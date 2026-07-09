@@ -23,19 +23,8 @@ Makinende kurulu olmalı: Docker Desktop, Python 3.12+, Node.js 20+.
 
 ## İlk Kurulum (her üye bir kez yapar)
 
-Repoyu klonladıktan sonra kütüphaneler repoda GELMEZ (`.venv` ve
-`node_modules` bilinçli olarak dışlanmıştır); her üye kendi makinesinde kurar.
 
-### 1. Ortam değişkenleri
-Repo kökünde:
-
-    copy .env.example .env      # Windows
-    cp .env.example .env        # Mac/Linux
-
-Geliştirme için `.env` içindeki varsayılan değerler çalışır; değiştirmeye
-gerek yoktur. `.env` ASLA commit edilmez.
-
-### 2. Backend kütüphaneleri
+### 1. Backend kütüphaneleri
 
     cd backend
     python -m venv .venv
@@ -46,7 +35,7 @@ gerek yoktur. `.env` ASLA commit edilmez.
 Windows'ta `activate` "running scripts is disabled" hatası verirse, PowerShell'i
 yönetici açıp bir kez: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
-### 3. Frontend kütüphaneleri
+### 2. Frontend kütüphaneleri
 
     cd frontend
     npm install

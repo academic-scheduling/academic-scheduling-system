@@ -1,4 +1,4 @@
-# Çakışma Motoru Kural Seti (v1.1 — K-12 onaylandı)
+# Çakışma Motoru Kural Seti (v1.2 — K-12, K-13 işlendi)
 
 **Kaynak:** Proje dokümanı §4 + karar defteri K-03, K-05, K-06, K-07, K-08, K-10.
 **Sahibi:** Stajyer C. Bu belge hem implementasyon spesifikasyonu hem unit test şablonudur.
@@ -62,6 +62,12 @@ Dokümandaki tek satırlık "exam vs course" kuralı aslında üç ayrı fizikse
 | X2 | Cohort | Sınav, aynı cohort'un (bölüm+yıl+dönem) haftalık dersiyle kesişiyor | WARNING — vize haftasında dersler fiilen boş geçebilir; engellemek aşırı katı olur |
 | X3 | Hoca | Sınav sorumlusu, aynı anda haftalık derste görünüyor | WARNING — ders o hafta yapılmıyor olabilir |
 
+**Aynı ders istisnası [K-13]:** X1/X2/X3 karşılaştırmalarında sınavın dersi ile
+haftalık girişin dersi aynıysa (`exam.course_id == weekly_entry.course_id`) o
+karşılaştırma ATLANIR. Bir dersin sınavı kendi normal yerinde/saatinde/hocasıyla
+yapıldığında sahte çakışma üretilmemesi için. Gerçek çakışma yalnızca sınav BAŞKA
+bir dersin oda/cohort/hoca alanına girince doğar.
+
 Karşılaştırma: yalnızca sınav tarihi hafta içiyse ve sınav saati 08:30-17:30
 penceresiyle kesişiyorsa anlamlıdır (17:30 sonrası sınav hiçbir dersle kesişemez —
 bu, ucuz bir ön-eleme optimizasyonudur).
@@ -92,6 +98,8 @@ Ek senaryo testleri:
 - İki slotluk ders (slot 3-4) × tek slotluk ders (slot 4) → çakışır.
 - İki slotluk ders (slot 3-4) × tek slotluk ders (slot 5) → çakışmaz.
 - 17:31'de başlayan sınav × slot 9 dersi (16:30-17:15) → çakışmaz (X kuralları).
+- Matematik vizesi, Matematik dersinin kendi yerinde/saatinde → X1/X2/X3 HİÇBİRİ tetiklenmez [K-13].
+- Matematik vizesi, aynı odada BAŞKA dersin (Fizik) olduğu saate → X1 HARD tetiklenir.
 - Aynı saat farklı gün / aynı gün farklı workgroup → çakışmaz.
 
 ## Mesaj Şablonları (doküman §4.4 formatında)

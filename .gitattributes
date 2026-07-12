@@ -1,0 +1,5 @@
+# Satir sonlarini tum platformlarda LF olarak standartlastir.
+# Windows/Mac/Linux fark etmeksizin herkes ayni satir sonunu kullanir;
+# "LF will be replaced by CRLF" uyarilarini ve sahte "modified" durumlarini onler.
+# Binary dosyalar (gorseller, pdf vb.) 'text=auto' ile otomatik taninir ve dokunulmaz.
+* text=auto eol=lf

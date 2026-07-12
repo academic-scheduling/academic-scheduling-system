@@ -113,3 +113,7 @@ zincirinin tamamının çalıştığını kanıtlar.
 | Backend (FastAPI) | 8000 |
 | PostgreSQL | 5432 |
 | Mailpit arayüz / SMTP | 8025 / 1025 |
+
+
+## Önemli
+requirements.txt'e dokunan bir değişiklik çektikten sonra her zaman `pip install -r requirements.txt` çalıştır. 

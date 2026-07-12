@@ -103,3 +103,14 @@ Kural setindeki üç açık severity kararı onaylandı:
 - **E3** (sınav hoca/sorumlu çakışması) → **HARD** (haftalık W2 ile tutarlı; hoca aynı anda iki sınavda olamaz).
 - **E4** (cohort sınav çakışması) → K-05 mantığı sınavlara da uygulanır: zorunlu×zorunlu = **HARD**, seçmeli dahil = **WARNING**.
 - **X2 / X3** (sınav×ders cohort ve hoca çakışması) → **WARNING** (vize haftasında ders fiilen yapılmayabilir; engellemek aşırı katı olur). X1 (derslik) HARD kalır.
+
+## K-13 · Sınav×ders (X kuralları) aynı ders istisnası [E]
+X1/X2/X3 çapraz kuralları çalışırken, sınavın dersi ile haftalık ders girişinin
+dersi **aynıysa** (`exam.course_id == weekly_entry.course_id`) o karşılaştırma
+**atlanır** — çakışma üretmez.
+**Gerekçe:** Bir dersin sınavı, o dersin normal haftalık yerinde/saatinde/hocasıyla
+yapıldığında oda, cohort ve hoca "çakışması" görünür ama gerçek değildir: çakışan
+iki nesne aynı derse aittir, öğrenciler zaten o saatte o dersteydi. İstisna olmazsa
+"dersin sınavını kendi yerinde yapmak" gibi tamamen normal bir durum yanlışlıkla
+3 uyarı birden üretir. Gerçek çakışma ancak sınav BAŞKA bir dersin
+oda/cohort/hoca alanına girdiğinde doğar.

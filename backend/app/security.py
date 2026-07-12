@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from app.config import settings
+import secrets
+import hashlib
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -23,3 +25,11 @@ def decode_access_token(token: str) -> dict | None:
         return payload
     except JWTError:
         return None
+
+def generate_invitation_token() -> str:
+    """Maile gidecek ham token. URL-safe, ~43 karakter, 32 bayt entropi."""
+    return secrets.token_urlsafe(32)
+
+def hash_token(raw_token: str) -> str:
+    """DB'ye yazılacak/aranacak hash. Deterministik sha256 hex (64 karakter)."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()

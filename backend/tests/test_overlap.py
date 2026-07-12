@@ -22,6 +22,7 @@ from app.conflicts.engine import e6_exam_out_of_window
 from app.conflicts.engine import x1_exam_weekly_classroom_conflict
 from app.conflicts.engine import x2_exam_weekly_course_conflict
 from app.conflicts.engine import x3_exam_weekly_lecturer_conflict
+from app.conflicts.message import build_message 
 
 def base_session():
     # tüm kurallarda kullanılacak geçerli bir temel oturum üretir
@@ -29,7 +30,8 @@ def base_session():
         "course_id": 1, "classroom_id": 10, "day_of_week": 1,
         "start_slot": 3, "slot_count": 2, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
-        "is_elective": False, "expected_students": 40, "capacity": 30,
+        "is_elective": False, "expected_students": 40, "capacity": 30, 
+        "course_code": "CENG2001",'section_no': 1
     }
 
 def test_intervals_overlap():
@@ -269,7 +271,8 @@ def base_exam():
         "exam_date": date(2026, 6, 15), "start_time": time(10, 0),
         "duration_minutes": 90, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
-        "is_elective": False, "expected_students": 40,
+        "is_elective": False, "expected_students": 40,"course_code": "CENG2001",
+        "section_no": 1,
     }
 
 
@@ -606,3 +609,87 @@ def test_x3_final_exam_no_conflict():
     b['lecturer_id'] = 5                # aynı öğretim üyesi
     result = x3_exam_weekly_lecturer_conflict(a, b)
     assert result is None
+
+# ------------------------------------------- mesaj testleri -----------------------------------------------------                  
+
+def test_message_w1():
+    a = base_session()
+    b = base_session()
+    msg = build_message("W1", a, b)
+    assert "Derslik çakışması" in msg
+    assert "CENG2001-1" in msg          # course_label çalışıyor mu
+
+
+def test_message_w6_single_arg():
+    a = base_session()
+    a["day_of_week"] = 6                 # pencere dışı
+    msg = build_message("W6", a)         # tekil kural, b vermiyoruz
+    assert "Pencere dışı" in msg
+
+
+def test_message_unknown_rule_fallback():
+    a = base_session()
+    msg = build_message("ZZ", a)         # tanımsız kural
+    assert "ZZ" in msg                   # yedek metin devrede mi
+
+
+# ---------- sınav (E) mesaj testleri ----------
+
+def test_message_e1():
+    a = base_exam()
+    b = base_exam()
+    assert "Sınav derslik çakışması" in build_message("E1", a, b)
+
+
+def test_message_e2():
+    a = base_exam()
+    b = base_exam()
+    assert "Mükerrer sınav" in build_message("E2", a, b)
+
+
+def test_message_e3():
+    a = base_exam()
+    b = base_exam()
+    assert "hoca çakışması" in build_message("E3", a, b).lower()
+
+
+def test_message_e4():
+    a = base_exam()
+    b = base_exam()
+    assert "cohort" in build_message("E4a", a, b).lower()   # E4a ve E4b aynı fonksiyona
+
+
+def test_message_e5():
+    a = base_exam()
+    assert "kapasite" in build_message("E5", a).lower()      # tekil, b yok
+
+
+def test_message_e6():
+    a = base_exam()
+    assert "Hafta sonu" in build_message("E6", a)
+
+
+# ---------- çapraz (X) mesaj testleri: a=sınav, b=ders ----------
+
+def test_message_x1a():
+    exam = base_exam()
+    weekly = base_session()
+    assert "Sınav-ders derslik" in build_message("X1a", exam, weekly)
+
+
+def test_message_x1b():
+    exam = base_exam()
+    weekly = base_session()
+    assert "kendi dersinin" in build_message("X1b", exam, weekly)
+
+
+def test_message_x2():
+    exam = base_exam()
+    weekly = base_session()
+    assert "cohort" in build_message("X2", exam, weekly).lower()
+
+
+def test_message_x3():
+    exam = base_exam()
+    weekly = base_session()
+    assert "hoca" in build_message("X3", exam, weekly).lower()    

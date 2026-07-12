@@ -13,7 +13,7 @@ SLOTS = {
 }
 def slot_range_to_times(start_slot: int, slot_count: int) -> tuple[time, time]:
     """
-    Returns the start and end times for a given range of slots.
+    verilen slot aralığı için başlangıç ve bitiş saatlerini döndürür.
     """
     end_slot = start_slot + slot_count - 1
     if start_slot not in SLOTS or end_slot not in SLOTS:

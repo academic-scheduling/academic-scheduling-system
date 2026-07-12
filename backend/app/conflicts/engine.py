@@ -231,9 +231,9 @@ def x1_exam_weekly_classroom_conflict(exam, weekly):
     if weekly["classroom_id"] in _room_ids(exam) and exam_weekly_overlap(exam, weekly):
         # aynı dersin sınavı kendi dersiyle çakışıyorsa → sadece uyarı
         if exam["course_id"] == weekly["course_id"]:
-            return {"rule_id": "X1", "severity": "WARNING"}
+            return {"rule_id": "X1b", "severity": "WARNING"}
         # farklı ders → gerçek derslik işgali → HARD
-        return {"rule_id": "X1", "severity": "HARD"}
+        return {"rule_id": "X1a", "severity": "HARD"}
 
     return None
 

@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://app:app_dev_password@localhost:5432/scheduling"
     secret_key: str = "dev-only-secret"
-    allowed_email_domain: str = "muh.example.edu.tr"
+    allowed_email_domains: str = "muh.example.edu.tr"
     smtp_host: str = "localhost"
     smtp_port: int = 1025
 
@@ -15,5 +15,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    invitation_expire_hours: int = 168          # 7 gün = 7 * 24
+    frontend_base_url: str = "http://localhost:5173"
+    mail_from: str = "no-reply@muh.example.edu.tr"
 
 settings = Settings()

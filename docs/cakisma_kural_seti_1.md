@@ -1,7 +1,20 @@
-# Çakışma Motoru Kural Seti (v1.2 — K-12, K-13 işlendi)
+# Çakışma Motoru Kural Seti (v1.3 — K-14..K-20 işlendi, 13 Temmuz hoca toplantısı)
 
-**Kaynak:** Proje dokümanı §4 + karar defteri K-03, K-05, K-06, K-07, K-08, K-10.
+**Kaynak:** Proje dokümanı §4 + karar defteri K-03, K-05..K-08, K-12..K-20.
 **Sahibi:** Stajyer C. Bu belge hem implementasyon spesifikasyonu hem unit test şablonudur.
+**v1.3 değişiklikleri (Stajyer A tarafından taslaklandı, C'nin onayı bekleniyor):**
+şube-farkındalıklı cohort (W3/W4), asenkron muafiyeti (ön-eleme), W8 tamlık kuralı,
+sınavın ders düzeyine taşınması, çoklu derslik + exam_capacity (E1/E5/E7).
+
+## Ön-Eleme: Asenkron Muafiyeti [K-19]
+
+`delivery_mode = 'ONLINE_ASYNC'` olan haftalık giriş, gün/saat taşısa bile
+**hiçbir çakışma karşılaştırmasına girmez**: taraflarından biri asenkron olan
+her (giriş, giriş) ve (sınav, giriş) çifti W1-W5, W7 ve X1-X3'te ATLANIR.
+İstisnalar: W6 (pencere) girişin kendi geçerliliğidir, asenkron için de çalışır;
+W8 (tamlık) toplamına asenkron oturumlar DAHİLDİR (normal gün/saat taşırlar).
+`ONLINE_SYNC` girişlerde muafiyet YOKTUR: dersliği olmadığından W1/W7 zaten
+NULL-derslik koşuluyla susar; W2 (hoca) ve W3/W4 (cohort) normal çalışır.
 
 ## Motorun İki Çalışma Anı [K-03]
 
@@ -27,29 +40,60 @@
 
 ## A. Haftalık Ders Kuralları
 
+Genel not [K-14]: haftalık giriş artık **şubeye** (`section_id`) bağlıdır;
+`course` = şubenin dersi (kod düzeyi). Tüm kurallarda asenkron ön-elemesi geçerli.
+
 | ID | Kural | Koşul | Severity | Atlama koşulu |
 |---|---|---|---|---|
 | W1 | Derslik çakışması | Aynı `classroom_id`, aynı gün, kesişen slotlar | **HARD** | Taraflardan birinin `classroom_id` NULL ise [K-10] |
-| W2 | Hoca çakışması | Aynı `lecturer_id`, aynı gün, kesişen slotlar | **HARD** | — |
-| W3 | Cohort: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, iki ders de `is_elective=false`, kesişen slotlar | **HARD** [K-05] | Aynı dersin kendisiyle karşılaştırması (o W5'in işi) |
-| W4 | Cohort: seçmeli dahil | Aynı bölüm+yıl+dönem, en az biri `is_elective=true`, kesişen slotlar | **WARNING** [K-05] | — |
-| W5 | Mükerrer ders-şube oturumu | Aynı `course_id`, kesişen slotlar | WARNING | — |
+| W2 | Hoca çakışması | Aynı `section.lecturer_id`, aynı gün, kesişen slotlar | **HARD** | — |
+| W3 | Cohort: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, iki FARKLI ders, ikisi de `is_elective=false`, **şube-farkındalıklı çakışma** (aşağıda) | **HARD** [K-05, K-15] | Aynı dersin şubeleri arası karşılaştırma (şubeler alternatiftir; aynı şube içi mükerrerlik W5'in işi) |
+| W4 | Cohort: seçmeli dahil | Aynı bölüm+yıl+dönem, iki FARKLI ders, en az biri `is_elective=true`, **şube-farkındalıklı çakışma** | **WARNING** [K-05, K-15] | — |
+| W5 | Mükerrer şube oturumu | Aynı `section_id`, kesişen slotlar | WARNING | — |
 | W6 | Pencere dışı slot | Gün 1-5 dışında VEYA `start_slot+slot_count-1 > 9` | **HARD** | Sadece derslere uygulanır; sınavlara ASLA [K-06]. DB CHECK zaten koruyor; motor yine de anlaşılır mesaj üretir |
-| W7 | Kapasite | `course.expected_students > classroom.capacity` | WARNING | `classroom_id` NULL ise |
+| W7 | Kapasite | `section.expected_students > classroom.capacity` | WARNING | `classroom_id` NULL ise |
+| W8 | T+U+L tamlığı [K-20] | Şubenin `session_type` bazında SUM(slot_count) ≠ dersin `hours_theory/practice/lab` değeri (eksik VEYA fazla) | WARNING | **Yalnız submit anında** çalışır; save'de sessiz [K-20]. hours değeri 0 olan bileşen için giriş yoksa kontrol edilmez |
+
+### Şube-farkındalıklı cohort çakışması [K-15]
+
+W3/W4, ders (kod) düzeyinde değerlendirilir:
+
+1. Aynı cohort'taki (bölüm+yıl+dönem) iki farklı ders A ve B için tüm aktif
+   şube çiftleri (a ∈ A.sections, b ∈ B.sections) kurulur.
+2. Bir (a, b) çifti "uyumsuz"dur ⇔ a'nın herhangi bir oturumu ile b'nin
+   herhangi bir oturumu kesişir (asenkron oturumlar kesişim hesabına girmez).
+3. **En az bir uyumlu (a, b) çifti varsa çakışma YOKTUR** — öğrenci o
+   kombinasyonu seçebilir. TÜM çiftler uyumsuzsa W3/W4 üretilir.
+
+Örnek [S]: A1×B1 aynı saatte, A2×B2 aynı (ama farklı) saatte → (A1,B2) ve
+(A2,B1) uyumlu → çakışma yok. Tek şubeli iki ders çakışıyorsa (tek çift, o da
+uyumsuz) → eski davranışla birebir aynı sonuç.
+
+Not: `affected_objects` uyumsuzluğu kanıtlayan somut giriş çiftlerini içermeli
+ki B raporda "hangi oturumlar" gösterebilsin.
 
 ## B. Sınav Kuralları
 
+Genel not [K-16, K-17]: sınav artık **ders düzeyindedir** (şubeden bağımsız,
+tüm şubeler aynı sınava girer) ve **birden çok dersliği** olabilir
+(`exam_classrooms`). "Dersliksiz sınav" = sıfır derslik satırı.
+Sınavın öğrenci sayısı: `total_expected = SUM(dersin aktif şubelerinin
+expected_students)`.
+
 | ID | Kural | Koşul | Severity | Atlama koşulu |
 |---|---|---|---|---|
-| E1 | Sınav derslik çakışması | Aynı `classroom_id`, aynı tarih, kesişen saat aralıkları | **HARD** | Taraflardan biri NULL derslikli ise |
-| E2 | Mükerrer sınav tipi | Aynı `course_id` + `exam_type` ikinci kayıt | **HARD** | — (DB UNIQUE zaten engeller; motor anlaşılır mesaj üretir) |
+| E1 | Sınav derslik çakışması | İki sınavın derslik KÜMELERİ kesişiyor (ortak en az bir derslik) ve aynı tarih, kesişen saat aralıkları | **HARD** | Taraflardan birinin derslik kümesi boşsa |
+| E2 | Mükerrer sınav tipi | Aynı `course_id` (ders) + `exam_type` ikinci kayıt | **HARD** | — (DB UNIQUE zaten engeller; motor anlaşılır mesaj üretir) |
 | E3 | Hoca/sorumlu çakışması | Aynı `lecturer_id`, aynı tarih, kesişen saatler | **HARD** [K-12] | — |
-| E4a | Cohort sınav: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, ikisi de zorunlu, kesişen tarih+saat | **HARD** [K-12] | — |
+| E4a | Cohort sınav: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, ikisi de zorunlu, kesişen tarih+saat | **HARD** [K-12] | — (sınav ders düzeyinde olduğundan şube esnekliği YOKTUR — herkes aynı sınavda) |
 | E4b | Cohort sınav: seçmeli dahil | Aynı cohort, en az biri seçmeli | **WARNING** | — |
-| E5 | Sınav kapasitesi | `course.expected_students > classroom.capacity` | WARNING | NULL derslik |
+| E5 | Sınav kontenjanı yetersiz [K-17] | `SUM(seçili dersliklerin exam_capacity) < total_expected` → "ek derslik seçin" mesajı | WARNING | Derslik kümesi boşsa |
 | E6 | Hafta sonu tarihi | `exam_date` Cmt/Paz | **HARD** [K-06] | — (DB CHECK yedekli) |
+| E7 | Gereksiz kontenjan fazlası [K-17] | Derslik kümesinden EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam hâlâ `>= total_expected` ise (yani bir derslik tamamen gereksiz) | WARNING | Derslik sayısı <= 1 ise |
 
 Not: Sınavlarda **saat penceresi kuralı yoktur** — 17:30 sonrası serbesttir [K-06].
+Not: E5/E7'de `capacity` DEĞİL `exam_capacity` kullanılır (boşluklu oturma, K-17).
+E7 eşiği ekip önerisidir; hoca onayı bekliyor (karar defteri açık konu 5).
 
 ## C. Çapraz Kural: Sınav × Haftalık Ders [K-06, AÇIK]
 
@@ -58,15 +102,18 @@ Dokümandaki tek satırlık "exam vs course" kuralı aslında üç ayrı fizikse
 
 | ID | Kural | Koşul | Severity (öneri) |
 |---|---|---|---|
-| X1 | Derslik işgali | Sınav, aynı derslikteki haftalık dersle kesişiyor | **HARD** — fiziksel imkânsızlık, oda ikiye bölünemez |
+| X1 | Derslik işgali | Sınavın derslik kümesinden HERHANGİ biri, aynı derslikteki haftalık dersle kesişiyor | **HARD** — fiziksel imkânsızlık, oda ikiye bölünemez |
 | X2 | Cohort | Sınav, aynı cohort'un (bölüm+yıl+dönem) haftalık dersiyle kesişiyor | WARNING — vize haftasında dersler fiilen boş geçebilir; engellemek aşırı katı olur |
 | X3 | Hoca | Sınav sorumlusu, aynı anda haftalık derste görünüyor | WARNING — ders o hafta yapılmıyor olabilir |
 
+Haftalık taraf `ONLINE_ASYNC` ise X1/X2/X3 atlanır (ön-eleme, K-19).
+
 **Aynı ders istisnası [K-13]:** X1/X2/X3 karşılaştırmalarında sınavın dersi ile
-haftalık girişin dersi aynıysa (`exam.course_id == weekly_entry.course_id`) o
-karşılaştırma ATLANIR. Bir dersin sınavı kendi normal yerinde/saatinde/hocasıyla
-yapıldığında sahte çakışma üretilmemesi için. Gerçek çakışma yalnızca sınav BAŞKA
-bir dersin oda/cohort/hoca alanına girince doğar.
+haftalık girişin dersi aynıysa (`exam.course_id == weekly_entry.section.course_id`
+— sınav ders düzeyinde olduğundan dersin HERHANGİ bir şubesinin oturumu bu
+istisnaya girer, K-16) o karşılaştırma ATLANIR. Bir dersin sınavı kendi normal
+yerinde/saatinde/hocasıyla yapıldığında sahte çakışma üretilmemesi için. Gerçek
+çakışma yalnızca sınav BAŞKA bir dersin oda/cohort/hoca alanına girince doğar.
 
 Karşılaştırma: yalnızca sınav tarihi hafta içiyse ve sınav saati 08:30-17:30
 penceresiyle kesişiyorsa anlamlıdır (17:30 sonrası sınav hiçbir dersle kesişemez —
@@ -74,11 +121,12 @@ bu, ucuz bir ön-eleme optimizasyonudur).
 
 ## Açık Kararlar (ekip onayı bekliyor)
 
-1. **E3 severity:** Doküman "hard veya warning" diyor. Öneri: **HARD** — W2 ile tutarlı
-   (bir hoca iki yerde olamaz). Onaylanmalı.
-2. **E4 severity ayrımı:** K-05 haftalık dersler için verildi; sınavlara aynı mantığın
-   (zorunlu×zorunlu=hard, seçmeli=warning) uygulanması önerildi. Onaylanmalı.
-3. **X2/X3 severity:** WARNING önerildi (gerekçe tabloda). Onaylanmalı.
+1. ~~E3 / E4 / X2-X3 severity'leri~~ → K-12 ile onaylandı (v1.2).
+2. **v1.3 değişiklik seti** (şube-farkındalıklı W3/W4, asenkron ön-eleme, W8,
+   ders düzeyi sınav, E1/E5/E7): Stajyer A taslakladı; **Stajyer C gözden
+   geçirip onaylamalı** (motorun sahibi C'dir).
+3. **E7 israf eşiği:** "en küçük derslik çıkarılsa hâlâ yetiyor" kriteri ekip
+   önerisi; hoca onayı alınabilir.
 
 ## Unit Test Şablonu (Stajyer C)
 
@@ -101,6 +149,22 @@ Ek senaryo testleri:
 - Matematik vizesi, Matematik dersinin kendi yerinde/saatinde → X1/X2/X3 HİÇBİRİ tetiklenmez [K-13].
 - Matematik vizesi, aynı odada BAŞKA dersin (Fizik) olduğu saate → X1 HARD tetiklenir.
 - Aynı saat farklı gün / aynı gün farklı workgroup → çakışmaz.
+
+v1.3 ek senaryoları [K-15, K-19, K-20, K-17]:
+- A1×B1 çakışık, A2×B2 çakışık (farklı saatte) → W3 YOK (uyumlu kombinasyon var).
+- A1×B1 çakışık, A1×B2 çakışık, A tek şubeli → W3 VAR (tüm çiftler uyumsuz).
+- Tek şubeli iki zorunlu ders çakışık → W3 VAR (eski davranışla aynı).
+- Asenkron giriş × aynı saatte aynı hocanın başka dersi → W2 YOK (ön-eleme).
+- Senkron online giriş × aynı hocanın aynı saatte dersi → W2 VAR.
+- Asenkron giriş W8 toplamına dahil: 3+0+0 ders, 2 slot yüz yüze + 1 slot
+  asenkron THEORY → W8 YOK.
+- 3+2+0 ders, submit'te teori 2 slot yerleşmiş → W8 WARNING (eksik).
+  Teori 4 slot → W8 WARNING (fazla). Lab girişi yok (L=0) → sessiz.
+- Sınav: exam_capacity 40+40, total_expected 90 → E5 WARNING (yetersiz).
+- Sınav: exam_capacity 40+40+40, total_expected 75 → E7 WARNING (40 çıkınca 80 >= 75).
+- İki sınav ortak dersliği paylaşıyor, saatler kesişik → E1 HARD (küme kesişimi).
+- Aynı dersin (kod) iki şubesinin oturumları çakışık → W3/W4 YOK, W5 de YOK
+  (farklı section_id); şubeler alternatiftir.
 
 ## Mesaj Şablonları (doküman §4.4 formatında)
 

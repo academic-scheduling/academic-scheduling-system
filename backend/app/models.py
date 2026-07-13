@@ -1,10 +1,18 @@
 """
 SQLAlchemy ORM modelleri.
 
-Bu dosya schema.sql tasariminin Python karsiligidir (WP0).
+Bu dosya schema.sql tasariminin Python karsiligidir (v0.3, K-01..K-20).
   - Enum tipleri: schema.sql'deki CREATE TYPE ... AS ENUM karsiliklari
-  - 12 tablo modeli: kimlik/organizasyon + cekirdek veri + program/sinav
+  - Kimlik/organizasyon + cekirdek veri + program/sinav tablolari
   - relationship(): Python tarafinda nesne uzerinden gezinme (DB'yi degistirmez)
+
+v0.2 -> v0.3 (13 Temmuz hoca toplantisi, karar defteri K-14..K-20):
+  - courses ikiye ayrildi: Course (ders, kod duzeyi) + CourseSection (sube)
+  - Exam ders duzeyine baglandi (subeden bagimsiz tek sinav) ve coklu
+    derslige gecti (exam_classrooms)
+  - Building tablosu; Classroom.building metni yerine building_id FK
+  - Classroom.exam_capacity (bosluklu oturma kontenjani)
+  - WeeklyScheduleEntry: section_id + session_type (T/U/L) + delivery_mode
 
 Not: name="..." parametreli enum'lar, PostgreSQL'deki tip adiyla BIREBIR
 ayni olmali; Alembic dogru enum tipini bu isimle uretir.
@@ -17,6 +25,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Column,
     Date,
     DateTime,
     Enum,
@@ -25,6 +34,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Table,
     Text,
     Time,
     UniqueConstraint,
@@ -87,6 +97,26 @@ class EntryStatus(str, enum.Enum):
     SUBMITTED = "SUBMITTED"
 
 
+class SessionType(str, enum.Enum):
+    """session_type — haftalik girisin karsiladigi T/U/L bileseni (K-20)."""
+
+    THEORY = "THEORY"
+    PRACTICE = "PRACTICE"
+    LAB = "LAB"
+
+
+class DeliveryMode(str, enum.Enum):
+    """delivery_mode — girisin islenis bicimi (K-19).
+
+    ONLINE_ASYNC girisler normal gun/saat tasir ama cakisma
+    karsilastirmalarina girmez.
+    """
+
+    FACE_TO_FACE = "FACE_TO_FACE"
+    ONLINE_SYNC = "ONLINE_SYNC"
+    ONLINE_ASYNC = "ONLINE_ASYNC"
+
+
 # ==================================================================
 # Kimlik / organizasyon tablolari
 # ==================================================================
@@ -132,6 +162,7 @@ class Workgroup(Base):
         back_populates="workgroup"
     )
     lecturers: Mapped[list["Lecturer"]] = relationship(back_populates="workgroup")
+    buildings: Mapped[list["Building"]] = relationship(back_populates="workgroup")
     classrooms: Mapped[list["Classroom"]] = relationship(back_populates="workgroup")
 
 
@@ -266,35 +297,71 @@ class Lecturer(Base):
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="lecturers")
-    courses: Mapped[list["Course"]] = relationship(back_populates="lecturer")
+    sections: Mapped[list["CourseSection"]] = relationship(
+        back_populates="lecturer"
+    )
     exams: Mapped[list["Exam"]] = relationship(back_populates="lecturer")
 
 
-class Classroom(Base):
-    """classrooms — derslikler; kapasite MVP kurallarinda kullanilir."""
+class Building(Base):
+    """buildings — yonetilen bina listesi (K-18; serbest metin yerine)."""
 
-    __tablename__ = "classrooms"
+    __tablename__ = "buildings"
     __table_args__ = (
-        UniqueConstraint(
-            "workgroup_id", "building", "room_code", name="uq_classrooms_location"
-        ),
-        CheckConstraint("capacity > 0", name="ck_classrooms_capacity_positive"),
+        UniqueConstraint("workgroup_id", "name", name="uq_buildings_workgroup_name"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     workgroup_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("workgroups.id", ondelete="CASCADE")
     )
-    building: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(100))
+    active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+
+    workgroup: Mapped["Workgroup"] = relationship(back_populates="buildings")
+    classrooms: Mapped[list["Classroom"]] = relationship(back_populates="building")
+
+
+class Classroom(Base):
+    """classrooms — derslikler.
+
+    capacity: ders kapasitesi (W7). exam_capacity: bosluklu oturma duzeninde
+    sinav kontenjani (K-17; E5/E7 bu alani kullanir, capacity'yi DEGIL).
+    """
+
+    __tablename__ = "classrooms"
+    __table_args__ = (
+        UniqueConstraint("building_id", "room_code", name="uq_classrooms_location"),
+        CheckConstraint("capacity > 0", name="ck_classrooms_capacity_positive"),
+        CheckConstraint(
+            "exam_capacity > 0 AND exam_capacity <= capacity",
+            name="ck_classrooms_exam_capacity_range",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workgroup_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workgroups.id", ondelete="CASCADE")
+    )
+    # RESTRICT: dersligi olan bina silinemez (once derslikler tasinmali).
+    building_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("buildings.id", ondelete="RESTRICT")
+    )
     room_code: Mapped[str] = mapped_column(String(30))
     capacity: Mapped[int] = mapped_column(Integer)
+    exam_capacity: Mapped[int] = mapped_column(Integer)
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="classrooms")
+    building: Mapped["Building"] = relationship(back_populates="classrooms")
 
 
 class Course(Base):
-    """courses — bir bolumun bir donemdeki dersi (subeler section_no ile ayrilir)."""
+    """courses — DERS, kod duzeyi (K-14).
+
+    Ad, secmelilik ve T+U+L saatleri subeler arasinda ORTAKTIR; sube
+    duzeyindeki alanlar CourseSection'dadir. Sinav bu tabloya baglanir (K-16).
+    """
 
     __tablename__ = "courses"
     __table_args__ = (
@@ -303,14 +370,12 @@ class Course(Base):
             "year",
             "semester",
             "code",
-            "section_no",
             name="uq_courses_identity",
         ),
         CheckConstraint("year BETWEEN 1 AND 6", name="ck_courses_year_range"),
-        CheckConstraint("section_no > 0", name="ck_courses_section_positive"),
-        CheckConstraint(
-            "expected_students > 0", name="ck_courses_expected_positive"
-        ),
+        CheckConstraint("hours_theory >= 0", name="ck_courses_hours_theory"),
+        CheckConstraint("hours_practice >= 0", name="ck_courses_hours_practice"),
+        CheckConstraint("hours_lab >= 0", name="ck_courses_hours_lab"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -322,27 +387,64 @@ class Course(Base):
         Enum(SemesterType, name="semester_type")
     )
     code: Mapped[str] = mapped_column(String(20))
-    section_no: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     name: Mapped[str] = mapped_column(String(200))
-    # RESTRICT: hocanin hala dersi varsa hoca SILINEMEZ (K-08).
+    is_elective: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # T+U+L (K-20): degerler oldugu gibi alinir, U/L ayrimi sorgulanmaz.
+    hours_theory: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0")
+    )
+    hours_practice: Mapped[int] = mapped_column(
+        SmallInteger, server_default=text("0")
+    )
+    hours_lab: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+
+    department: Mapped["Department"] = relationship(back_populates="courses")
+    sections: Mapped[list["CourseSection"]] = relationship(
+        back_populates="course"
+    )
+    exams: Mapped[list["Exam"]] = relationship(back_populates="course")
+
+
+class CourseSection(Base):
+    """course_sections — SUBE (K-14).
+
+    Hoca, beklenen ogrenci ve varsayilan derslik sube duzeyindedir.
+    Ayni hoca birden cok subeye girebilir. Haftalik program girisleri
+    subeye baglanir.
+    """
+
+    __tablename__ = "course_sections"
+    __table_args__ = (
+        UniqueConstraint("course_id", "section_no", name="uq_sections_course_no"),
+        CheckConstraint("section_no > 0", name="ck_sections_no_positive"),
+        CheckConstraint(
+            "expected_students > 0", name="ck_sections_expected_positive"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    course_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("courses.id", ondelete="CASCADE")
+    )
+    section_no: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
+    # RESTRICT: hocanin hala subesi varsa hoca SILINEMEZ (K-08).
     lecturer_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("lecturers.id", ondelete="RESTRICT")
     )
     expected_students: Mapped[int] = mapped_column(Integer)  # CHECK: > 0 (K-07)
-    is_elective: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
-    # SET NULL: derslik silinirse ders kalir, sadece varsayilan bosalir.
+    # SET NULL: derslik silinirse sube kalir, sadece varsayilan bosalir.
     default_classroom_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("classrooms.id", ondelete="SET NULL")
     )
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
-    department: Mapped["Department"] = relationship(back_populates="courses")
-    lecturer: Mapped["Lecturer"] = relationship(back_populates="courses")
+    course: Mapped["Course"] = relationship(back_populates="sections")
+    lecturer: Mapped["Lecturer"] = relationship(back_populates="sections")
     default_classroom: Mapped["Classroom | None"] = relationship()  # tek yonlu
     schedule_entries: Mapped[list["WeeklyScheduleEntry"]] = relationship(
-        back_populates="course"
+        back_populates="section"
     )
-    exams: Mapped[list["Exam"]] = relationship(back_populates="course")
 
 
 class Slot(Base):
@@ -364,7 +466,12 @@ class Slot(Base):
 
 
 class WeeklyScheduleEntry(Base):
-    """weekly_schedule_entries — haftalik ders programindaki tek bir yerlesim."""
+    """weekly_schedule_entries — haftalik ders programindaki tek bir yerlesim.
+
+    Subeye baglanir (K-14). session_type: bu yerlesim T/U/L'nin hangisini
+    karsiliyor (K-20, W8 tamlik kurali). delivery_mode=ONLINE_ASYNC girisler
+    normal gun/saat tasir ama cakisma karsilastirmalarina girmez (K-19).
+    """
 
     __tablename__ = "weekly_schedule_entries"
     __table_args__ = (
@@ -376,13 +483,13 @@ class WeeklyScheduleEntry(Base):
             name="ck_wse_status_submitted_consistency",
         ),
         Index("idx_wse_classroom_day", "classroom_id", "day_of_week"),
-        Index("idx_wse_course", "course_id"),
+        Index("idx_wse_section", "section_id"),
         Index("idx_wse_status", "status"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    course_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("courses.id", ondelete="CASCADE")
+    section_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("course_sections.id", ondelete="CASCADE")
     )
     classroom_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("classrooms.id", ondelete="RESTRICT")
@@ -396,6 +503,13 @@ class WeeklyScheduleEntry(Base):
     slot_count: Mapped[int] = mapped_column(
         SmallInteger, CheckConstraint("slot_count >= 1"), server_default=text("1")
     )
+    session_type: Mapped[SessionType] = mapped_column(
+        Enum(SessionType, name="session_type"), server_default=text("'THEORY'")
+    )
+    delivery_mode: Mapped[DeliveryMode] = mapped_column(
+        Enum(DeliveryMode, name="delivery_mode"),
+        server_default=text("'FACE_TO_FACE'"),
+    )
     status: Mapped[EntryStatus] = mapped_column(
         Enum(EntryStatus, name="entry_status"), server_default=text("'DRAFT'")
     )
@@ -407,12 +521,43 @@ class WeeklyScheduleEntry(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    course: Mapped["Course"] = relationship(back_populates="schedule_entries")
+    section: Mapped["CourseSection"] = relationship(
+        back_populates="schedule_entries"
+    )
     classroom: Mapped["Classroom | None"] = relationship()  # tek yonlu
 
 
+# Sinav <-> derslik cok-a-cok baglantisi (K-17). Ek kolonu olmadigi icin
+# ayri model sinifi yerine sade Table olarak tanimlandi.
+# RESTRICT: sinavi olan derslik silinemez; CASCADE: sinav silinince satirlar gider.
+exam_classrooms = Table(
+    "exam_classrooms",
+    Base.metadata,
+    Column(
+        "exam_id",
+        BigInteger,
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "classroom_id",
+        BigInteger,
+        ForeignKey("classrooms.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Index("idx_exam_classrooms_classroom", "classroom_id"),
+)
+
+
 class Exam(Base):
-    """exams — bir dersin bir sinavi (vize/final/butunleme)."""
+    """exams — bir DERSIN bir sinavi (vize/final/butunleme).
+
+    K-16: sinav ders duzeyindedir (subeden bagimsiz; tum subeler ayni sinava
+    girer). Ogrenci sayisi turetilir: dersin aktif subelerinin
+    expected_students toplami.
+    K-17: birden cok derslikte yapilabilir (classrooms listesi); dersliksiz
+    sinav = bos liste (eski nullable classroom_id'nin yerini alir).
+    """
 
     __tablename__ = "exams"
     __table_args__ = (
@@ -426,7 +571,6 @@ class Exam(Base):
             name="ck_exams_status_submitted_consistency",
         ),
         Index("idx_exams_date", "exam_date"),
-        Index("idx_exams_classroom_date", "classroom_id", "exam_date"),
         Index("idx_exams_status", "status"),
     )
 
@@ -439,9 +583,6 @@ class Exam(Base):
     start_time: Mapped[time] = mapped_column(Time)
     duration_minutes: Mapped[int] = mapped_column(
         Integer, CheckConstraint("duration_minutes BETWEEN 10 AND 480")
-    )
-    classroom_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("classrooms.id", ondelete="RESTRICT")
     )
     lecturer_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("lecturers.id", ondelete="RESTRICT")
@@ -460,7 +601,9 @@ class Exam(Base):
 
     course: Mapped["Course"] = relationship(back_populates="exams")
     lecturer: Mapped["Lecturer"] = relationship(back_populates="exams")
-    classroom: Mapped["Classroom | None"] = relationship()  # tek yonlu
+    classrooms: Mapped[list["Classroom"]] = relationship(
+        secondary=exam_classrooms
+    )  # tek yonlu
 
 
 class AuditLog(Base):

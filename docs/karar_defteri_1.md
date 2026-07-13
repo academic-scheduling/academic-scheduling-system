@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 7 Temmuz 2026
+**Son güncelleme:** 13 Temmuz 2026 (hoca toplantısı sonrası K-14..K-20 eklendi)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -91,12 +91,21 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 | Sınav saat penceresi | Belirsiz | Kısıt yok (hafta içi olmak şartıyla) |
 | Lecturer | Serbest metin önerisi | Yönetilen entity + web import |
 | PDF export | Could | Kapsamda (format ertelendi) |
+| Şube (section) | Tek courses tablosu | courses + course_sections ayrımı (K-14) |
+| Cohort kuralı | Şubeden habersiz | Şube-farkındalıklı, kod düzeyinde (K-15) |
+| Sınav | Şube başına | Şubeden bağımsız, ders düzeyinde tek sınav (K-16) |
+| Sınav dersliği | Tek derslik (nullable) | Çoklu derslik + exam_capacity (K-17) |
+| Bina | Serbest metin | buildings tablosu (K-18) |
+| Online ders | Ertelendi (K-10) | delivery_mode giriş düzeyinde; asenkron muaf (K-19) |
+| Ders saatleri | Yok | T+U+L + session_type + W8 tamlık kuralı (K-20) |
 
 ## Açık / Ertelenen Konular
-1. Online derslerin derslik ve cohort davranışı (K-10)
+1. ~~Online derslerin derslik ve cohort davranışı (K-10)~~ → K-19 ile kapandı
 2. XLSX/PDF ayrıntılı format şablonu (K-09) — Hafta 3
 3. `expected_students` zorunlu mu opsiyonel mi — ekip önerisi zorunlu, onay bekliyor (K-07)
 4. Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)
+5. E7 israf uyarısının eşiği ("bir derslik çıkarılsa hâlâ yetiyor" kriteri) —
+   ekip önerisi kural setinde, hoca onayı beklenebilir (K-17)
 
 ## K-12 · Sınav/çapraz kural severity'leri [E]
 Kural setindeki üç açık severity kararı onaylandı:
@@ -106,11 +115,78 @@ Kural setindeki üç açık severity kararı onaylandı:
 
 ## K-13 · Sınav×ders (X kuralları) aynı ders istisnası [E]
 X1/X2/X3 çapraz kuralları çalışırken, sınavın dersi ile haftalık ders girişinin
-dersi **aynıysa** (`exam.course_id == weekly_entry.course_id`) o karşılaştırma
-**atlanır** — çakışma üretmez.
+dersi **aynıysa** (`exam.course_id == weekly_entry.section.course_id`) o
+karşılaştırma **atlanır** — çakışma üretmez.
 **Gerekçe:** Bir dersin sınavı, o dersin normal haftalık yerinde/saatinde/hocasıyla
 yapıldığında oda, cohort ve hoca "çakışması" görünür ama gerçek değildir: çakışan
 iki nesne aynı derse aittir, öğrenciler zaten o saatte o dersteydi. İstisna olmazsa
 "dersin sınavını kendi yerinde yapmak" gibi tamamen normal bir durum yanlışlıkla
 3 uyarı birden üretir. Gerçek çakışma ancak sınav BAŞKA bir dersin
 oda/cohort/hoca alanına girdiğinde doğar.
+(Not: K-14 ders/şube ayrımından sonra karşılaştırma şube değil ders kimliği
+üzerinden yapılır — bir dersin sınavı, dersin HERHANGİ bir şubesinin oturumuyla
+karşılaştırılırken atlanır.)
+
+## K-14 · Ders / şube (section) ayrımı: iki tablo [S+E]
+Hoca bildirdi [S]: bir ders birden çok şube ile açılabilir; şubeler farklı
+hoca/saat/derslikte olabilir, aynı hoca birden çok şubeye de girebilir; haftalık
+programa her şube ayrı yerleştirilir. Şema kararı [E]: tek `courses` tablosu
+yerine **`courses` (ders, kod düzeyi) + `course_sections` (şube)** ayrımı.
+- Ders düzeyi: bölüm, yıl, dönem, kod, ad, zorunlu/seçmeli, T+U+L saatleri.
+- Şube düzeyi: şube no, hoca, beklenen öğrenci, varsayılan derslik.
+**Gerekçe:** ad/T+U+L/seçmelilik kod düzeyinin özelliğidir; şube başına
+kopyalanırsa şubeler arasında tutarsızlaşabilir (A1: 3+2+0, A2: 3+0-0 gibi).
+Sınavın şubeden bağımsızlığı (K-16) bu ayrımla şemada garanti edilir.
+
+## K-15 · Şube-farkındalıklı cohort çakışması [S]
+W3/W4 cohort kuralları **ders (kod) düzeyinde** değerlendirilir: aynı cohort'taki
+iki ders ancak **tüm şube kombinasyonları çakışıyorsa** çakışmış sayılır.
+En az bir çakışmayan (şubeA, şubeB) çifti varsa öğrenciler o kombinasyonu
+seçebilir → çakışma YOK. Örnek [S]: A1×B1 aynı saatte ve A2×B2 aynı saatte
+(farklı bir saatte) ise B1 alan öğrenci A2'yi seçer → temiz.
+Şube çifti "çakışıyor" = iki şubenin herhangi iki oturumu kesişiyor
+(asenkron oturumlar hariç, K-19).
+
+## K-16 · Sınav şubeden bağımsız [S]
+Şubeli derslerin sınavı **tektir**: tüm şubeler aynı sınava girer. Sınav
+`courses` (ders düzeyi) tablosuna bağlanır; UNIQUE(ders, sınav tipi) korunur.
+Sınavın öğrenci sayısı = dersin tüm şubelerinin `expected_students` toplamı.
+
+## K-17 · Sınav kontenjanı ve çoklu derslik [S]
+- `classrooms.exam_capacity`: boşluklu oturma düzeni kontenjanı; derslik
+  eklenirken yetkili tarafından girilir, **zorunlu**, `<= capacity` (örn.
+  kapasite 90 → sınav kontenjanı 40).
+- Bir sınava **birden çok derslik** atanabilir: `exam_classrooms` (çok-a-çok).
+  Tek `classroom_id` alanı kalktı; dersliksiz sınav = sıfır satır (K-10 nullable
+  semantiğinin yerini alır).
+- Yeni uyarılar: seçilen dersliklerin `exam_capacity` toplamı öğrenci sayısını
+  karşılamıyorsa → **WARNING** "ek derslik seçin" (E5 yeniden tanımlandı);
+  bir derslik çıkarıldığında kontenjan hâlâ yetiyorsa (gereksiz fazla seçim)
+  → **WARNING** israf uyarısı (yeni E7).
+
+## K-18 · Bina: yönetilen entity [E]
+`classrooms.building` serbest metni yerine **`buildings` tablosu**
+(workgroup'a bağlı, id + ad). Derslik formu binayı listeden seçer.
+**Gerekçe:** serbest metinde aynı bina farklı yazılır ("Müh. Fak." /
+"Mühendislik"); derslik çakışma tespiti ve raporlar bina adına dayanır.
+
+## K-19 · Online dersler: delivery_mode giriş düzeyinde [S+E] — K-10 kapandı
+Haftalık girişe `delivery_mode` alanı: `FACE_TO_FACE / ONLINE_SYNC / ONLINE_ASYNC`.
+- Giriş düzeyinde tutulur [E]: aynı dersin teorisi online, lab'ı yüz yüze olabilir.
+- **Asenkron** girişler normal gün/saatle girilir ve programda görünür [S+E],
+  ancak **hiçbir çakışma karşılaştırmasına girmez** (W1-W5, W7, X1-X3 muaf;
+  sabit saatte fiilen kimse bir yerde bulunmaz).
+- **Senkron online**: saati sabittir; derslik yok (classroom_id NULL → W1/W7
+  zaten atlanır) ama **W2 (hoca) ve W3/W4 (cohort) çalışmaya devam eder**.
+
+## K-20 · T+U+L ders saatleri ve tamlık kuralı [S+E]
+- Derse `hours_theory / hours_practice / hours_lab` (T+U+L, örn. Fizik 3+2+0)
+  girilir. U/L ayrımının doğruluğu **sorgulanmaz**; değerler olduğu gibi alınır [S].
+- Haftalık girişe `session_type` alanı: `THEORY / PRACTICE / LAB` — her
+  yerleştirme hangi bileşeni karşıladığını söyler.
+- Yeni kural **W8 (tamlık)**: bir şubenin bileşen bazında yerleştirilen slot
+  toplamı T/U/L değerinden **eksik veya fazla** ise uyarı. Tetiklenme anı [E]:
+  **submit'te WARNING** (save sırasında sessiz — yerleştirme sürerken "hâlâ
+  eksik" uyarısı yağdırmamak için; K-03 save/submit ikiliğiyle tutarlı).
+  Asenkron oturumlar da normal gün/saat taşıdığından tamlık toplamına dahildir.
+

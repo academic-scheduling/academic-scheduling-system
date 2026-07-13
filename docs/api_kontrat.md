@@ -1,4 +1,4 @@
-# API Kontrat Taslağı (v0.1)
+# API Kontrat Taslağı (v0.2 — 13 Temmuz hoca toplantısı revizyonu, K-14..K-20)
 
 **Amaç:** Frontend/backend'in ayrışmadan önce anlaştığı sözleşme (doküman WP0 + risk maddesi).
 **Durum:** Taslak — ekip ilk toplantıda gözden geçirip dondurur. Değişiklik = karar defterine kayıt.
@@ -16,7 +16,7 @@
 ```json
 {
   "severity": "HARD" | "WARNING",
-  "rule_id": "W1" | "W2" | ... | "X3",
+  "rule_id": "W1" | ... | "W8" | "E1" | ... | "E7" | "X1" | "X2" | "X3",
   "message": "Derslik çakışması: CENG2001-1 ve MATH1001-2 ...",
   "affected": [
     { "type": "weekly_entry" | "exam", "id": 42, "course_code": "CENG2001-1" }
@@ -76,39 +76,68 @@ Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 
 ---
 
-## 5. Derslikler (ADMIN veya can_manage_classrooms=true)
+## 5. Binalar ve Derslikler (ADMIN veya can_manage_classrooms=true)
 
-### GET /classrooms → `[ { "id", "building", "room_code", "capacity", "active" } ]`
-### POST /classrooms — İstek: `{ "building": "...", "room_code": "B-201", "capacity": 60 }` → 201  ← capacity zorunlu (K-07)
+### GET /buildings → `[ { "id", "name", "active" } ]`   ← K-18
+### POST /buildings — İstek: `{ "name": "Mühendislik Fakültesi" }` → 201 · Hata 409: ad zaten var
+### PATCH /buildings/{id} — ad düzeltme / pasife alma
+
+### GET /classrooms → `[ { "id", "building": { "id", "name" }, "room_code", "capacity", "exam_capacity", "active" } ]`
+### POST /classrooms — İstek: `{ "building_id": 1, "room_code": "B-201", "capacity": 90, "exam_capacity": 40 }` → 201
+  ← capacity zorunlu (K-07); exam_capacity zorunlu ve <= capacity (K-17, boşluklu oturma)
+  Hata 400: exam_capacity > capacity.
 ### PATCH /classrooms/{id} — pasife alma dahil: `{ "active": false }` (silme yok — K-02 soft delete)
 
 ---
 
-## 6. Dersler (alt hesap: yalnız atanmış bölümleri)
+## 6. Dersler ve Şubeler (K-14; alt hesap: yalnız atanmış bölümleri)
 
 ### GET /courses?department_id=&year=&semester=&search=
-Cevap: `[ { "id", "code", "section_no", "name", "year", "semester",
-  "lecturer": { "id", "full_name" }, "expected_students", "is_elective",
-  "department_id", "active" } ]`
+Cevap (ders + şubeleri iç içe):
+```json
+[ { "id": 4, "code": "CENG2001", "name": "...", "year": 2, "semester": "SPRING",
+    "department_id": 1, "is_elective": false,
+    "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
+    "active": true,
+    "sections": [
+      { "id": 7, "section_no": 1, "lecturer": { "id": 3, "full_name": "..." },
+        "expected_students": 55, "default_classroom_id": null, "active": true }
+    ] } ]
+```
 
-### POST /courses
+### POST /courses   (ders — kod düzeyi)
 İstek: `{ "department_id": 1, "year": 2, "semester": "SPRING", "code": "CENG2001",
-  "section_no": 1, "name": "...", "lecturer_id": 3,
-  "expected_students": 55, "is_elective": false }`   ← lecturer_id FK, expected zorunlu
-Cevap 201 · Hata 409: kod+şube+bölüm+yıl+dönem zaten var.
+  "name": "...", "is_elective": false,
+  "hours_theory": 3, "hours_practice": 2, "hours_lab": 0 }`   ← T+U+L (K-20)
+Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
+
+### POST /courses/{id}/sections   (şube)
+İstek: `{ "section_no": 2, "lecturer_id": 3, "expected_students": 45,
+  "default_classroom_id": null }`   ← aynı hoca birden çok şubeye girebilir (K-14)
+Cevap 201 · Hata 409: bu derste bu şube no zaten var.
+
+### PATCH /course-sections/{id} · DELETE /course-sections/{id} (girişi yoksa)
 
 ---
 
 ## 7. Haftalık Program — save/submit ayrımı (K-03'ün kalbi)
 
 ### GET /weekly-entries?department_id=&year=&semester=&classroom_id=&lecturer_id=
-Cevap: `[ { "id", "course": {...}, "classroom": {...} | null, "day_of_week": 1,
-  "start_slot": 3, "slot_count": 2, "status": "DRAFT" | "SUBMITTED" } ]`
+Cevap: `[ { "id", "section": { "id", "section_no", "course": {...} },
+  "classroom": {...} | null, "day_of_week": 1, "start_slot": 3, "slot_count": 2,
+  "session_type": "THEORY" | "PRACTICE" | "LAB",
+  "delivery_mode": "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC",
+  "status": "DRAFT" | "SUBMITTED" } ]`
 
 ### POST /weekly-entries   (KAYIT — asla engellemez)
-İstek: `{ "course_id": 7, "classroom_id": 2 | null, "day_of_week": 1, "start_slot": 3, "slot_count": 2 }`
+İstek: `{ "section_id": 7, "classroom_id": 2 | null, "day_of_week": 1,
+  "start_slot": 3, "slot_count": 2,
+  "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE" }`
+  ← session_type: bu yerleştirme T/U/L'nin hangisini karşılıyor (K-20)
+  ← delivery_mode: ONLINE_ASYNC girişler normal gün/saat taşır ama çakışma
+    karşılaştırmalarına girmez (K-19)
 Cevap 201: `{ "entry": {...status:"DRAFT"...}, "conflicts": [ConflictResult, ...] }`
 → conflicts DOLU OLSA BİLE kayıt başarılıdır; B bunları bilgi amaçlı gösterir.
 
@@ -121,6 +150,8 @@ Hata 409: giriş SUBMITTED — önce draft'a çevrilmeli.
 İstek: `{ "entry_ids": [12, 13, 14] }`
 Cevap 200: `{ "submitted": [12,13,14], "warnings": [ConflictResult...] }`
   → WARNING'ler submit'i durdurmaz, görünür kalır.
+  → W8 tamlık uyarısı (yerleşen saat ≠ T+U+L) yalnız burada üretilir,
+    save'de üretilmez (K-20).
 Cevap 409: `{ "detail": "Hard çakışma nedeniyle submit reddedildi",
   "conflicts": [ConflictResult...] }` → hiçbir giriş submit edilmez (hep-veya-hiç).
 
@@ -128,14 +159,23 @@ Cevap 409: `{ "detail": "Hard çakışma nedeniyle submit reddedildi",
 
 ---
 
-## 8. Sınavlar — aynı save/submit deseni
+## 8. Sınavlar — aynı save/submit deseni (K-16: sınav DERS düzeyinde, şubeden bağımsız)
 
 ### GET /exams?department_id=&exam_type=&date_from=&date_to=&classroom_id=&year=&semester=&lecturer_id=
+Cevap girişleri: `{ "id", "course": { "id", "code", "name" }, "exam_type", "exam_date",
+  "start_time", "duration_minutes", "classrooms": [ { "id", "building", "room_code", "exam_capacity" } ],
+  "lecturer": {...}, "total_expected_students": 100, "status" }`
+  ← total_expected_students = dersin tüm aktif şubelerinin toplamı (K-16)
+
 ### POST /exams
-İstek: `{ "course_id": 7, "exam_type": "MIDTERM", "exam_date": "2026-11-12",
-  "start_time": "18:00", "duration_minutes": 90, "classroom_id": 2 | null,
+İstek: `{ "course_id": 4, "exam_type": "MIDTERM", "exam_date": "2026-11-12",
+  "start_time": "18:00", "duration_minutes": 90, "classroom_ids": [2, 5],
   "lecturer_id": 3, "notes": null }`      ← 18:00 GEÇERLİ (K-06: saat kısıtı yok)
+  ← course_id artık DERS id'sidir (şube değil); tüm şubeler aynı sınava girer (K-16)
+  ← classroom_ids: çoklu derslik (K-17); boş liste = derslik henüz atanmadı
 Cevap 201: `{ "exam": {...}, "conflicts": [...] }` · Hata 400: hafta sonu tarihi.
+  → conflicts, kontenjan uyarılarını da içerir: toplam exam_capacity yetersiz (E5)
+    veya gereksiz fazla derslik (E7) → WARNING (K-17).
 ### POST /exams/submit — haftalıkla aynı sözleşme
 ### POST /exams/{id}/revert-to-draft · DELETE /exams/{id} (yalnız DRAFT)
 

@@ -1,9 +1,14 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user
-from app.schemas import LoginRequest, TokenResponse, UserPublic
-from app.security import verify_password, create_access_token
-from app.models import User, UserStatus
+from app.schemas import (
+    LoginRequest, TokenResponse, UserPublic,
+    CompleteInvitationRequest, MessageResponse,
+)
+from app.security import verify_password, create_access_token, hash_password, hash_token
+from app.models import User, UserStatus, InvitationToken
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -27,3 +32,34 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserPublic)
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     return UserPublic.model_validate(current_user)
+
+@router.post("/complete-invitation", response_model=MessageResponse)
+def complete_invitation(payload: CompleteInvitationRequest, db: Session = Depends(get_db)):
+    # 1. Ham token'ı hash'le, DB'de ara
+    invite = db.query(InvitationToken).filter(
+        InvitationToken.token_hash == hash_token(payload.token)
+    ).first()
+    if invite is None:
+        raise HTTPException(status_code=400, detail="Geçersiz davet bağlantısı")
+
+    # 2. Daha önce kullanılmış mı
+    if invite.used_at is not None:
+        raise HTTPException(status_code=400, detail="Davet bağlantısı zaten kullanılmış")
+
+    # 3. Süresi dolmuş mu (naive gelirse UTC say — SQLite güvenliği)
+    expires = invite.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Davet süresi dolmuş")
+
+    # 4. Hesabı aktifleştir + token'ı mühürle
+    user = invite.user
+    user.password_hash = hash_password(payload.password)
+    user.status = UserStatus.ACTIVE
+    invite.used_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return MessageResponse(message="Hesap aktifleştirildi")
+
+

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 from app.models import UserRole, UserStatus
+from app.models import UserRole, UserStatus, SemesterType
 
 class LoginRequest(BaseModel):
     email: str
@@ -122,4 +123,66 @@ class ClassroomOut(BaseModel):
     capacity: int
     exam_capacity: int | None
     active: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Dersler ve Şubeler (WP2, K-14/K-20) ---
+
+class SectionCreate(BaseModel):
+    section_no: int = Field(gt=0)
+    lecturer_id: int
+    expected_students: int = Field(gt=0)      # K-07: zorunlu
+    default_classroom_id: int | None = None
+
+class SectionUpdate(BaseModel):
+    section_no: int | None = Field(None, gt=0)
+    lecturer_id: int | None = None
+    expected_students: int | None = Field(None, gt=0)
+    default_classroom_id: int | None = None
+    active: bool | None = None
+
+class SectionOut(BaseModel):
+    id: int
+    section_no: int
+    lecturer: LecturerOut                     # iç içe hoca — kontrat şekli
+    expected_students: int
+    default_classroom_id: int | None
+    active: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class CourseCreate(BaseModel):
+    department_id: int
+    year: int = Field(ge=1, le=6)
+    semester: SemesterType                    # enum: FALL/SPRING/SUMMER — Pydantic doğrular
+    code: str
+    name: str
+    is_elective: bool = False
+    hours_theory: int = Field(0, ge=0)        # K-20: T+U+L, varsayılan 0
+    hours_practice: int = Field(0, ge=0)
+    hours_lab: int = Field(0, ge=0)
+
+class CourseUpdate(BaseModel):
+    # Kimlik alanları (department/year/semester) PATCH'le DEĞİŞMEZ —
+    # yanlış girildiyse ders pasife alınıp yeniden açılır. code/name/T+U+L düzeltilebilir.
+    code: str | None = None
+    name: str | None = None
+    is_elective: bool | None = None
+    hours_theory: int | None = Field(None, ge=0)
+    hours_practice: int | None = Field(None, ge=0)
+    hours_lab: int | None = Field(None, ge=0)
+    active: bool | None = None
+
+class CourseOut(BaseModel):
+    id: int
+    department_id: int
+    year: int
+    semester: SemesterType
+    code: str
+    name: str
+    is_elective: bool
+    hours_theory: int
+    hours_practice: int
+    hours_lab: int
+    active: bool
+    sections: list[SectionOut]                # ders + şubeleri iç içe — kontrat şekli
     model_config = ConfigDict(from_attributes=True)

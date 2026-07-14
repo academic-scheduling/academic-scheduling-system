@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_admin
 from app.models import Department, User
 from app.schemas import DepartmentCreate, DepartmentUpdate, DepartmentOut
+from app.audit import log_action
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -40,6 +41,8 @@ def create_department(
         code=payload.code,
     )
     db.add(dep)
+    db.flush()
+    log_action(db, admin, "CREATE", "department", dep.id)
     db.commit()
     db.refresh(dep)
     return dep
@@ -68,6 +71,7 @@ def update_department(
 
     for field, value in data.items():
         setattr(dep, field, value)
+    log_action(db, admin, "UPDATE", "department", dep.id)
     db.commit()
     db.refresh(dep)
     return dep

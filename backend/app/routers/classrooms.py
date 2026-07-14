@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.deps import get_db, get_current_user, require_classroom_manager
 from app.models import Building, Classroom, User
 from app.schemas import ClassroomCreate, ClassroomUpdate, ClassroomOut
+from app.audit import log_action
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
 
@@ -53,6 +54,8 @@ def create_classroom(
 
     cls = Classroom(workgroup_id=manager.workgroup_id, **payload.model_dump())
     db.add(cls)
+    db.flush()
+    log_action(db, manager, "CREATE", "classroom", cls.id)
     db.commit()
     db.refresh(cls)
     return cls
@@ -98,6 +101,7 @@ def update_classroom(
 
     for field, value in data.items():
         setattr(cls, field, value)
+    log_action(db, manager, "UPDATE", "classroom", cls.id)
     db.commit()
     db.refresh(cls)
     return cls

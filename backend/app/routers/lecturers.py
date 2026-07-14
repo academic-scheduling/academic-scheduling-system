@@ -5,6 +5,7 @@ from app.deps import get_db, get_current_user, require_admin
 from app.models import Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerOut
+from app.audit import log_action
 
 router = APIRouter(prefix="/lecturers", tags=["lecturers"])
 
@@ -54,6 +55,8 @@ def create_lecturer(
         source="MANUAL",          # elle eklenen 40/a; web import'u IMPORT yazar
     )
     db.add(lec)
+    db.flush()
+    log_action(db, admin, "CREATE", "lecturer", lec.id)
     db.commit()
     db.refresh(lec)
     return lec

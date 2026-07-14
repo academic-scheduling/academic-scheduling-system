@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_classroom_manager
 from app.models import Building, User
 from app.schemas import BuildingCreate, BuildingUpdate, BuildingOut
+from app.audit import log_action
 
 router = APIRouter(prefix="/buildings", tags=["buildings"])
 
@@ -36,6 +37,8 @@ def create_building(
 
     bld = Building(workgroup_id=manager.workgroup_id, name=payload.name)
     db.add(bld)
+    db.flush()
+    log_action(db, manager, "CREATE", "building", bld.id)
     db.commit()
     db.refresh(bld)
     return bld
@@ -64,6 +67,7 @@ def update_building(
 
     for field, value in data.items():
         setattr(bld, field, value)
+    log_action(db, manager, "UPDATE", "building", bld.id)
     db.commit()
     db.refresh(bld)
     return bld

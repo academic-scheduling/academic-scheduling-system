@@ -11,6 +11,9 @@ app.include_router(auth_router)
 from app.routers.users import router as users_router
 app.include_router(users_router)
 
+from app.routers.departments import router as departments_router
+app.include_router(departments_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

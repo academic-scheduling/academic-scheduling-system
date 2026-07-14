@@ -1,4 +1,4 @@
-# API Kontrat Taslağı (v0.2 — 13 Temmuz hoca toplantısı revizyonu, K-14..K-20)
+# API Kontrat Taslağı (v0.2 — 13-14 Temmuz hoca toplantısı revizyonu, K-14..K-21)
 
 **Amaç:** Frontend/backend'in ayrışmadan önce anlaştığı sözleşme (doküman WP0 + risk maddesi).
 **Durum:** Taslak — ekip ilk toplantıda gözden geçirip dondurur. Değişiklik = karar defterine kayıt.
@@ -83,9 +83,9 @@ Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 ### PATCH /buildings/{id} — ad düzeltme / pasife alma
 
 ### GET /classrooms → `[ { "id", "building": { "id", "name" }, "room_code", "capacity", "exam_capacity", "active" } ]`
-### POST /classrooms — İstek: `{ "building_id": 1, "room_code": "B-201", "capacity": 90, "exam_capacity": 40 }` → 201
-  ← capacity zorunlu (K-07); exam_capacity zorunlu ve <= capacity (K-17, boşluklu oturma)
-  Hata 400: exam_capacity > capacity.
+### POST /classrooms — İstek: `{ "building_id": 1, "room_code": "B-201", "capacity": 90, "exam_capacity": 40 | null }` → 201
+  ← capacity zorunlu (K-07); exam_capacity OPSİYONEL (K-21) — girilirse <= capacity,
+    girilmezse NULL kalır; sınav yeri seçiminde NULL'lu derslik WARNING üretir
 ### PATCH /classrooms/{id} — pasife alma dahil: `{ "active": false }` (silme yok — K-02 soft delete)
 
 ---

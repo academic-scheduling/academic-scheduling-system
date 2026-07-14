@@ -1,13 +1,14 @@
 -- ============================================================
 -- Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
--- PostgreSQL 16 Şeması — v0.3 (karar defteri K-01..K-20 uyumlu)
--- Değişiklikler v0.2 -> v0.3 (13 Temmuz 2026 hoca toplantısı):
+-- PostgreSQL 16 Şeması — v0.3 (karar defteri K-01..K-21 uyumlu)
+-- Değişiklikler v0.2 -> v0.3 (13-14 Temmuz 2026 hoca toplantısı):
 --   [K-14] courses ikiye ayrıldı: courses (ders) + course_sections (şube)
 --   [K-16] exams ders düzeyine bağlandı (şubeden bağımsız tek sınav)
 --   [K-17] classrooms.exam_capacity + exam_classrooms (çoklu derslik)
 --   [K-18] buildings tablosu; classrooms.building (metin) -> building_id (FK)
 --   [K-19] delivery_mode enum + weekly_schedule_entries.delivery_mode
 --   [K-20] courses T+U+L saatleri + weekly_schedule_entries.session_type
+--   [K-21] classrooms.exam_capacity opsiyonel (NULL = sınav dersliği değil/henüz girilmedi)
 -- ============================================================
 
 CREATE TYPE user_role AS ENUM ('ADMIN', 'SUB_ACCOUNT');
@@ -99,7 +100,7 @@ CREATE TABLE classrooms (
     building_id   BIGINT NOT NULL REFERENCES buildings(id) ON DELETE RESTRICT, -- [K-18]
     room_code     VARCHAR(30) NOT NULL,
     capacity      INT NOT NULL CHECK (capacity > 0),               -- [K-07] zorunlu
-    exam_capacity INT NOT NULL,                                    -- [K-17] boşluklu oturma
+    exam_capacity INT,                                    -- [K-17/K-21] boşluklu oturma; opsiyonel, sınavda kullanılacaksa girilir
     active        BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (building_id, room_code),
     CHECK (exam_capacity > 0 AND exam_capacity <= capacity)        -- [K-17]

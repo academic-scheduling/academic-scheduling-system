@@ -56,3 +56,11 @@ def require_admin(current_user=Depends(get_current_user)) -> User:
             detail="Admin privileges required",
         )
     return current_user
+
+def require_classroom_manager(current_user=Depends(get_current_user)) -> User:
+    if current_user.role != UserRole.ADMIN and not current_user.can_manage_classrooms:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Derslik yönetim yetkisi gerekli",
+        )
+    return current_user

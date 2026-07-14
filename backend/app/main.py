@@ -11,6 +11,21 @@ app.include_router(auth_router)
 from app.routers.users import router as users_router
 app.include_router(users_router)
 
+from app.routers.departments import router as departments_router
+app.include_router(departments_router)
+
+from app.routers.lecturers import router as lecturers_router
+app.include_router(lecturers_router)
+
+from app.routers.buildings import router as buildings_router
+app.include_router(buildings_router)
+
+from app.routers.classrooms import router as classrooms_router
+app.include_router(classrooms_router)
+
+from app.routers.courses import router as courses_router
+app.include_router(courses_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

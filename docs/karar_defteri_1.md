@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 13 Temmuz 2026 (hoca toplantısı sonrası K-14..K-20 eklendi)
+**Son güncelleme:** 14 Temmuz 2026 (K-21: exam_capacity opsiyonel; 13 Temmuz'da K-14..K-20)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -190,3 +190,15 @@ Haftalık girişe `delivery_mode` alanı: `FACE_TO_FACE / ONLINE_SYNC / ONLINE_A
   eksik" uyarısı yağdırmamak için; K-03 save/submit ikiliğiyle tutarlı).
   Asenkron oturumlar da normal gün/saat taşıdığından tamlık toplamına dahildir.
 
+## K-21 · exam_capacity opsiyonel; sınav dersliği seçiminde istenir [S+E] — K-17 revizyonu
+Her derslikte sınav yapılmaz. `classrooms.exam_capacity` bu yüzden derslik
+eklenirken ZORUNLU DEĞİLDİR (NULL olabilir); K-17'deki "zorunlu" ifadesi
+geçersizdir.
+- Sınav yeri seçiminde, seçilen dersliğin `exam_capacity`'si NULL ise motor
+  WARNING üretir: "bu dersliğin sınav kontenjanı girilmemiş" — kullanıcı
+  önce derslik kaydına kontenjanı girer (PATCH /classrooms/{id}), sonra
+  sınav yerleşimine devam eder.
+- E5 toplam kontenjan kontrolü, yalnızca TÜM seçili dersliklerin
+  exam_capacity'si doluyken hesaplanabilir; NULL'lu derslik varken toplam
+  karşılaştırması yapılmaz (önce eksik veri uyarısı).
+- Girildiğinde kural aynı: `exam_capacity > 0 AND exam_capacity <= capacity`.

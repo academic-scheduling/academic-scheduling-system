@@ -48,3 +48,19 @@ class UserListItem(BaseModel):
     can_manage_classrooms: bool
     department_ids: list[int] = []
     model_config = ConfigDict(from_attributes=True)
+
+# --- Bölümler (WP2) ---
+
+class DepartmentCreate(BaseModel):
+    name: str
+    code: str
+
+class DepartmentUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+
+class DepartmentOut(BaseModel):
+    id: int
+    name: str
+    code: str
+    model_config = ConfigDict(from_attributes=True)

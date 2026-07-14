@@ -64,3 +64,62 @@ class DepartmentOut(BaseModel):
     name: str
     code: str
     model_config = ConfigDict(from_attributes=True)
+
+# --- Lecturers (WP2) ---
+
+class LecturerCreate(BaseModel):
+    full_name: str
+    email: str | None = None
+    is_external: bool = False
+
+class LecturerOut(BaseModel):
+    id: int
+    full_name: str
+    is_external: bool
+    model_config = ConfigDict(from_attributes=True)
+
+# --- Binalar (WP2, K-18) ---
+
+class BuildingCreate(BaseModel):
+    name: str
+
+class BuildingUpdate(BaseModel):
+    name: str | None = None
+    active: bool | None = None
+
+class BuildingOut(BaseModel):
+    id: int
+    name: str
+    active: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class BuildingRef(BaseModel):
+    """Derslik cevabının içine gömülen kısa bina gösterimi."""
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Derslikler (WP2, K-07/K-17) ---
+
+class ClassroomCreate(BaseModel):
+    building_id: int
+    room_code: str
+    capacity: int = Field(gt=0)           # K-07: zorunlu ve pozitif
+    exam_capacity: int | None = Field(None, gt=0)   # K-21: opsiyonel
+
+class ClassroomUpdate(BaseModel):
+    building_id: int | None = None
+    room_code: str | None = None
+    capacity: int | None = Field(None, gt=0)
+    exam_capacity: int | None = Field(None, gt=0)
+    active: bool | None = None
+
+class ClassroomOut(BaseModel):
+    id: int
+    building: BuildingRef                 # iç içe nesne — kontrat şekli
+    room_code: str
+    capacity: int
+    exam_capacity: int | None
+    active: bool
+    model_config = ConfigDict(from_attributes=True)

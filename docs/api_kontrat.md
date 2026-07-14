@@ -55,9 +55,9 @@ Hata 400: e-posta izinli domainde değil.
 
 ## 3. Bölümler (yalnız ADMIN yazabilir)
 
-### GET /departments → `[ { "id", "name", "code" } ]`
+### GET /departments → `[ { "id", "name", "code", "active" } ]`
 ### POST /departments — İstek: `{ "name": "...", "code": "CENG" }` → 201
-### PATCH /departments/{id} → 200
+### PATCH /departments/{id} — ad/kod düzeltme + pasife alma: `{ "active": false }` (silme yok — K-02 soft delete)
 
 ---
 
@@ -70,6 +70,12 @@ Autocomplete için. Cevap: `[ { "id": 3, "full_name": "Doç. Dr. Ayşe Kaya", "i
 ### POST /lecturers (yalnız ADMIN — 40/a elle ekleme)
 İstek: `{ "full_name": "...", "email": null, "is_external": true }` → 201
 Hata 409: normalized_name zaten var.
+
+### PATCH /lecturers/{id} (yalnız ADMIN)
+Ad düzeltme / pasife alma: `{ "full_name": "...", "email": "...", "is_external": true, "active": false }`
+(hepsi opsiyonel). full_name değişirse normalized_name yeniden hesaplanır.
+Hata 409: yeni ad başka bir hocanın normalized_name'iyle çakışıyor.
+Not: pasife alınan hoca (`active=false`) autocomplete'te (`GET /lecturers?search=`) görünmez.
 
 Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 çalıştırılan tek seferlik script'tir (`scripts/import_lecturers.py`).

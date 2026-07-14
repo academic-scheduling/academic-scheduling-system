@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_admin
 from app.models import Lecturer, User
 from app.normalize import normalize_lecturer_name
-from app.schemas import LecturerCreate, LecturerOut
+from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
 from app.audit import log_action
 
 router = APIRouter(prefix="/lecturers", tags=["lecturers"])
@@ -57,6 +57,45 @@ def create_lecturer(
     db.add(lec)
     db.flush()
     log_action(db, admin, "CREATE", "lecturer", lec.id)
+    db.commit()
+    db.refresh(lec)
+    return lec
+
+
+@router.patch("/{lecturer_id}", response_model=LecturerOut)
+def update_lecturer(
+    lecturer_id: int,
+    payload: LecturerUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    lec = db.get(Lecturer, lecturer_id)
+    if lec is None or lec.workgroup_id != admin.workgroup_id:
+        raise HTTPException(status_code=404, detail="Hoca bulunamadı")
+
+    data = payload.model_dump(exclude_unset=True)
+
+    # full_name degisirse normalized_name yeniden hesaplanir ve cakisma kontrol edilir.
+    if "full_name" in data:
+        normalized = normalize_lecturer_name(data["full_name"])
+        if not normalized:
+            raise HTTPException(status_code=400, detail="Geçerli bir hoca adı girilmeli")
+        if normalized != lec.normalized_name:
+            clash = db.query(Lecturer).filter(
+                Lecturer.workgroup_id == admin.workgroup_id,
+                Lecturer.normalized_name == normalized,
+                Lecturer.id != lec.id,
+            ).first()
+            if clash:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Bu hoca zaten kayıtlı: {clash.full_name}",
+                )
+        lec.normalized_name = normalized
+
+    for field, value in data.items():
+        setattr(lec, field, value)
+    log_action(db, admin, "UPDATE", "lecturer", lec.id)
     db.commit()
     db.refresh(lec)
     return lec

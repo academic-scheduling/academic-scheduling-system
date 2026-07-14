@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 14 Temmuz 2026 (K-21: exam_capacity opsiyonel; 13 Temmuz'da K-14..K-20)
+**Son güncelleme:** 14 Temmuz 2026 (K-22: sınav PATCH + çakışma servisi dikişi; aynı gün K-21)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -202,3 +202,14 @@ geçersizdir.
   exam_capacity'si doluyken hesaplanabilir; NULL'lu derslik varken toplam
   karşılaştırması yapılmaz (önce eksik veri uyarısı).
 - Girildiğinde kural aynı: `exam_capacity > 0 AND exam_capacity <= capacity`.
+
+## K-22 · Sınav PATCH endpoint'i + çakışma servisi dikişi [E]
+WP4 başlangıcında (14 Temmuz, üç stajyerin onayıyla) iki karar:
+- Kontrat §8'e `PATCH /exams/{id}` (yalnız DRAFT) eklendi. Gerekçe: haftalık
+  programda PATCH vardı, sınavda unutulmuştu; brief kabul kriteri "sınav
+  kayıtları düzenlenebilir" diyor. Haftalıkla aynı DRAFT-only sözleşme.
+- Sınav endpoint'leri çakışma motorunu `app/conflict_service.py` arayüzü
+  üzerinden çağırır. Motor (WP5, Stajyer C) hazır olana dek stub `[]` döner;
+  entegrasyon bu tek dosyada yapılır. İmza: `check_exams_save(db, exam)` /
+  `check_exams_submit(db, exams)` → kontrat §0 ConflictResult listesi.
+  Stub aktifken submit HARD engeli göremez (bilinen geçici sınırlama).

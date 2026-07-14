@@ -26,6 +26,9 @@ app.include_router(classrooms_router)
 from app.routers.courses import router as courses_router
 app.include_router(courses_router)
 
+from app.routers.exams import router as exams_router
+app.include_router(exams_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

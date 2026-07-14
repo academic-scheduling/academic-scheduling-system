@@ -327,6 +327,8 @@ class Classroom(Base):
 
     capacity: ders kapasitesi (W7). exam_capacity: bosluklu oturma duzeninde
     sinav kontenjani (K-17; E5/E7 bu alani kullanir, capacity'yi DEGIL).
+    exam_capacity opsiyoneldir: NULL = sinav dersligi degil / kontenjan henuz
+    girilmedi (K-21); girilmisse CHECK ile capacity'yi asamaz.
     """
 
     __tablename__ = "classrooms"
@@ -348,8 +350,8 @@ class Classroom(Base):
         BigInteger, ForeignKey("buildings.id", ondelete="RESTRICT")
     )
     room_code: Mapped[str] = mapped_column(String(30))
-    capacity: Mapped[int] = mapped_column(Integer)
-    exam_capacity: Mapped[int] = mapped_column(Integer)
+    capacity: Mapped[int] = mapped_column(Integer)    
+    exam_capacity: Mapped[int | None] = mapped_column(Integer)
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="classrooms")

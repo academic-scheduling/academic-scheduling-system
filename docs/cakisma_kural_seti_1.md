@@ -1,10 +1,10 @@
-# Çakışma Motoru Kural Seti (v1.3 — K-14..K-20 işlendi, 13 Temmuz hoca toplantısı)
+# Çakışma Motoru Kural Seti (v1.4 — K-14..K-21 işlendi, 13-14 Temmuz hoca toplantısı)
 
-**Kaynak:** Proje dokümanı §4 + karar defteri K-03, K-05..K-08, K-12..K-20.
+**Kaynak:** Proje dokümanı §4 + karar defteri K-03, K-05..K-08, K-12..K-21.
 **Sahibi:** Stajyer C. Bu belge hem implementasyon spesifikasyonu hem unit test şablonudur.
-**v1.3 değişiklikleri (Stajyer A tarafından taslaklandı, C'nin onayı bekleniyor):**
+**v1.3/v1.4 değişiklikleri (Stajyer A tarafından taslaklandı, C'nin onayı bekleniyor):**
 şube-farkındalıklı cohort (W3/W4), asenkron muafiyeti (ön-eleme), W8 tamlık kuralı,
-sınavın ders düzeyine taşınması, çoklu derslik + exam_capacity (E1/E5/E7).
+sınavın ders düzeyine taşınması, çoklu derslik + exam_capacity (E1/E5/E5a/E7).
 
 ## Ön-Eleme: Asenkron Muafiyeti [K-19]
 
@@ -87,9 +87,10 @@ expected_students)`.
 | E3 | Hoca/sorumlu çakışması | Aynı `lecturer_id`, aynı tarih, kesişen saatler | **HARD** [K-12] | — |
 | E4a | Cohort sınav: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, ikisi de zorunlu, kesişen tarih+saat | **HARD** [K-12] | — (sınav ders düzeyinde olduğundan şube esnekliği YOKTUR — herkes aynı sınavda) |
 | E4b | Cohort sınav: seçmeli dahil | Aynı cohort, en az biri seçmeli | **WARNING** | — |
-| E5 | Sınav kontenjanı yetersiz [K-17] | `SUM(seçili dersliklerin exam_capacity) < total_expected` → "ek derslik seçin" mesajı | WARNING | Derslik kümesi boşsa |
+| E5 | Sınav kontenjanı yetersiz [K-17] | `SUM(seçili dersliklerin exam_capacity) < total_expected` → "ek derslik seçin" mesajı | WARNING | Derslik kümesi boşsa VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
+| E5a | Kontenjansız derslik seçimi [K-21] | Seçili dersliklerden birinin `exam_capacity` değeri NULL | WARNING — "sınav kontenjanı girilmemiş, önce derslik kaydına girin" | Derslik kümesi boşsa |
 | E6 | Hafta sonu tarihi | `exam_date` Cmt/Paz | **HARD** [K-06] | — (DB CHECK yedekli) |
-| E7 | Gereksiz kontenjan fazlası [K-17] | Derslik kümesinden EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam hâlâ `>= total_expected` ise (yani bir derslik tamamen gereksiz) | WARNING | Derslik sayısı <= 1 ise |
+| E7 | Gereksiz kontenjan fazlası [K-17] | Derslik kümesinden EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam hâlâ `>= total_expected` ise (yani bir derslik tamamen gereksiz) | WARNING | Derslik sayısı <= 1 VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
 
 Not: Sınavlarda **saat penceresi kuralı yoktur** — 17:30 sonrası serbesttir [K-06].
 Not: E5/E7'de `capacity` DEĞİL `exam_capacity` kullanılır (boşluklu oturma, K-17).

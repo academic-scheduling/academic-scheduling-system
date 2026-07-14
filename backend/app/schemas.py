@@ -59,11 +59,13 @@ class DepartmentCreate(BaseModel):
 class DepartmentUpdate(BaseModel):
     name: str | None = None
     code: str | None = None
+    active: bool | None = None
 
 class DepartmentOut(BaseModel):
     id: int
     name: str
     code: str
+    active: bool
     model_config = ConfigDict(from_attributes=True)
 
 # --- Lecturers (WP2) ---
@@ -72,6 +74,12 @@ class LecturerCreate(BaseModel):
     full_name: str
     email: str | None = None
     is_external: bool = False
+
+class LecturerUpdate(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    is_external: bool | None = None
+    active: bool | None = None
 
 class LecturerOut(BaseModel):
     id: int

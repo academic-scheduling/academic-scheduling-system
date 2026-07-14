@@ -59,6 +59,7 @@ CREATE TABLE departments (
     workgroup_id BIGINT       NOT NULL REFERENCES workgroups(id) ON DELETE CASCADE,
     name         VARCHAR(200) NOT NULL,
     code         VARCHAR(20)  NOT NULL,
+    active       BOOLEAN      NOT NULL DEFAULT TRUE,   -- soft delete (K-02 tutarlılığı)
     UNIQUE (workgroup_id, code)
 );
 

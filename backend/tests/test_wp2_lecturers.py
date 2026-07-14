@@ -63,3 +63,44 @@ def test_isolation_foreign_admin_sees_nothing():
     client.post("/lecturers", json={"full_name": name}, headers=h)
     r = client.get("/lecturers", headers=foreign_admin_headers())
     assert all(name not in l["full_name"] for l in r.json())
+
+
+# --- PATCH: düzenleme + pasife alma ---
+
+def test_patch_rename_lecturer():
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Eski Ad")}, headers=h).json()
+    yeni = _uname("Yeni Ad")
+    r = client.patch(f"/lecturers/{lec['id']}", json={"full_name": f"Prof. Dr. {yeni}"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["full_name"] == f"Prof. Dr. {yeni}"
+
+def test_patch_deactivate_hides_from_autocomplete():
+    """Pasife alınan hoca autocomplete listesinde görünmemeli."""
+    h = admin_headers()
+    name = _uname("Emekli Hoca")
+    lec = client.post("/lecturers", json={"full_name": name}, headers=h).json()
+    parca = name.split()[-1].lower()
+
+    # önce görünüyor
+    assert any(name in l["full_name"] for l in client.get(f"/lecturers?search={parca}", headers=h).json())
+    # pasife al
+    assert client.patch(f"/lecturers/{lec['id']}", json={"active": False}, headers=h).status_code == 200
+    # artık görünmüyor
+    assert all(name not in l["full_name"] for l in client.get(f"/lecturers?search={parca}", headers=h).json())
+
+def test_patch_rename_into_existing_conflicts():
+    """Yeni ad başka bir hocanın normalized_name'iyle çakışırsa 409."""
+    h = admin_headers()
+    hedef = _uname("Ahmet Yılmaz")
+    client.post("/lecturers", json={"full_name": f"Doç. Dr. {hedef}"}, headers=h)   # mevcut hoca
+    digeri = client.post("/lecturers", json={"full_name": _uname("Başka Hoca")}, headers=h).json()
+
+    r = client.patch(f"/lecturers/{digeri['id']}", json={"full_name": hedef}, headers=h)   # onun adına çek
+    assert r.status_code == 409
+
+def test_patch_lecturer_isolation():
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Bizim Hoca")}, headers=h).json()
+    r = client.patch(f"/lecturers/{lec['id']}", json={"active": False}, headers=foreign_admin_headers())
+    assert r.status_code == 404      # yabancı admin ne görebilir ne dokunabilir

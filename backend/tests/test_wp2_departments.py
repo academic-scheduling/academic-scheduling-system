@@ -59,6 +59,21 @@ def test_patch_nonexistent_returns_404():
     assert client.patch("/departments/99999999", json={"name": "X"}, headers=h).status_code == 404
 
 
+def test_create_defaults_active_true():
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Aktif", "code": _u("AK")}, headers=h).json()
+    assert dep["active"] is True
+
+
+def test_patch_deactivate_department():
+    """K-02 soft delete: bölüm silinmez, active=false ile pasife alınır."""
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Kapanan", "code": _u("KP")}, headers=h).json()
+    r = client.patch(f"/departments/{dep['id']}", json={"active": False}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["active"] is False
+
+
 # --- workgroup izolasyonu (WP2'nin kalbi) ---
 
 def test_isolation_foreign_admin_cannot_see_or_touch():

@@ -236,6 +236,7 @@ class Department(Base):
     )
     name: Mapped[str] = mapped_column(String(200))
     code: Mapped[str] = mapped_column(String(20))
+    active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="departments")
     courses: Mapped[list["Course"]] = relationship(back_populates="department")

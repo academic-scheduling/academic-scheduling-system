@@ -7,6 +7,8 @@ from app.db import SessionLocal
 from app.models import User, UserRole, UserStatus, Workgroup
 from app.security import hash_password
 
+from app.models import User, UserRole, UserStatus, Workgroup, DepartmentMembership
+
 client = TestClient(app)
 ADMIN = {"email": "admin@muh.example.edu.tr", "password": "admin1234"}
 
@@ -41,18 +43,22 @@ def foreign_admin_headers():
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
-def sub_headers(can_manage_classrooms: bool = False):
+def sub_headers(can_manage_classrooms: bool = False, department_ids: list[int] | None = None):
     """Ana workgroup'ta SUB_ACCOUNT yaratır, login olur, header döndürür."""
     db = SessionLocal()
     admin = db.query(User).filter(User.email == ADMIN["email"]).first()
     email = f"sub_{uuid.uuid4().hex[:8]}@muh.example.edu.tr"
     pw = "subhesap123"
-    db.add(User(
+    user = User(
         workgroup_id=admin.workgroup_id, name="Alt Hesap", email=email,
         password_hash=hash_password(pw), role=UserRole.SUB_ACCOUNT,
         status=UserStatus.ACTIVE,
         can_manage_classrooms=can_manage_classrooms,
-    ))
+    )
+    db.add(user)
+    db.flush()
+    for dep_id in (department_ids or []):
+        db.add(DepartmentMembership(user_id=user.id, department_id=dep_id))
     db.commit()
     db.close()
     r = client.post("/auth/login", json={"email": email, "password": pw})

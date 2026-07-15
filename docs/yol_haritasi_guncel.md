@@ -2,7 +2,7 @@
 
 **Tarih:** 15 Temmuz 2026 (Hafta 3 ortası) · **Yazan:** Intern A
 **Amaç:** is_bolumu.md'deki plandan bağımsız, reponun BUGÜNKÜ gerçek durumuna göre
-kalan işlerin sırası. (Intern B'nin işleri bu belgenin kapsamı dışında.)
+kalan işlerin sırası.
 
 ## Bugünkü durum fotoğrafı
 

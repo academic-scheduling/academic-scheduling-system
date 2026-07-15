@@ -608,6 +608,13 @@ class Exam(Base):
         secondary=exam_classrooms
     )  # tek yonlu
 
+    @property
+    def total_expected_students(self) -> int:
+        """K-16: dersin AKTIF subelerinin expected_students toplami (turetilir)."""
+        return sum(
+            s.expected_students for s in self.course.sections if s.active
+        )
+
 
 class AuditLog(Base):
     """audit_logs — kim, neyi, ne zaman degistirdi izi."""

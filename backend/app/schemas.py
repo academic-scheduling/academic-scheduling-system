@@ -1,6 +1,10 @@
+from datetime import date, time
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 from app.models import UserRole, UserStatus
 from app.models import UserRole, UserStatus, SemesterType
+from app.models import EntryStatus, ExamType
 
 class LoginRequest(BaseModel):
     email: str
@@ -194,3 +198,81 @@ class CourseOut(BaseModel):
     active: bool
     sections: list[SectionOut]                # ders + şubeleri iç içe — kontrat şekli
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Çakışma sonucu (kontrat §0 — C'nin motoru üretir, B çizer) ---
+
+class ConflictAffectedRef(BaseModel):
+    type: Literal["weekly_entry", "exam"]
+    id: int
+    course_code: str | None = None
+
+class ConflictResultOut(BaseModel):
+    severity: Literal["HARD", "WARNING"]
+    rule_id: str                              # "W1".."W8" | "E1".."E7" | "X1".."X3"
+    message: str
+    affected: list[ConflictAffectedRef] = []
+
+
+# --- Sınavlar (WP4, K-16/K-17/K-22) ---
+
+class ExamCreate(BaseModel):
+    course_id: int                            # DERS id'si — şube değil (K-16)
+    exam_type: ExamType
+    exam_date: date
+    start_time: time                          # saat kısıtı yok, 18:00 geçerli (K-06)
+    duration_minutes: int = Field(ge=10, le=480)
+    classroom_ids: list[int] = []             # çoklu derslik; boş = henüz atanmadı (K-17)
+    lecturer_id: int
+    notes: str | None = None
+
+class ExamUpdate(BaseModel):
+    # course_id PATCH'le DEĞİŞMEZ (sınavın kimliği) — yanlışsa DRAFT silinip yeniden açılır.
+    exam_type: ExamType | None = None
+    exam_date: date | None = None
+    start_time: time | None = None
+    duration_minutes: int | None = Field(None, ge=10, le=480)
+    classroom_ids: list[int] | None = None    # verilirse liste TAM değişir (K-22)
+    lecturer_id: int | None = None
+    notes: str | None = None
+
+class CourseRef(BaseModel):
+    """Sınav cevabının içine gömülen kısa ders gösterimi."""
+    id: int
+    code: str
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class ExamClassroomRef(BaseModel):
+    """Kontrat §8: sınav dersliği — exam_capacity ile (capacity DEĞİL, K-17)."""
+    id: int
+    building: BuildingRef
+    room_code: str
+    exam_capacity: int | None
+    model_config = ConfigDict(from_attributes=True)
+
+class ExamOut(BaseModel):
+    id: int
+    course: CourseRef
+    exam_type: ExamType
+    exam_date: date
+    start_time: time
+    duration_minutes: int
+    classrooms: list[ExamClassroomRef]
+    lecturer: LecturerOut
+    total_expected_students: int              # türetilir: aktif şubelerin toplamı (K-16)
+    notes: str | None
+    status: EntryStatus
+    model_config = ConfigDict(from_attributes=True)
+
+class ExamSaveResponse(BaseModel):
+    """POST/PATCH cevabı: conflicts dolu olsa bile kayıt başarılıdır (K-03)."""
+    exam: ExamOut
+    conflicts: list[ConflictResultOut]
+
+class ExamSubmitRequest(BaseModel):
+    exam_ids: list[int] = Field(min_length=1)
+
+class ExamSubmitResponse(BaseModel):
+    submitted: list[int]
+    warnings: list[ConflictResultOut]

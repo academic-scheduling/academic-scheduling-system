@@ -182,6 +182,11 @@ Cevap girişleri: `{ "id", "course": { "id", "code", "name" }, "exam_type", "exa
 Cevap 201: `{ "exam": {...}, "conflicts": [...] }` · Hata 400: hafta sonu tarihi.
   → conflicts, kontenjan uyarılarını da içerir: toplam exam_capacity yetersiz (E5)
     veya gereksiz fazla derslik (E7) → WARNING (K-17).
+### PATCH /exams/{id}  (yalnız DRAFT girişte çalışır — K-22)
+Alanlar POST ile aynı, hepsi opsiyonel; `classroom_ids` verilirse liste tam değişir.
+Cevap 200: `{ "exam": {...}, "conflicts": [...] }`
+Hata 409: sınav SUBMITTED — önce draft'a çevrilmeli.
+
 ### POST /exams/submit — haftalıkla aynı sözleşme
 ### POST /exams/{id}/revert-to-draft · DELETE /exams/{id} (yalnız DRAFT)
 

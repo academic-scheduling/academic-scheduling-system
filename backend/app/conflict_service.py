@@ -21,7 +21,7 @@ Stub aktifken bilinen sinirlama: submit hicbir zaman HARD engeli gormez
 
 from sqlalchemy.orm import Session
 
-from app.models import Exam
+from app.models import Exam, WeeklyScheduleEntry
 
 
 def check_exams_save(db: Session, exam: Exam) -> list[dict]:
@@ -34,5 +34,28 @@ def check_exams_submit(db: Session, exams: list[Exam]) -> list[dict]:
 
     Stub: her zaman temiz. Gercek motor HARD iceren liste dondurdugunde
     router submit'i 409 ile reddeder.
+    """
+    return []
+
+
+def check_weekly_save(db: Session, entry: WeeklyScheduleEntry) -> list[dict]:
+    """Tek haftalik girisin kayit ani kontrolu. Stub: her zaman temiz.
+
+    Gercek motor (WP5, Stajyer C) W1-W7 kurallarini calistirir; sonuc
+    BILGILENDIRIR, kaydi ENGELLEMEZ (K-03). W8 tamlik kurali burada
+    URETILMEZ — yalniz submit aninda (K-20).
+    """
+    return []
+
+
+def check_weekly_submit(db: Session, entries: list[WeeklyScheduleEntry]) -> list[dict]:
+    """Submit kumesinin kontrolu (kume ici + mevcut girislere karsi).
+
+    Gercek motor HARD iceren liste dondurdugunde router submit'i 409 ile
+    reddeder (hep-veya-hic). W8 tamlik WARNING'i YALNIZ burada uretilir (K-20):
+    subenin session_type bazinda yerlesen slot toplami T+U+L'den farkliysa.
+    Karsilastirma evreni: workgroup'taki DRAFT + SUBMITTED tum girisler.
+
+    Stub: her zaman temiz.
     """
     return []

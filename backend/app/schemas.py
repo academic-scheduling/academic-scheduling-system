@@ -2,9 +2,8 @@ from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from app.models import UserRole, UserStatus
 from app.models import UserRole, UserStatus, SemesterType
-from app.models import EntryStatus, ExamType
+from app.models import EntryStatus, ExamType, DeliveryMode, SessionType
 
 class LoginRequest(BaseModel):
     email: str
@@ -274,5 +273,57 @@ class ExamSubmitRequest(BaseModel):
     exam_ids: list[int] = Field(min_length=1)
 
 class ExamSubmitResponse(BaseModel):
+    submitted: list[int]
+    warnings: list[ConflictResultOut]
+
+
+# --- Haftalık Program (WP3, K-03/K-14/K-19/K-20) ---
+
+class WeeklyEntryCreate(BaseModel):
+    section_id: int                           # yerleşim şubeye bağlanır (K-14)
+    classroom_id: int | None = None           # senkron/asenkron online'da NULL olabilir (K-19)
+    day_of_week: int = Field(ge=1, le=5)      # Pzt-Cum
+    start_slot: int = Field(ge=1, le=9)       # slot 1-9
+    slot_count: int = Field(1, ge=1)          # ardışık slot sayısı, varsayılan 1
+    session_type: SessionType                 # T/U/L'nin hangisini karşılıyor (K-20)
+    delivery_mode: DeliveryMode               # yüz yüze / senkron / asenkron (K-19)
+
+class WeeklyEntryUpdate(BaseModel):
+    # section_id PATCH'le DEĞİŞMEZ (yerleşimin kimliği) — yanlışsa DRAFT silinip yeniden yerleştirilir.
+    classroom_id: int | None = None
+    day_of_week: int | None = Field(None, ge=1, le=5)
+    start_slot: int | None = Field(None, ge=1, le=9)
+    slot_count: int | None = Field(None, ge=1)
+    session_type: SessionType | None = None
+    delivery_mode: DeliveryMode | None = None
+
+class WeeklySectionRef(BaseModel):
+    """Haftalık cevabın içine gömülen kısa şube gösterimi (kontrat §7)."""
+    id: int
+    section_no: int
+    course: CourseRef                         # id/code/name — satır 239'daki ref yeniden kullanılıyor
+    model_config = ConfigDict(from_attributes=True)
+
+class WeeklyEntryOut(BaseModel):
+    id: int
+    section: WeeklySectionRef
+    classroom: ClassroomOut | None            # W7 kapasite kuralı capacity'yi ister
+    day_of_week: int
+    start_slot: int
+    slot_count: int
+    session_type: SessionType
+    delivery_mode: DeliveryMode
+    status: EntryStatus
+    model_config = ConfigDict(from_attributes=True)
+
+class WeeklyEntrySaveResponse(BaseModel):
+    """POST/PATCH cevabı: conflicts dolu olsa bile kayıt başarılıdır (K-03)."""
+    entry: WeeklyEntryOut
+    conflicts: list[ConflictResultOut]
+
+class WeeklyEntrySubmitRequest(BaseModel):
+    entry_ids: list[int] = Field(min_length=1)
+
+class WeeklyEntrySubmitResponse(BaseModel):
     submitted: list[int]
     warnings: list[ConflictResultOut]

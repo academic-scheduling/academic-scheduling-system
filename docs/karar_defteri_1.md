@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 14 Temmuz 2026 (K-22: sınav PATCH + çakışma servisi dikişi; aynı gün K-21)
+**Son güncelleme:** 16 Temmuz 2026 (K-23: online girişte derslik kısıtı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -213,3 +213,17 @@ WP4 başlangıcında (14 Temmuz, üç stajyerin onayıyla) iki karar:
   entegrasyon bu tek dosyada yapılır. İmza: `check_exams_save(db, exam)` /
   `check_exams_submit(db, exams)` → kontrat §0 ConflictResult listesi.
   Stub aktifken submit HARD engeli göremez (bilinen geçici sınırlama).
+
+## K-23 · Online girişte derslik yok: API kısıtı [E] — K-19 tamamlayıcısı
+WP3 haftalık program API'si yazılırken (16 Temmuz, üç stajyerin onayıyla):
+**hibrit ders yoktur** (fiziksel sınıftan online yayın senaryosu kabul edilmiyor).
+Dolayısıyla `delivery_mode` FACE_TO_FACE değilken `classroom_id` gönderilmesi
+anlamsızdır ve API tarafından **400** ile reddedilir.
+- **Gerekçe:** K-19 "senkron online: derslik yok" diyordu ama bunu yalnız motor
+  davranışı olarak tarif ediyordu (NULL → W1/W7 susar); API'de kısıt yoktu.
+  Yüz yüze bir giriş PATCH ile online'a çevrilip dersliği temizlenmezse, motor
+  o dersliği **hayalet-dolu** sanar ve başka bir ders o saate konduğunda sahte
+  W1 üretir — oysa oda gerçekte boştur.
+- **Kapsam:** POST ve PATCH. PATCH'te kontrol, gelen + mevcut alanların
+  BİRLEŞİMİ üzerinden yapılır (slot taşması kontrolüyle aynı desen).
+- Kontrat §7'ye 400 hata satırları eklendi.

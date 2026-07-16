@@ -146,9 +146,14 @@ Cevap: `[ { "id", "section": { "id", "section_no", "course": {...} },
     karşılaştırmalarına girmez (K-19)
 Cevap 201: `{ "entry": {...status:"DRAFT"...}, "conflicts": [ConflictResult, ...] }`
 → conflicts DOLU OLSA BİLE kayıt başarılıdır; B bunları bilgi amaçlı gösterir.
+Hata 400: `delivery_mode` FACE_TO_FACE değilken `classroom_id` dolu
+  (K-23: hibrit ders yok — online girişte derslik NULL olmalı).
+Hata 400: `start_slot + slot_count - 1 > 9` (slot penceresi taşması).
 
 ### PATCH /weekly-entries/{id}  (yalnız DRAFT girişte çalışır)
 Hata 409: giriş SUBMITTED — önce draft'a çevrilmeli.
+Hata 400: POST ile aynı doğrulamalar; kontrol gelen + mevcut alanların
+  birleşimi üzerinden yapılır (K-23, slot taşması).
 
 ### POST /weekly-entries/{id}/revert-to-draft → 200 (SUBMITTED → DRAFT)
 

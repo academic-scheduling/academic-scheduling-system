@@ -1,35 +1,24 @@
-import { useEffect, useState } from "react";
-import { Container, Title, Text, Badge, Group } from "@mantine/core";
-
-type Health = { status: string; database: string };
+import { Navigate, Route, Routes } from "react-router-dom";
+import RequireAuth from "./auth/RequireAuth";
+import LoginPage from "./pages/LoginPage";
+import ActivatePage from "./pages/ActivatePage";
+import HomePage from "./pages/HomePage";
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setError(true));
-  }, []);
-
   return (
-    <Container py="xl">
-      <Title order={2}>Akademik Program ve Sınav Çakışma Yönetimi</Title>
-      <Text c="dimmed" mt="xs">
-        Proje iskeleti — Hafta 1
-      </Text>
-      <Group mt="lg">
-        <Badge color={health ? "green" : error ? "red" : "gray"}>
-          Backend: {health ? health.status : error ? "erişilemiyor" : "kontrol ediliyor..."}
-        </Badge>
-        {health && (
-          <Badge color={health.database === "up" ? "green" : "red"}>
-            Veritabanı: {health.database}
-          </Badge>
-        )}
-      </Group>
-    </Container>
+    <Routes>
+      {/* Public: kimlik istemeyen iki adres (kontrat §1) */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/activate" element={<ActivatePage />} />
+
+      {/* Korumalı alan: RequireAuth'tan geçmeyen giremez.
+          Yeni korumalı ekran = buraya bir satır Route. */}
+      <Route element={<RequireAuth />}>
+        <Route path="/" element={<HomePage />} />
+      </Route>
+
+      {/* Tanınmayan her adres ana sayfaya */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

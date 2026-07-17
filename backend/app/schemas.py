@@ -40,6 +40,16 @@ class CompleteInvitationRequest(BaseModel):
     token: str = Field(..., description="Davet tokeni")
     password: str = Field(min_length=8, description="Kullanıcının belirleyeceği şifre")
 
+class InvitationPreview(BaseModel):
+    """GET /auth/invitation/{token} cevabı (K-24).
+
+    Yalnız e-posta + ad: hesap tamamlama ekranı e-postayı salt-okunur gösterir.
+    Rol/bölüm/workgroup bilerek DIŞARIDA — token'ı ele geçirene sızdırılmaz.
+    """
+    email: str
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
 class MessageResponse(BaseModel):
     message: str
 

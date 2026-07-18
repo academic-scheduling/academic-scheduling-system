@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 16 Temmuz 2026 (K-23: online girişte derslik kısıtı)
+**Son güncelleme:** 16 Temmuz 2026 (K-24: davet token'ı ön-doğrulama ucu)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -227,3 +227,27 @@ anlamsızdır ve API tarafından **400** ile reddedilir.
 - **Kapsam:** POST ve PATCH. PATCH'te kontrol, gelen + mevcut alanların
   BİRLEŞİMİ üzerinden yapılır (slot taşması kontrolüyle aynı desen).
 - Kontrat §7'ye 400 hata satırları eklendi.
+
+## K-24 · Davet token'ı ön-doğrulama ucu [E] — kontrat §1 eklemesi
+Frontend bağlama işi başlarken (16 Temmuz, üç stajyerin onayıyla) kontrat §1'e
+`GET /auth/invitation/{token}` eklendi: hesap tamamlama ekranı açılırken token'ı
+doğrular, sahibinin e-posta + adını döner, token'ı **tüketmez**.
+- **Gerekçe:** Wireframe §2 "süresi dolmuş/kullanılmış token → form yerine tam
+  sayfa hata" diyor, ama bugünkü tek uç (`POST /auth/complete-invitation`) bu üç
+  durumu ancak şifre gönderildikten SONRA 400 ile bildiriyor. Kullanıcı ölü bir
+  linke şifresini yazıp gönderdikten sonra duvara çarpıyor; sayfa açılır açılmaz
+  söylenmesi gereken şey en sona kalıyor. Ayrıca ekranın salt-okunur e-posta
+  alanının (wireframe §2) başka veri kaynağı yok — token'dan çözülmesi gerekiyor.
+- **Reddedilen alternatif:** 400 cevabının mesaj metnini frontend'de string olarak
+  eşleştirip durumu ayırt etmek. Mesaj metni değiştiği gün UI sessizce bozulur;
+  sözleşme metne değil uca dayanmalı.
+- **Güvenlik sınırları [E]:** Token'ı yakan tek uç `complete-invitation`'dır — GET
+  `used_at`'e ASLA dokunmaz. Cevap yalnız e-posta + ad taşır; rol/bölüm/workgroup
+  sızdırılmaz. 404 kullanılmaz, üç hata da 400'dür (POST ile aynı desen — token'ın
+  varlığı ayırt edilmez). Token URL'de yeni bir risk değil: zaten davet mailindeki
+  linkin içinde, tek kullanımlık ve süreli (brief §6.3 şartı sağlanıyor).
+  GET ön-doğrulama yapsa bile POST tüm kontrolleri tekrar eder — iki çağrı
+  arasında token süresi dolabilir veya başkası kullanabilir (TOCTOU).
+- **Yan düzeltme:** Kontratın "tüm istekler login hariç Bearer taşır" genel kuralı
+  yanlıştı — davet uçlarının ikisi de public. Kural üç public ucu sayacak şekilde
+  düzeltildi.

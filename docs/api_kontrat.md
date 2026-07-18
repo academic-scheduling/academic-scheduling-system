@@ -1,9 +1,11 @@
-# API Kontrat Taslağı (v0.2 — 13-14 Temmuz hoca toplantısı revizyonu, K-14..K-21)
+# API Kontrat Taslağı (v0.2 — 13-14 Temmuz hoca toplantısı revizyonu, K-14..K-24)
 
 **Amaç:** Frontend/backend'in ayrışmadan önce anlaştığı sözleşme (doküman WP0 + risk maddesi).
 **Durum:** Taslak — ekip ilk toplantıda gözden geçirip dondurur. Değişiklik = karar defterine kayıt.
 **Genel kurallar:**
-- Tüm istekler (login hariç) `Authorization: Bearer <JWT>` başlığı taşır.
+- Tüm istekler `Authorization: Bearer <JWT>` başlığı taşır. Tek istisna, kimliğin
+  henüz oluşmadığı üç public uçtur: `POST /auth/login`, `GET /auth/invitation/{token}`,
+  `POST /auth/complete-invitation`.
 - Workgroup izolasyonu token'dan gelir; istemci hiçbir yerde workgroup_id GÖNDERMEZ.
 - Tarihler `YYYY-MM-DD`, saatler `HH:MM` (24 saat).
 - Hata formatı her yerde aynı: `{ "detail": "insan okur mesaj" }` + uygun HTTP kodu
@@ -34,10 +36,32 @@ Bu şekil kural setindeki (cakisma_kural_seti.md) yapıya birebir bağlıdır.
 Cevap 200: `{ "access_token": "...", "user": { "id": 1, "name": "...", "role": "ADMIN" | "SUB_ACCOUNT", "can_manage_classrooms": false } }`
 Hata 401: geçersiz bilgiler.
 
+### GET /auth/invitation/{token}   ← K-24
+Hesap tamamlama ekranı AÇILIRKEN çağrılır: token'ı doğrular ve sahibini döner.
+Token'ı **tüketmez** — yakan tek uç `complete-invitation`'dır.
+Cevap 200: `{ "email": "ceng@muh.example.edu.tr", "name": "Bilgisayar Sorumlusu" }`
+  ← e-posta ekranda salt-okunur gösterilir (wireframe §2); rol/bölüm DÖNMEZ.
+Hata 400: `{ "detail": "Geçersiz davet bağlantısı" | "Davet bağlantısı zaten kullanılmış" | "Davet süresi dolmuş" }`
+  → B bu üç durumda form yerine tam sayfa hata gösterir (wireframe §2).
+Not: 404 kullanılmaz — token'ın varlığı/yokluğu ayırt edilmez (POST ile aynı desen).
+
 ### POST /auth/complete-invitation
 Davet e-postasındaki linkten gelinir. İstek: `{ "token": "...", "password": "..." }`
 Cevap 200: hesap ACTIVE olur → `{ "message": "Hesap aktifleştirildi" }`
-Hata 400: token süresi dolmuş / kullanılmış.
+Hata 400: token geçersiz / süresi dolmuş / kullanılmış (mesajlar GET ile aynı).
+Not: GET ön-doğrulama yapmış olsa bile bu uç tüm kontrolleri TEKRAR eder —
+  GET ile POST arasında token süresi dolabilir/kullanılabilir (K-24).
+
+  ### GET /auth/me
+Açılışta oturum kurtarma: elindeki token'ın hâlâ geçerli olup olmadığını ve
+sahibinin kim olduğunu söyler. Cevap 200: `{ "id": 1, "name": "...",
+"role": "ADMIN" | "SUB_ACCOUNT", "can_manage_classrooms": false }`
+(login cevabındaki `user` nesnesinin aynısı.)
+Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
+
+**Davet linkinin adresi:** `backend/app/mailer.py` maili
+`{FRONTEND_BASE_URL}/activate?token=<ham token>` olarak kurar. Frontend'in
+`/activate` route'u token'ı **query string'den** okur; değişirse mailer da değişir.
 
 ---
 

@@ -76,6 +76,95 @@ def test_invite_forbidden_for_subaccount(monkeypatch):
     assert r.status_code == 403
 
 
+# --- invitation preview (K-24) ---
+
+def test_preview_returns_owner(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "app.routers.users.send_invitation_email",
+        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+    )
+    email = unique_email()
+    client.post("/users/invite", json={"name": "Önizleme", "email": email}, headers=admin_headers())
+
+    r = client.get(f"/auth/invitation/{captured['token']}")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"email": email, "name": "Önizleme"}   # rol/bölüm SIZMAZ
+
+
+def test_preview_does_not_consume_token(monkeypatch):
+    """K-24 çekirdek şartı: ön-doğrulama token'ı yakmaz."""
+    captured = {}
+    monkeypatch.setattr(
+        "app.routers.users.send_invitation_email",
+        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+    )
+    email = unique_email()
+    client.post("/users/invite", json={"name": "Yanmaz", "email": email}, headers=admin_headers())
+    token = captured["token"]
+
+    assert client.get(f"/auth/invitation/{token}").status_code == 200
+    assert client.get(f"/auth/invitation/{token}").status_code == 200   # ikinci kez de çalışır
+    # ve token hâlâ hesabı aktifleştirebilir
+    assert client.post("/auth/complete-invitation",
+                       json={"token": token, "password": "yenisifre123"}).status_code == 200
+
+
+def test_preview_invalid_token():
+    r = client.get("/auth/invitation/gecersiz-token")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Geçersiz davet bağlantısı"
+
+
+def test_preview_used_token(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "app.routers.users.send_invitation_email",
+        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+    )
+    email = unique_email()
+    client.post("/users/invite", json={"name": "Kullanılmış", "email": email}, headers=admin_headers())
+    token = captured["token"]
+    client.post("/auth/complete-invitation", json={"token": token, "password": "yenisifre123"})
+
+    r = client.get(f"/auth/invitation/{token}")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Davet bağlantısı zaten kullanılmış"
+
+
+def test_preview_expired_token(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "app.routers.users.send_invitation_email",
+        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+    )
+    email = unique_email()
+    client.post("/users/invite", json={"name": "Süresi Dolan", "email": email}, headers=admin_headers())
+    token = captured["token"]
+
+    db = SessionLocal()
+    tok = db.query(InvitationToken).filter(InvitationToken.token_hash == hash_token(token)).first()
+    tok.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+    db.close()
+
+    r = client.get(f"/auth/invitation/{token}")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Davet süresi dolmuş"
+
+
+def test_preview_requires_no_auth(monkeypatch):
+    """Kontrat §1: davet uçları public — Bearer istemez."""
+    captured = {}
+    monkeypatch.setattr(
+        "app.routers.users.send_invitation_email",
+        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+    )
+    client.post("/users/invite", json={"name": "Public", "email": unique_email()}, headers=admin_headers())
+    r = client.get(f"/auth/invitation/{captured['token']}")   # başlıksız
+    assert r.status_code == 200
+
+
 # --- complete-invitation ---
 
 def test_complete_invitation_flow(monkeypatch):

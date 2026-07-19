@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import log_action
 from app.conflict_service import check_exams_save, check_exams_submit
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_exam_manager
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus, Exam,
     ExamType, Lecturer, SemesterType, User, UserRole,
@@ -137,12 +137,8 @@ def list_exams(
     user: User = Depends(get_current_user),
 ):
     q = _eager_exam_query(db).filter(Department.workgroup_id == user.workgroup_id)
-    # Alt hesap yalnız atanmış bölümlerini görür (courses.py ile aynı davranış)
-    if user.role != UserRole.ADMIN:
-        member_ids = _member_department_ids(user)
-        if not member_ids:
-            return []
-        q = q.filter(Course.department_id.in_(member_ids))
+    # K-26: workgroup içindeki herkes TÜM bölümleri okur; yazma kısıtı ayrıdır
+    # (bayrak + üyelik, yazma uçlarında).
     if department_id is not None:
         q = q.filter(Course.department_id == department_id)
     if exam_type is not None:
@@ -171,7 +167,7 @@ def list_exams(
 def create_exam(
     payload: ExamCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_exam_manager),
 ):
     course = _get_owned_course(db, user, payload.course_id)
     _ensure_department_access(db, user, course.department_id)
@@ -207,7 +203,7 @@ def update_exam(
     exam_id: int,
     payload: ExamUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_exam_manager),
 ):
     exam = _get_owned_exam(db, user, exam_id)
     _ensure_department_access(db, user, exam.course.department_id)
@@ -250,7 +246,7 @@ def update_exam(
 def submit_exams(
     payload: ExamSubmitRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_exam_manager),
 ):
     exams: list[Exam] = []
     for exam_id in payload.exam_ids:
@@ -288,7 +284,7 @@ def submit_exams(
 def revert_exam_to_draft(
     exam_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_exam_manager),
 ):
     exam = _get_owned_exam(db, user, exam_id)
     _ensure_department_access(db, user, exam.course.department_id)
@@ -306,7 +302,7 @@ def revert_exam_to_draft(
 def delete_exam(
     exam_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_exam_manager),
 ):
     exam = _get_owned_exam(db, user, exam_id)
     _ensure_department_access(db, user, exam.course.department_id)

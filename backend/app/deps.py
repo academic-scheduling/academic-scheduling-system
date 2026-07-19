@@ -57,10 +57,36 @@ def require_admin(current_user=Depends(get_current_user)) -> User:
         )
     return current_user
 
-def require_classroom_manager(current_user=Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.ADMIN and not current_user.can_manage_classrooms:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Derslik yönetim yetkisi gerekli",
-        )
-    return current_user
+def _require_capability(flag_name: str, error_detail: str):
+    """Yetenek bayrağı denetleyen bir dependency üretir (K-25).
+
+    Desen K-02'den gelir: ADMIN her yetenekten muaftır, alt hesap bayrağa bakar.
+    Fabrika kullanılmasının sebebi, beş yeteneğin aynı üç satırı kopyalamaması —
+    kural tek yerde durur, biri düzeltilince hepsi düzelir.
+    """
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role != UserRole.ADMIN and not getattr(current_user, flag_name):
+            raise HTTPException(status_code=403, detail=error_detail)
+        return current_user
+    return dependency
+
+
+# Bölüme ait kaynaklar: bayrak TEK BAŞINA yetmez, ayrıca bölüm üyeliği aranır
+# (router'lar içinde, K-25'in "iki boyut" kuralı).
+require_course_manager = _require_capability(
+    "can_manage_courses", "Ders yönetim yetkisi gerekli"
+)
+require_weekly_manager = _require_capability(
+    "can_manage_weekly", "Haftalık program yönetim yetkisi gerekli"
+)
+require_exam_manager = _require_capability(
+    "can_manage_exams", "Sınav yönetim yetkisi gerekli"
+)
+
+# Workgroup geneli paylaşımlı kaynaklar: üyelik boyutu yok, bayrak yeter.
+require_classroom_manager = _require_capability(
+    "can_manage_classrooms", "Derslik yönetim yetkisi gerekli"
+)
+require_lecturer_manager = _require_capability(
+    "can_manage_lecturers", "Öğretim üyesi yönetim yetkisi gerekli"
+)

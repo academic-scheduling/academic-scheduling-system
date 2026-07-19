@@ -109,7 +109,8 @@ def test_sub_account_membership_rules():
     dep_a = make_department(h)     # üye olacağı bölüm
     dep_b = make_department(h)     # üye OLMAYACAĞI bölüm
 
-    h_sub = sub_headers(department_ids=[dep_a["id"]])
+    # Yetenek AÇIK: bu test üyelik boyutunu ölçer, bayrağı değil (K-25)
+    h_sub = sub_headers(department_ids=[dep_a["id"]], can_manage_courses=True)
 
     # Atanmış bölümde ders açabilir
     r = client.post("/courses", json={
@@ -125,17 +126,75 @@ def test_sub_account_membership_rules():
     }, headers=h_sub)
     assert r.status_code == 403
 
-def test_sub_account_list_only_assigned():
+def test_sub_account_lists_all_departments():
+    """K-26: alt hesap workgroup'taki TÜM bölümlerin derslerini okur.
+
+    Eski davranış (yalnız atanmış bölümler) çakışma çözümünü imkânsız kılıyordu:
+    motor "CENG2001 ile çakışıyorsun" der ama kullanıcı o dersi göremezdi.
+    """
     h = admin_headers()
     dep_a = make_department(h)
     dep_b = make_department(h)
-    make_course(h, dep_a)
+    course_a = make_course(h, dep_a)
     course_b = make_course(h, dep_b)
 
-    h_sub = sub_headers(department_ids=[dep_a["id"]])
-    r = client.get("/courses", headers=h_sub)
-    listed_ids = [c["id"] for c in r.json()]
-    assert course_b["id"] not in listed_ids   # atanmamış bölümün dersi görünmez
+    h_sub = sub_headers(department_ids=[dep_a["id"]])   # yalnız dep_a üyesi
+    listed_ids = [c["id"] for c in client.get("/courses", headers=h_sub).json()]
+    assert course_a["id"] in listed_ids
+    assert course_b["id"] in listed_ids    # atanmamış bölümün dersi de GÖRÜNÜR
+
+    # department_id filtresiyle daraltabilir (kontrat §6)
+    only_b = client.get(f"/courses?department_id={dep_b['id']}", headers=h_sub).json()
+    assert [c["id"] for c in only_b] == [course_b["id"]]
+
+
+# --- yetenek bayrağı (K-25) ---
+
+def test_course_capability_required():
+    """Bayrak kapalıysa, bölüme ÜYE olsa bile yazamaz — iki boyutun ilki."""
+    h = admin_headers()
+    dep = make_department(h)
+
+    # Üye AMA can_manage_courses kapalı
+    h_sub = sub_headers(department_ids=[dep["id"]], can_manage_courses=False)
+    r = client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("NC"), "name": "Yetkisiz",
+    }, headers=h_sub)
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Ders yönetim yetkisi gerekli"
+
+    # Okuma ise serbest (K-26) — yetkisizlik görmeyi engellemez
+    assert client.get("/courses", headers=h_sub).status_code == 200
+
+
+def test_capabilities_are_independent():
+    """Bir yetenek diğerini açmaz: sınav yetkisi ders yazma hakkı vermez."""
+    h = admin_headers()
+    dep = make_department(h)
+    h_sub = sub_headers(department_ids=[dep["id"]], can_manage_exams=True)
+
+    r = client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("XC"), "name": "Yanlış Yetki",
+    }, headers=h_sub)
+    assert r.status_code == 403
+
+
+def test_admin_bypasses_all_capability_flags():
+    """ADMIN'in DB'deki bayrakları false'tur ama rol muafiyeti geçirir."""
+    h = admin_headers()
+    dep = make_department(h)
+    r = client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("AD"), "name": "Admin Dersi",
+    }, headers=h)
+    assert r.status_code == 201
+
+    # API admin'e tüm bayrakları true raporlar (kontrat §1)
+    me = client.get("/auth/me", headers=h).json()
+    assert me["can_manage_courses"] is True
+    assert me["can_manage_exams"] is True
 
 
 # --- izolasyon ---

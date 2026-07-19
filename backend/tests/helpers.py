@@ -43,8 +43,20 @@ def foreign_admin_headers():
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
-def sub_headers(can_manage_classrooms: bool = False, department_ids: list[int] | None = None):
-    """Ana workgroup'ta SUB_ACCOUNT yaratır, login olur, header döndürür."""
+def sub_headers(
+    can_manage_classrooms: bool = False,
+    department_ids: list[int] | None = None,
+    can_manage_courses: bool = False,
+    can_manage_weekly: bool = False,
+    can_manage_exams: bool = False,
+    can_manage_lecturers: bool = False,
+):
+    """Ana workgroup'ta SUB_ACCOUNT yaratır, login olur, header döndürür.
+
+    K-25: yetenek bayraklarının hepsi VARSAYILAN OLARAK KAPALI. Her test
+    hangi yetkiyle çalıştığını açıkça söyler — "kolaylık olsun" diye açık
+    varsayılan vermek, yetki testlerinin gerçekte neyi kanıtladığını gizler.
+    """
     db = SessionLocal()
     admin = db.query(User).filter(User.email == ADMIN["email"]).first()
     email = f"sub_{uuid.uuid4().hex[:8]}@muh.example.edu.tr"
@@ -54,6 +66,10 @@ def sub_headers(can_manage_classrooms: bool = False, department_ids: list[int] |
         password_hash=hash_password(pw), role=UserRole.SUB_ACCOUNT,
         status=UserStatus.ACTIVE,
         can_manage_classrooms=can_manage_classrooms,
+        can_manage_courses=can_manage_courses,
+        can_manage_weekly=can_manage_weekly,
+        can_manage_exams=can_manage_exams,
+        can_manage_lecturers=can_manage_lecturers,
     )
     db.add(user)
     db.flush()

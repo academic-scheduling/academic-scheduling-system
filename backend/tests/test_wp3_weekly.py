@@ -184,12 +184,14 @@ def test_sub_account_membership_rules():
     sec_a, sec_b = make_section(h, dep=dep_a), make_section(h, dep=dep_b)
     make_entry(h, sec_b)                                   # admin dep_b'ye bir giriş koyar
 
-    h_sub = sub_headers(department_ids=[dep_a["id"]])
+    # Yetenek AÇIK: bu test üyelik boyutunu ölçer, bayrağı değil (K-25)
+    h_sub = sub_headers(department_ids=[dep_a["id"]], can_manage_weekly=True)
     assert make_entry(h_sub, sec_a).status_code == 201     # atanmış bölüm: izinli
     assert make_entry(h_sub, sec_b).status_code == 403     # atanmamış bölüm: yasak
-    # dep_b'de giriş VAR ama alt hesabın listesinde görünmemeli
+    # K-26: dep_b'ye YAZAMAZ ama GÖRÜR — çakışmayı çözebilmek için karşı tarafın
+    # doluluğunu görmek şarttır.
     sec_ids = [e["section"]["id"] for e in client.get("/weekly-entries", headers=h_sub).json()]
-    assert sec_a["id"] in sec_ids and sec_b["id"] not in sec_ids
+    assert sec_a["id"] in sec_ids and sec_b["id"] in sec_ids
 
 
 # --- yaşam döngüsü (K-03) ---

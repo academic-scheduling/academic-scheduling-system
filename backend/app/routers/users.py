@@ -61,6 +61,10 @@ def invite_user(
             raise HTTPException(status_code=400, detail="Geçersiz bölüm seçimi")
 
     # 4. PENDING kullanıcı
+    # K-25: ADMIN davet edildiyse bayraklar YOK SAYILIR — rol muafiyeti zaten
+    # her yetkiyi veriyor; DB'ye true yazmak yanıltıcı bir ikinci gerçek üretir
+    # (rol düşürülürse sessizce yetkili kalırdı).
+    is_admin = payload.role == UserRole.ADMIN
     user = User(
         workgroup_id=admin.workgroup_id,
         name=payload.name,
@@ -68,7 +72,11 @@ def invite_user(
         role=payload.role,
         status=UserStatus.PENDING,
         password_hash=None,
-        can_manage_classrooms=payload.can_manage_classrooms,
+        can_manage_courses=False if is_admin else payload.can_manage_courses,
+        can_manage_weekly=False if is_admin else payload.can_manage_weekly,
+        can_manage_exams=False if is_admin else payload.can_manage_exams,
+        can_manage_classrooms=False if is_admin else payload.can_manage_classrooms,
+        can_manage_lecturers=False if is_admin else payload.can_manage_lecturers,
     )
     db.add(user)
     db.flush()  # user.id'yi almak için
@@ -119,15 +127,4 @@ def list_users(
     admin: User = Depends(require_admin),
 ):
     users = db.query(User).filter(User.workgroup_id == admin.workgroup_id).all()
-    result = []
-    for u in users:
-        result.append(UserListItem(
-            id=u.id,
-            name=u.name,
-            email=u.email,
-            role=u.role,
-            status=u.status,
-            can_manage_classrooms=u.can_manage_classrooms,
-            department_ids=[m.department_id for m in u.memberships],
-        ))
-    return result
+    return users

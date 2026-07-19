@@ -161,12 +161,15 @@ def test_sub_account_membership_rules():
     course_a = make_course_with_sections(h, dep=dep_a)
     course_b = make_course_with_sections(h, dep=dep_b)
 
-    h_sub = sub_headers(department_ids=[dep_a["id"]])
+    make_exam(h, course_b)          # admin dep_b'ye bir sınav koyar (görünürlük kanıtı için)
+
+    # Yetenek AÇIK: bu test üyelik boyutunu ölçer, bayrağı değil (K-25)
+    h_sub = sub_headers(department_ids=[dep_a["id"]], can_manage_exams=True)
     assert make_exam(h_sub, course_a).status_code == 201     # atanmış bölüm: izinli
     assert make_exam(h_sub, course_b).status_code == 403     # atanmamış bölüm: yasak
-    # listede yalnız atanmış bölümün sınavı görünür
+    # K-26: atanmamış bölümün sınavı da LİSTEDE GÖRÜNÜR (yazma yasak, okuma serbest)
     ids = [e["course"]["id"] for e in client.get("/exams", headers=h_sub).json()]
-    assert course_a["id"] in ids and course_b["id"] not in ids
+    assert course_a["id"] in ids and course_b["id"] in ids
 
 
 # --- yaşam döngüsü (K-03) ---

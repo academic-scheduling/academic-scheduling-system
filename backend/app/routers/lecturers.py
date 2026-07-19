@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.deps import get_db, get_current_user, require_admin
+from app.deps import get_db, get_current_user, require_lecturer_manager
 from app.models import Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
@@ -30,14 +30,14 @@ def list_lecturers(
 def create_lecturer(
     payload: LecturerCreate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    manager: User = Depends(require_lecturer_manager),
 ):
     normalized = normalize_lecturer_name(payload.full_name)
     if not normalized:
         raise HTTPException(status_code=400, detail="Geçerli bir hoca adı girilmeli")
 
     clash = db.query(Lecturer).filter(
-        Lecturer.workgroup_id == admin.workgroup_id,
+        Lecturer.workgroup_id == manager.workgroup_id,
         Lecturer.normalized_name == normalized,
     ).first()
     if clash:
@@ -47,7 +47,7 @@ def create_lecturer(
         )
 
     lec = Lecturer(
-        workgroup_id=admin.workgroup_id,
+        workgroup_id=manager.workgroup_id,
         full_name=payload.full_name,
         normalized_name=normalized,
         email=payload.email,
@@ -56,7 +56,7 @@ def create_lecturer(
     )
     db.add(lec)
     db.flush()
-    log_action(db, admin, "CREATE", "lecturer", lec.id)
+    log_action(db, manager,"CREATE", "lecturer", lec.id)
     db.commit()
     db.refresh(lec)
     return lec
@@ -67,10 +67,10 @@ def update_lecturer(
     lecturer_id: int,
     payload: LecturerUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    manager: User = Depends(require_lecturer_manager),
 ):
     lec = db.get(Lecturer, lecturer_id)
-    if lec is None or lec.workgroup_id != admin.workgroup_id:
+    if lec is None or lec.workgroup_id != manager.workgroup_id:
         raise HTTPException(status_code=404, detail="Hoca bulunamadı")
 
     data = payload.model_dump(exclude_unset=True)
@@ -82,7 +82,7 @@ def update_lecturer(
             raise HTTPException(status_code=400, detail="Geçerli bir hoca adı girilmeli")
         if normalized != lec.normalized_name:
             clash = db.query(Lecturer).filter(
-                Lecturer.workgroup_id == admin.workgroup_id,
+                Lecturer.workgroup_id == manager.workgroup_id,
                 Lecturer.normalized_name == normalized,
                 Lecturer.id != lec.id,
             ).first()
@@ -95,7 +95,7 @@ def update_lecturer(
 
     for field, value in data.items():
         setattr(lec, field, value)
-    log_action(db, admin, "UPDATE", "lecturer", lec.id)
+    log_action(db, manager,"UPDATE", "lecturer", lec.id)
     db.commit()
     db.refresh(lec)
     return lec

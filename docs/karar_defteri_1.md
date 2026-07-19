@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 16 Temmuz 2026 (K-24: davet token'ı ön-doğrulama ucu)
+**Son güncelleme:** 17 Temmuz 2026 (K-25/K-26: yetenek matrisi + bölüm görünürlüğü)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -98,6 +98,8 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 | Bina | Serbest metin | buildings tablosu (K-18) |
 | Online ders | Ertelendi (K-10) | delivery_mode giriş düzeyinde; asenkron muaf (K-19) |
 | Ders saatleri | Yok | T+U+L + session_type + W8 tamlık kuralı (K-20) |
+| Yazma yetkisi | Yalnız derslik izne bağlı (§2.1) | Beş yetenek bayrağı (K-25) |
+| Alt hesap görünürlüğü | Yalnız atanmış bölümler | Workgroup içi tümü salt-okunur (K-26) |
 
 ## Açık / Ertelenen Konular
 1. ~~Online derslerin derslik ve cohort davranışı (K-10)~~ → K-19 ile kapandı
@@ -106,6 +108,21 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 4. Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)
 5. E7 israf uyarısının eşiği ("bir derslik çıkarılsa hâlâ yetiyor" kriteri) —
    ekip önerisi kural setinde, hoca onayı beklenebilir (K-17)
+6. **Çoklu workgroup [S] — hoca talebi, KARAR BEKLİYOR (17 Tem itibarıyla).**
+   Bugünkü sistem tek workgroup varsayıyor: `users.workgroup_id` tekil FK,
+   workgroup endpoint'i yok, workgroup'u `create_admin.py` yaratıyor. Brief
+   çelişkili: §1 "one or more" derken §2 "Owns a scheduling group" diyor ve
+   §5 veri modelinde `User.workgroup_id` hiç yok.
+   Konuşulan tasarım: admin çoklu (sahiplik `workgroups.created_by` üzerinden),
+   alt hesap tekli; aktif workgroup **token claim'i** ile taşınır
+   (`POST /auth/select-workgroup` yeni token üretir; kontratın "istemci
+   workgroup_id göndermez" kuralı korunur). Şema değişikliği gerektirmez.
+   Bilinen sınırlama: `users.email` global unique olduğundan aynı e-posta iki
+   workgroup'a davet edilemez.
+   **Son tarih:** Hafta 4 başı; o güne dek karar çıkmazsa fiilen "MVP'de yok"
+   demektir. Tahmini maliyet ~2,5-3 gün (izolasyon filtreleri 8 router'da
+   revize edilir). K-25 ile aynı dosyalara (deps.py, kontrat §1-2) dokunduğu
+   için birlikte planlanmalı.
 
 ## K-12 · Sınav/çapraz kural severity'leri [E]
 Kural setindeki üç açık severity kararı onaylandı:
@@ -251,3 +268,53 @@ doğrular, sahibinin e-posta + adını döner, token'ı **tüketmez**.
 - **Yan düzeltme:** Kontratın "tüm istekler login hariç Bearer taşır" genel kuralı
   yanlıştı — davet uçlarının ikisi de public. Kural üç public ucu sayacak şekilde
   düzeltildi.
+
+## K-25 · Yetenek matrisi: yazma yetkileri kullanıcı bazlı bayraklar [E]
+K-02'nin (derslik izni) tek bayraklı deseni **beş yeteneğe genelleştirildi**.
+Admin davet sırasında hangi yetkileri vereceğini tek tek seçer; ADMIN rolü
+verilirse hepsi otomatik açıktır.
+
+| Bayrak | Kapsadığı yazma uçları | Üyelik boyutu |
+|---|---|---|
+| `can_manage_courses` | `/courses`, `/course-sections` | **var** |
+| `can_manage_weekly` | `/weekly-entries` (submit/revert dahil) | **var** |
+| `can_manage_exams` | `/exams` (submit/revert dahil) | **var** |
+| `can_manage_classrooms` (K-02) | `/classrooms`, `/buildings` | yok |
+| `can_manage_lecturers` | `/lecturers` | yok |
+
+- **İki boyut:** İlk üç yetenek bölüme ait kaynakları yönetir; yetki =
+  **bayrak VE bölüm üyeliği** (ikisi birden). Son ikisi workgroup geneli
+  paylaşımlı kaynaklardır; üyelik boyutu yoktur, yalnız bayrağa bakılır.
+- **Bölüm CRUD'u ve kullanıcı daveti bayrağa bağlanMAZ** — yapıyı tanımlayan
+  işlemler ADMIN'de kalır (kontrat §2-§3).
+- **Uygulama deseni:** mevcut `require_classroom_manager` aynen çoğaltılır:
+  `role != ADMIN and not flag` → 403. Bayraklar `users` tablosunda boolean
+  kolonlar olarak tutulur (ayrı izin tablosu kurulmadı: yetenek sayısı sabit
+  ve az, JWT/`/auth/me` ile taşınması bu haliyle ucuz).
+- **Brief'ten sapma [bilinçli]:** Brief §2.1 yalnız dersliği izne bağlıyor,
+  ders/haftalık/sınav için "atanmış bölüm yeter" diyor. Ekip, sınav
+  koordinatörlüğü gibi ayrışan sorumlulukları ifade edebilmek için yetenek
+  boyutunu ekledi. Bedeli kabul edildi: A-5'in test matrisi genişliyor.
+- **Frontend sonucu:** bayraklar login cevabı ve `/auth/me` ile taşınır;
+  ekranlar "düzenleyebilir miyim?" sorusunu buradan cevaplar (yetkisizde
+  salt-okunur görünüm). UI'da gizlemek güvenlik değildir — otorite sunucudadır.
+
+## K-26 · Bölüm görünürlüğü: workgroup içinde herkes her şeyi OKUR [S+E]
+Alt hesap, workgroup'undaki **tüm bölümlerin** ders/haftalık/sınav/çakışma
+verisini görür; **yazma** yetkisi yalnız atandığı bölümlerle sınırlıdır.
+Bir alt hesap birden çok bölüme atanabilir (`department_memberships` çok-a-çok).
+- **Önceki durum:** Kontrat §6/§9 ve `list_courses` alt hesabı yalnız atanmış
+  bölümlerini görecek şekilde kısıtlıyordu; gerekçesi kayda geçmemişti.
+- **Gerekçe 1 — çakışma çözülemiyordu:** Motor mesajları zaten başka bölümün
+  verisini açığa veriyor ("Derslik çakışması: CENG2001-1 ve MATH1001-2, Pzt
+  10:30, B-201"). Kullanıcıya çakıştığı dersi söyleyip o bölümün programını
+  göstermemek, çakışmayı çözmesini imkânsız kılıyordu — boş saat aramak için
+  diğer bölümün doluluğunu görmek gerekir. Kısıt, sistemin çekirdek işlevini
+  sabote ediyordu.
+- **Gerekçe 2:** Brief §2.1 zaten bunu öneriyor: *"View all schedules in
+  workgroup — Sub-account: Recommended: read-only."*
+- **Değişmeyen:** Workgroup izolasyonu mutlak kalır (K-04). Açılan yalnızca
+  fakülte içi bölümler arası **okuma**.
+- **Demo etkisi:** seed planı §9 adım 2'deki "izolasyon kanıtı" yer değiştirir:
+  "ceng@ EEE verisini görür ama düzenlemeye kalkınca 403" — sunucu taraflı
+  yetki denetimini gösterdiği için brief §10.2 açısından daha güçlü bir kanıt.

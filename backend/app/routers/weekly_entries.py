@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import log_action
 from app.conflict_service import check_weekly_save, check_weekly_submit
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_weekly_manager
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus,
     SemesterType, User, UserRole, WeeklyScheduleEntry,
@@ -136,12 +136,8 @@ def list_weekly_entries(
     user: User = Depends(get_current_user),
 ):
     q = _eager_entry_query(db).filter(Department.workgroup_id == user.workgroup_id)
-    # Alt hesap yalnız atanmış bölümlerini görür (exams.py/courses.py ile aynı davranış)
-    if user.role != UserRole.ADMIN:
-        member_ids = _member_department_ids(user)
-        if not member_ids:
-            return []
-        q = q.filter(Course.department_id.in_(member_ids))
+    # K-26: workgroup içindeki herkes TÜM bölümleri okur — çakışmayı çözebilmek için
+    # başka bölümün doluluğunu görmek şarttır. Yazma kısıtı ayrıdır (bayrak + üyelik).
     if department_id is not None:
         q = q.filter(Course.department_id == department_id)
     if year is not None:
@@ -166,7 +162,7 @@ def list_weekly_entries(
 def create_weekly_entry(
     payload: WeeklyEntryCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_weekly_manager),
 ):
     section = _get_owned_section(db, user, payload.section_id)
     _ensure_department_access(user, section.course.department_id)
@@ -193,7 +189,7 @@ def update_weekly_entry(
     entry_id: int,
     payload: WeeklyEntryUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_weekly_manager),
 ):
     entry = _get_owned_entry(db, user, entry_id)
     _ensure_department_access(user, entry.section.course.department_id)
@@ -229,7 +225,7 @@ def update_weekly_entry(
 def submit_weekly_entries(
     payload: WeeklyEntrySubmitRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_weekly_manager),
 ):
     entries: list[WeeklyScheduleEntry] = []
     for entry_id in payload.entry_ids:
@@ -268,7 +264,7 @@ def submit_weekly_entries(
 def revert_weekly_entry_to_draft(
     entry_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_weekly_manager),
 ):
     entry = _get_owned_entry(db, user, entry_id)
     _ensure_department_access(user, entry.section.course.department_id)
@@ -286,7 +282,7 @@ def revert_weekly_entry_to_draft(
 def delete_weekly_entry(
     entry_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_weekly_manager),
 ):
     entry = _get_owned_entry(db, user, entry_id)
     _ensure_department_access(user, entry.section.course.department_id)

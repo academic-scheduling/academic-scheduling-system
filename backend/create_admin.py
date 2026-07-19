@@ -21,9 +21,18 @@ admin = User(
     password_hash=hash_password("admin1234"),
     role=UserRole.ADMIN,
     status=UserStatus.ACTIVE,
-    can_manage_classrooms=True
+    # K-25: ADMIN'e yetenek bayrağı YAZILMAZ — yetki rol muafiyetinden gelir.
+    # Bayrak yazmak yetkinin ikinci bir kaynağını yaratır: rol SUB_ACCOUNT'a
+    # düşürülse bile hesap sessizce yetkili kalırdı.
 )
 db.add(admin)
+db.flush()
+
+# Workgroup'u yaratan admin'i işaretle. Bugün kullanılmıyor ama kolon zaten
+# şemada var ve NULL bırakmak veriyi eksik bırakmak demek; ayrıca ertelenen
+# çoklu workgroup kararında (karar defteri, açık konu 6) sahiplik bu kolondan
+# okunacak.
+wg.created_by = admin.id
 db.commit()
 print("Admin user created successfully.")
 db.close()

@@ -7,6 +7,10 @@
   henüz oluşmadığı üç public uçtur: `POST /auth/login`, `GET /auth/invitation/{token}`,
   `POST /auth/complete-invitation`.
 - Workgroup izolasyonu token'dan gelir; istemci hiçbir yerde workgroup_id GÖNDERMEZ.
+- **Okuma/yazma ayrımı (K-25, K-26):** Workgroup içindeki her kullanıcı, tüm
+  bölümlerin verisini OKUR. Yazma yetkisi iki koşula bağlıdır:
+  (a) ilgili **yetenek bayrağı**, (b) bölüme ait kaynaklarda ayrıca **bölüm üyeliği**.
+  ADMIN her ikisinden de muaftır. Yetkisiz yazma → **403**.
 - Tarihler `YYYY-MM-DD`, saatler `HH:MM` (24 saat).
 - Hata formatı her yerde aynı: `{ "detail": "insan okur mesaj" }` + uygun HTTP kodu
   (400 doğrulama, 401 kimliksiz, 403 yetkisiz, 404 yok, 409 çakışma/kural ihlali).
@@ -33,7 +37,19 @@ Bu şekil kural setindeki (cakisma_kural_seti.md) yapıya birebir bağlıdır.
 
 ### POST /auth/login
 İstek: `{ "email": "...", "password": "..." }`
-Cevap 200: `{ "access_token": "...", "user": { "id": 1, "name": "...", "role": "ADMIN" | "SUB_ACCOUNT", "can_manage_classrooms": false } }`
+Cevap 200:
+```json
+{ "access_token": "...",
+  "user": { "id": 1, "name": "...", "role": "ADMIN" | "SUB_ACCOUNT",
+    "department_ids": [1, 2],
+    "can_manage_courses": false, "can_manage_weekly": false,
+    "can_manage_exams": false, "can_manage_classrooms": false,
+    "can_manage_lecturers": false } }
+```
+← Yetenek bayrakları (K-25) + kullanıcının atandığı bölümler (K-26): UI
+  "bu kaydı düzenleyebilir miyim?" sorusunu bu iki alandan cevaplar.
+  ADMIN'de tüm bayraklar `true` döner (rol muafiyeti istemciye yansıtılır),
+  `department_ids` boş gelir — admin zaten tüm bölümlerde yetkilidir.
 Hata 401: geçersiz bilgiler.
 
 ### GET /auth/invitation/{token}   ← K-24
@@ -52,11 +68,10 @@ Hata 400: token geçersiz / süresi dolmuş / kullanılmış (mesajlar GET ile a
 Not: GET ön-doğrulama yapmış olsa bile bu uç tüm kontrolleri TEKRAR eder —
   GET ile POST arasında token süresi dolabilir/kullanılabilir (K-24).
 
-  ### GET /auth/me
+### GET /auth/me
 Açılışta oturum kurtarma: elindeki token'ın hâlâ geçerli olup olmadığını ve
-sahibinin kim olduğunu söyler. Cevap 200: `{ "id": 1, "name": "...",
-"role": "ADMIN" | "SUB_ACCOUNT", "can_manage_classrooms": false }`
-(login cevabındaki `user` nesnesinin aynısı.)
+sahibinin kim olduğunu söyler. Cevap 200: login cevabındaki `user` nesnesinin
+**aynısı** (yetenek bayrakları + `department_ids` dahil — tek şekil, tek tip).
 Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 
 **Davet linkinin adresi:** `backend/app/mailer.py` maili
@@ -68,9 +83,21 @@ Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 ## 2. Kullanıcılar ve Davet (yalnız ADMIN)
 
 ### POST /users/invite
-İstek: `{ "name": "...", "email": "...", "role": "SUB_ACCOUNT", "department_ids": [1,2], "can_manage_classrooms": true }`  ← K-02
+İstek:
+```json
+{ "name": "...", "email": "...", "role": "SUB_ACCOUNT",
+  "department_ids": [1, 2],
+  "can_manage_courses": true, "can_manage_weekly": true,
+  "can_manage_exams": false, "can_manage_classrooms": false,
+  "can_manage_lecturers": false }
+```
+← Yetenek bayrakları davet anında tek tek seçilir (K-25); hepsi opsiyonel,
+  varsayılan `false`. `role: "ADMIN"` verilirse bayraklar YOK SAYILIR —
+  admin her yetkiye zaten sahiptir.
+← `department_ids` çoklu olabilir: bir alt hesap birden çok bölümden sorumlu
+  olabilir (K-26). Yazma yetkisi bu bölümlerle sınırlıdır; okuma değil.
 Cevap 201: `{ "id": 5, "status": "PENDING" }` (e-posta Mailpit'e düşer)
-Hata 400: e-posta izinli domainde değil.
+Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 
 ### POST /users/{id}/resend-invitation → 200
 ### GET /users → kullanıcı listesi (bölüm atamalarıyla)
@@ -85,17 +112,17 @@ Hata 400: e-posta izinli domainde değil.
 
 ---
 
-## 4. Hocalar (K-08: yönetilen entity)
+## 4. Öğretim Üyeleri (K-08: yönetilen entity · yazma: `can_manage_lecturers`)
 
 ### GET /lecturers?search=ay
 Autocomplete için. Cevap: `[ { "id": 3, "full_name": "Doç. Dr. Ayşe Kaya", "is_external": false } ]`
 `search` normalized_name üzerinde arar.
 
-### POST /lecturers (yalnız ADMIN — 40/a elle ekleme)
+### POST /lecturers (ADMIN veya `can_manage_lecturers` — 40/a elle ekleme)
 İstek: `{ "full_name": "...", "email": null, "is_external": true }` → 201
 Hata 409: normalized_name zaten var.
 
-### PATCH /lecturers/{id} (yalnız ADMIN)
+### PATCH /lecturers/{id} (ADMIN veya `can_manage_lecturers`)
 Ad düzeltme / pasife alma: `{ "full_name": "...", "email": "...", "is_external": true, "active": false }`
 (hepsi opsiyonel). full_name değişirse normalized_name yeniden hesaplanır.
 Hata 409: yeni ad başka bir hocanın normalized_name'iyle çakışıyor.
@@ -106,7 +133,7 @@ Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 
 ---
 
-## 5. Binalar ve Derslikler (ADMIN veya can_manage_classrooms=true)
+## 5. Binalar ve Derslikler (yazma: ADMIN veya `can_manage_classrooms`)
 
 ### GET /buildings → `[ { "id", "name", "active" } ]`   ← K-18
 ### POST /buildings — İstek: `{ "name": "Mühendislik Fakültesi" }` → 201 · Hata 409: ad zaten var
@@ -120,9 +147,11 @@ Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 
 ---
 
-## 6. Dersler ve Şubeler (K-14; alt hesap: yalnız atanmış bölümleri)
+## 6. Dersler ve Şubeler (K-14; yazma: `can_manage_courses` + bölüm üyeliği)
 
 ### GET /courses?department_id=&year=&semester=&search=
+Workgroup'un **tüm** bölümlerinin dersleri döner — alt hesap da dahil (K-26).
+Bölüme göre daraltmak isteyen istemci `department_id` filtresini kullanır.
 Cevap (ders + şubeleri iç içe):
 ```json
 [ { "id": 4, "code": "CENG2001", "name": "...", "year": 2, "semester": "SPRING",
@@ -153,8 +182,11 @@ Cevap 201 · Hata 409: bu derste bu şube no zaten var.
 ---
 
 ## 7. Haftalık Program — save/submit ayrımı (K-03'ün kalbi)
+Yazma: `can_manage_weekly` + girişin dersinin bölümüne üyelik (K-25).
 
 ### GET /weekly-entries?department_id=&year=&semester=&classroom_id=&lecturer_id=
+Workgroup'un **tüm** bölümlerinin girişleri döner (K-26) — çakışmayı çözebilmek
+için başka bölümün doluluğunu görmek şarttır.
 Cevap: `[ { "id", "section": { "id", "section_no", "course": {...} },
   "classroom": {...} | null, "day_of_week": 1, "start_slot": 3, "slot_count": 2,
   "session_type": "THEORY" | "PRACTICE" | "LAB",
@@ -195,6 +227,8 @@ Cevap 409: `{ "detail": "Hard çakışma nedeniyle submit reddedildi",
 ---
 
 ## 8. Sınavlar — aynı save/submit deseni (K-16: sınav DERS düzeyinde, şubeden bağımsız)
+Yazma: `can_manage_exams` + sınavın dersinin bölümüne üyelik (K-25).
+`GET /exams` workgroup'un tüm bölümlerini döner (K-26).
 
 ### GET /exams?department_id=&exam_type=&date_from=&date_to=&classroom_id=&year=&semester=&lecturer_id=
 Cevap girişleri: `{ "id", "course": { "id", "code", "name" }, "exam_type", "exam_date",
@@ -225,8 +259,10 @@ Hata 409: sınav SUBMITTED — önce draft'a çevrilmeli.
 
 ### GET /conflicts
 Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": [ConflictResult...] }`
-- ADMIN: tüm workgroup (K-04).
-- SUB_ACCOUNT: yalnız atanmış bölümleri.
+- Workgroup'un TÜMÜ taranır ve tüm sonuçlar herkese döner (K-04 + K-26).
+- Alt hesabın çakışmayı çözebilmesi için karşı tarafı görmesi şarttır; ayrıca
+  motor mesajları zaten diğer bölümün ders/derslik/saat bilgisini içerir.
+- Çözme (düzenleme) yetkisi yine bayrak + üyelikle sınırlıdır.
 
 ---
 

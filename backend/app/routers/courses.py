@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseSection, Department, DepartmentMembership,
     Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
@@ -95,12 +95,8 @@ def list_courses(
         .options(selectinload(Course.sections).selectinload(CourseSection.lecturer))
         .filter(Department.workgroup_id == user.workgroup_id)
     )
-    # Alt hesap yalnız atanmış bölümlerini görür (kontrat §6)
-    if user.role != UserRole.ADMIN:
-        member_ids = _member_department_ids(user)
-        if not member_ids:
-            return []
-        q = q.filter(Course.department_id.in_(member_ids))
+    # K-26: workgroup içindeki herkes TÜM bölümleri okur; yazma kısıtı ayrıdır
+    # (bayrak + üyelik, yazma uçlarında). Filtrelemek isteyen department_id kullanır.
     if department_id is not None:
         q = q.filter(Course.department_id == department_id)
     if year is not None:
@@ -117,7 +113,7 @@ def list_courses(
 def create_course(
     payload: CourseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_course_manager),
 ):
     _ensure_department_access(db, user, payload.department_id)
 
@@ -145,7 +141,7 @@ def update_course(
     course_id: int,
     payload: CourseUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_course_manager),
 ):
     course = _get_owned_course(db, user, course_id)
     _ensure_department_access(db, user, course.department_id)
@@ -181,7 +177,7 @@ def create_section(
     course_id: int,
     payload: SectionCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_course_manager),
 ):
     course = _get_owned_course(db, user, course_id)
     _ensure_department_access(db, user, course.department_id)
@@ -210,7 +206,7 @@ def update_section(
     section_id: int,
     payload: SectionUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_course_manager),
 ):
     sec = _get_owned_section(db, user, section_id)
     _ensure_department_access(db, user, sec.course.department_id)
@@ -240,7 +236,7 @@ def update_section(
 def delete_section(
     section_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_course_manager),
 ):
     sec = _get_owned_section(db, user, section_id)
     _ensure_department_access(db, user, sec.course.department_id)

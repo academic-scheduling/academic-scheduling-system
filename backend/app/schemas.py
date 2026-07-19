@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
 from app.models import EntryStatus, ExamType, DeliveryMode, SessionType
 
@@ -13,8 +13,30 @@ class UserPublic(BaseModel):
     id: int
     name: str
     role: UserRole
-    can_manage_classrooms: bool
+    department_ids: list[int] = []          # K-26: yazma kapsamı
+    can_manage_courses: bool = False        # K-25: yetenek bayrakları
+    can_manage_weekly: bool = False
+    can_manage_exams: bool = False
+    can_manage_classrooms: bool = False
+    can_manage_lecturers: bool = False
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _admin_has_every_capability(self):
+        """ADMIN'de tüm bayraklar true raporlanır (kontrat §1).
+
+        DB'de admin'in bayrakları false'tur ve öyle kalır — deps.py rol
+        muafiyetiyle geçirir. Bu dönüşüm yalnız İSTEMCİ İÇİN: UI her yerde
+        "role === 'ADMIN' || can_manage_x" yazmak zorunda kalmasın, tek
+        koşul yetsin. Yetkinin otoritesi yine sunucudadır.
+        """
+        if self.role == UserRole.ADMIN:
+            self.can_manage_courses = True
+            self.can_manage_weekly = True
+            self.can_manage_exams = True
+            self.can_manage_classrooms = True
+            self.can_manage_lecturers = True
+        return self
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -23,13 +45,17 @@ class TokenResponse(BaseModel):
 # --- Davet (WP1-invitations) ---
 
 class InviteRequest(BaseModel):
-    name: str = Field(..., description="Davet edilecek kullanıcının adı")    
+    name: str = Field(..., description="Davet edilecek kullanıcının adı")
     email: str = Field(..., description="Davet edilecek kullanıcının e-posta adresi")
     role: UserRole = UserRole.SUB_ACCOUNT
-    department_ids: list[int] = []    
-    can_manage_classrooms: bool = Field(
-        False, description="Kullanıcıya sınıf yönetim yetkisi verilsin mi?"
-    )
+    department_ids: list[int] = []
+    # K-25: yetenek bayrakları davet anında tek tek seçilir.
+    # role=ADMIN geldiğinde router bunları YOK SAYAR (admin zaten hepsine sahip).
+    can_manage_courses: bool = False
+    can_manage_weekly: bool = False
+    can_manage_exams: bool = False
+    can_manage_classrooms: bool = False
+    can_manage_lecturers: bool = False
 
 class InviteResponse(BaseModel):
     id: int
@@ -59,8 +85,12 @@ class UserListItem(BaseModel):
     email: str
     role: UserRole
     status: UserStatus
-    can_manage_classrooms: bool
     department_ids: list[int] = []
+    can_manage_courses: bool = False
+    can_manage_weekly: bool = False
+    can_manage_exams: bool = False
+    can_manage_classrooms: bool = False
+    can_manage_lecturers: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 # --- Bölümler (WP2) ---

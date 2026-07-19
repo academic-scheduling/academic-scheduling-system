@@ -185,9 +185,31 @@ class User(Base):
     can_manage_classrooms: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false")
     )
+    can_manage_courses: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
+    can_manage_weekly: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
+    can_manage_exams: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
+    can_manage_lecturers: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    @property
+    def department_ids(self) -> list[int]:
+        """Üyelik tablosundan türetilir — UserPublic/UserListItem bunu okur (K-26).
+
+        Kolon DEĞİL: kaynağı department_memberships. Property olması sayesinde
+        Pydantic'in from_attributes'ı otomatik alır, router'larda elle
+        kurulmasına gerek kalmaz.
+        """
+        return [m.department_id for m in self.memberships]
 
     # --- iliskiler ---
     workgroup: Mapped["Workgroup | None"] = relationship(

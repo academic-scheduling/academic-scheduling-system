@@ -108,7 +108,14 @@ Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 
 ### GET /departments → `[ { "id", "name", "code", "active" } ]`
 ### POST /departments — İstek: `{ "name": "...", "code": "CENG" }` → 201
-### PATCH /departments/{id} — ad/kod düzeltme + pasife alma: `{ "active": false }` (silme yok — K-02 soft delete)
+### PATCH /departments/{id} — ad/kod düzeltme + pasife alma: `{ "active": false }`
+### DELETE /departments/{id}   ← K-27 (yalnız ADMIN)
+Yalnız **boş** bölüm silinir: bağlı ders veya kullanıcı ataması olmamalı.
+Cevap 204: silindi.
+Hata 409: `{ "detail": "Bu bölüm silinemez: 3 ders ve 2 kullanıcı ataması bağlı. Önce bunları kaldırın." }`
+Hata 404: bölüm yok veya başka workgroup'a ait.
+Not: `PATCH {active:false}` (soft delete) API'de durmaya devam eder ama
+bölüm ekranı artık kullanmaz (K-27).
 
 ---
 

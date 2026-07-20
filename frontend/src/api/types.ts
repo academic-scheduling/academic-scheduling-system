@@ -39,3 +39,40 @@ export type InvitationPreview = {
 export type MessageResponse = {
   message: string;
 };
+
+/** Kontrat §3 · GET /departments elemanı */
+export type Department = {
+  id: number;
+  name: string;
+  code: string;
+  active: boolean;
+};
+
+export type SemesterType = "FALL" | "SPRING" | "SUMMER";
+
+export type SectionLecturerRef = { id: number; full_name: string };
+
+export type CourseSection = {
+  id: number;
+  section_no: number;
+  lecturer: SectionLecturerRef;
+  expected_students: number;
+  default_classroom_id: number | null;
+  active: boolean;
+};
+
+/** Kontrat §6 · GET /courses elemanı (ders + şubeleri iç içe) */
+export type Course = {
+  id: number;
+  department_id: number;
+  year: number;
+  semester: SemesterType;
+  code: string;
+  name: string;
+  is_elective: boolean;
+  hours_theory: number;
+  hours_practice: number;
+  hours_lab: number;
+  active: boolean;
+  sections: CourseSection[];
+};

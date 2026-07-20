@@ -7,6 +7,7 @@ import ActivatePage from "./pages/ActivatePage";
 import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import DepartmentsPage from "./pages/DepartmentsPage";
 
 export default function App() {
   return (
@@ -17,7 +18,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/departments" element={<PlaceholderPage title="Bölümler" />} />
+          <Route path="/departments" element={<DepartmentsPage />} />
           <Route path="/courses" element={<PlaceholderPage title="Dersler" />} />
           <Route path="/classrooms" element={<PlaceholderPage title="Derslikler" />} />
           <Route path="/lecturers" element={<PlaceholderPage title="Öğretim Üyeleri" />} />

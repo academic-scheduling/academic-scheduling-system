@@ -206,3 +206,50 @@ def test_isolation_foreign_admin():
     h_foreign = foreign_admin_headers()
     r = client.patch(f"/courses/{course['id']}", json={"name": "Ele Geçti"}, headers=h_foreign)
     assert r.status_code == 404
+
+# --- ders silme (K-32) ---
+
+def test_delete_empty_course():
+    h = admin_headers()
+    course = make_course(h, make_department(h))
+    assert client.delete(f"/courses/{course['id']}", headers=h).status_code == 204
+    assert course["id"] not in [c["id"] for c in client.get("/courses", headers=h).json()]
+
+
+def test_delete_course_blocked_by_section():
+    h = admin_headers()
+    dep = make_department(h)
+    course = make_course(h, dep)
+    lec = make_lecturer(h)
+    client.post(f"/courses/{course['id']}/sections", json={
+        "section_no": 1, "lecturer_id": lec["id"], "expected_students": 30,
+    }, headers=h)
+
+    r = client.delete(f"/courses/{course['id']}", headers=h)
+    assert r.status_code == 409
+    assert "şube" in r.json()["detail"]
+
+
+def test_delete_course_blocked_by_exam_without_section():
+    """K-32'nin asıl sebebi: sınav DERS düzeyinde (K-16), şubesiz ders sınavlı olabilir."""
+    h = admin_headers()
+    dep = make_department(h)
+    course = make_course(h, dep)
+    lec = make_lecturer(h)
+    r = client.post("/exams", json={
+        "course_id": course["id"], "exam_type": "MIDTERM", "exam_date": "2026-11-12",
+        "start_time": "10:00", "duration_minutes": 90, "classroom_ids": [],
+        "lecturer_id": lec["id"],
+    }, headers=h)
+    assert r.status_code == 201, r.text
+
+    r = client.delete(f"/courses/{course['id']}", headers=h)
+    assert r.status_code == 409
+    assert "sınav" in r.json()["detail"]      # şube yok ama sınav engelledi
+
+
+def test_delete_course_isolation_and_permission():
+    h = admin_headers()
+    course = make_course(h, make_department(h))
+    assert client.delete(f"/courses/{course['id']}", headers=foreign_admin_headers()).status_code == 404
+    assert client.delete(f"/courses/{course['id']}", headers=sub_headers()).status_code == 403

@@ -8,6 +8,8 @@ import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
+import LecturersPage from "./pages/LecturersPage";
+import ClassroomsPage from "./pages/ClassroomsPage";
 
 export default function App() {
   return (
@@ -20,8 +22,8 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/departments" element={<DepartmentsPage />} />
           <Route path="/courses" element={<PlaceholderPage title="Dersler" />} />
-          <Route path="/classrooms" element={<PlaceholderPage title="Derslikler" />} />
-          <Route path="/lecturers" element={<PlaceholderPage title="Öğretim Üyeleri" />} />
+          <Route path="/classrooms" element={<ClassroomsPage />} />
+          <Route path="/lecturers" element={<LecturersPage />} />
           <Route path="/weekly" element={<PlaceholderPage title="Haftalık Program" />} />
           <Route path="/exams" element={<PlaceholderPage title="Sınavlar" />} />
           <Route path="/conflicts" element={<PlaceholderPage title="Çakışma Raporu" />} />

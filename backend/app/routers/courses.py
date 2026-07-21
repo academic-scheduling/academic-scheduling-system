@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseSection, Department, DepartmentMembership,
-    Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
+    Exam, Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
 )
 from app.schemas import (
     CourseCreate, CourseUpdate, CourseOut,
@@ -250,4 +250,42 @@ def delete_section(
 
     log_action(db, user, "DELETE", "course_section", sec.id)
     db.delete(sec)
+    db.commit()
+
+
+@router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_course(
+    course_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_course_manager),
+):
+    """Yalnız hiç şubesi ve hiç sınavı olmayan dersi siler (K-32).
+
+    courses'a bağlananlar: course_sections (CASCADE) ve exams (CASCADE).
+    Sınav K-16 gereği DERS düzeyindedir, yani şubesiz bir dersin sınavı
+    olabilir; iki koşul da aranmazsa sınav sessizce silinirdi.
+    Kullanımdaki ders silinmez, PATCH {active:false} ile pasife alınır.
+    """
+    course = _get_owned_course(db, user, course_id)
+    _ensure_department_access(db, user, course.department_id)
+
+    section_count = db.query(CourseSection).filter(
+        CourseSection.course_id == course.id
+    ).count()
+    exam_count = db.query(Exam).filter(Exam.course_id == course.id).count()
+
+    if section_count or exam_count:
+        parcalar = []
+        if section_count:
+            parcalar.append(f"{section_count} şube")
+        if exam_count:
+            parcalar.append(f"{exam_count} sınav")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu ders silinemez: {' ve '.join(parcalar)} bağlı. "
+                   "Önce bunları kaldırın.",
+        )
+
+    log_action(db, user, "DELETE", "course", course.id)
+    db.delete(course)
     db.commit()

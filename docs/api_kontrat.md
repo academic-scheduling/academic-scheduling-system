@@ -210,6 +210,11 @@ Cevap (ders + şubeleri iç içe):
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
+### DELETE /courses/{id}   ← K-32
+Yalnız **hiç şubesi ve hiç sınavı olmayan** ders silinir.
+Cevap 204 · Hata 409: `{ "detail": "Bu ders silinemez: 2 şube ve 1 sınav bağlı. Önce bunları kaldırın." }`
+Not: Sınav K-16 gereği ders düzeyindedir; şubesiz bir dersin sınavı olabilir,
+  o yüzden iki koşul da aranır. Kullanımdaki ders `PATCH {active:false}` ile pasife alınır.
 
 ### POST /courses/{id}/sections   (şube)
 İstek: `{ "section_no": 2, "lecturer_id": 3, "expected_students": 45,

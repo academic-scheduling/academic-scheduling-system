@@ -48,6 +48,53 @@ export type Department = {
   active: boolean;
 };
 
+/** Kontrat §4 · GET /lecturers elemanı (K-28: active dahil) */
+export type Lecturer = {
+  id: number;
+  full_name: string;
+  /** Unvansız, küçük harf ad — alfabetik sıralama bunun üzerinden yapılır (K-28). */
+  normalized_name: string;
+  is_external: boolean;
+  active: boolean;
+};
+
+/** Kontrat §5 · GET /buildings elemanı (K-18, K-30) */
+export type Building = {
+  id: number;
+  name: string;
+  /** K-30: fakülte dışı bina. Yalnız etiket+filtre; motor davranışını değiştirmez. */
+  is_external: boolean;
+  active: boolean;
+};
+
+/** Derslik cevabına gömülü kısa bina gösterimi */
+export type BuildingRef = {
+  id: number;
+  name: string;
+  is_external: boolean;
+};
+
+/** K-31 · dersliğin fiziksel türü. Motor okumaz; bilgi + filtre. */
+export type RoomType = "CLASSROOM" | "AMPHI" | "LAB";
+
+export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
+  CLASSROOM: "Sınıf",          // ekranın adı "Derslikler" olduğu için tip "Sınıf"
+  AMPHI: "Amfi",
+  LAB: "Laboratuvar",
+};
+
+/** Kontrat §5 · GET /classrooms elemanı */
+export type Classroom = {
+  id: number;
+  building: BuildingRef;
+  room_code: string;
+  room_type: RoomType;
+  capacity: number;
+  /** K-21: opsiyonel — boşsa sınav yerleşiminde uyarı üretir */
+  exam_capacity: number | null;
+  active: boolean;
+};
+
 export type SemesterType = "FALL" | "SPRING" | "SUMMER";
 
 export type SectionLecturerRef = { id: number; full_name: string };

@@ -4,7 +4,6 @@
 
 from dataclasses import dataclass
 from datetime import date, time
-from email.mime import base
 from app.conflicts.slots import slot_range_to_times
 
 @dataclass

@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
-from app.models import EntryStatus, ExamType, DeliveryMode, SessionType
+from app.models import EntryStatus, ExamType, DeliveryMode, SessionType, RoomType
 
 class LoginRequest(BaseModel):
     email: str
@@ -127,21 +127,26 @@ class LecturerUpdate(BaseModel):
 class LecturerOut(BaseModel):
     id: int
     full_name: str
+    normalized_name: str                      # K-28: unvansız ad — istemci sıralaması bunu kullanır
     is_external: bool
+    active: bool                              # K-28: yönetim ekranı pasifi ayırt eder
     model_config = ConfigDict(from_attributes=True)
 
 # --- Binalar (WP2, K-18) ---
 
 class BuildingCreate(BaseModel):
     name: str
+    is_external: bool = False                 # K-30: fakülte dışı bina
 
 class BuildingUpdate(BaseModel):
     name: str | None = None
+    is_external: bool | None = None
     active: bool | None = None
 
 class BuildingOut(BaseModel):
     id: int
     name: str
+    is_external: bool
     active: bool
     model_config = ConfigDict(from_attributes=True)
 
@@ -149,6 +154,7 @@ class BuildingRef(BaseModel):
     """Derslik cevabının içine gömülen kısa bina gösterimi."""
     id: int
     name: str
+    is_external: bool                         # K-30: derslik tablosunda rozet için
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -157,12 +163,14 @@ class BuildingRef(BaseModel):
 class ClassroomCreate(BaseModel):
     building_id: int
     room_code: str
+    room_type: RoomType = RoomType.CLASSROOM   # K-31: amfi / lab / derslik
     capacity: int = Field(gt=0)           # K-07: zorunlu ve pozitif
     exam_capacity: int | None = Field(None, gt=0)   # K-21: opsiyonel
 
 class ClassroomUpdate(BaseModel):
     building_id: int | None = None
     room_code: str | None = None
+    room_type: RoomType | None = None          # K-31
     capacity: int | None = Field(None, gt=0)
     exam_capacity: int | None = Field(None, gt=0)
     active: bool | None = None
@@ -171,6 +179,7 @@ class ClassroomOut(BaseModel):
     id: int
     building: BuildingRef                 # iç içe nesne — kontrat şekli
     room_code: str
+    room_type: RoomType                   # K-31
     capacity: int
     exam_capacity: int | None
     active: bool

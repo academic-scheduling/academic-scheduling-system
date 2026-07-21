@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user, require_lecturer_manager
-from app.models import Lecturer, User
+from app.models import CourseSection, Exam, Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
 from app.audit import log_action
@@ -13,13 +13,17 @@ router = APIRouter(prefix="/lecturers", tags=["lecturers"])
 @router.get("", response_model=list[LecturerOut])
 def list_lecturers(
     search: str | None = Query(None, description="Autocomplete: normalized_name üzerinde arar"),
+    include_inactive: bool = Query(
+        False, description="K-28: pasifler de gelsin mi (yönetim ekranı için)"
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    q = db.query(Lecturer).filter(
-        Lecturer.workgroup_id == user.workgroup_id,
-        Lecturer.active.is_(True),
-    )
+    # Varsayılan yalnız aktifler: ders formundaki autocomplete pasife alınmış
+    # hocayı ÖNERMEMELİ (K-08/K-28). Yönetim ekranı include_inactive=true geçer.
+    q = db.query(Lecturer).filter(Lecturer.workgroup_id == user.workgroup_id)
+    if not include_inactive:
+        q = q.filter(Lecturer.active.is_(True))
     if search:
         # Aranan terimi de normalize et: kullanici "Doç. Ayşe" yazsa da bulsun
         q = q.filter(Lecturer.normalized_name.contains(normalize_lecturer_name(search)))
@@ -99,3 +103,41 @@ def update_lecturer(
     db.commit()
     db.refresh(lec)
     return lec
+
+
+@router.delete("/{lecturer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_lecturer(
+    lecturer_id: int,
+    db: Session = Depends(get_db),
+    manager: User = Depends(require_lecturer_manager),
+):
+    """Yalnız hiçbir yere bağlı olmayan öğretim üyesini siler (K-28).
+
+    Şema zaten korur (lecturer_id FK'leri ondelete=RESTRICT); bu kontrol
+    kullanıcının ham DB hatası yerine neyin engellediğini sayan bir mesaj
+    görmesi için. Ders vermiş ama ayrılan hoca silinmez, pasife alınır.
+    """
+    lec = db.get(Lecturer, lecturer_id)
+    if lec is None or lec.workgroup_id != manager.workgroup_id:
+        raise HTTPException(status_code=404, detail="Öğretim üyesi bulunamadı")
+
+    section_count = db.query(CourseSection).filter(
+        CourseSection.lecturer_id == lec.id
+    ).count()
+    exam_count = db.query(Exam).filter(Exam.lecturer_id == lec.id).count()
+
+    if section_count or exam_count:
+        parcalar = []
+        if section_count:
+            parcalar.append(f"{section_count} şube")
+        if exam_count:
+            parcalar.append(f"{exam_count} sınav")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu öğretim üyesi silinemez: {' ve '.join(parcalar)} bağlı. "
+                   "Önce bu bağlantıları kaldırın.",
+        )
+
+    log_action(db, manager, "DELETE", "lecturer", lec.id)
+    db.delete(lec)
+    db.commit()

@@ -104,3 +104,56 @@ def test_patch_lecturer_isolation():
     lec = client.post("/lecturers", json={"full_name": _uname("Bizim Hoca")}, headers=h).json()
     r = client.patch(f"/lecturers/{lec['id']}", json={"active": False}, headers=foreign_admin_headers())
     assert r.status_code == 404      # yabancı admin ne görebilir ne dokunabilir
+
+# --- pasif görünürlüğü + silme (K-28) ---
+
+def test_inactive_hidden_by_default_shown_with_flag():
+    """Autocomplete pasifi ÖNERMEZ; yönetim ekranı include_inactive ile görür."""
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Ayrilan Hoca")}, headers=h).json()
+    assert lec["active"] is True                      # cevap artık active taşıyor
+
+    client.patch(f"/lecturers/{lec['id']}", json={"active": False}, headers=h)
+
+    varsayilan = [l["id"] for l in client.get("/lecturers", headers=h).json()]
+    assert lec["id"] not in varsayilan                # autocomplete davranışı korunuyor
+
+    yonetim = [l["id"] for l in client.get("/lecturers?include_inactive=true", headers=h).json()]
+    assert lec["id"] in yonetim                       # yönetim ekranı görür
+
+
+def test_delete_unlinked_lecturer():
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Yanlis Kayit")}, headers=h).json()
+    assert client.delete(f"/lecturers/{lec['id']}", headers=h).status_code == 204
+    kalan = [l["id"] for l in client.get("/lecturers?include_inactive=true", headers=h).json()]
+    assert lec["id"] not in kalan
+
+
+def test_delete_blocked_by_section():
+    """Şubeye bağlı hoca silinmez — mesaj sebebi sayarak söyler."""
+    from tests.helpers import _u
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Dersi Olan")}, headers=h).json()
+    dep = client.post("/departments", json={"name": "Hoca Testi", "code": _u("HT")}, headers=h).json()
+    course = client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("HC"), "name": "Bagli Ders",
+    }, headers=h).json()
+    client.post(f"/courses/{course['id']}/sections", json={
+        "section_no": 1, "lecturer_id": lec["id"], "expected_students": 30,
+    }, headers=h)
+
+    r = client.delete(f"/lecturers/{lec['id']}", headers=h)
+    assert r.status_code == 409
+    assert "şube" in r.json()["detail"]
+
+
+def test_delete_isolation_and_permission():
+    from tests.helpers import sub_headers
+    h = admin_headers()
+    lec = client.post("/lecturers", json={"full_name": _uname("Korunan Hoca")}, headers=h).json()
+    # yabancı workgroup: varlığını bile sızdırmayız
+    assert client.delete(f"/lecturers/{lec['id']}", headers=foreign_admin_headers()).status_code == 404
+    # yetenek bayrağı kapalı alt hesap
+    assert client.delete(f"/lecturers/{lec['id']}", headers=sub_headers()).status_code == 403

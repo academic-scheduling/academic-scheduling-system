@@ -115,3 +115,103 @@ def test_classroom_without_exam_capacity_is_allowed():
     }, headers=h)
     assert r.status_code == 201, r.text
     assert r.json()["exam_capacity"] is None
+
+# --- fakülte dışı bina (K-30) + silme (K-29) ---
+
+def test_building_is_external_flag():
+    h = admin_headers()
+    ic = client.post("/buildings", json={"name": _u("Ic-")}, headers=h).json()
+    dis = client.post("/buildings", json={"name": _u("Dis-"), "is_external": True}, headers=h).json()
+    assert ic["is_external"] is False          # varsayılan
+    assert dis["is_external"] is True
+
+    # derslik cevabındaki gömülü bina da bayrağı taşımalı (tabloda rozet için)
+    oda = client.post("/classrooms", json={
+        "building_id": dis["id"], "room_code": _u("D"), "capacity": 50,
+    }, headers=h).json()
+    assert oda["building"]["is_external"] is True
+
+
+def test_delete_unlinked_classroom_and_building():
+    h = admin_headers()
+    bina = make_building(h)
+    oda = client.post("/classrooms", json={
+        "building_id": bina["id"], "room_code": _u("S"), "capacity": 40,
+    }, headers=h).json()
+
+    # dersliği olan bina silinemez
+    r = client.delete(f"/buildings/{bina['id']}", headers=h)
+    assert r.status_code == 409
+    assert "derslik" in r.json()["detail"]
+
+    # bağlantısız derslik silinir, sonra bina da silinir
+    assert client.delete(f"/classrooms/{oda['id']}", headers=h).status_code == 204
+    assert client.delete(f"/buildings/{bina['id']}", headers=h).status_code == 204
+
+
+def test_delete_classroom_blocked_by_default_section():
+    """default_classroom_id SET NULL olsa da engel sayılır (K-29)."""
+    h = admin_headers()
+    bina = make_building(h)
+    oda = client.post("/classrooms", json={
+        "building_id": bina["id"], "room_code": _u("V"), "capacity": 60,
+    }, headers=h).json()
+    lec = client.post("/lecturers", json={"full_name": f"Dr. Derslik {_u('L')}"}, headers=h).json()
+    dep = client.post("/departments", json={"name": "Derslik Testi", "code": _u("DT")}, headers=h).json()
+    course = client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("DK"), "name": "Varsayilan Derslikli",
+    }, headers=h).json()
+    client.post(f"/courses/{course['id']}/sections", json={
+        "section_no": 1, "lecturer_id": lec["id"], "expected_students": 30,
+        "default_classroom_id": oda["id"],
+    }, headers=h)
+
+    r = client.delete(f"/classrooms/{oda['id']}", headers=h)
+    assert r.status_code == 409
+    assert "varsayılan" in r.json()["detail"]
+
+
+def test_delete_classroom_isolation_and_permission():
+    h = admin_headers()
+    bina = make_building(h)
+    oda = client.post("/classrooms", json={
+        "building_id": bina["id"], "room_code": _u("K"), "capacity": 20,
+    }, headers=h).json()
+    # yabancı workgroup varlığı bile görmemeli
+    assert client.delete(f"/classrooms/{oda['id']}", headers=foreign_admin_headers()).status_code == 404
+    # can_manage_classrooms kapalı alt hesap
+    assert client.delete(f"/classrooms/{oda['id']}", headers=sub_headers()).status_code == 403
+
+
+# --- derslik tipi (K-31) ---
+
+def test_room_type_default_and_set():
+    h = admin_headers()
+    b = make_building(h)
+    varsayilan = client.post("/classrooms", json={
+        "building_id": b["id"], "room_code": _u("T"), "capacity": 40,
+    }, headers=h).json()
+    assert varsayilan["room_type"] == "CLASSROOM"      # varsayılan
+
+    amfi = client.post("/classrooms", json={
+        "building_id": b["id"], "room_code": _u("A"), "capacity": 200,
+        "room_type": "AMPHI",
+    }, headers=h).json()
+    assert amfi["room_type"] == "AMPHI"
+
+    # PATCH ile tip değiştirilebilir
+    r = client.patch(f"/classrooms/{varsayilan['id']}", json={"room_type": "LAB"}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["room_type"] == "LAB"
+
+
+def test_room_type_invalid_rejected():
+    """Enum dışı değer Pydantic'te 422 — serbest metin kabul edilmez (K-31)."""
+    h = admin_headers()
+    b = make_building(h)
+    r = client.post("/classrooms", json={
+        "building_id": b["id"], "room_code": _u("X"), "capacity": 30,
+        "room_type": "amfi",        # küçük harf: geçersiz
+    }, headers=h)
+    assert r.status_code == 422

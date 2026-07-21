@@ -143,3 +143,24 @@ def build_message(rule_id, a, b=None):
     if builder is None:
         return f"Çakışma: {rule_id}"
     return builder(a, b)
+
+def _affected_ref(obj):
+    """ConflictResult.affected içindeki tek öğe (kontrat §0)."""
+    if obj.get("type") == "exam":
+        code = obj["course_code"]      # sınav ders düzeyinde (K-16) — şube yok
+    else:
+        code = course_label(obj)       # "CENG2001-1" (kod + şube_no)
+    return {"type": obj["type"], "id": obj["id"], "course_code": code}
+
+
+def build_result(rule_id, severity, a, b=None):
+    """Bir kural vuruşunu tam ConflictResult'a çevirir."""
+    affected = [_affected_ref(a)]
+    if b is not None:                  # tekil kurallar (W6/W7/E5/E6...) tek nesne
+        affected.append(_affected_ref(b))
+    return {
+        "severity": severity,
+        "rule_id": rule_id,
+        "message": build_message(rule_id, a, b),
+        "affected": affected,
+    }

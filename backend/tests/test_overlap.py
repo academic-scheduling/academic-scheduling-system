@@ -1,10 +1,6 @@
-from asyncio import base_events
+
 from datetime import date
 from datetime import time
-from email.mime import base
-from pickle import FROZENSET
-from re import A
-from unittest import result
 from app.conflicts.engine import w1_classroom_conflict
 from app.conflicts.engine import intervals_overlap
 from app.conflicts.slots import slot_range_to_times
@@ -22,7 +18,8 @@ from app.conflicts.engine import e6_exam_out_of_window
 from app.conflicts.engine import x1_exam_weekly_classroom_conflict
 from app.conflicts.engine import x2_exam_weekly_course_conflict
 from app.conflicts.engine import x3_exam_weekly_lecturer_conflict
-from app.conflicts.message import build_message 
+from app.conflicts.message import build_message, build_result
+
 
 def base_session():
     # tüm kurallarda kullanılacak geçerli bir temel oturum üretir
@@ -31,8 +28,23 @@ def base_session():
         "start_slot": 3, "slot_count": 2, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
         "is_elective": False, "expected_students": 40, "capacity": 30, 
-        "course_code": "CENG2001",'section_no': 1
+        "course_code": "CENG2001",'section_no': 1 ,"id": 1, "type": "weekly_entry",
     }
+
+
+def test_build_result_shape():
+    a = base_session(); a["id"] = 10
+    b = base_session(); b["id"] = 11; b["course_code"] = "MATH1001"
+    hit = w1_classroom_conflict(a, b)          # {rule_id, severity}
+    result = build_result(hit["rule_id"], hit["severity"], a, b)
+    assert result["severity"] == "HARD"
+    assert result["rule_id"] == "W1"
+    assert "Derslik çakışması" in result["message"]
+    assert result["affected"] == [
+        {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1"},
+        {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1"},
+    ]
+  
 
 def test_intervals_overlap():
     # Test 09:15 biten x 09:15 başlayan --> TEMİZ
@@ -272,7 +284,7 @@ def base_exam():
         "duration_minutes": 90, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
         "is_elective": False, "expected_students": 40,"course_code": "CENG2001",
-        "section_no": 1,
+        "section_no": 1, "id": 1, "type": "exam",
     }
 
 

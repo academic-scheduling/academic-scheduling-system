@@ -97,6 +97,29 @@ export type Classroom = {
 
 export type SemesterType = "FALL" | "SPRING" | "SUMMER";
 
+export const SEMESTER_LABELS: Record<SemesterType, string> = {
+  FALL: "Güz",
+  SPRING: "Bahar",
+  SUMMER: "Yaz",
+};
+
+export type SessionType = "THEORY" | "PRACTICE" | "LAB";
+export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
+export type EntryStatus = "DRAFT" | "SUBMITTED";
+
+/** Kontrat §7 · GET /weekly-entries elemanı */
+export type WeeklyEntry = {
+  id: number;
+  section: { id: number; section_no: number; course: { id: number; code: string; name: string } };
+  classroom: Classroom | null;
+  day_of_week: number;
+  start_slot: number;
+  slot_count: number;
+  session_type: SessionType;
+  delivery_mode: DeliveryMode;
+  status: EntryStatus;
+};
+
 export type SectionLecturerRef = { id: number; full_name: string };
 
 export type CourseSection = {

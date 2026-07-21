@@ -10,6 +10,7 @@ import PlaceholderPage from "./pages/PlaceholderPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import LecturersPage from "./pages/LecturersPage";
 import ClassroomsPage from "./pages/ClassroomsPage";
+import CoursesPage from "./pages/CoursesPage";
 
 export default function App() {
   return (
@@ -21,7 +22,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/departments" element={<DepartmentsPage />} />
-          <Route path="/courses" element={<PlaceholderPage title="Dersler" />} />
+          <Route path="/courses" element={<CoursesPage />} />
           <Route path="/classrooms" element={<ClassroomsPage />} />
           <Route path="/lecturers" element={<LecturersPage />} />
           <Route path="/weekly" element={<PlaceholderPage title="Haftalık Program" />} />

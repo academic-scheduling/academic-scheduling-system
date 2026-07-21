@@ -90,3 +90,52 @@ def test_isolation_foreign_admin_cannot_see_or_touch():
     # 2. PATCH edememeli — üstelik 403 değil 404 (varlığını bile sızdırmayız)
     r = client.patch(f"/departments/{dep['id']}", json={"name": "Ele Geçti"}, headers=h_foreign)
     assert r.status_code == 404
+
+# --- kalıcı silme (K-27) ---
+
+def test_delete_empty_department():
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Boş", "code": _u("DL")}, headers=h).json()
+    assert client.delete(f"/departments/{dep['id']}", headers=h).status_code == 204
+    assert dep["code"] not in [d["code"] for d in client.get("/departments", headers=h).json()]
+
+
+def test_delete_blocked_by_course():
+    """Ders bağlıysa silinmez ve mesaj sebebi söyler."""
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Derslibölüm", "code": _u("DC")}, headers=h).json()
+    lec = client.post("/lecturers", json={"full_name": f"Dr. Silme {_u('L')}"}, headers=h).json()
+    client.post("/courses", json={
+        "department_id": dep["id"], "year": 1, "semester": "FALL",
+        "code": _u("DD"), "name": "Engelleyen Ders",
+    }, headers=h)
+
+    r = client.delete(f"/departments/{dep['id']}", headers=h)
+    assert r.status_code == 409
+    assert "ders" in r.json()["detail"]
+    assert lec  # hoca kaydı kullanılmadıysa da testin niyeti bozulmasın
+
+
+def test_delete_blocked_by_membership():
+    """Kullanıcı ataması varsa silinmez (ders olmasa bile)."""
+    from tests.helpers import sub_headers
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Atamalı", "code": _u("DM")}, headers=h).json()
+    sub_headers(department_ids=[dep["id"]])          # bölüme bir kullanıcı ata
+
+    r = client.delete(f"/departments/{dep['id']}", headers=h)
+    assert r.status_code == 409
+    assert "kullanıcı ataması" in r.json()["detail"]
+
+
+def test_delete_isolation_foreign_admin():
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Bizim", "code": _u("DI")}, headers=h).json()
+    assert client.delete(f"/departments/{dep['id']}", headers=foreign_admin_headers()).status_code == 404
+
+
+def test_delete_forbidden_for_sub_account():
+    from tests.helpers import sub_headers
+    h = admin_headers()
+    dep = client.post("/departments", json={"name": "Korunan", "code": _u("DF")}, headers=h).json()
+    assert client.delete(f"/departments/{dep['id']}", headers=sub_headers()).status_code == 403

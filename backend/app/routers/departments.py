@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user, require_admin
-from app.models import Department, User
+from app.models import Course, Department, DepartmentMembership, User
 from app.schemas import DepartmentCreate, DepartmentUpdate, DepartmentOut
 from app.audit import log_action
 
@@ -75,3 +75,41 @@ def update_department(
     db.commit()
     db.refresh(dep)
     return dep
+
+@router.delete("/{department_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_department(
+    department_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Yalnız BOŞ bölümü kalıcı siler (K-27).
+
+    departments'a FK ile bağlanan tek şey courses ve department_memberships;
+    ikisi de yoksa CASCADE'in silecek hiçbir şeyi kalmaz. Biri varsa 409 —
+    mesaj neyin engellediğini sayarak söyler ki kullanıcı ne yapacağını bilsin.
+    """
+    dep = db.get(Department, department_id)
+    if dep is None or dep.workgroup_id != admin.workgroup_id:
+        raise HTTPException(status_code=404, detail="Bölüm bulunamadı")
+
+    course_count = db.query(Course).filter(Course.department_id == dep.id).count()
+    member_count = (
+        db.query(DepartmentMembership)
+        .filter(DepartmentMembership.department_id == dep.id)
+        .count()
+    )
+    if course_count or member_count:
+        parcalar = []
+        if course_count:
+            parcalar.append(f"{course_count} ders")
+        if member_count:
+            parcalar.append(f"{member_count} kullanıcı ataması")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu bölüm silinemez: {' ve '.join(parcalar)} bağlı. "
+                   "Önce bunları kaldırın.",
+        )
+
+    log_action(db, admin, "DELETE", "department", dep.id)
+    db.delete(dep)
+    db.commit()

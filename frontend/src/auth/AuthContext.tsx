@@ -60,3 +60,29 @@ export function useAuth(): AuthState {
   if (!ctx) throw new Error("useAuth yalnızca <AuthProvider> içinde kullanılabilir");
   return ctx;
 }
+
+/** Bir bölümde YAZMA yetkisi var mı? (K-25 + K-26 iki boyutu tek yerde)
+ *
+ *  Ekranlar bunu çağırır: `canWriteIn(user, "can_manage_courses", dep.id)`.
+ *  Kural burada tek yerde durur — 9 ekrana dağılırsa biri yanlış uygular.
+ *  DİKKAT: bu yalnız GÖRÜNÜM kararıdır (butonu göster/gizle). Otorite
+ *  sunucudadır; UI'da gizlemek güvenlik değildir (brief §10.2).
+ */
+export function canWriteIn(
+  user: User | null,
+  capability: keyof Pick<
+    User,
+    | "can_manage_courses"
+    | "can_manage_weekly"
+    | "can_manage_exams"
+    | "can_manage_classrooms"
+    | "can_manage_lecturers"
+  >,
+  departmentId?: number,
+): boolean {
+  if (!user) return false;
+  if (!user[capability]) return false;              // 1. boyut: yetenek
+  if (departmentId === undefined) return true;      // paylaşımlı kaynak (derslik, hoca)
+  if (user.role === "ADMIN") return true;           // admin her bölümde yetkili
+  return user.department_ids.includes(departmentId); // 2. boyut: üyelik
+}

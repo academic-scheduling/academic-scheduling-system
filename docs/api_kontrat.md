@@ -108,15 +108,31 @@ Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 
 ### GET /departments → `[ { "id", "name", "code", "active" } ]`
 ### POST /departments — İstek: `{ "name": "...", "code": "CENG" }` → 201
-### PATCH /departments/{id} — ad/kod düzeltme + pasife alma: `{ "active": false }` (silme yok — K-02 soft delete)
+### PATCH /departments/{id} — ad/kod düzeltme + pasife alma: `{ "active": false }`
+### DELETE /departments/{id}   ← K-27 (yalnız ADMIN)
+Yalnız **boş** bölüm silinir: bağlı ders veya kullanıcı ataması olmamalı.
+Cevap 204: silindi.
+Hata 409: `{ "detail": "Bu bölüm silinemez: 3 ders ve 2 kullanıcı ataması bağlı. Önce bunları kaldırın." }`
+Hata 404: bölüm yok veya başka workgroup'a ait.
+Not: `PATCH {active:false}` (soft delete) API'de durmaya devam eder ama
+bölüm ekranı artık kullanmaz (K-27).
 
 ---
 
 ## 4. Öğretim Üyeleri (K-08: yönetilen entity · yazma: `can_manage_lecturers`)
 
-### GET /lecturers?search=ay
-Autocomplete için. Cevap: `[ { "id": 3, "full_name": "Doç. Dr. Ayşe Kaya", "is_external": false } ]`
+### GET /lecturers?search=ay&include_inactive=false
+Cevap: `[ { "id": 3, "full_name": "Doç. Dr. Ayşe Kaya", "normalized_name": "ayşe kaya",
+  "is_external": false, "active": true } ]`
 `search` normalized_name üzerinde arar.
+- `normalized_name` (unvansız, küçük harf) istemciye de dönülür: listeyi
+  **alfabetik sıralamak** için gerekir. `full_name` unvanla başladığından ona
+  göre sıralamak "Doç. < Öğr. < Prof." gibi anlamsız bir düzen üretir (K-28).
+  Normalizasyon kuralının tek kaynağı backend'dir; istemci onu tekrar yazmaz.
+- **Varsayılan yalnız aktifleri döner** — ders formundaki autocomplete bu davranışa
+  dayanır (pasife alınan hoca yeni derse atanamasın).
+- `include_inactive=true`: pasifler de gelir. Yönetim ekranı bunu kullanır —
+  pasif hocayı görüp geri aktifleştirebilmek için (K-28).
 
 ### POST /lecturers (ADMIN veya `can_manage_lecturers` — 40/a elle ekleme)
 İstek: `{ "full_name": "...", "email": null, "is_external": true }` → 201
@@ -128,6 +144,16 @@ Ad düzeltme / pasife alma: `{ "full_name": "...", "email": "...", "is_external"
 Hata 409: yeni ad başka bir hocanın normalized_name'iyle çakışıyor.
 Not: pasife alınan hoca (`active=false`) autocomplete'te (`GET /lecturers?search=`) görünmez.
 
+### DELETE /lecturers/{id}   ← K-28 (ADMIN veya `can_manage_lecturers`)
+Yalnız **hiçbir yere bağlı olmayan** öğretim üyesi silinir.
+Cevap 204: silindi.
+Hata 409: `{ "detail": "Bu öğretim üyesi silinemez: 2 şube ve 1 sınav bağlı. Önce bu bağlantıları kaldırın." }`
+Hata 404: kayıt yok veya başka workgroup'a ait.
+Not: Şema zaten korur (`course_sections.lecturer_id` ve `exams.lecturer_id`
+  → **ondelete=RESTRICT**); uç bu kontrolü önden yapıp insan-okur mesaj üretir.
+Not: Silme ile pasife alma FARKLI işlerdir — ders vermiş ama ayrılan hoca
+  silinemez (RESTRICT), `active=false` ile autocomplete'ten çıkarılır (K-28).
+
 Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 çalıştırılan tek seferlik script'tir (`scripts/import_lecturers.py`).
 
@@ -135,15 +161,28 @@ Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
 
 ## 5. Binalar ve Derslikler (yazma: ADMIN veya `can_manage_classrooms`)
 
-### GET /buildings → `[ { "id", "name", "active" } ]`   ← K-18
-### POST /buildings — İstek: `{ "name": "Mühendislik Fakültesi" }` → 201 · Hata 409: ad zaten var
-### PATCH /buildings/{id} — ad düzeltme / pasife alma
+### GET /buildings → `[ { "id", "name", "is_external", "active" } ]`   ← K-18, K-30
+### POST /buildings — İstek: `{ "name": "Mühendislik Fakültesi", "is_external": false }` → 201 · Hata 409: ad zaten var
+  ← `is_external` (K-30): fakülte dışı bina etiketi, opsiyonel, varsayılan false
+### PATCH /buildings/{id} — ad düzeltme / fakülte dışı işaretleme / pasife alma
+### DELETE /buildings/{id}   ← K-29
+Yalnız **hiç dersliği olmayan** bina silinir.
+Cevap 204 · Hata 409: `{ "detail": "Bu bina silinemez: 3 derslik bağlı. Önce onları kaldırın." }`
 
-### GET /classrooms → `[ { "id", "building": { "id", "name" }, "room_code", "capacity", "exam_capacity", "active" } ]`
-### POST /classrooms — İstek: `{ "building_id": 1, "room_code": "B-201", "capacity": 90, "exam_capacity": 40 | null }` → 201
+### GET /classrooms → `[ { "id", "building": { "id", "name", "is_external" }, "room_code",
+  "room_type": "CLASSROOM" | "AMPHI" | "LAB", "capacity", "exam_capacity", "active" } ]`
+### POST /classrooms — İstek: `{ "building_id": 1, "room_code": "B-201", "room_type": "AMPHI",
+  "capacity": 90, "exam_capacity": 40 | null }` → 201
+  ← `room_type` (K-31): opsiyonel, varsayılan `CLASSROOM`. Enum dışı değer → 422.
+    Bilgi/filtre amaçlı; çakışma motoru bu alanı OKUMAZ.
   ← capacity zorunlu (K-07); exam_capacity OPSİYONEL (K-21) — girilirse <= capacity,
     girilmezse NULL kalır; sınav yeri seçiminde NULL'lu derslik WARNING üretir
-### PATCH /classrooms/{id} — pasife alma dahil: `{ "active": false }` (silme yok — K-02 soft delete)
+### PATCH /classrooms/{id} — pasife alma dahil: `{ "active": false }`
+### DELETE /classrooms/{id}   ← K-29
+Yalnız **hiçbir yere bağlı olmayan** derslik silinir: haftalık giriş, sınav ve
+şubenin varsayılan dersliği olarak kullanılmamış olmalı.
+Cevap 204 · Hata 409: `{ "detail": "Bu derslik silinemez: 2 haftalık giriş ve 1 sınav bağlı. Önce bu bağlantıları kaldırın." }`
+Not: Kullanılmış derslik silinmez, `PATCH {active:false}` ile pasife alınır (K-29).
 
 ---
 
@@ -171,6 +210,11 @@ Cevap (ders + şubeleri iç içe):
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
+### DELETE /courses/{id}   ← K-32
+Yalnız **hiç şubesi ve hiç sınavı olmayan** ders silinir.
+Cevap 204 · Hata 409: `{ "detail": "Bu ders silinemez: 2 şube ve 1 sınav bağlı. Önce bunları kaldırın." }`
+Not: Sınav K-16 gereği ders düzeyindedir; şubesiz bir dersin sınavı olabilir,
+  o yüzden iki koşul da aranır. Kullanımdaki ders `PATCH {active:false}` ile pasife alınır.
 
 ### POST /courses/{id}/sections   (şube)
 İstek: `{ "section_no": 2, "lecturer_id": 3, "expected_students": 45,

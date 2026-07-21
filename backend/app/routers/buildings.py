@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user, require_classroom_manager
-from app.models import Building, User
+from app.models import Building, Classroom, User
 from app.schemas import BuildingCreate, BuildingUpdate, BuildingOut
 from app.audit import log_action
 
@@ -35,7 +35,11 @@ def create_building(
     if clash:
         raise HTTPException(status_code=409, detail="Bu bina adı zaten kayıtlı")
 
-    bld = Building(workgroup_id=manager.workgroup_id, name=payload.name)
+    bld = Building(
+        workgroup_id=manager.workgroup_id,
+        name=payload.name,
+        is_external=payload.is_external,       # K-30
+    )
     db.add(bld)
     db.flush()
     log_action(db, manager, "CREATE", "building", bld.id)
@@ -71,3 +75,30 @@ def update_building(
     db.commit()
     db.refresh(bld)
     return bld
+
+@router.delete("/{building_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_building(
+    building_id: int,
+    db: Session = Depends(get_db),
+    manager: User = Depends(require_classroom_manager),
+):
+    """Yalniz hic dersligi olmayan binayi siler (K-29).
+
+    classrooms.building_id RESTRICT oldugu icin DB zaten engelliyor; bu kontrol
+    ham DB hatasi yerine sayili bir mesaj uretmek icin.
+    """
+    bld = db.get(Building, building_id)
+    if bld is None or bld.workgroup_id != manager.workgroup_id:
+        raise HTTPException(status_code=404, detail="Bina bulunamadı")
+
+    room_count = db.query(Classroom).filter(Classroom.building_id == bld.id).count()
+    if room_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu bina silinemez: {room_count} derslik bağlı. "
+                   "Önce onları kaldırın.",
+        )
+
+    log_action(db, manager, "DELETE", "building", bld.id)
+    db.delete(bld)
+    db.commit()

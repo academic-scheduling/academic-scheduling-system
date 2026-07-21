@@ -105,6 +105,18 @@ class SessionType(str, enum.Enum):
     LAB = "LAB"
 
 
+class RoomType(str, enum.Enum):
+    """room_type — dersligin fiziksel turu (K-31).
+
+    Bugun yalniz bilgi/filtre amacli; cakisma motoru bu alani OKUMAZ.
+    (Ileride "LAB oturumu LAB olmayan derslikte" uyarisi icin veri hazir.)
+    """
+
+    CLASSROOM = "CLASSROOM"
+    AMPHI = "AMPHI"
+    LAB = "LAB"
+
+
 class DeliveryMode(str, enum.Enum):
     """delivery_mode — girisin islenis bicimi (K-19).
 
@@ -339,6 +351,9 @@ class Building(Base):
         BigInteger, ForeignKey("workgroups.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(String(100))
+    # K-30: fakulte disi bina etiketi. Yalniz gorsel/filtre amacli; cakisma
+    # motoru acisindan oda odadir, kural degistirmez.
+    is_external: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="buildings")
@@ -373,7 +388,11 @@ class Classroom(Base):
         BigInteger, ForeignKey("buildings.id", ondelete="RESTRICT")
     )
     room_code: Mapped[str] = mapped_column(String(30))
-    capacity: Mapped[int] = mapped_column(Integer)    
+    # K-31: fiziksel tur. Bilgi/filtre amacli; motor okumaz.
+    room_type: Mapped[RoomType] = mapped_column(
+        Enum(RoomType, name="room_type"), server_default=text("'CLASSROOM'")
+    )
+    capacity: Mapped[int] = mapped_column(Integer)
     exam_capacity: Mapped[int | None] = mapped_column(Integer)
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 

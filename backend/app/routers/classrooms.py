@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_db, get_current_user, require_classroom_manager
-from app.models import Building, Classroom, User
+from app.models import (
+    Building, Classroom, CourseSection, User, WeeklyScheduleEntry, exam_classrooms,
+)
 from app.schemas import ClassroomCreate, ClassroomUpdate, ClassroomOut
 from app.audit import log_action
 
@@ -105,3 +107,48 @@ def update_classroom(
     db.commit()
     db.refresh(cls)
     return cls
+
+@router.delete("/{classroom_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_classroom(
+    classroom_id: int,
+    db: Session = Depends(get_db),
+    manager: User = Depends(require_classroom_manager),
+):
+    """Yalniz hicbir yere bagli olmayan dersligi siler (K-29).
+
+    Sema zaten korur: weekly_schedule_entries ve exam_classrooms FK'leri
+    RESTRICT. default_classroom_id ise SET NULL — teknik olarak silme yalniz
+    subenin tercihini temizler ama sessiz yan etki olmasin diye o da engel
+    sayilir. Kullanilmis derslik silinmez, PATCH {active:false} ile pasife alinir.
+    """
+    cls = db.get(Classroom, classroom_id)
+    if cls is None or cls.workgroup_id != manager.workgroup_id:
+        raise HTTPException(status_code=404, detail="Derslik bulunamadı")
+
+    weekly_count = db.query(WeeklyScheduleEntry).filter(
+        WeeklyScheduleEntry.classroom_id == cls.id
+    ).count()
+    exam_count = db.query(exam_classrooms).filter(
+        exam_classrooms.c.classroom_id == cls.id
+    ).count()
+    default_count = db.query(CourseSection).filter(
+        CourseSection.default_classroom_id == cls.id
+    ).count()
+
+    if weekly_count or exam_count or default_count:
+        parcalar = []
+        if weekly_count:
+            parcalar.append(f"{weekly_count} haftalık giriş")
+        if exam_count:
+            parcalar.append(f"{exam_count} sınav")
+        if default_count:
+            parcalar.append(f"{default_count} şubenin varsayılan dersliği")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu derslik silinemez: {' ve '.join(parcalar)} bağlı. "
+                   "Önce bu bağlantıları kaldırın.",
+        )
+
+    log_action(db, manager, "DELETE", "classroom", cls.id)
+    db.delete(cls)
+    db.commit()

@@ -186,11 +186,22 @@ def e5_exam_capacity(a):
     # tekil kural: tek sınavın derslik kapasitesini kontrol eder
     # atlama: online ders (derslik yok) → karşılaştıracak kapasite yok
     if not a["rooms"]:
-        return None
+         return None
+    if any(room["exam_capacity"] is None for room in a["rooms"]):
+        return None      # NULL'lu derslik varken E5 hesaplanmaz (once E5a)  
     # beklenen öğrenci sayısı toplam kapasiteyi aşıyorsa uyarı
-    total_capacity = sum(room["capacity"] for room in a["rooms"])
+    total_capacity = sum(room["exam_capacity"] for room in a["rooms"])   # capacity -> exam_capacity
     if a["expected_students"] > total_capacity:
         return {"rule_id": "E5", "severity": "WARNING"}
+    return None
+
+
+def e5a_missing_exam_capacity(a):
+    """K-21: secili dersliklerden birinin exam_capacity'si NULL -> WARNING."""
+    if not a["rooms"]:
+        return None
+    if any(room["exam_capacity"] is None for room in a["rooms"]):
+        return {"rule_id": "E5a", "severity": "WARNING"}
     return None
 
 
@@ -198,6 +209,21 @@ def e6_exam_out_of_window(a):
     # hafta sonu sınavları  → HARD
     if a["exam_date"].weekday() >= 5:
         return {"rule_id": "E6", "severity": "HARD"}
+      
+
+def e7_excess_capacity(a, margin=0):
+    """K-17: en kucuk exam_capacity'li derslik cikarilinca kalan hala
+    yetiyorsa israf -> WARNING. margin: hoca onayi bekleyen esik (varsayilan 0)."""
+    rooms = a["rooms"]
+    if len(rooms) <= 1:                                        # cikarilacak fazlalik yok
+        return None
+    if any(room["exam_capacity"] is None for room in rooms):  # NULL varsa once E5a
+        return None
+    total = sum(room["exam_capacity"] for room in rooms)
+    smallest = min(room["exam_capacity"] for room in rooms)
+    if total - smallest >= a["expected_students"] + margin:
+        return {"rule_id": "E7", "severity": "WARNING"}
+    return None
 
 
 def exam_weekly_overlap(exam, weekly):

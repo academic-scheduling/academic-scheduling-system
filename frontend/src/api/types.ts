@@ -164,3 +164,29 @@ export type DashboardSummary = {
   unresolved_hard: number;
   unresolved_warnings: number;
 };
+
+/** Kontrat §0 · ConflictResult — motorun ürettiği, UI'ın çizdiği ortak nesne. */
+export type ConflictSeverity = "HARD" | "WARNING";
+
+export type ConflictAffectedRef = {
+  type: "weekly_entry" | "exam";
+  id: number;
+  course_code: string | null;
+};
+
+export type ConflictResult = {
+  severity: ConflictSeverity;
+  rule_id: string;                  // "W1".."W8" | "E1".."E7" | "X1".."X3"
+  message: string;
+  affected: ConflictAffectedRef[];
+};
+
+/** Kontrat §9 · GET /conflicts — tam tarama, iki kovaya ayrılmış.
+ *
+ *  Ayrımı sunucu yapar (K-05): hard submit'i engeller, warning engellemez.
+ *  Sonuç canlı hesaplanır, saklanmaz — çakışmanın zaman damgası yoktur.
+ */
+export type ConflictScan = {
+  hard: ConflictResult[];
+  warnings: ConflictResult[];
+};

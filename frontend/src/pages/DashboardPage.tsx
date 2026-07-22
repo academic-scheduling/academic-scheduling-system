@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Group, Loader, Paper, SimpleGrid, Text, Title } from "@mantine/core";
+import { Link } from "react-router-dom";
+import {
+  Alert, Anchor, Badge, Group, Loader, Paper, SimpleGrid, Table, Text, Title,
+} from "@mantine/core";
 import { api, ApiError } from "../api/client";
-import type { DashboardSummary } from "../api/types";
+import type { ConflictResult, ConflictScan, DashboardSummary } from "../api/types";
+
+/** Dashboard'da gösterilecek en fazla çakışma satırı.
+ *
+ *  Tümü listelenseydi altındaki kullanıcı ve log blokları sayfanın çok
+ *  aşağısına düşerdi. Kesilen kısım için "Tümünü gör" bağlantısı var.
+ */
+const MAX_ROWS = 5;
 
 /** Tek sayaç kartı: büyük sayı üstte, ne olduğu altında.
  *
@@ -22,18 +32,57 @@ function StatCard({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/** Çakışma satırı: ağırlık rozeti + kural kimliği + motorun açıklaması.
+ *
+ *  Mesajı UI kurmuyor, motor kuruyor (kontrat §0). Brief §3.6 açık: çakışma
+ *  "genel hata mesajı" değil, ne olduğunu anlatan bir cümleyle bildirilmeli.
+ */
+function ConflictRow({ conflict }: { conflict: ConflictResult }) {
+  const hard = conflict.severity === "HARD";
+  return (
+    <Table.Tr>
+      <Table.Td w={90}>
+        {/* Renkler özet kartıyla aynı: engel kırmızı, uyarı turuncu.
+            Metin de yazılır — rengi ayırt edemeyen kullanıcı için (brief §6.2). */}
+        <Badge color={hard ? "red" : "orange"} variant="light" size="sm">
+          {hard ? "ENGEL" : "UYARI"}
+        </Badge>
+      </Table.Td>
+      <Table.Td w={60}>
+        <Text size="sm" c="dimmed">{conflict.rule_id}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">{conflict.message}</Text>
+      </Table.Td>
+    </Table.Tr>
+  );
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [scan, setScan] = useState<ConflictScan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<DashboardSummary>("/dashboard/summary")
-      .then(setData)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Özet yüklenemedi"));
+    // İki uç paralel: ikisi de sunucuda aynı taramadan (scan_workgroup)
+    // besleniyor, o yüzden karttaki sayı ile tablodaki satır sayısı ayrışamaz.
+    Promise.all([
+      api.get<DashboardSummary>("/dashboard/summary"),
+      api.get<ConflictScan>("/conflicts"),
+    ])
+      .then(([ozet, tarama]) => { setData(ozet); setScan(tarama); })
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Dashboard yüklenemedi"));
   }, []);
 
   if (error) return <Alert color="red" mt="md">{error}</Alert>;
-  if (!data) return <Loader mt="xl" />;
+  if (!data || !scan) return <Loader mt="xl" />;
+
+  // Önce engeller, sonra uyarılar: kullanıcının ilk çözmesi gereken satır
+  // üstte dursun. Çakışmanın zaman damgası yok (canlı hesaplanıyor, kontrat
+  // §9), o yüzden "en yeni" diye bir sıralama mümkün değil — ağırlık tek
+  // anlamlı sıralama ölçütü.
+  const tumu = [...scan.hard, ...scan.warnings];
+  const gosterilen = tumu.slice(0, MAX_ROWS);
 
   return (
     <>
@@ -80,8 +129,34 @@ export default function DashboardPage() {
         />
       </SimpleGrid>
 
+      <Group justify="space-between" align="baseline" mt="xl" mb="sm">
+        <Title order={4}>Çakışmalar</Title>
+        {tumu.length > MAX_ROWS && (
+          <Anchor component={Link} to="/conflicts" size="sm">
+            Tümünü gör ({tumu.length})
+          </Anchor>
+        )}
+      </Group>
+
+      <Paper withBorder radius="md">
+        {gosterilen.length === 0 ? (
+          <Text c="dimmed" size="sm" p="md">Çakışma bulunamadı.</Text>
+        ) : (
+          <Table verticalSpacing="xs" highlightOnHover>
+            <Table.Tbody>
+              {gosterilen.map((c, i) => (
+                // Çakışmanın kalıcı bir id'si yok — canlı hesaplanıyor, bir
+                // tabloda satırı yok. Sıra indeksi burada meşru bir anahtar:
+                // liste her yüklemede baştan kuruluyor, araya ekleme olmuyor.
+                <ConflictRow key={`${c.rule_id}-${i}`} conflict={c} />
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
+
       <Alert mt="lg" color="gray">
-        Çakışma tablosu, kullanıcı yönetimi ve işlem kayıtları bu bloğun altına gelecek.
+        Kullanıcı yönetimi ve işlem kayıtları bu bloğun altına gelecek.
       </Alert>
     </>
   );

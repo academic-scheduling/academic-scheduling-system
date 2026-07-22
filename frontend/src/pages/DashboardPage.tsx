@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Container, Group, Loader, Paper, SimpleGrid, Text, Title } from "@mantine/core";
+import { Alert, Group, Loader, Paper, SimpleGrid, Text, Title } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import type { DashboardSummary } from "../api/types";
 
@@ -36,22 +36,22 @@ export default function DashboardPage() {
   if (!data) return <Loader mt="xl" />;
 
   return (
-    // Container sayfayı sınırlar ve ortalar: geniş ekranda kartlar tüm
-    // genişliğe yayılmasın. Alttaki bloklar (çakışma tablosu, kullanıcılar,
-    // işlem kayıtları) da bu Container'ın içine gelecek — hepsi aynı hizada
-    // dursun, blok başına ayrı genişlik olmasın.
-    //
-    // 1000px tesadüfi değil: dört sütunda kart başına ~235px düşüyor ve
-    // "Çakışma (engel / uyarı)" etiketi tek satırda ancak bu genişlikte
-    // kalıyor. Daha dar bir sınır etiketleri iki satıra kırıp kart
-    // yüksekliklerini eşitsizleştiriyor.
-    <Container size={1000} px={0}>
+    <>
       <Title order={3} mb="md">Dashboard</Title>
 
       {/* 4×2 grid: üst sıra "ne var" (kaynaklar), alt sıra "kim ve ne oluyor".
           Dar ekranda 2 sütuna düşer — kart içeriği tek satır olduğu için
-          daha fazla daraltmaya gerek yok. */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+          daha fazla daraltmaya gerek yok.
+
+          Genişlik sınırı YALNIZ bu grid'e: geniş ekranda kartlar sayfaya
+          yayılmasın diye ortalanıyor (mx="auto"). Başlık ve alttaki bloklar
+          sayfanın kendi hizasında kalır.
+
+          1000px tesadüfi değil: dört sütunda kart başına ~238px düşüyor ve
+          "Çakışma (engel / uyarı)" etiketi tek satırda ancak bu genişlikte
+          kalıyor. Daha dar bir sınır etiketleri iki satıra kırıp kart
+          yüksekliklerini eşitsizleştiriyor. */}
+      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" maw={1000} mx="auto">
         <StatCard label="Bölümler" value={data.departments} />
         <StatCard label="Derslikler" value={data.classrooms} />
         <StatCard label="Öğretim Üyeleri" value={data.lecturers} />
@@ -83,6 +83,6 @@ export default function DashboardPage() {
       <Alert mt="lg" color="gray">
         Çakışma tablosu, kullanıcı yönetimi ve işlem kayıtları bu bloğun altına gelecek.
       </Alert>
-    </Container>
+    </>
   );
 }

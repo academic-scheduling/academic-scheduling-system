@@ -2,29 +2,41 @@ from app.conflicts.engine import (
     w1_classroom_conflict, w2_lecturer_conflict,
     w5_duplicate_session,
     w6_out_of_window, w7_capacity,
-    courses_conflict,
+    courses_conflict, is_async,          # is_async eklendi
 )
 from app.conflicts.message import build_result
 
 
 def scan_weekly(entries):
     results = []
-    # 1) TEKIL kurallar: her giris kendi basina (W6 pencere, W7 kapasite)
+
+    # W6 (pencere): asenkron DAHIL tum girislere uygulanir (K-19 istisnasi)
     for e in entries:
-        for rule in (w6_out_of_window, w7_capacity):
-            hit = rule(e)
-            if hit:
-                results.append(build_result(hit["rule_id"], hit["severity"], e))
-    # 2) CIFTLI kurallar: her benzersiz (a, b) cifti (i<j)
-    for i in range(len(entries)):
-        for j in range(i + 1, len(entries)):
-            a, b = entries[i], entries[j]
-            for rule in (w1_classroom_conflict, w2_lecturer_conflict,
-                         w5_duplicate_session):
+        hit = w6_out_of_window(e)
+        if hit:
+            results.append(build_result(hit["rule_id"], hit["severity"], e))
+
+    # ON-ELEME (K-19): asenkron girisler diger karsilastirmalara girmez
+    active = [e for e in entries if not is_async(e)]
+
+    # W7 (kapasite) tekil: yalniz aktif girisler
+    for e in active:
+        hit = w7_capacity(e)
+        if hit:
+            results.append(build_result(hit["rule_id"], hit["severity"], e))
+
+    # Ciftli kurallar (W1, W2, W5): yalniz aktif girisler
+    for i in range(len(active)):
+        for j in range(i + 1, len(active)):
+            a, b = active[i], active[j]
+            for rule in (w1_classroom_conflict, w2_lecturer_conflict, w5_duplicate_session):
                 hit = rule(a, b)
                 if hit:
                     results.append(build_result(hit["rule_id"], hit["severity"], a, b))
-    results += scan_cohort(entries)
+
+    # Cohort (W3/W4): yalniz aktif girisler
+    results += scan_cohort(active)
+
     return results
 
 

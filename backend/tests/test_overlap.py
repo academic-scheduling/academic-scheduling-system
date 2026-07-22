@@ -4,8 +4,7 @@ from datetime import time
 from app.conflicts.engine import w1_classroom_conflict
 from app.conflicts.engine import intervals_overlap
 from app.conflicts.slots import slot_range_to_times
-from app.conflicts.engine import w2_lecturer_conflict
-from app.conflicts.engine import w3_w4_cohort_conflict   
+from app.conflicts.engine import w2_lecturer_conflict 
 from app.conflicts.engine import w5_duplicate_session
 from app.conflicts.engine import w6_out_of_window
 from app.conflicts.engine import w7_capacity
@@ -19,6 +18,10 @@ from app.conflicts.engine import x1_exam_weekly_classroom_conflict
 from app.conflicts.engine import x2_exam_weekly_course_conflict
 from app.conflicts.engine import x3_exam_weekly_lecturer_conflict
 from app.conflicts.message import build_message, build_result
+from app.conflicts.orchestrator import scan_weekly
+from app.conflicts.engine import sections_conflict
+from app.conflicts.engine import courses_conflict
+from app.conflicts.orchestrator import scan_cohort
 
 
 def base_session():
@@ -28,7 +31,8 @@ def base_session():
         "start_slot": 3, "slot_count": 2, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
         "is_elective": False, "expected_students": 40, "capacity": 30, 
-        "course_code": "CENG2001",'section_no': 1 ,"id": 1, "type": "weekly_entry",
+        "course_code": "CENG2001",'section_no': 1 ,"id": 1, 
+        "type": "weekly_entry", "section_id": 100,
     }
 
 
@@ -145,69 +149,40 @@ def test_w2_adjacent_slots_no_conflict():      # uç uca slot → None
     assert result is None
 
 
-def test_w3_both_mandatory_hard():
-    # aynı cohort, ikisi de zorunlu, kesişen slot → HARD (W3)
-    a = base_session()
-    b = base_session()
-    b["course_id"] = 2          # farklı ders (yoksa atlama devreye girer)
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is not None
-    assert result["severity"] == "HARD"
-    assert result["rule_id"] == "W3"
+def test_sections_conflict_overlap():
+    # iki subenin birer oturumu ayni gun+slotta -> True
+    assert sections_conflict([base_session()], [base_session()]) is True
 
 
-def test_w4_one_elective_warning():
-    # aynı cohort ama biri seçmeli → WARNING (W4)
-    a = base_session()
-    b = base_session()
-    b["course_id"] = 2
-    b["is_elective"] = True     
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is not None
-    assert result["severity"] == "WARNING"
-    assert result["rule_id"] == "W4"
+def test_sections_conflict_no_overlap():
+    b = base_session(); b["day_of_week"] = 3        # farkli gun
+    assert sections_conflict([base_session()], [b]) is False
 
 
-def test_cohort_different_cohort_no_conflict():
-    # farklı yıl → aynı cohort değil → None
-    a = base_session()
-    b = base_session()
-    b["course_id"] = 2
-    b["year"] = 3              
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is None   
-    
-
-def test_cohort_same_course_skipped():
-    # aynı course_id → atlama (W5'in işi) → None
-    a = base_session()
-    b = base_session()          # course_id ikisinde de 1 → aynı ders
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is None
-
-
-def test_cohort_adjacent_slots_no_conflict():
-    # aynı cohort ama slotlar uç uca → None
-    a = base_session()
-    b = base_session()
-    b["course_id"] = 2
-    b["start_slot"] = 5
-    b["slot_count"] = 1         # a: 3-4, b: 5 → değmiyor
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is None
+def test_sections_conflict_multi_session():
+    # A'nin iki oturumu var; sadece ikincisi B ile kesisiyor -> yine True
+    a1 = base_session(); a1["day_of_week"] = 1
+    a2 = base_session(); a2["day_of_week"] = 2
+    b  = base_session(); b["day_of_week"]  = 2       # a2 ile kesisir
+    assert sections_conflict([a1, a2], [b]) is True   
 
 
 def test_w5_duplicate_session():
-    # aynı ders, aynı gün, kesişen slot → WARNING (W5)
+    # aynı şube (aynı section_id), aynı gün, kesişen slot → WARNING (W5)
     a = base_session()
-    b = base_session()          # course_id ikisinde de 1 → aynı ders
-    result = w3_w4_cohort_conflict(a, b)
-    assert result is None        # W3/W4 atladı
+    b = base_session()          # section_id ikisinde de 100 → aynı şube
     result = w5_duplicate_session(a, b)
     assert result is not None
     assert result["rule_id"] == "W5"
     assert result["severity"] == "WARNING"
 
+  
+def test_scan_cohort_same_course_no_conflict():
+    # ayni ders (course_id=1) cohort'ta tek basina -> ders cifti yok -> W3/W4 YOK
+    a = base_session(); a["id"] = 1; a["course_id"] = 1; a["section_id"] = 100
+    b = base_session(); b["id"] = 2; b["course_id"] = 1; b["section_id"] = 101
+    assert scan_cohort([a, b]) == []
+  
 
 def test_w5_different_course_no_conflict():
     # farklı ders → çakışma yok
@@ -217,6 +192,12 @@ def test_w5_different_course_no_conflict():
     result = w5_duplicate_session(a, b)
     assert result is None
 
+def test_w5_same_course_different_section_no_conflict():
+    # ayni ders (course_id=1) ama FARKLI sube -> subeler alternatif -> W5 YOK
+    a = base_session()
+    b = base_session(); b["section_id"] = 200
+    assert w5_duplicate_session(a, b) is None
+
 
 def test_w5_touching_slots_no_conflict():
     # aynı ders ama slotlar uç uca → çakışma yok
@@ -225,6 +206,14 @@ def test_w5_touching_slots_no_conflict():
     b["start_slot"] = 5         # a: 3-4, b: 5 → değmiyor
     result = w5_duplicate_session(a, b)
     assert result is None
+
+
+def test_w5_different_course_no_conflict():
+    a = base_session()
+    b = base_session()
+    b["course_id"] = 2
+    b["section_id"] = 200     # farkli ders -> farkli sube (yeni satir)
+    assert w5_duplicate_session(a, b) is None
 
 
 def test_w6_valid_session():
@@ -272,6 +261,37 @@ def test_w7_null_classroom_skipped():
     a = base_session()
     a["classroom_id"] = None          # öğrenci sayısı kapasiteyi aşsa bile atlanır
     assert w7_capacity(a) is None
+
+
+def test_courses_conflict_all_pairs_overlap():
+    # A tek sube (Pzt), B tek sube (Pzt) -> tek cift, cakisik -> cakisma VAR
+    a = [[base_session()]]
+    b = [[base_session()]]
+    assert courses_conflict(a, b) is True
+
+def test_courses_conflict_compatible_combo_exists():
+    # A: sube1 Pzt, sube2 Sali ; B: sube1 Pzt, sube2 Sali
+    # (A1,B2) uyumlu -> cakisma YOK -> False
+    a1 = base_session(); a1["day_of_week"] = 1
+    a2 = base_session(); a2["day_of_week"] = 2
+    b1 = base_session(); b1["day_of_week"] = 1
+    b2 = base_session(); b2["day_of_week"] = 2
+    assert courses_conflict([[a1], [a2]], [[b1], [b2]]) is False
+
+def test_courses_conflict_single_section_no_overlap():
+    # tek subeli iki ders, farkli gun -> uyumlu -> False
+    b = base_session(); b["day_of_week"] = 3
+    assert courses_conflict([[base_session()]], [[b]]) is False
+
+
+def test_scan_weekly_cohort_compatible_combo():
+    # section-aware: uyumlu kombinasyon varsa scan_weekly de W3/W4 URETMEZ
+    a1 = base_session(); a1["id"]=1; a1["course_id"]=1; a1["section_id"]=100; a1["day_of_week"]=1
+    a2 = base_session(); a2["id"]=2; a2["course_id"]=1; a2["section_id"]=101; a2["day_of_week"]=2
+    b1 = base_session(); b1["id"]=3; b1["course_id"]=2; b1["section_id"]=200; b1["day_of_week"]=1
+    b2 = base_session(); b2["id"]=4; b2["course_id"]=2; b2["section_id"]=201; b2["day_of_week"]=2
+    results = scan_weekly([a1, a2, b1, b2])
+    assert not any(r["rule_id"] in ("W3", "W4") for r in results)  
 
 #-----------------------------------------exam rules tests-----------------------------------------
 
@@ -705,3 +725,54 @@ def test_message_x3():
     exam = base_exam()
     weekly = base_session()
     assert "hoca" in build_message("X3", exam, weekly).lower()    
+
+# ----------------------------------------- orchestrator testleri ---------------------------------
+
+def test_scan_weekly_detects_w1():
+    a = base_session(); a["id"] = 1
+    b = base_session(); b["id"] = 2
+    results = scan_weekly([a, b])
+    rule_ids = [r["rule_id"] for r in results]
+    assert "W1" in rule_ids                       # ayni derslik + gun + slot
+    w1 = next(r for r in results if r["rule_id"] == "W1")
+    assert {ref["id"] for ref in w1["affected"]} == {1, 2}   # affected iki girisi de gosteriyor
+
+
+def test_scan_weekly_empty():
+    assert scan_weekly([]) == []
+
+
+def test_scan_weekly_no_conflict():
+    a = base_session(); a["id"] = 1; a["expected_students"] = 20
+    b = base_session(); b["id"] = 2; b["expected_students"] = 20
+    b["day_of_week"] = 3                           # farkli gun -> zaman cakismasi yok
+    assert scan_weekly([a, b]) == []
+
+
+def test_scan_cohort_w3_both_mandatory():
+    a = base_session(); a["id"] = 1; a["course_id"] = 1; a["section_id"] = 100
+    b = base_session(); b["id"] = 2; b["course_id"] = 2; b["section_id"] = 200
+    # ayni cohort (dept2/yil2/FALL), ayni gun+slot, ikisi de zorunlu -> W3
+    assert any(r["rule_id"] == "W3" for r in scan_cohort([a, b]))
+
+def test_scan_cohort_w4_one_elective():
+    a = base_session(); a["id"] = 1; a["course_id"] = 1; a["section_id"] = 100
+    b = base_session(); b["id"] = 2; b["course_id"] = 2; b["section_id"] = 200
+    b["is_elective"] = True
+    assert any(r["rule_id"] == "W4" for r in scan_cohort([a, b]))
+
+def test_scan_cohort_compatible_combo_no_conflict():
+    # Ders A: sube100 Pzt, sube101 Sali ; Ders B: sube200 Pzt, sube201 Sali
+    # (A-Sali, B-Pzt) gibi uyumlu kombinasyon var -> W3/W4 YOK [K-15]
+    a1 = base_session(); a1["id"]=1; a1["course_id"]=1; a1["section_id"]=100; a1["day_of_week"]=1
+    a2 = base_session(); a2["id"]=2; a2["course_id"]=1; a2["section_id"]=101; a2["day_of_week"]=2
+    b1 = base_session(); b1["id"]=3; b1["course_id"]=2; b1["section_id"]=200; b1["day_of_week"]=1
+    b2 = base_session(); b2["id"]=4; b2["course_id"]=2; b2["section_id"]=201; b2["day_of_week"]=2
+    results = scan_cohort([a1, a2, b1, b2])
+    assert not any(r["rule_id"] in ("W3", "W4") for r in results)
+
+def test_scan_cohort_different_cohort_no_conflict():
+    a = base_session(); a["id"]=1; a["course_id"]=1; a["section_id"]=100
+    b = base_session(); b["id"]=2; b["course_id"]=2; b["section_id"]=200; b["year"]=3
+    # farkli yil -> farkli cohort -> karsilastirilmaz
+    assert scan_cohort([a, b]) == []

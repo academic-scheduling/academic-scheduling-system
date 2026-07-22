@@ -42,6 +42,16 @@ def weekly_sessions_overlap(a, b):
            a["start_slot"], a["slot_count"], b["start_slot"], b["slot_count"]
        )
 
+
+def sections_conflict(sessions_a, sessions_b):
+    """İki şubenin oturum listeleri: HERHANGİ bir çift kesişiyorsa True."""
+    for sa in sessions_a:
+        for sb in sessions_b:
+            if weekly_sessions_overlap(sa, sb):
+                return True
+    return False
+  
+
 def w1_classroom_conflict(a, b):
     # 1) Atlama koşulu [K-10]: taraflardan biri online ise (derslik yok) kontrol anlamsız
     if a["classroom_id"] is None or b["classroom_id"] is None:
@@ -62,32 +72,11 @@ def w2_lecturer_conflict(a, b):
     # 2) Yukarıdaki tutmadıysa çakışma yok
     return None
 
-def w3_w4_cohort_conflict(a, b):
-    # w5 te kontrol edilecek
-    if a["course_id"] == b["course_id"]:
-        return None
-    
-    same_cohort = (
-       a["department_id"] == b["department_id"]
-       and a["year"] == b["year"]
-       and a["semester"] == b["semester"]
-    )
-
-    # 1) Aynı öğrenci grubu mu? VE zamanları kesişiyor mu?
-    if same_cohort and weekly_sessions_overlap(a, b):
-        if not a["is_elective"] and not b["is_elective"]:
-            return {"rule_id": "W3", "severity": "HARD"}
-        else:
-            return {"rule_id": "W4", "severity": "WARNING"} 
-
-    # 2) Yukarıdaki tutmadıysa çakışma yok
-    return None
-
 
 def w5_duplicate_session(a, b):
     # 1) Aynı ders mi? VE aynı gün ve slotlarda mı?
     if (
-        a["course_id"] == b["course_id"]
+        a["section_id"] == b["section_id"]
         and weekly_sessions_overlap(a, b)  
     ):
         return {"rule_id": "W5", "severity": "WARNING"}
@@ -114,6 +103,16 @@ def w7_capacity(a):
     if a["expected_students"] > a["capacity"]:
         return {"rule_id": "W7", "severity": "WARNING"}
     return None
+  
+
+def courses_conflict(sections_a, sections_b):
+    """İki dersin şubeleri: EN AZ BİR uyumlu (kesişmeyen) şube çifti varsa
+    çakışma YOK (False). Hiç uyumlu çift yoksa çakışma VAR (True) [K-15]."""
+    for sa_sessions in sections_a:
+        for sb_sessions in sections_b:
+            if not sections_conflict(sa_sessions, sb_sessions):
+                return False      # uyumlu kombinasyon bulundu -> ogrenci secebilir
+    return True                   # hic uyumlu cift yok -> ders cakismasi
 
 #----------------------------------------exam collision tests-------------------------------------------------------------------
 

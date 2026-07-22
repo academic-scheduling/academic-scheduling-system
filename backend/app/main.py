@@ -35,6 +35,9 @@ app.include_router(weekly_entries_router)
 from app.routers.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
+from app.routers.conflicts import router as conflicts_router
+app.include_router(conflicts_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

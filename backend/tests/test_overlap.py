@@ -23,6 +23,10 @@ from app.conflicts.engine import sections_conflict
 from app.conflicts.engine import courses_conflict
 from app.conflicts.orchestrator import scan_cohort
 from app.conflicts.engine import is_async
+from app.conflicts.engine import e5a_missing_exam_capacity
+from app.conflicts.engine import e7_excess_capacity
+
+
 
 
 def base_session():
@@ -332,7 +336,7 @@ def base_exam():
     # tüm sınav kurallarında kullanılacak geçerli bir temel sınav
     return {
         "course_id": 1, "exam_type": "FINAL",
-        "rooms": [{"classroom_id": 10, "capacity": 30}],   # <-- artık liste
+        "rooms": [{"classroom_id": 10, "exam_capacity": 30}],   # <-- artık liste
         "exam_date": date(2026, 6, 15), "start_time": time(10, 0),
         "duration_minutes": 90, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
@@ -488,7 +492,7 @@ def test_e5_over_capacity_warning():
     # beklenen öğrenci sayısı kapasiteyi aşıyor → WARNING
     a = base_exam()
     a["expected_students"] = 40
-    a["rooms"] = [{"classroom_id": 10, "capacity": 30}]
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 30}]
     result = e5_exam_capacity(a)
     assert result is not None
     assert result["rule_id"] == "E5"
@@ -499,8 +503,18 @@ def test_e5_within_capacity_ok():
     # beklenen öğrenci sayısı kapasiteyi aşmıyor → çakışma yok
     a = base_exam()
     a["expected_students"] = 20
-    a["rooms"] = [{"classroom_id": 10, "capacity": 30}]
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 30}]
     assert e5_exam_capacity(a) is None
+
+
+def test_e5_uses_exam_capacity_not_capacity():
+    a = base_exam()
+    a["expected_students"] = 40
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 30,        "capacity": 200}]
+    # exam_capacity(30) < 40 -> E5 cikar; yanlislikla capacity(200) okunsa E5 CIKMAZDI
+    result = e5_exam_capacity(a)
+    assert result is not None
+    assert result["rule_id"] == "E5"
 
 
 def test_multiple_rooms_total_capacity():
@@ -508,10 +522,10 @@ def test_multiple_rooms_total_capacity():
     a = base_exam()
     a["expected_students"] = 100
     a["rooms"] = [
-        {"classroom_id": 10, "capacity": 30},
-        {"classroom_id": 11, "capacity": 40},
-        {"classroom_id": 12, "capacity": 20}
-    ]  # toplam kapasite = 90 < 100
+        {"classroom_id": 10, "exam_capacity": 30},
+        {"classroom_id": 11, "exam_capacity": 40},
+        {"classroom_id": 12, "exam_capacity": 20},
+    ]
     result = e5_exam_capacity(a)
     assert result is not None
     assert result["rule_id"] == "E5"
@@ -531,6 +545,33 @@ def test_e6_in_of_window_():
     result = e6_exam_out_of_window(a)
     assert result is None
 
+  
+def test_e5a_null_exam_capacity_warning():
+    a = base_exam()
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": None}]
+    result = e5a_missing_exam_capacity(a)
+    assert result is not None
+    assert result["rule_id"] == "E5a"
+    assert result["severity"] == "WARNING"
+
+def test_e5a_all_filled_no_warning():
+    a = base_exam()
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 30}]
+    assert e5a_missing_exam_capacity(a) is None
+
+def test_e5a_empty_rooms_skipped():
+    a = base_exam()
+    a["rooms"] = []
+    assert e5a_missing_exam_capacity(a) is None
+
+def test_e5_skipped_when_null_capacity():
+    # NULL'lu derslik varken E5 hesaplanmaz (once E5a) -> E5 None
+    a = base_exam()
+    a["expected_students"] = 100
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": None},
+                  {"classroom_id": 11, "exam_capacity": 40}]
+    assert e5_exam_capacity(a) is None
+  
 
 def test_e6_weekend_hard():
     # sınav tarihi hafta sonu  → HARD
@@ -540,6 +581,38 @@ def test_e6_weekend_hard():
     assert result is not None
     assert result["rule_id"] == "E6"
     assert result["severity"] == "HARD"
+
+
+def test_e7_excess_capacity_warning():
+    # 40+40+40=120, expected 75; en kucuk(40) cikinca 80 >= 75 -> E7
+    a = base_exam()
+    a["expected_students"] = 75
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 40},
+                  {"classroom_id": 11, "exam_capacity": 40},
+                  {"classroom_id": 12, "exam_capacity": 40}]
+    result = e7_excess_capacity(a)
+    assert result is not None
+    assert result["rule_id"] == "E7"
+
+def test_e7_no_excess_all_needed():
+    # 40+40=80, expected 75; en kucuk(40) cikinca 40 < 75 -> israf YOK
+    a = base_exam()
+    a["expected_students"] = 75
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 40},
+                  {"classroom_id": 11, "exam_capacity": 40}]
+    assert e7_excess_capacity(a) is None
+
+def test_e7_single_room_skipped():
+    a = base_exam()
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 40}]
+    assert e7_excess_capacity(a) is None
+
+def test_e7_null_capacity_skipped():
+    # NULL varsa once E5a -> E7 susar
+    a = base_exam()
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": None},
+                  {"classroom_id": 11, "exam_capacity": 40}]
+    assert e7_excess_capacity(a) is None
 
 
 def test_x1_different_course_conflict():

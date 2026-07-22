@@ -2,24 +2,7 @@
 # bu dosta asla FastAPI,SQLAlchemy veya veritabanı import etmez.
 # a ve b birer dersin gösterimidir.
 
-from dataclasses import dataclass
-from datetime import date, time
 from app.conflicts.slots import slot_range_to_times
-
-@dataclass
-class WeeklySession:
-    course_id: int
-    classroom_id: int | None   # [K-10] NULL olabilir
-    day_of_week: int
-    start_slot: int
-    slot_count: int
-    department_id: int  
-    year: int   
-    semester: int   
-    lecturer_id: int    
-    is_elective: bool
-    expected_students: int
-    capacity: int
 
 
 def intervals_overlap(start_a, end_a, start_b, end_b):

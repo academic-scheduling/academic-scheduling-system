@@ -78,3 +78,34 @@ def scan_cohort(entries):
                         rule_id, severity = "W4", "WARNING"
                     results.append(build_result(rule_id, severity, A["rep"], B["rep"]))
     return results
+
+
+def scan_completeness(entries):
+    """W8 (K-20): subenin session_type bazinda yerlesen slot toplami dersin
+    T/U/L degerinden farkliysa WARNING. Asenkron oturumlar DAHILDIR.
+    Yalniz submit yolundan cagrilir (save'de degil)."""
+    results = []
+    # section_id -> {rep, hours, placed}
+    sections = {}
+    for e in entries:
+        sid = e["section_id"]
+        if sid not in sections:
+            sections[sid] = {
+                "rep": e,
+                "hours": {"THEORY": e["hours_theory"],
+                          "PRACTICE": e["hours_practice"],
+                          "LAB": e["hours_lab"]},
+                "placed": {"THEORY": 0, "PRACTICE": 0, "LAB": 0},
+            }
+        sections[sid]["placed"][e["session_type"]] += e["slot_count"]
+
+    for sec in sections.values():
+        for stype in ("THEORY", "PRACTICE", "LAB"):
+            required = sec["hours"][stype]
+            placed = sec["placed"][stype]
+            if required == 0 and placed == 0:
+                continue                    # bilesen yok -> kontrol etme
+            if placed != required:
+                results.append(build_result("W8", "WARNING", sec["rep"]))
+                break                       # sube basina bir W8 yeter
+    return results

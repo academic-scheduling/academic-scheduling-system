@@ -5,6 +5,7 @@ import {
   Alert, Anchor, Badge, Group, Loader, Paper, SimpleGrid, Table, Text, Title,
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
+import UsersSection from "./UsersSection";
 import type { ConflictResult, ConflictScan, DashboardSummary } from "../api/types";
 
 /** Dashboard'da gösterilecek en fazla çakışma satırı.
@@ -155,8 +156,10 @@ export default function DashboardPage() {
         )}
       </Paper>
 
+      <UsersSection />
+
       <Alert mt="lg" color="gray">
-        Kullanıcı yönetimi ve işlem kayıtları bu bloğun altına gelecek.
+        İşlem kayıtları bu bloğun altına gelecek.
       </Alert>
     </>
   );

@@ -190,3 +190,41 @@ export type ConflictScan = {
   hard: ConflictResult[];
   warnings: ConflictResult[];
 };
+
+/** Kontrat §2 · kullanıcı yaşam döngüsü.
+ *
+ *  PENDING: davet edildi, hiç giriş yapmadı → daveti silinebilir (K-34).
+ *  ACTIVE / DISABLED: hesap kullanılmış → silinmez, erişimi kapatılır.
+ */
+export type UserStatus = "PENDING" | "ACTIVE" | "DISABLED";
+
+/** Kontrat §2 · GET /users elemanı.
+ *
+ *  `User`den (auth) farkı: e-posta ve durum taşır, bayrakları OLDUĞU GİBİ
+ *  verir. /auth/me'deki "ADMIN'de hepsi true" dönüşümü burada YOKTUR —
+ *  yönetim ekranı DB'deki gerçeği göstermeli (K-34).
+ */
+export type ManagedUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  department_ids: number[];
+  can_manage_courses: boolean;
+  can_manage_weekly: boolean;
+  can_manage_exams: boolean;
+  can_manage_classrooms: boolean;
+  can_manage_lecturers: boolean;
+};
+
+/** K-25'in beş yetenek bayrağı — form ve rozet listelerinin tek kaynağı. */
+export const CAPABILITIES = [
+  { key: "can_manage_courses", label: "Dersler" },
+  { key: "can_manage_weekly", label: "Haftalık Program" },
+  { key: "can_manage_exams", label: "Sınavlar" },
+  { key: "can_manage_classrooms", label: "Derslikler" },
+  { key: "can_manage_lecturers", label: "Öğretim Üyeleri" },
+] as const;
+
+export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];

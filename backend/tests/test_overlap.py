@@ -26,6 +26,8 @@ from app.conflicts.engine import is_async
 from app.conflicts.engine import e5a_missing_exam_capacity
 from app.conflicts.engine import e7_excess_capacity
 from app.conflicts.orchestrator import scan_completeness
+from app.conflicts.orchestrator import scan_exams
+from app.conflicts.orchestrator import scan_cross
 
 
 
@@ -895,3 +897,36 @@ def test_scan_cohort_different_cohort_no_conflict():
     b = base_session(); b["id"]=2; b["course_id"]=2; b["section_id"]=200; b["year"]=3
     # farkli yil -> farkli cohort -> karsilastirilmaz
     assert scan_cohort([a, b]) == []
+
+
+def test_scan_exams_detects_e1():
+    # iki sinav ayni derslik+tarih+saat, farkli ders -> E1
+    a = base_exam(); a["id"] = 1; a["course_id"] = 1
+    b = base_exam(); b["id"] = 2; b["course_id"] = 2
+    assert any(r["rule_id"] == "E1" for r in scan_exams([a, b]))
+
+def test_scan_exams_empty():
+    assert scan_exams([]) == []
+
+def test_scan_exams_single_rule_e6():
+    # tek sinav hafta sonunda -> E6
+    a = base_exam(); a["id"] = 1; a["exam_date"] = date(2026, 6, 14)   # Pazar
+    assert any(r["rule_id"] == "E6" for r in scan_exams([a]))
+
+def test_scan_cross_flag_off_no_results():
+    # bayrak kapali -> hicbir X kurali calismaz (K-06)
+    exam = base_exam(); exam["course_id"] = 1
+    weekly = base_session(); weekly["course_id"] = 2
+    assert scan_cross([exam], [weekly], False) == []
+
+def test_scan_cross_detects_x1():
+    # bayrak acik, farkli ders, ortak oda+zaman -> X1
+    exam = base_exam(); exam["course_id"] = 1
+    weekly = base_session(); weekly["course_id"] = 2
+    assert any(r["rule_id"] == "X1" for r in scan_cross([exam], [weekly], True))
+
+def test_scan_cross_async_weekly_skipped():
+    # asenkron haftalik giris X kurallarina girmez (K-19)
+    exam = base_exam(); exam["course_id"] = 1
+    weekly = base_session(); weekly["course_id"] = 2; weekly["delivery_mode"] = "ONLINE_ASYNC"
+    assert scan_cross([exam], [weekly], True) == []

@@ -636,15 +636,6 @@ def test_x1_same_course_skipped():
     assert x1_exam_weekly_classroom_conflict(a, b) is None  
 
 
-def test_x1_final_exam_no_conflict():
-    # final sınavları sadece final sınavlarıyla çakışabilir → çakışma yok
-    a = base_exam()
-    a["exam_type"] = "FINAL"        # final sınavı
-    b = base_session()
-    result = x1_exam_weekly_classroom_conflict(a, b)
-    assert result is None
-
-
 def test_x1_different_classroom_no_conflict():
     # farklı derslik → çakışma yok
     a = base_exam()
@@ -663,6 +654,15 @@ def test_x1_different_time_no_conflict():
     b["start_slot"] = 5             # a: 3-4, b: 5 → değmiyor
     result = x1_exam_weekly_classroom_conflict(a, b)
     assert result is None
+
+
+def test_x1_works_for_any_exam_type():
+    # K-06: X kurallari sinav tipine bagli DEGIL; FINAL sinavi da X1 uretir
+    a = base_exam(); a["exam_type"] = "FINAL"
+    b = base_session(); b["course_id"] = 2      # farkli ders (K-13 atlamasin)
+    result = x1_exam_weekly_classroom_conflict(a, b)
+    assert result is not None
+    assert result["rule_id"] == "X1"
 
 
 def test_x2_same_cohort_different_course():
@@ -696,15 +696,6 @@ def test_x2_same_course_skipped():
     assert result is None
 
 
-def test_x2_final_exam_no_conflict():
-    # final sınavları sadece final sınavlarıyla çakışabilir → çakışma yok
-    a = base_exam()
-    a["exam_type"] = "FINAL"        # final sınavı
-    b = base_session()
-    result = x2_exam_weekly_course_conflict(a, b)
-    assert result is None
-
-
 def test_x3_same_lecturer_conflict():
     # aynı öğretim üyesi, kesişen saatler → X3 
     a = base_exam()
@@ -733,17 +724,6 @@ def test_x3_same_course_skipped():
     a = base_exam()
     a['exam_type'] = "MIDTERM"      # çapraz kontrol sadece MIDTERM
     b = base_session()              # course_id ikisinde de 1 → aynı ders
-    result = x3_exam_weekly_lecturer_conflict(a, b)
-    assert result is None
-
-
-def test_x3_final_exam_no_conflict():
-    # final sınavları sadece final sınavlarıyla çakışabilir → çakışma yok
-    a = base_exam()
-    a['exam_type'] = "FINAL"        # final sınavı
-    b = base_session()
-    b['course_id'] = 2                  # farklı ders
-    b['lecturer_id'] = 5                # aynı öğretim üyesi
     result = x3_exam_weekly_lecturer_conflict(a, b)
     assert result is None
 

@@ -307,6 +307,12 @@ Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": 
 - Alt hesabın çakışmayı çözebilmesi için karşı tarafı görmesi şarttır; ayrıca
   motor mesajları zaten diğer bölümün ders/derslik/saat bilgisini içerir.
 - Çözme (düzenleme) yetkisi yine bayrak + üyelikle sınırlıdır.
+- **Yetki notu:** dashboard özeti (§10) yalnız ADMIN'dir, bu uç DEĞİL — alt hesap
+  da okur (K-26). İki ucun yetkisi bilerek farklıdır.
+- Sonuç **canlı hesaplanır**, tabloda saklanmaz: çakışmanın id'si ve zaman
+  damgası yoktur, "en yeni çakışma" diye bir sıralama mümkün değildir.
+- Motor bağlanana dek iki liste de **boş** döner (`conflict_service` stub —
+  A-3/A-4). Cevap şekli şimdiden sabit, B mock'unu buna göre kurabilir.
 
 ---
 

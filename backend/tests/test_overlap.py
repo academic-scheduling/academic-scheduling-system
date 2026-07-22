@@ -25,6 +25,7 @@ from app.conflicts.orchestrator import scan_cohort
 from app.conflicts.engine import is_async
 from app.conflicts.engine import e5a_missing_exam_capacity
 from app.conflicts.engine import e7_excess_capacity
+from app.conflicts.orchestrator import scan_completeness
 
 
 
@@ -37,7 +38,7 @@ def base_session():
         "department_id": 2, "year": 2, "semester": "FALL",
         "is_elective": False, "expected_students": 40, "capacity": 30, 
         "course_code": "CENG2001",'section_no': 1 ,"id": 1, 
-        "type": "weekly_entry", "section_id": 100, "delivery_mode": "FACE_TO_FACE",
+        "type": "weekly_entry", "section_id": 100, "delivery_mode": "FACE_TO_FACE","session_type": "THEORY", "hours_theory": 3, "hours_practice": 0, "hours_lab": 0,
     }
 
 
@@ -267,6 +268,38 @@ def test_w7_null_classroom_skipped():
     a["classroom_id"] = None          # öğrenci sayısı kapasiteyi aşsa bile atlanır
     assert w7_capacity(a) is None
 
+
+def test_w8_incomplete_theory():
+    # 3+0+0 ders, teori 2 slot -> eksik -> W8
+    e = base_session()
+    e["session_type"] = "THEORY"; e["slot_count"] = 2
+    e["hours_theory"] = 3; e["hours_practice"] = 0; e["hours_lab"] = 0
+    assert any(r["rule_id"] == "W8" for r in scan_completeness([e]))
+
+def test_w8_complete_no_warning():
+    # 3+0+0, teori 3 slot -> tam; lab yok (L=0) -> sessiz -> W8 YOK
+    e = base_session()
+    e["session_type"] = "THEORY"; e["slot_count"] = 3
+    e["hours_theory"] = 3; e["hours_practice"] = 0; e["hours_lab"] = 0
+    assert scan_completeness([e]) == []
+
+def test_w8_excess_theory():
+    # 3+0+0, teori 4 slot -> fazla -> W8
+    e = base_session()
+    e["session_type"] = "THEORY"; e["slot_count"] = 4
+    e["hours_theory"] = 3; e["hours_practice"] = 0; e["hours_lab"] = 0
+    assert any(r["rule_id"] == "W8" for r in scan_completeness([e]))
+
+def test_w8_async_counted():
+    # 2 slot yuz yuze + 1 slot asenkron THEORY = 3 -> tam -> W8 YOK (asenkron dahil, K-20)
+    e1 = base_session(); e1["section_id"] = 100
+    e1["session_type"] = "THEORY"; e1["slot_count"] = 2
+    e1["hours_theory"] = 3; e1["hours_practice"] = 0; e1["hours_lab"] = 0
+    e2 = base_session(); e2["section_id"] = 100
+    e2["session_type"] = "THEORY"; e2["slot_count"] = 1; e2["delivery_mode"] = "ONLINE_ASYNC"
+    e2["hours_theory"] = 3; e2["hours_practice"] = 0; e2["hours_lab"] = 0
+    assert scan_completeness([e1, e2]) == []
+  
 
 def test_courses_conflict_all_pairs_overlap():
     # A tek sube (Pzt), B tek sube (Pzt) -> tek cift, cakisik -> cakisma VAR

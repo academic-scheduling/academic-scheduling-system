@@ -376,3 +376,22 @@ class WeeklyEntrySubmitRequest(BaseModel):
 class WeeklyEntrySubmitResponse(BaseModel):
     submitted: list[int]
     warnings: list[ConflictResultOut]
+
+# --- Dashboard (WP6, K-33) ---
+
+class DashboardSummary(BaseModel):
+    """GET /dashboard/summary cevabi (kontrat 10, K-33).
+
+    Sekiz kart cizilir; weekly_entries kart degil ama alan korunuyor
+    (kontrat onu zaten vaat etmisti, kaldirmak kirici degisiklik olurdu).
+    """
+    departments: int
+    classrooms: int
+    lecturers: int
+    courses: int
+    admins: int
+    sub_accounts: int
+    weekly_entries: int
+    exams: int
+    unresolved_hard: int
+    unresolved_warnings: int

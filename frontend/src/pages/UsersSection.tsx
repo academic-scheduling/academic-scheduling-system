@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Checkbox, Group, Loader, Modal, MultiSelect,
-  Paper, Select, Stack, Table, Text, TextInput, Title, Tooltip,
+  Pagination, Paper, Select, Stack, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -12,6 +12,10 @@ import { CAPABILITIES } from "../api/types";
 import type { CapabilityKey, Department, ManagedUser, Role, UserStatus } from "../api/types";
 
 const ALL = "__all__";
+
+/** Sayfa başına kullanıcı satırı. Dashboard tek sayfada dört blok taşıyor;
+ *  kullanıcı tablosu diğerlerini aşağı itmemeli. */
+const PAGE_SIZE = 10;
 
 const STATUS_META: Record<UserStatus, { label: string; color: string }> = {
   PENDING: { label: "Davet bekliyor", color: "yellow" },
@@ -53,6 +57,7 @@ export default function UsersSection() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [page, setPage] = useState(1);
 
   const [formModal, setFormModal] = useState(false);
   const [editing, setEditing] = useState<ManagedUser | null>(null);
@@ -114,6 +119,18 @@ export default function UsersSection() {
   const bekleyenSayisi = useMemo(
     () => users.filter((u) => u.status === "PENDING").length,
     [users],
+  );
+
+  // Sayfa numarası state'te tutuluyor ama KULLANILMADAN ÖNCE sınırlanıyor.
+  // Aksi halde son sayfadayken bir davet silmek ya da filtre daraltmak
+  // kullanıcıyı var olmayan bir sayfada, boş tabloya bakar halde bırakırdı.
+  // Türetilmiş değer kullanmak bunu bir effect'e gerek kalmadan kendiliğinden
+  // düzeltir — ekranda boş tablo anı hiç oluşmaz.
+  const toplamSayfa = Math.max(1, Math.ceil(gorunen.length / PAGE_SIZE));
+  const gecerliSayfa = Math.min(page, toplamSayfa);
+  const sayfadakiler = gorunen.slice(
+    (gecerliSayfa - 1) * PAGE_SIZE,
+    gecerliSayfa * PAGE_SIZE,
   );
 
   function openInvite() {
@@ -252,10 +269,12 @@ export default function UsersSection() {
       </Group>
 
       <Group mb="sm">
+        {/* Filtre değişince ilk sayfaya dön: arama sonucu 3 kişiye düşerken
+            5. sayfada kalmak kullanıcıyı "sonuç yok" sanısına düşürürdü. */}
         <TextInput
           placeholder="Ad veya e-posta ara"
           value={search}
-          onChange={(e) => setSearch(e.currentTarget.value)}
+          onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }}
           w={240}
         />
         <Select
@@ -266,7 +285,7 @@ export default function UsersSection() {
             })),
           ]}
           value={statusFilter}
-          onChange={(v) => setStatusFilter(v ?? ALL)}
+          onChange={(v) => { setStatusFilter(v ?? ALL); setPage(1); }}
           allowDeselect={false}
           w={180}
         />
@@ -286,7 +305,7 @@ export default function UsersSection() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {gorunen.map((u) => {
+            {sayfadakiler.map((u) => {
               const kendisi = u.id === me?.id;
               const bekleyen = u.status === "PENDING";
               const durum = STATUS_META[u.status];
@@ -386,6 +405,27 @@ export default function UsersSection() {
           <Text c="dimmed" size="sm" p="md">Filtreye uyan kullanıcı yok.</Text>
         )}
       </Paper>
+
+      {/* Sayfalama yalnız gerektiğinde: tek sayfalık listede numara çubuğu
+          göstermek boş yer kaplar. Sayaç metni her zaman görünür ki toplamın
+          kaçta kaçına bakıldığı belli olsun. */}
+      {gorunen.length > 0 && (
+        <Group justify="space-between" mt="sm">
+          <Text size="sm" c="dimmed">
+            {gorunen.length} kullanıcıdan{" "}
+            {(gecerliSayfa - 1) * PAGE_SIZE + 1}–
+            {Math.min(gecerliSayfa * PAGE_SIZE, gorunen.length)} arası
+          </Text>
+          {toplamSayfa > 1 && (
+            <Pagination
+              total={toplamSayfa}
+              value={gecerliSayfa}
+              onChange={setPage}
+              size="sm"
+            />
+          )}
+        </Group>
+      )}
 
       {/* --- davet / düzenleme formu --- */}
       <Modal

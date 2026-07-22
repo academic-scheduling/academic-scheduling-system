@@ -146,3 +146,21 @@ export type Course = {
   active: boolean;
   sections: CourseSection[];
 };
+/** Kontrat §10 · GET /dashboard/summary (K-33).
+ *
+ *  Sekiz kart çizilir; `weekly_entries` kart değildir ama kontrat onu vaat
+ *  ettiği için alan burada da durur (haftalık program ekranı gelince kart olur).
+ *  Çakışma alanları motor bağlanana dek 0 döner — K-33'te kayıtlı sınırlama.
+ */
+export type DashboardSummary = {
+  departments: number;
+  classrooms: number;
+  lecturers: number;
+  courses: number;
+  admins: number;
+  sub_accounts: number;
+  weekly_entries: number;
+  exams: number;
+  unresolved_hard: number;
+  unresolved_warnings: number;
+};

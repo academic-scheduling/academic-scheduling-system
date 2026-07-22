@@ -227,11 +227,8 @@ def e7_excess_capacity(a, margin=0):
 
 
 def exam_weekly_overlap(exam, weekly):
-    # dersler sadece midterm sınavlarıyla çakışabilir, final sınavları sadece final sınavlarıyla çakışabilir    
-    if exam["exam_type"] != "MIDTERM":
-        return False
-    
-    # sınavın gününü tarihten türet: weekday() 0=Pzt → +1 ile haftalık ölçeğe (1=Pzt) getir
+    # K-06: X kurallari sinav TIPINE degil, check_exam_vs_course BAYRAGINA baglidir.
+    # Bayrak orkestratorde uygulanir; bu fonksiyon yalnizca gun+saat kesisimini hesaplar
     exam_day = exam["exam_date"].weekday() + 1
     if exam_day != weekly["day_of_week"]:
         return False  # farklı günlerdeyse çakışamaz

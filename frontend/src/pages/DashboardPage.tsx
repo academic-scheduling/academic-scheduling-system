@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Group, Loader, Paper, SimpleGrid, Text, Title } from "@mantine/core";
+import { Alert, Container, Group, Loader, Paper, SimpleGrid, Text, Title } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import type { DashboardSummary } from "../api/types";
 
@@ -12,8 +12,11 @@ import type { DashboardSummary } from "../api/types";
  */
 function StatCard({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <Paper withBorder radius="md" p="lg">
-      <Text fw={700} fz={36} lh={1.1}>{value}</Text>
+    <Paper withBorder radius="md" p="lg" ta="center">
+      {/* component="div": `value` bazen Group taşıyor (çakışma kartı). Text
+          varsayılan <p> üretir ve <p> içine <div> koymak geçersiz HTML'dir —
+          tarayıcı p'yi erkenden kapatıp hizalamayı bozar. */}
+      <Text component="div" fw={700} fz={36} lh={1.1}>{value}</Text>
       <Text size="sm" c="dimmed" mt={6}>{label}</Text>
     </Paper>
   );
@@ -33,7 +36,16 @@ export default function DashboardPage() {
   if (!data) return <Loader mt="xl" />;
 
   return (
-    <>
+    // Container sayfayı sınırlar ve ortalar: geniş ekranda kartlar tüm
+    // genişliğe yayılmasın. Alttaki bloklar (çakışma tablosu, kullanıcılar,
+    // işlem kayıtları) da bu Container'ın içine gelecek — hepsi aynı hizada
+    // dursun, blok başına ayrı genişlik olmasın.
+    //
+    // 1000px tesadüfi değil: dört sütunda kart başına ~235px düşüyor ve
+    // "Çakışma (engel / uyarı)" etiketi tek satırda ancak bu genişlikte
+    // kalıyor. Daha dar bir sınır etiketleri iki satıra kırıp kart
+    // yüksekliklerini eşitsizleştiriyor.
+    <Container size={1000} px={0}>
       <Title order={3} mb="md">Dashboard</Title>
 
       {/* 4×2 grid: üst sıra "ne var" (kaynaklar), alt sıra "kim ve ne oluyor".
@@ -55,7 +67,7 @@ export default function DashboardPage() {
         <StatCard
           label="Çakışma (engel / uyarı)"
           value={
-            <Group gap={6} align="baseline">
+            <Group gap={6} align="baseline" justify="center">
               <Text span inherit c={data.unresolved_hard > 0 ? "red" : undefined}>
                 {data.unresolved_hard}
               </Text>
@@ -71,6 +83,6 @@ export default function DashboardPage() {
       <Alert mt="lg" color="gray">
         Çakışma tablosu, kullanıcı yönetimi ve işlem kayıtları bu bloğun altına gelecek.
       </Alert>
-    </>
+    </Container>
   );
 }

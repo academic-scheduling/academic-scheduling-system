@@ -9,7 +9,10 @@ from app.models import (
     User, UserRole, UserStatus,
     Department, DepartmentMembership, InvitationToken,
 )
-from app.schemas import InviteRequest, InviteResponse, MessageResponse, UserListItem
+from app.schemas import (
+    InviteRequest, InviteResponse, MessageResponse, UserListItem, UserUpdate,
+)
+from app.audit import log_action
 from app.security import generate_invitation_token, hash_token
 from app.mailer import send_invitation_email
 
@@ -128,3 +131,119 @@ def list_users(
 ):
     users = db.query(User).filter(User.workgroup_id == admin.workgroup_id).all()
     return users
+
+
+def _get_owned_user(db: Session, admin: User, user_id: int) -> User:
+    """Workgroup dışındaki kullanıcı YOK sayılır (404, 403 değil).
+
+    403 verilseydi "bu id'de bir kullanıcı var ama senin değil" bilgisi
+    sızardı; brief §6.3 URL id değiştirerek başka workgroup'a erişmeyi
+    yasaklıyor, varlığını doğrulamak da bir sızıntıdır.
+    """
+    user = db.get(User, user_id)
+    if user is None or user.workgroup_id != admin.workgroup_id:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    return user
+
+
+@router.patch("/{user_id}", response_model=UserListItem)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Rol, bölüm ataması, yetenek bayrakları ve erişim durumu (K-34).
+
+    Kendi rolünü/durumunu değiştirmek yasaktır: admin kendini DISABLED yapar
+    ya da SUB_ACCOUNT'a düşürürse geri dönüşü olmayan biçimde kilitlenir.
+    Bu kilit aynı zamanda "son admin" sorununu da çözer — çağıran ACTIVE bir
+    admin olduğuna ve kendini değiştiremediğine göre, işlem sonrası
+    workgroup'ta her zaman en az bir aktif admin kalır.
+    """
+    user = _get_owned_user(db, admin, user_id)
+    veri = payload.model_dump(exclude_unset=True)
+
+    if user.id == admin.id and ("role" in veri or "status" in veri):
+        raise HTTPException(
+            status_code=400,
+            detail="Kendi rolünüzü veya erişim durumunuzu değiştiremezsiniz. "
+                   "Bunu başka bir admin yapmalı.",
+        )
+
+    if "name" in veri:
+        user.name = veri["name"]
+    if "status" in veri:
+        user.status = veri["status"]
+
+    # Rol ve bayraklar birlikte değerlendirilir: ADMIN'de bayraklar YOK SAYILIR
+    # (K-25). Önce rolü belirle, sonra bayrakları ona göre uygula — sıra önemli,
+    # aynı istekte hem rol hem bayrak gelebilir.
+    yeni_rol = veri.get("role", user.role)
+    if "role" in veri:
+        user.role = yeni_rol
+
+    for bayrak in ("can_manage_courses", "can_manage_weekly", "can_manage_exams",
+                   "can_manage_classrooms", "can_manage_lecturers"):
+        if yeni_rol == UserRole.ADMIN:
+            # Admin'e çıkarılan hesapta bayraklar false'a çekilir: rol muafiyeti
+            # zaten her yetkiyi veriyor. true yazılsaydı, rol sonradan
+            # düşürüldüğünde hesap sessizce yetkili kalırdı.
+            setattr(user, bayrak, False)
+        elif bayrak in veri:
+            setattr(user, bayrak, veri[bayrak])
+
+    if "department_ids" in veri:
+        # Üyelikler TOPLU değiştirilir: gönderilen liste yeni gerçektir.
+        # Tek tek ekle/çıkar uçları olsaydı istemci iki isteği yarıda bırakıp
+        # tutarsız bir ara duruma düşürebilirdi.
+        db.query(DepartmentMembership).filter(
+            DepartmentMembership.user_id == user.id
+        ).delete(synchronize_session=False)
+
+        istenen = set(veri["department_ids"])
+        if istenen:
+            bulunan = db.query(Department).filter(
+                Department.id.in_(istenen),
+                Department.workgroup_id == admin.workgroup_id,
+            ).count()
+            if bulunan != len(istenen):
+                raise HTTPException(status_code=400, detail="Geçersiz bölüm seçimi")
+            for dep_id in istenen:
+                db.add(DepartmentMembership(user_id=user.id, department_id=dep_id))
+
+    log_action(db, admin, "UPDATE", "user", user.id)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Yalnız PENDING hesabı siler (K-34).
+
+    Veritabanı bu silmeyi ENGELLEMEZ: `audit_logs.user_id`, `exams.created_by`
+    ve `weekly_schedule_entries.created_by` FK'leri ON DELETE SET NULL.
+    Yani kullanılmış bir hesabı silmek hata vermez, sessizce o kişinin yaptığı
+    her işlemin "kim" bilgisini siler — brief §6.3'ün log şartını geriye dönük
+    çökertir. Kısıt veritabanında olmadığı için engel burada duruyor.
+
+    PENDING hesap hiç giriş yapmamıştır, hiçbir kaydın faili değildir;
+    CASCADE'in götürdüğü tek şey kendi davet token'ı ve bölüm atamasıdır.
+    """
+    user = _get_owned_user(db, admin, user_id)
+
+    if user.status != UserStatus.PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail="Kullanılmış hesap silinemez: işlem kayıtlarındaki izi "
+                   "kaybolur. Erişimi kapatın (status: DISABLED).",
+        )
+
+    log_action(db, admin, "DELETE", "user", user.id)
+    db.delete(user)
+    db.commit()

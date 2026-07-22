@@ -79,6 +79,26 @@ class InvitationPreview(BaseModel):
 class MessageResponse(BaseModel):
     message: str
 
+class UserUpdate(BaseModel):
+    """PATCH /users/{id} — hepsi opsiyonel, yalnız gönderilen alan değişir (K-34).
+
+    `email` BİLEREK yok: kimliktir ve davet token'ı ona bağlıdır. Yanlış
+    e-postanın çözümü düzenleme değil, daveti silip yeniden göndermektir.
+
+    `status` yalnız ACTIVE|DISABLED alır — PENDING'e geri dönülemez, çünkü
+    tamamlanmış bir hesap "henüz tamamlanmamış" haline getirilemez.
+    """
+    name: str | None = None
+    role: UserRole | None = None
+    department_ids: list[int] | None = None
+    status: Literal[UserStatus.ACTIVE, UserStatus.DISABLED] | None = None
+    can_manage_courses: bool | None = None
+    can_manage_weekly: bool | None = None
+    can_manage_exams: bool | None = None
+    can_manage_classrooms: bool | None = None
+    can_manage_lecturers: bool | None = None
+
+
 class UserListItem(BaseModel):
     id: int
     name: str

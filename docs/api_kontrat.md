@@ -312,9 +312,24 @@ Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": 
 
 ## 10. Dashboard
 
-### GET /dashboard/summary
-Cevap: `{ "departments": 2, "courses": 24, "classrooms": 5,
-  "weekly_entries": 61, "exams": 18, "unresolved_hard": 3, "unresolved_warnings": 7 }`
+### GET /dashboard/summary   ← K-33 (yalnız ADMIN)
+Cevap:
+```json
+{ "departments": 2, "classrooms": 5, "lecturers": 9, "courses": 24,
+  "admins": 1, "sub_accounts": 3,
+  "weekly_entries": 61, "exams": 18,
+  "unresolved_hard": 3, "unresolved_warnings": 7 }
+```
+← **Yalnız aktif kayıtlar sayılır** (K-33): `active=false` bölüm/derslik/
+  öğretim üyesi/ders sayaca girmez — ekranlardaki liste uzunluklarıyla tutsun.
+← `admins` / `sub_accounts`: yalnız `status="ACTIVE"` hesaplar. PENDING davet
+  ve DISABLED hesap sayılmaz (ikisi de sisteme bir şey yapamaz).
+← `exams` ve `weekly_entries`: `active` bayrağı yok, DRAFT + SUBMITTED birlikte
+  sayılır (K-03).
+← `unresolved_hard` / `unresolved_warnings`: motor bağlanana dek **ikisi de 0**
+  döner (`conflict_service` stub — A-3/A-4). Alan adları şimdiden sabit.
+← Dashboard sekiz kart çizer; `weekly_entries` kart olarak gösterilmez ama
+  alan korunur (haftalık program ekranı gelince eklenecek).
 
 ---
 

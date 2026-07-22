@@ -57,6 +57,10 @@ def _msg_w6(a, b):
 def _msg_w7(a, b):
     return (f"Kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
             f"({a['expected_students']}) derslik kapasitesini aşıyor.")
+
+def _msg_w8(a, b):
+    return (f"Ders saati tamlığı: {course_label(a)} şubesinin yerleşen slot toplamı "
+            f"dersin T+U+L değeriyle uyuşmuyor (eksik veya fazla).")
      
 # ------------------------------------sınav kuralları mesajları --------------------------------------------
 
@@ -86,9 +90,21 @@ def _msg_e5(a, b):
     return (f"Sınav kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
             f"({a['expected_students']}) toplam derslik kapasitesini aşıyor.")
 
+
+def _msg_e5a(a, b):
+    return (f"Sınav kontenjanı eksik: {course_label(a)} sınavı için seçili "
+            f"dersliklerden en az birinin kontenjanı (exam_capacity) girilmemiş.")
+
+
+
 def _msg_e6(a, b):
     return (f"Hafta sonu sınavı: {course_label(a)} sınavı {a['exam_date']} "
             f"tarihinde hafta sonuna denk geliyor.")
+
+
+def _msg_e7(a, b):
+    return (f"Gereksiz derslik: {course_label(a)} sınavı için seçilen dersliklerden "
+            f"en küçüğü çıkarılsa da kalan kontenjan öğrenci sayısına yetiyor.")
 
 # ---------- çapraz kural mesajları (sınav × ders) ----------
 
@@ -118,6 +134,7 @@ MESSAGE_BUILDERS = {
     "W5": _msg_w5,
     "W6": _msg_w6,
     "W7": _msg_w7,
+    "W8": _msg_w8,  
     # sınav kuralları
     "E1": _msg_e1,
     "E2": _msg_e2,
@@ -125,7 +142,9 @@ MESSAGE_BUILDERS = {
     "E4a": _msg_e4a,
     "E4b": _msg_e4b,
     "E5": _msg_e5,
+    "E5a": _msg_e5a,
     "E6": _msg_e6,
+    "E7": _msg_e7,
     # çapraz (sınav × ders)
     "X1": _msg_x1,
     "X2": _msg_x2,

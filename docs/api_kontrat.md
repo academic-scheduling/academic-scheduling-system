@@ -100,7 +100,30 @@ Cevap 201: `{ "id": 5, "status": "PENDING" }` (e-posta Mailpit'e düşer)
 Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 
 ### POST /users/{id}/resend-invitation → 200
+Yalnız `PENDING`. Eski kullanılmamış token'lar geçersiz kılınır, yenisi gönderilir.
+
 ### GET /users → kullanıcı listesi (bölüm atamalarıyla)
+`[ { "id", "name", "email", "role", "status", "department_ids", "can_manage_*" } ]`
+`status`: `PENDING` (davet edildi, giriş yapmadı) · `ACTIVE` · `DISABLED`.
+
+### PATCH /users/{id}   ← K-34
+İstek (hepsi opsiyonel): `{ "name", "role", "department_ids", "status",
+  "can_manage_courses", "can_manage_weekly", "can_manage_exams",
+  "can_manage_classrooms", "can_manage_lecturers" }`
+← **E-posta değiştirilemez** — kimliktir, davet token'ı ona bağlıdır. Yanlış
+  e-postanın çözümü daveti silip yeniden göndermektir.
+← `status` yalnız `ACTIVE` | `DISABLED` alır. `PENDING`'e geri dönülemez:
+  tamamlanmış bir hesap "tamamlanmamış" yapılamaz.
+← `role: "ADMIN"` verilirse yetenek bayrakları `false`'a çekilir (K-25).
+Cevap 200 · Hata 400: kendi rolünü/durumunu değiştiremezsin (K-34) ·
+  404: başka workgroup.
+
+### DELETE /users/{id}   ← K-34
+Yalnız **`PENDING`** hesap kalıcı silinir (yanlış adrese giden davet).
+Cevap 204 · Hata 409: `{ "detail": "Kullanılmış hesap silinemez: işlem
+  kayıtlarındaki izi kaybolur. Erişimi kapatın (status: DISABLED)." }`
+Not: `audit_logs.user_id` FK'si `ON DELETE SET NULL` — silme hata vermez,
+  sessizce log'un "kim" bilgisini siler. Engel bu yüzden uygulama katmanında.
 
 ---
 

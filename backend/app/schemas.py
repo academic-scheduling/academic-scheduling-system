@@ -395,3 +395,13 @@ class DashboardSummary(BaseModel):
     exams: int
     unresolved_hard: int
     unresolved_warnings: int
+
+
+class ConflictScanOut(BaseModel):
+    """GET /conflicts cevabi (kontrat 9).
+
+    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
+    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
+    """
+    hard: list[ConflictResultOut] = []
+    warnings: list[ConflictResultOut] = []

@@ -783,6 +783,9 @@ def test_message_unknown_rule_fallback():
     assert "ZZ" in msg                   # yedek metin devrede mi
 
 
+def test_message_w8():
+    assert "Ders saati tamlığı" in build_message("W8", base_session())
+
 # ---------- sınav (E) mesaj testleri ----------
 
 def test_message_e1():
@@ -817,6 +820,10 @@ def test_message_e5():
 def test_message_e6():
     a = base_exam()
     assert "Hafta sonu" in build_message("E6", a)
+
+
+def test_message_e7():
+    assert "Gereksiz derslik" in build_message("E7", base_exam())
 
 
 # ---------- çapraz (X) mesaj testleri: a=sınav, b=ders ----------

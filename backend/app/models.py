@@ -227,11 +227,16 @@ class User(Base):
     workgroup: Mapped["Workgroup | None"] = relationship(
         back_populates="users", foreign_keys="User.workgroup_id"
     )
+    # passive_deletes=True: silmeyi VERITABANINA birak (K-34).
+    # Iki tabloda da FK zaten ON DELETE CASCADE. Bu bayrak olmadan SQLAlchemy
+    # "yardimci" olmaya calisip once cocuk satirlarin user_id'sini NULL'a
+    # cekiyor; invitation_tokens.user_id NOT NULL oldugu icin silme
+    # IntegrityError ile patliyordu.
     invitation_tokens: Mapped[list["InvitationToken"]] = relationship(
-        back_populates="user"
+        back_populates="user", passive_deletes=True
     )
     memberships: Mapped[list["DepartmentMembership"]] = relationship(
-        back_populates="user"
+        back_populates="user", passive_deletes=True
     )
 
 

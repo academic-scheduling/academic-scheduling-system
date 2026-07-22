@@ -250,18 +250,14 @@ def exam_weekly_overlap(exam, weekly):
 
 
 def x1_exam_weekly_classroom_conflict(exam, weekly):
-    # 1) midterm sınavı nın sınıflarından biri, haftalık dersin sınıfıyla aynı mı? VE zamanları kesişiyor mu?
     if weekly["classroom_id"] is None:
         return None
-
-    # ortak derslik VE zaman kesişimi var mı?
+    # K-13: sinavin dersi ile haftalik dersin dersi ayniysa -> ATLA (hicbir sey uretme)
+    if exam["course_id"] == weekly["course_id"]:
+        return None
+    # farkli ders + ortak derslik + zaman kesisimi -> gercek derslik isgali
     if weekly["classroom_id"] in _room_ids(exam) and exam_weekly_overlap(exam, weekly):
-        # aynı dersin sınavı kendi dersiyle çakışıyorsa → sadece uyarı
-        if exam["course_id"] == weekly["course_id"]:
-            return {"rule_id": "X1b", "severity": "WARNING"}
-        # farklı ders → gerçek derslik işgali → HARD
-        return {"rule_id": "X1a", "severity": "HARD"}
-
+        return {"rule_id": "X1", "severity": "HARD"}
     return None
 
 

@@ -92,14 +92,10 @@ def _msg_e6(a, b):
 
 # ---------- çapraz kural mesajları (sınav × ders) ----------
 
-def _msg_x1a(exam, weekly):
+def _msg_x1(exam, weekly):
     return (f"Sınav-ders derslik çakışması: {course_label(exam)} sınavı ({exam_time_label(exam)}), "
             f"farklı bir dersin ({course_label(weekly)}, {weekly_time_label(weekly)}) "
             f"dersliğini işgal ediyor.")
-
-def _msg_x1b(exam, weekly):
-    return (f"Bilgi: {course_label(exam)} sınavı, kendi dersinin saatinde "
-            f"({weekly_time_label(weekly)}) yapılıyor.")
 
 def _msg_x2(exam, weekly):
     return (f"Sınav-ders cohort çakışması: {course_label(exam)} sınavı, aynı grubun "
@@ -131,8 +127,7 @@ MESSAGE_BUILDERS = {
     "E5": _msg_e5,
     "E6": _msg_e6,
     # çapraz (sınav × ders)
-    "X1a": _msg_x1a,
-    "X1b": _msg_x1b,
+    "X1": _msg_x1,
     "X2": _msg_x2,
     "X3": _msg_x3,
 }

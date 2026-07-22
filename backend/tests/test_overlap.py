@@ -623,18 +623,17 @@ def test_x1_different_course_conflict():
     b["course_id"] = 2             # farklı ders
     result = x1_exam_weekly_classroom_conflict(a, b)
     assert result is not None
+    assert result["rule_id"] == "X1"
     assert result["severity"] == "HARD"
 
 
-def test_x1_same_course_and_exam_no_conflict():
-    # aynı dersin sınavı ve dersi → WARNİNG 
+def test_x1_same_course_skipped():
+    # K-13: sinav ile haftalik ders ayni derse ait -> ATLA
     a = base_exam()
-    a["exam_type"] = "MIDTERM"      # çapraz kontrol sadece MIDTERM
+    a["exam_type"] = "MIDTERM"
     b = base_session()
-    b["course_id"] = 1             # aynı ders
-    result = x1_exam_weekly_classroom_conflict(a, b)
-    assert result is not None  
-    assert result["severity"] == "WARNING"  
+    b["course_id"] = 1             # ayni ders
+    assert x1_exam_weekly_classroom_conflict(a, b) is None  
 
 
 def test_x1_final_exam_no_conflict():
@@ -809,16 +808,10 @@ def test_message_e6():
 
 # ---------- çapraz (X) mesaj testleri: a=sınav, b=ders ----------
 
-def test_message_x1a():
+def test_message_x1():
     exam = base_exam()
     weekly = base_session()
-    assert "Sınav-ders derslik" in build_message("X1a", exam, weekly)
-
-
-def test_message_x1b():
-    exam = base_exam()
-    weekly = base_session()
-    assert "kendi dersinin" in build_message("X1b", exam, weekly)
+    assert "Sınav-ders derslik" in build_message("X1", exam, weekly)
 
 
 def test_message_x2():

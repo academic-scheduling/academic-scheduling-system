@@ -22,6 +22,7 @@ from app.conflicts.orchestrator import scan_weekly
 from app.conflicts.engine import sections_conflict
 from app.conflicts.engine import courses_conflict
 from app.conflicts.orchestrator import scan_cohort
+from app.conflicts.engine import is_async
 
 
 def base_session():
@@ -32,7 +33,7 @@ def base_session():
         "department_id": 2, "year": 2, "semester": "FALL",
         "is_elective": False, "expected_students": 40, "capacity": 30, 
         "course_code": "CENG2001",'section_no': 1 ,"id": 1, 
-        "type": "weekly_entry", "section_id": 100,
+        "type": "weekly_entry", "section_id": 100, "delivery_mode": "FACE_TO_FACE",
     }
 
 
@@ -293,6 +294,38 @@ def test_scan_weekly_cohort_compatible_combo():
     results = scan_weekly([a1, a2, b1, b2])
     assert not any(r["rule_id"] in ("W3", "W4") for r in results)  
 
+
+def test_is_async_true():
+    e = base_session(); e["delivery_mode"] = "ONLINE_ASYNC"
+    assert is_async(e) is True
+
+def test_is_async_false_face_to_face():
+    assert is_async(base_session()) is False        # base'de FACE_TO_FACE
+
+def test_is_async_false_sync():
+    e = base_session(); e["delivery_mode"] = "ONLINE_SYNC"
+    assert is_async(e) is False                     # senkron muaf DEGIL
+
+  
+def test_scan_weekly_async_skips_pairwise():
+    # asenkron giris, ayni derslik+saatteki normal derse ragmen W1/W2/W5 URETMEZ (K-19)
+    a = base_session(); a["id"] = 1; a["delivery_mode"] = "ONLINE_ASYNC"
+    b = base_session(); b["id"] = 2                      # FACE_TO_FACE
+    results = scan_weekly([a, b])
+    assert not any(r["rule_id"] in ("W1", "W2", "W5") for r in results)
+
+def test_scan_weekly_async_still_gets_w6():
+    # asenkron da olsa pencere disi -> W6 URETILIR (istisna)
+    a = base_session(); a["id"] = 1; a["delivery_mode"] = "ONLINE_ASYNC"; a["day_of_week"] = 6
+    assert any(r["rule_id"] == "W6" for r in scan_weekly([a]))
+
+def test_scan_weekly_async_skips_cohort():
+    # asenkron ders, ayni cohort'taki baska zorunlu derse ragmen W3 URETMEZ
+    a = base_session(); a["id"]=1; a["course_id"]=1; a["section_id"]=100; a["delivery_mode"]="ONLINE_ASYNC"
+    b = base_session(); b["id"]=2; b["course_id"]=2; b["section_id"]=200
+    results = scan_weekly([a, b])
+    assert not any(r["rule_id"] in ("W3", "W4") for r in results)
+  
 #-----------------------------------------exam rules tests-----------------------------------------
 
 def base_exam():

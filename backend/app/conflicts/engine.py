@@ -114,6 +114,9 @@ def courses_conflict(sections_a, sections_b):
                 return False      # uyumlu kombinasyon bulundu -> ogrenci secebilir
     return True                   # hic uyumlu cift yok -> ders cakismasi
 
+def is_async(entry):
+    """K-19: ONLINE_ASYNC giris cakisma karsilastirmalarina girmez."""
+    return entry.get("delivery_mode") == "ONLINE_ASYNC"  
 #----------------------------------------exam collision tests-------------------------------------------------------------------
 
 def minutes_since_midnight(t):

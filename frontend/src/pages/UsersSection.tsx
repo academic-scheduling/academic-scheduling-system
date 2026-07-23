@@ -5,7 +5,9 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { IconMail, IconPencil, IconTrash } from "@tabler/icons-react";
+import {
+  IconMail, IconPencil, IconTrash, IconUserCheck, IconUserOff,
+} from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
@@ -18,10 +20,30 @@ const ALL = "__all__";
 const PAGE_SIZE = 10;
 
 const STATUS_META: Record<UserStatus, { label: string; color: string }> = {
-  PENDING: { label: "Davet bekliyor", color: "yellow" },
+  PENDING: { label: "Davetli", color: "yellow" },
   ACTIVE: { label: "Aktif", color: "green" },
-  DISABLED: { label: "Kapalı", color: "gray" },
+  DISABLED: { label: "Pasif", color: "gray" },
 };
+
+/** Liste sırası: önce çalışanlar, sonra bekleyenler, en altta pasifler.
+ *  Admin'in ilgilendiği satırlar üstte kalsın; pasif hesap arşiv niteliğinde. */
+const STATUS_ORDER: Record<UserStatus, number> = {
+  ACTIVE: 0,
+  PENDING: 1,
+  DISABLED: 2,
+};
+
+/** Sütun genişlikleri sabit (Table layout="fixed" ile birlikte).
+ *  Aksi halde her sayfada içeriğe göre yeniden hesaplanır ve sayfa
+ *  değiştirdikçe sütunlar kayar. */
+const COL = {
+  ad: 180,
+  eposta: 250,
+  rol: 110,
+  durum: 90,
+  bolumler: 150,
+  eylem: 100,
+} as const;
 
 type FormValues = {
   name: string;
@@ -57,6 +79,7 @@ export default function UsersSection() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [roleFilter, setRoleFilter] = useState<string>(ALL);
   const [page, setPage] = useState(1);
 
   const [formModal, setFormModal] = useState(false);
@@ -108,18 +131,20 @@ export default function UsersSection() {
   // taşımak kontratı bu ekran için genişletmek olurdu.
   const gorunen = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("tr");
-    return users.filter((u) => {
-      if (statusFilter !== ALL && u.status !== statusFilter) return false;
-      if (!q) return true;
-      return u.name.toLocaleLowerCase("tr").includes(q)
-        || u.email.toLocaleLowerCase("tr").includes(q);
-    });
-  }, [users, search, statusFilter]);
-
-  const bekleyenSayisi = useMemo(
-    () => users.filter((u) => u.status === "PENDING").length,
-    [users],
-  );
+    return users
+      .filter((u) => {
+        if (statusFilter !== ALL && u.status !== statusFilter) return false;
+        if (roleFilter !== ALL && u.role !== roleFilter) return false;
+        if (!q) return true;
+        return u.name.toLocaleLowerCase("tr").includes(q)
+          || u.email.toLocaleLowerCase("tr").includes(q);
+      })
+      // Durum grubu içinde ada göre: sıra sayfadan sayfaya sabit kalsın,
+      // sunucunun döndürdüğü rastgele sıraya bağlı olmasın.
+      .sort((a, b) =>
+        STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+        || a.name.localeCompare(b.name, "tr"));
+  }, [users, search, statusFilter, roleFilter]);
 
   // Sayfa numarası state'te tutuluyor ama KULLANILMADAN ÖNCE sınırlanıyor.
   // Aksi halde son sayfadayken bir davet silmek ya da filtre daraltmak
@@ -255,16 +280,7 @@ export default function UsersSection() {
   return (
     <>
       <Group justify="space-between" align="baseline" mt="xl" mb="sm">
-        <Group gap="xs" align="baseline">
-          <Title order={4}>Kullanıcılar</Title>
-          {/* Bekleyen davet sayısı başlıkta: admin'in takip etmesi gereken
-              tek "yapılacak iş" bu — kimler daveti henüz tamamlamadı. */}
-          {bekleyenSayisi > 0 && (
-            <Badge variant="light" color="yellow" size="sm">
-              {bekleyenSayisi} davet bekliyor
-            </Badge>
-          )}
-        </Group>
+        <Title order={4}>Kullanıcılar</Title>
         <Button size="xs" onClick={openInvite}>+ Kullanıcı Davet Et</Button>
       </Group>
 
@@ -279,6 +295,17 @@ export default function UsersSection() {
         />
         <Select
           data={[
+            { value: ALL, label: "Tüm roller" },
+            { value: "ADMIN", label: "Admin" },
+            { value: "SUB_ACCOUNT", label: "Alt hesap" },
+          ]}
+          value={roleFilter}
+          onChange={(v) => { setRoleFilter(v ?? ALL); setPage(1); }}
+          allowDeselect={false}
+          w={160}
+        />
+        <Select
+          data={[
             { value: ALL, label: "Tüm durumlar" },
             ...(Object.keys(STATUS_META) as UserStatus[]).map((s) => ({
               value: s, label: STATUS_META[s].label,
@@ -287,21 +314,25 @@ export default function UsersSection() {
           value={statusFilter}
           onChange={(v) => { setStatusFilter(v ?? ALL); setPage(1); }}
           allowDeselect={false}
-          w={180}
+          w={160}
         />
       </Group>
 
       <Paper withBorder radius="md">
-        <Table verticalSpacing="xs" highlightOnHover>
+        {/* layout="fixed": sütun genişlikleri içeriğe göre DEĞİL, aşağıdaki
+            sabit değerlere göre belirlenir. Otomatik yerleşimde her sayfanın
+            içeriği farklı olduğu için sütunlar sayfa değiştikçe kayıyordu.
+            Yetkiler sütunu genişlik almaz — kalan yeri o doldurur. */}
+        <Table verticalSpacing="xs" highlightOnHover layout="fixed">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Ad</Table.Th>
-              <Table.Th>E-posta</Table.Th>
-              <Table.Th w={110}>Rol</Table.Th>
-              <Table.Th w={130}>Durum</Table.Th>
-              <Table.Th>Bölümler</Table.Th>
+              <Table.Th w={COL.ad}>Ad</Table.Th>
+              <Table.Th w={COL.eposta}>E-posta</Table.Th>
+              <Table.Th w={COL.rol}>Rol</Table.Th>
+              <Table.Th w={COL.durum}>Durum</Table.Th>
+              <Table.Th w={COL.bolumler}>Bölümler</Table.Th>
               <Table.Th>Yetkiler</Table.Th>
-              <Table.Th w={110} />
+              <Table.Th w={COL.eylem} />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -311,13 +342,17 @@ export default function UsersSection() {
               const durum = STATUS_META[u.status];
               return (
                 <Table.Tr key={u.id} opacity={u.status === "DISABLED" ? 0.6 : 1}>
+                  {/* truncate: sabit genişlikte uzun ad/e-posta sütunu
+                      taşırmasın, "..." ile kesilsin. */}
                   <Table.Td>
-                    <Text size="sm">
+                    <Text size="sm" truncate>
                       {u.name}
                       {kendisi && <Text span size="xs" c="dimmed"> (siz)</Text>}
                     </Text>
                   </Table.Td>
-                  <Table.Td><Text size="sm" c="dimmed">{u.email}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed" truncate title={u.email}>{u.email}</Text>
+                  </Table.Td>
                   <Table.Td>
                     <Badge variant="light" color={u.role === "ADMIN" ? "blue" : "gray"} size="sm">
                       {u.role === "ADMIN" ? "Admin" : "Alt hesap"}
@@ -352,7 +387,7 @@ export default function UsersSection() {
                           </Badge>
                         ))}
                         {CAPABILITIES.every((c) => !u[c.key]) && (
-                          <Text size="sm" c="dimmed">salt okuma</Text>
+                          <Text size="sm" c="dimmed">sadece okuma</Text>
                         )}
                       </Group>
                     )}
@@ -384,15 +419,19 @@ export default function UsersSection() {
                           </ActionIcon>
                         </Tooltip>
                       ) : u.status === "ACTIVE" ? (
-                        <Button size="compact-xs" variant="subtle" color="red"
-                                onClick={() => setDisabling(u)}>
-                          Kapat
-                        </Button>
+                        <Tooltip label="Erişimi kapat">
+                          <ActionIcon variant="subtle" size="sm" color="red"
+                                      onClick={() => setDisabling(u)}>
+                            <IconUserOff size={15} />
+                          </ActionIcon>
+                        </Tooltip>
                       ) : (
-                        <Button size="compact-xs" variant="subtle"
-                                onClick={() => toggleAccess(u, "ACTIVE")}>
-                          Aç
-                        </Button>
+                        <Tooltip label="Erişimi aç">
+                          <ActionIcon variant="subtle" size="sm" color="green"
+                                      onClick={() => toggleAccess(u, "ACTIVE")}>
+                            <IconUserCheck size={15} />
+                          </ActionIcon>
+                        </Tooltip>
                       ))}
                     </Group>
                   </Table.Td>
@@ -407,23 +446,15 @@ export default function UsersSection() {
       </Paper>
 
       {/* Sayfalama yalnız gerektiğinde: tek sayfalık listede numara çubuğu
-          göstermek boş yer kaplar. Sayaç metni her zaman görünür ki toplamın
-          kaçta kaçına bakıldığı belli olsun. */}
-      {gorunen.length > 0 && (
-        <Group justify="space-between" mt="sm">
-          <Text size="sm" c="dimmed">
-            {gorunen.length} kullanıcıdan{" "}
-            {(gecerliSayfa - 1) * PAGE_SIZE + 1}–
-            {Math.min(gecerliSayfa * PAGE_SIZE, gorunen.length)} arası
-          </Text>
-          {toplamSayfa > 1 && (
-            <Pagination
-              total={toplamSayfa}
-              value={gecerliSayfa}
-              onChange={setPage}
-              size="sm"
-            />
-          )}
+          boş yer kaplar. Toplam sayı özet kartlarında zaten duruyor. */}
+      {toplamSayfa > 1 && (
+        <Group justify="flex-end" mt="sm">
+          <Pagination
+            total={toplamSayfa}
+            value={gecerliSayfa}
+            onChange={setPage}
+            size="sm"
+          />
         </Group>
       )}
 
@@ -436,13 +467,12 @@ export default function UsersSection() {
         <form onSubmit={form.onSubmit(submit)}>
           <Stack>
             <TextInput label="Ad Soyad" {...form.getInputProps("name")} />
+            {/* Düzenlemede kilitli: e-posta kimliktir, davet token'ı ona bağlı
+                (K-34). Yanlışsa daveti iptal edip yeniden göndermek gerekir. */}
             <TextInput
               label="E-posta"
               placeholder="ad.soyad@muh.example.edu.tr"
               disabled={!!editing}
-              description={editing
-                ? "Kimliktir, değiştirilemez — yanlışsa daveti iptal edip yeniden gönderin (K-34)"
-                : "Üniversite domaini doğrulanır"}
               {...form.getInputProps("email")}
             />
             <Select
@@ -459,20 +489,19 @@ export default function UsersSection() {
               value={form.values.role}
               onChange={(v) => form.setFieldValue("role", (v ?? "SUB_ACCOUNT") as Role)}
             />
+            {/* Bölüm ataması YAZMA kapsamıdır; okuma zaten tüm workgroup'ta
+                serbest (K-26). */}
             <MultiSelect
               label="Bölümler"
               placeholder={form.values.department_ids.length ? undefined : "Seçin"}
               data={depOptions}
               searchable
-              description="Yazma yetkisi bu bölümlerle sınırlıdır; okuma tüm workgroup'ta serbest (K-26)"
               {...form.getInputProps("department_ids")}
             />
 
-            {form.values.role === "ADMIN" ? (
-              <Alert color="blue" variant="light">
-                Admin tüm yetkilere rolü gereği sahiptir; ayrıca seçim yapılmaz (K-25).
-              </Alert>
-            ) : (
+            {/* ADMIN'de yetki seçimi hiç gösterilmez: rol muafiyeti zaten
+                hepsini veriyor, sunucu da gönderileni yok sayıyor (K-25). */}
+            {form.values.role !== "ADMIN" && (
               <Stack gap={6}>
                 <Text size="sm" fw={500}>Yetkiler</Text>
                 {CAPABILITIES.map((c) => (

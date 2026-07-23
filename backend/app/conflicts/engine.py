@@ -2,25 +2,7 @@
 # bu dosta asla FastAPI,SQLAlchemy veya veritabanı import etmez.
 # a ve b birer dersin gösterimidir.
 
-from dataclasses import dataclass
-from datetime import date, time
-from email.mime import base
 from app.conflicts.slots import slot_range_to_times
-
-@dataclass
-class WeeklySession:
-    course_id: int
-    classroom_id: int | None   # [K-10] NULL olabilir
-    day_of_week: int
-    start_slot: int
-    slot_count: int
-    department_id: int  
-    year: int   
-    semester: int   
-    lecturer_id: int    
-    is_elective: bool
-    expected_students: int
-    capacity: int
 
 
 def intervals_overlap(start_a, end_a, start_b, end_b):
@@ -43,6 +25,16 @@ def weekly_sessions_overlap(a, b):
            a["start_slot"], a["slot_count"], b["start_slot"], b["slot_count"]
        )
 
+
+def sections_conflict(sessions_a, sessions_b):
+    """İki şubenin oturum listeleri: HERHANGİ bir çift kesişiyorsa True."""
+    for sa in sessions_a:
+        for sb in sessions_b:
+            if weekly_sessions_overlap(sa, sb):
+                return True
+    return False
+  
+
 def w1_classroom_conflict(a, b):
     # 1) Atlama koşulu [K-10]: taraflardan biri online ise (derslik yok) kontrol anlamsız
     if a["classroom_id"] is None or b["classroom_id"] is None:
@@ -63,32 +55,11 @@ def w2_lecturer_conflict(a, b):
     # 2) Yukarıdaki tutmadıysa çakışma yok
     return None
 
-def w3_w4_cohort_conflict(a, b):
-    # w5 te kontrol edilecek
-    if a["course_id"] == b["course_id"]:
-        return None
-    
-    same_cohort = (
-       a["department_id"] == b["department_id"]
-       and a["year"] == b["year"]
-       and a["semester"] == b["semester"]
-    )
-
-    # 1) Aynı öğrenci grubu mu? VE zamanları kesişiyor mu?
-    if same_cohort and weekly_sessions_overlap(a, b):
-        if not a["is_elective"] and not b["is_elective"]:
-            return {"rule_id": "W3", "severity": "HARD"}
-        else:
-            return {"rule_id": "W4", "severity": "WARNING"} 
-
-    # 2) Yukarıdaki tutmadıysa çakışma yok
-    return None
-
 
 def w5_duplicate_session(a, b):
     # 1) Aynı ders mi? VE aynı gün ve slotlarda mı?
     if (
-        a["course_id"] == b["course_id"]
+        a["section_id"] == b["section_id"]
         and weekly_sessions_overlap(a, b)  
     ):
         return {"rule_id": "W5", "severity": "WARNING"}
@@ -115,7 +86,20 @@ def w7_capacity(a):
     if a["expected_students"] > a["capacity"]:
         return {"rule_id": "W7", "severity": "WARNING"}
     return None
+  
 
+def courses_conflict(sections_a, sections_b):
+    """İki dersin şubeleri: EN AZ BİR uyumlu (kesişmeyen) şube çifti varsa
+    çakışma YOK (False). Hiç uyumlu çift yoksa çakışma VAR (True) [K-15]."""
+    for sa_sessions in sections_a:
+        for sb_sessions in sections_b:
+            if not sections_conflict(sa_sessions, sb_sessions):
+                return False      # uyumlu kombinasyon bulundu -> ogrenci secebilir
+    return True                   # hic uyumlu cift yok -> ders cakismasi
+
+def is_async(entry):
+    """K-19: ONLINE_ASYNC giris cakisma karsilastirmalarina girmez."""
+    return entry.get("delivery_mode") == "ONLINE_ASYNC"  
 #----------------------------------------exam collision tests-------------------------------------------------------------------
 
 def minutes_since_midnight(t):
@@ -185,11 +169,22 @@ def e5_exam_capacity(a):
     # tekil kural: tek sınavın derslik kapasitesini kontrol eder
     # atlama: online ders (derslik yok) → karşılaştıracak kapasite yok
     if not a["rooms"]:
-        return None
+         return None
+    if any(room["exam_capacity"] is None for room in a["rooms"]):
+        return None      # NULL'lu derslik varken E5 hesaplanmaz (once E5a)  
     # beklenen öğrenci sayısı toplam kapasiteyi aşıyorsa uyarı
-    total_capacity = sum(room["capacity"] for room in a["rooms"])
+    total_capacity = sum(room["exam_capacity"] for room in a["rooms"])   # capacity -> exam_capacity
     if a["expected_students"] > total_capacity:
         return {"rule_id": "E5", "severity": "WARNING"}
+    return None
+
+
+def e5a_missing_exam_capacity(a):
+    """K-21: secili dersliklerden birinin exam_capacity'si NULL -> WARNING."""
+    if not a["rooms"]:
+        return None
+    if any(room["exam_capacity"] is None for room in a["rooms"]):
+        return {"rule_id": "E5a", "severity": "WARNING"}
     return None
 
 
@@ -197,14 +192,26 @@ def e6_exam_out_of_window(a):
     # hafta sonu sınavları  → HARD
     if a["exam_date"].weekday() >= 5:
         return {"rule_id": "E6", "severity": "HARD"}
+      
+
+def e7_excess_capacity(a, margin=0):
+    """K-17: en kucuk exam_capacity'li derslik cikarilinca kalan hala
+    yetiyorsa israf -> WARNING. margin: hoca onayi bekleyen esik (varsayilan 0)."""
+    rooms = a["rooms"]
+    if len(rooms) <= 1:                                        # cikarilacak fazlalik yok
+        return None
+    if any(room["exam_capacity"] is None for room in rooms):  # NULL varsa once E5a
+        return None
+    total = sum(room["exam_capacity"] for room in rooms)
+    smallest = min(room["exam_capacity"] for room in rooms)
+    if total - smallest >= a["expected_students"] + margin:
+        return {"rule_id": "E7", "severity": "WARNING"}
+    return None
 
 
 def exam_weekly_overlap(exam, weekly):
-    # dersler sadece midterm sınavlarıyla çakışabilir, final sınavları sadece final sınavlarıyla çakışabilir    
-    if exam["exam_type"] != "MIDTERM":
-        return False
-    
-    # sınavın gününü tarihten türet: weekday() 0=Pzt → +1 ile haftalık ölçeğe (1=Pzt) getir
+    # K-06: X kurallari sinav TIPINE degil, check_exam_vs_course BAYRAGINA baglidir.
+    # Bayrak orkestratorde uygulanir; bu fonksiyon yalnizca gun+saat kesisimini hesaplar
     exam_day = exam["exam_date"].weekday() + 1
     if exam_day != weekly["day_of_week"]:
         return False  # farklı günlerdeyse çakışamaz
@@ -223,18 +230,14 @@ def exam_weekly_overlap(exam, weekly):
 
 
 def x1_exam_weekly_classroom_conflict(exam, weekly):
-    # 1) midterm sınavı nın sınıflarından biri, haftalık dersin sınıfıyla aynı mı? VE zamanları kesişiyor mu?
     if weekly["classroom_id"] is None:
         return None
-
-    # ortak derslik VE zaman kesişimi var mı?
+    # K-13: sinavin dersi ile haftalik dersin dersi ayniysa -> ATLA (hicbir sey uretme)
+    if exam["course_id"] == weekly["course_id"]:
+        return None
+    # farkli ders + ortak derslik + zaman kesisimi -> gercek derslik isgali
     if weekly["classroom_id"] in _room_ids(exam) and exam_weekly_overlap(exam, weekly):
-        # aynı dersin sınavı kendi dersiyle çakışıyorsa → sadece uyarı
-        if exam["course_id"] == weekly["course_id"]:
-            return {"rule_id": "X1b", "severity": "WARNING"}
-        # farklı ders → gerçek derslik işgali → HARD
-        return {"rule_id": "X1a", "severity": "HARD"}
-
+        return {"rule_id": "X1", "severity": "HARD"}
     return None
 
 

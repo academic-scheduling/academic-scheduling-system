@@ -190,7 +190,7 @@ def create_exam(
     exam.classrooms = _load_classrooms(db, classroom_ids)
     db.add(exam)
     db.flush()
-    log_action(db, user, "CREATE", "exam", exam.id)
+    log_action(db, user, "CREATE", "exam", exam.id, exam)
     db.commit()
 
     exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
@@ -230,7 +230,7 @@ def update_exam(
         exam.classrooms = _load_classrooms(db, classroom_ids)
     for field, value in data.items():
         setattr(exam, field, value)
-    log_action(db, user, "UPDATE", "exam", exam.id)
+    log_action(db, user, "UPDATE", "exam", exam.id, exam)
     db.commit()
 
     exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
@@ -275,7 +275,7 @@ def submit_exams(
     for exam in exams:
         exam.status = EntryStatus.SUBMITTED
         exam.submitted_at = now  # CHECK: status ile tutarlı olmak zorunda
-        log_action(db, user, "SUBMIT", "exam", exam.id)
+        log_action(db, user, "SUBMIT", "exam", exam.id, exam)
     db.commit()
     return {"submitted": [e.id for e in exams], "warnings": warnings}
 
@@ -293,7 +293,7 @@ def revert_exam_to_draft(
 
     exam.status = EntryStatus.DRAFT
     exam.submitted_at = None
-    log_action(db, user, "UPDATE", "exam", exam.id)
+    log_action(db, user, "UPDATE", "exam", exam.id, exam)
     db.commit()
     return _eager_exam_query(db).filter(Exam.id == exam.id).first()
 
@@ -308,6 +308,6 @@ def delete_exam(
     _ensure_department_access(db, user, exam.course.department_id)
     _ensure_draft(exam)  # SUBMITTED silinemez; önce draft'a çevrilir
 
-    log_action(db, user, "DELETE", "exam", exam.id)
+    log_action(db, user, "DELETE", "exam", exam.id, exam)
     db.delete(exam)  # exam_classrooms satırları CASCADE ile gider
     db.commit()

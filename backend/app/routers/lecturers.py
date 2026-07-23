@@ -60,7 +60,7 @@ def create_lecturer(
     )
     db.add(lec)
     db.flush()
-    log_action(db, manager,"CREATE", "lecturer", lec.id)
+    log_action(db, manager,"CREATE", "lecturer", lec.id, lec)
     db.commit()
     db.refresh(lec)
     return lec
@@ -99,7 +99,7 @@ def update_lecturer(
 
     for field, value in data.items():
         setattr(lec, field, value)
-    log_action(db, manager,"UPDATE", "lecturer", lec.id)
+    log_action(db, manager,"UPDATE", "lecturer", lec.id, lec)
     db.commit()
     db.refresh(lec)
     return lec
@@ -138,6 +138,6 @@ def delete_lecturer(
                    "Önce bu bağlantıları kaldırın.",
         )
 
-    log_action(db, manager, "DELETE", "lecturer", lec.id)
+    log_action(db, manager, "DELETE", "lecturer", lec.id, lec)
     db.delete(lec)
     db.commit()

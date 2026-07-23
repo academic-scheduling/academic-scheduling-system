@@ -175,7 +175,7 @@ def create_weekly_entry(
     entry = WeeklyScheduleEntry(created_by=user.id, **data)
     db.add(entry)
     db.flush()
-    log_action(db, user, "CREATE", "weekly_entry", entry.id)
+    log_action(db, user, "CREATE", "weekly_entry", entry.id, entry)
     db.commit()
 
     entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
@@ -210,7 +210,7 @@ def update_weekly_entry(
 
     for field, value in data.items():
         setattr(entry, field, value)
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id)
+    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry)
     db.commit()
 
     entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
@@ -254,7 +254,7 @@ def submit_weekly_entries(
     for entry in entries:
         entry.status = EntryStatus.SUBMITTED
         entry.submitted_at = now  # CHECK: status ile tutarlı olmak zorunda
-        log_action(db, user, "SUBMIT", "weekly_entry", entry.id)
+        log_action(db, user, "SUBMIT", "weekly_entry", entry.id, entry)
     db.commit()
     # W8 tamlık uyarıları dahil WARNING'ler submit'i durdurmaz, görünür kalır (K-20)
     return {"submitted": [e.id for e in entries], "warnings": warnings}
@@ -273,7 +273,7 @@ def revert_weekly_entry_to_draft(
 
     entry.status = EntryStatus.DRAFT
     entry.submitted_at = None
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id)
+    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry)
     db.commit()
     return _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
 
@@ -288,6 +288,6 @@ def delete_weekly_entry(
     _ensure_department_access(user, entry.section.course.department_id)
     _ensure_draft(entry)  # SUBMITTED silinemez; önce draft'a çevrilir
 
-    log_action(db, user, "DELETE", "weekly_entry", entry.id)
+    log_action(db, user, "DELETE", "weekly_entry", entry.id, entry)
     db.delete(entry)
     db.commit()

@@ -14,21 +14,26 @@ router = APIRouter(tags=["audit"])
 
 
 def _resolve_labels(db: Session, rows: list[AuditLog]) -> dict[tuple[str, int], str]:
-    """(entity_type, entity_id) → insan-okur etiket (K-35).
+    """(entity_type, entity_id) → insan-okur etiket — YALNIZ ESKİ SATIRLAR için.
 
-    Etiket log satırında TUTULMUYOR, burada çözülüyor. Bunun bilinen sınırı:
-    silinmiş kayıt çözülemez ve etiketi None kalır — üstelik adını en çok
-    merak edeceğimiz satır tam da odur (DELETE). Kalıcı çözüm etiketi yazma
-    anında satıra denormalize etmek; o eklendiğinde bu fonksiyon devreden
-    çıkar, cevap şekli değişmez.
+    K-36'dan sonra etiket işlem anında satıra yazılıyor; bu fonksiyon artık
+    yalnızca `entity_label` kolonundan ÖNCE yazılmış satırlar için çalışıyor.
+    Onlarda tek yapılabilecek şey bu: varlık hâlâ duruyorsa adını üret,
+    silinmişse None bırak.
 
-    N+1 YOK: satırlar türe göre gruplanıp tür başına TEK sorgu atılır
-    (en fazla 9 sorgu), satır başına bir sorgu değil.
+    Bu geri düşüşün bilinen iki sınırı (K-36'da kayıtlı): silinmiş kayıt
+    çözülemez, ve UPDATE satırı BUGÜNKÜ adı gösterir — işlem anındakini değil.
+    Yeni satırlarda ikisi de yok.
+
+    N+1 YOK: satırlar türe göre gruplanıp tür başına TEK sorgu atılır.
     """
-    # tür → o türden istenen id'ler
+    # tür → o türden istenen id'ler (yalnız etiketi eksik satırlar)
     istenen: dict[str, set[int]] = {}
     for r in rows:
-        istenen.setdefault(r.entity_type, set()).add(r.entity_id)
+        if r.entity_label is None:
+            istenen.setdefault(r.entity_type, set()).add(r.entity_id)
+    if not istenen:
+        return {}
 
     etiketler: dict[tuple[str, int], str] = {}
 
@@ -134,7 +139,10 @@ def list_audit_logs(
                 action=r.action,
                 entity_type=r.entity_type,
                 entity_id=r.entity_id,
-                entity_label=etiketler.get((r.entity_type, r.entity_id)),
+                # Önce satıra YAZILMIŞ etiket (K-36) — işlem anındaki gerçek.
+                # Yoksa eski satırdır, okuma anında çözülmeye çalışılır.
+                entity_label=r.entity_label
+                or etiketler.get((r.entity_type, r.entity_id)),
             )
             for r in rows
         ],

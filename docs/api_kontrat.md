@@ -382,9 +382,11 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
 ← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT`
 ← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
   `course` · `course_section` · `exam` · `weekly_entry` · `user`
-← `entity_label`: okuma anında ilgili tablodan çözülür. **Kayıt silinmişse
-  `null`** döner (K-35) — UI o zaman `#12` gösterir. Yazma anında denormalize
-  etmek sonraki iş; cevap şekli o zaman da değişmez.
+← `entity_label`: **işlem anındaki** insan-okur ad, satıra yazılır (K-36).
+  Silinen kayıt da konuşur; sonraki değişiklikler eski satırları bozmaz
+  (UPDATE satırı o işlemden sonraki adı taşır).
+  `null` yalnız K-36 öncesi yazılmış eski satırlarda görülür; onlarda varlık
+  hâlâ duruyorsa ad okuma anında çözülür, yoksa UI `#12` gösterir.
 ← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
 ← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
   `workgroup_id` kolonu yok.

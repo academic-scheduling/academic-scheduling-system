@@ -232,7 +232,7 @@ def update_user(
             for dep_id in istenen:
                 db.add(DepartmentMembership(user_id=user.id, department_id=dep_id))
 
-    log_action(db, admin, "UPDATE", "user", user.id)
+    log_action(db, admin, "UPDATE", "user", user.id, user)
     db.commit()
     db.refresh(user)
     return user
@@ -264,6 +264,6 @@ def delete_user(
                    "kaybolur. Erişimi kapatın (status: DISABLED).",
         )
 
-    log_action(db, admin, "DELETE", "user", user.id)
+    log_action(db, admin, "DELETE", "user", user.id, user)
     db.delete(user)
     db.commit()

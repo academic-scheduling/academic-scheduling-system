@@ -42,7 +42,7 @@ def create_department(
     )
     db.add(dep)
     db.flush()
-    log_action(db, admin, "CREATE", "department", dep.id)
+    log_action(db, admin, "CREATE", "department", dep.id, dep)
     db.commit()
     db.refresh(dep)
     return dep
@@ -71,7 +71,7 @@ def update_department(
 
     for field, value in data.items():
         setattr(dep, field, value)
-    log_action(db, admin, "UPDATE", "department", dep.id)
+    log_action(db, admin, "UPDATE", "department", dep.id, dep)
     db.commit()
     db.refresh(dep)
     return dep
@@ -110,6 +110,6 @@ def delete_department(
                    "Önce bunları kaldırın.",
         )
 
-    log_action(db, admin, "DELETE", "department", dep.id)
+    log_action(db, admin, "DELETE", "department", dep.id, dep)
     db.delete(dep)
     db.commit()

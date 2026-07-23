@@ -375,8 +375,12 @@ def base_exam():
         "exam_date": date(2026, 6, 15), "start_time": time(10, 0),
         "duration_minutes": 90, "lecturer_id": 5,
         "department_id": 2, "year": 2, "semester": "FALL",
-        "is_elective": False, "expected_students": 40,"course_code": "CENG2001",
-        "section_no": 1, "id": 1, "type": "exam",
+        "is_elective": False, "expected_students": 40, "course_code": "CENG2001",
+        "id": 1, "type": "exam",
+        # section_no BILEREK YOK: sinav ders duzeyindedir (K-16), subesi olmaz.
+        # Eskiden sahte "section_no": 1 vardi ve mesaj katmanindaki gercek hatayi
+        # (course_label(exam) -> KeyError) gizliyordu. Adaptor de bu alani
+        # uretmez; fixture artik gercek veriyle ayni sekle sahip.
     }
 
 
@@ -793,7 +797,10 @@ def test_message_w8():
 def test_message_e1():
     a = base_exam()
     b = base_exam()
-    assert "Sınav derslik çakışması" in build_message("E1", a, b)
+    msg = build_message("E1", a, b)
+    assert "Sınav çakışması" in msg
+    assert "CENG2001" in msg
+    assert "CENG2001-1" not in msg                 # K-16: sınavda şube no YOK
 
 
 def test_message_e2():
@@ -816,7 +823,7 @@ def test_message_e4():
 
 def test_message_e5():
     a = base_exam()
-    assert "kapasite" in build_message("E5", a).lower()      # tekil, b yok
+    assert "kontenjan" in build_message("E5", a).lower()     # tekil, b yok
 
 
 def test_message_e6():
@@ -833,7 +840,7 @@ def test_message_e7():
 def test_message_x1():
     exam = base_exam()
     weekly = base_session()
-    assert "Sınav-ders derslik" in build_message("X1", exam, weekly)
+    assert "Sınav-ders çakışması" in build_message("X1", exam, weekly)
 
 
 def test_message_x2():

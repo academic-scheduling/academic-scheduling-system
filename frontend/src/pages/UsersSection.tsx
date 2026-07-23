@@ -37,11 +37,11 @@ const STATUS_ORDER: Record<UserStatus, number> = {
  *  Aksi halde her sayfada içeriğe göre yeniden hesaplanır ve sayfa
  *  değiştirdikçe sütunlar kayar. */
 const COL = {
-  ad: 180,
-  eposta: 250,
+  ad: 170,
+  eposta: 230,
   rol: 110,
   durum: 90,
-  bolumler: 150,
+  bolumler: 190,        // üç bölüm rozeti tek satırda sığsın
   eylem: 100,
 } as const;
 
@@ -60,6 +60,42 @@ const BOS_FORM: FormValues = {
     can_manage_classrooms: false, can_manage_lecturers: false,
   },
 };
+
+/** En fazla kaç bölüm rozeti yazılır; kalanı "+N" olarak toplanır. */
+const MAX_DEP_BADGE = 3;
+
+/** Bölüm hücresi: rozetler tek satırda, taşan kısım "+N" altında.
+ *
+ *  Hepsi basılsaydı dar sütunda alt alta dizilir ve satır yüksekliği
+ *  kullanıcıdan kullanıcıya değişirdi — tablo dalgalanırdı. Tam liste
+ *  "+N"in tooltip'inde duruyor, yani bilgi kaybolmuyor, yalnız yer kaplamıyor.
+ */
+function DepartmentCell({
+  ids, depById,
+}: { ids: number[]; depById: Record<number, Department> }) {
+  if (ids.length === 0) return <Text size="sm" c="dimmed">—</Text>;
+
+  const kod = (id: number) => depById[id]?.code ?? String(id);
+  const gosterilen = ids.slice(0, MAX_DEP_BADGE);
+  const kalan = ids.slice(MAX_DEP_BADGE);
+
+  return (
+    <Group gap={4} wrap="nowrap">
+      {gosterilen.map((id) => (
+        <Badge key={id} variant="outline" size="sm" style={{ flexShrink: 1, minWidth: 0 }}>
+          {kod(id)}
+        </Badge>
+      ))}
+      {kalan.length > 0 && (
+        <Tooltip label={kalan.map(kod).join(", ")}>
+          <Badge variant="light" color="gray" size="sm" style={{ flexShrink: 0 }}>
+            +{kalan.length}
+          </Badge>
+        </Tooltip>
+      )}
+    </Group>
+  );
+}
 
 /** Dashboard'un kullanıcı bloğu: davet + yönetim (K-34).
  *
@@ -362,23 +398,18 @@ export default function UsersSection() {
                     <Badge variant="light" color={durum.color} size="sm">{durum.label}</Badge>
                   </Table.Td>
                   <Table.Td>
-                    {u.department_ids.length === 0 ? (
-                      <Text size="sm" c="dimmed">—</Text>
+                    {/* ADMIN'in ataması olmaz, her bölümde yetkilidir (K-34). */}
+                    {u.role === "ADMIN" ? (
+                      <Text size="sm" c="dimmed">tümü</Text>
                     ) : (
-                      <Group gap={4}>
-                        {u.department_ids.map((id) => (
-                          <Badge key={id} variant="outline" size="sm">
-                            {depById[id]?.code ?? id}
-                          </Badge>
-                        ))}
-                      </Group>
+                      <DepartmentCell ids={u.department_ids} depById={depById} />
                     )}
                   </Table.Td>
                   <Table.Td>
                     {/* ADMIN'de bayrak listelenmez: rol muafiyeti zaten hepsini
                         veriyor, beş rozet basmak gürültü olurdu (K-25). */}
                     {u.role === "ADMIN" ? (
-                      <Text size="sm" c="dimmed">tümü (rol gereği)</Text>
+                      <Text size="sm" c="dimmed">tümü</Text>
                     ) : (
                       <Group gap={4}>
                         {CAPABILITIES.filter((c) => u[c.key]).map((c) => (
@@ -490,14 +521,17 @@ export default function UsersSection() {
               onChange={(v) => form.setFieldValue("role", (v ?? "SUB_ACCOUNT") as Role)}
             />
             {/* Bölüm ataması YAZMA kapsamıdır; okuma zaten tüm workgroup'ta
-                serbest (K-26). */}
-            <MultiSelect
-              label="Bölümler"
-              placeholder={form.values.department_ids.length ? undefined : "Seçin"}
-              data={depOptions}
-              searchable
-              {...form.getInputProps("department_ids")}
-            />
+                serbest (K-26). ADMIN'de hiç gösterilmez: admin her bölümde
+                zaten yetkilidir, sunucu da gönderileni yok sayar (K-34). */}
+            {form.values.role !== "ADMIN" && (
+              <MultiSelect
+                label="Bölümler"
+                placeholder={form.values.department_ids.length ? undefined : "Seçin"}
+                data={depOptions}
+                searchable
+                {...form.getInputProps("department_ids")}
+              />
+            )}
 
             {/* ADMIN'de yetki seçimi hiç gösterilmez: rol muafiyeti zaten
                 hepsini veriyor, sunucu da gönderileni yok sayıyor (K-25). */}

@@ -117,11 +117,27 @@ def test_draft_exam_is_counted():
     assert summary(h)["exams"] == once + 1
 
 
-# --- motor bağlanana dek 0 (K-33'te kayıtlı bilinen sınırlama) ---
+# --- motor bağlı: sayaçlar gerçek çakışmayı sayıyor (K-39) ---
 
-def test_conflict_counters_are_zero_while_engine_is_stubbed():
-    s = summary(admin_headers())
-    assert s["unresolved_hard"] == 0 and s["unresolved_warnings"] == 0
+def test_hard_counter_rises_with_a_real_conflict():
+    """Gerçek W1 (derslik) çakışması yaratılır → unresolved_hard artar.
+
+    Motor stub'ken bu sayaç sabit 0'dı ("çakışma yok" gibi okunuyordu, oysa
+    henüz bakılmamıştı — K-33'ün bilinen sınırlaması). Artık gerçekten sayıyor.
+    Mutlak sayı değil FARK ölçülür: ortak DB'de başka testlerin çakışmaları var.
+    """
+    from tests.test_wp3_weekly import make_classroom, make_entry, make_section
+
+    h = admin_headers()
+    once = summary(h)["unresolved_hard"]
+
+    # Aynı derslik, aynı gün, aynı slot → W1 HARD (iki farklı şube)
+    room = make_classroom(h)
+    ortak = {"classroom_id": room["id"], "day_of_week": 3, "start_slot": 5}
+    assert make_entry(h, make_section(h), **ortak).status_code == 201
+    assert make_entry(h, make_section(h), **ortak).status_code == 201
+
+    assert summary(h)["unresolved_hard"] > once
 
 
 def test_conflict_counters_read_from_engine_seam(monkeypatch):

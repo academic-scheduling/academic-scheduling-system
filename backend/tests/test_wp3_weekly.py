@@ -202,7 +202,10 @@ def test_lifecycle_submit_revert_delete():
 
     r = client.post("/weekly-entries/submit", json={"entry_ids": [entry["id"]]}, headers=h)
     assert r.status_code == 200, r.text
-    assert r.json() == {"submitted": [entry["id"]], "warnings": []}
+    assert r.json()["submitted"] == [entry["id"]]
+    # Motor bağlandıktan sonra (K-39) tek slotluk giriş dersin T+U+L hedefini
+    # karşılamadığı için W8 tamlık UYARISI gelir — submit'i durdurmaz (K-20).
+    assert all(w["severity"] == "WARNING" for w in r.json()["warnings"])
 
     # SUBMITTED: düzenlenemez, silinemez, tekrar submit edilemez
     eid = entry["id"]

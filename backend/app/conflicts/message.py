@@ -57,6 +57,10 @@ def _msg_w6(a, b):
 def _msg_w7(a, b):
     return (f"Kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
             f"({a['expected_students']}) derslik kapasitesini aşıyor.")
+
+def _msg_w8(a, b):
+    return (f"Ders saati tamlığı: {course_label(a)} şubesinin yerleşen slot toplamı "
+            f"dersin T+U+L değeriyle uyuşmuyor (eksik veya fazla).")
      
 # ------------------------------------sınav kuralları mesajları --------------------------------------------
 
@@ -86,20 +90,28 @@ def _msg_e5(a, b):
     return (f"Sınav kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
             f"({a['expected_students']}) toplam derslik kapasitesini aşıyor.")
 
+
+def _msg_e5a(a, b):
+    return (f"Sınav kontenjanı eksik: {course_label(a)} sınavı için seçili "
+            f"dersliklerden en az birinin kontenjanı (exam_capacity) girilmemiş.")
+
+
+
 def _msg_e6(a, b):
     return (f"Hafta sonu sınavı: {course_label(a)} sınavı {a['exam_date']} "
             f"tarihinde hafta sonuna denk geliyor.")
 
+
+def _msg_e7(a, b):
+    return (f"Gereksiz derslik: {course_label(a)} sınavı için seçilen dersliklerden "
+            f"en küçüğü çıkarılsa da kalan kontenjan öğrenci sayısına yetiyor.")
+
 # ---------- çapraz kural mesajları (sınav × ders) ----------
 
-def _msg_x1a(exam, weekly):
+def _msg_x1(exam, weekly):
     return (f"Sınav-ders derslik çakışması: {course_label(exam)} sınavı ({exam_time_label(exam)}), "
             f"farklı bir dersin ({course_label(weekly)}, {weekly_time_label(weekly)}) "
             f"dersliğini işgal ediyor.")
-
-def _msg_x1b(exam, weekly):
-    return (f"Bilgi: {course_label(exam)} sınavı, kendi dersinin saatinde "
-            f"({weekly_time_label(weekly)}) yapılıyor.")
 
 def _msg_x2(exam, weekly):
     return (f"Sınav-ders cohort çakışması: {course_label(exam)} sınavı, aynı grubun "
@@ -122,6 +134,7 @@ MESSAGE_BUILDERS = {
     "W5": _msg_w5,
     "W6": _msg_w6,
     "W7": _msg_w7,
+    "W8": _msg_w8,  
     # sınav kuralları
     "E1": _msg_e1,
     "E2": _msg_e2,
@@ -129,10 +142,11 @@ MESSAGE_BUILDERS = {
     "E4a": _msg_e4a,
     "E4b": _msg_e4b,
     "E5": _msg_e5,
+    "E5a": _msg_e5a,
     "E6": _msg_e6,
+    "E7": _msg_e7,
     # çapraz (sınav × ders)
-    "X1a": _msg_x1a,
-    "X1b": _msg_x1b,
+    "X1": _msg_x1,
     "X2": _msg_x2,
     "X3": _msg_x3,
 }
@@ -143,3 +157,24 @@ def build_message(rule_id, a, b=None):
     if builder is None:
         return f"Çakışma: {rule_id}"
     return builder(a, b)
+
+def _affected_ref(obj):
+    """ConflictResult.affected içindeki tek öğe (kontrat §0)."""
+    if obj.get("type") == "exam":
+        code = obj["course_code"]      # sınav ders düzeyinde (K-16) — şube yok
+    else:
+        code = course_label(obj)       # "CENG2001-1" (kod + şube_no)
+    return {"type": obj["type"], "id": obj["id"], "course_code": code}
+
+
+def build_result(rule_id, severity, a, b=None):
+    """Bir kural vuruşunu tam ConflictResult'a çevirir."""
+    affected = [_affected_ref(a)]
+    if b is not None:                  # tekil kurallar (W6/W7/E5/E6...) tek nesne
+        affected.append(_affected_ref(b))
+    return {
+        "severity": severity,
+        "rule_id": rule_id,
+        "message": build_message(rule_id, a, b),
+        "affected": affected,
+    }

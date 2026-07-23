@@ -41,7 +41,7 @@ const COL = {
   eposta: 230,
   rol: 110,
   durum: 90,
-  bolumler: 190,        // üç bölüm rozeti tek satırda sığsın
+  bolumler: 190,        // kısa kodlarda (CENG, EEE) satır başına 3-4 rozet
   eylem: 100,
 } as const;
 
@@ -61,38 +61,25 @@ const BOS_FORM: FormValues = {
   },
 };
 
-/** En fazla kaç bölüm rozeti yazılır; kalanı "+N" olarak toplanır. */
-const MAX_DEP_BADGE = 3;
-
-/** Bölüm hücresi: rozetler tek satırda, taşan kısım "+N" altında.
+/** Bölüm hücresi: kodlar rozet olarak yan yana, sığmayan alt satıra geçer.
  *
- *  Hepsi basılsaydı dar sütunda alt alta dizilir ve satır yüksekliği
- *  kullanıcıdan kullanıcıya değişirdi — tablo dalgalanırdı. Tam liste
- *  "+N"in tooltip'inde duruyor, yani bilgi kaybolmuyor, yalnız yer kaplamıyor.
+ *  Bölüm kodları kısa (CENG, EEE), o yüzden sütuna satır başına 3-4 tanesi
+ *  sığıyor ve kısaltmaya gerek kalmıyor. Rozetler DARALTILMAZ: sıkıştırmak
+ *  "CE…" gibi okunamayan kodlar üretiyordu — kod zaten kısaltmadır, bir daha
+ *  kısaltılırsa anlamı kalmaz. Sığmayan aşağı iner.
  */
 function DepartmentCell({
   ids, depById,
 }: { ids: number[]; depById: Record<number, Department> }) {
   if (ids.length === 0) return <Text size="sm" c="dimmed">—</Text>;
 
-  const kod = (id: number) => depById[id]?.code ?? String(id);
-  const gosterilen = ids.slice(0, MAX_DEP_BADGE);
-  const kalan = ids.slice(MAX_DEP_BADGE);
-
   return (
-    <Group gap={4} wrap="nowrap">
-      {gosterilen.map((id) => (
-        <Badge key={id} variant="outline" size="sm" style={{ flexShrink: 1, minWidth: 0 }}>
-          {kod(id)}
+    <Group gap={4}>
+      {ids.map((id) => (
+        <Badge key={id} variant="outline" size="sm">
+          {depById[id]?.code ?? id}
         </Badge>
       ))}
-      {kalan.length > 0 && (
-        <Tooltip label={kalan.map(kod).join(", ")}>
-          <Badge variant="light" color="gray" size="sm" style={{ flexShrink: 0 }}>
-            +{kalan.length}
-          </Badge>
-        </Tooltip>
-      )}
     </Group>
   );
 }

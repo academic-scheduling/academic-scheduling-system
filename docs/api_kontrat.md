@@ -367,6 +367,30 @@ Cevap:
 
 ---
 
+## 12. İşlem Kayıtları (audit log)   ← K-35
+
+### GET /audit-logs?limit=20&offset=0&user_id=&action=&entity_type=&date_from=&date_to=
+Yalnız ADMIN. Yeniden eskiye sıralı.
+```json
+{ "total": 2613,
+  "items": [
+    { "id": 9120, "created_at": "2026-07-23T09:14:22Z",
+      "user": { "id": 3, "name": "Ayşe Yılmaz" },
+      "action": "DELETE", "entity_type": "course", "entity_id": 12,
+      "entity_label": "CENG2001 — İstatistik" } ] }
+```
+← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT`
+← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
+  `course` · `course_section` · `exam` · `weekly_entry` · `user`
+← `entity_label`: okuma anında ilgili tablodan çözülür. **Kayıt silinmişse
+  `null`** döner (K-35) — UI o zaman `#12` gösterir. Yazma anında denormalize
+  etmek sonraki iş; cevap şekli o zaman da değişmez.
+← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
+← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
+  `workgroup_id` kolonu yok.
+
+---
+
 ## 11. Export
 
 ### GET /export/weekly?format=xlsx&department_id=&year=&semester=

@@ -677,3 +677,8 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    # Tek yonlu (K-35): GET /audit-logs faili adiyla gosterir. User tarafinda
+    # karsiligi YOK -- kullaniciyi silmek zaten engelli (K-34), audit satirlari
+    # uzerinden gezinmeye ihtiyac yok.
+    user: Mapped["User | None"] = relationship()

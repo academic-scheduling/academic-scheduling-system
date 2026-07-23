@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 23 Temmuz 2026 (K-38: UPDATE satırında eski → yeni özeti)
+**Son güncelleme:** 24 Temmuz 2026 (K-39: çakışma motoru API'ye bağlandı, stub dönemi bitti)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -644,3 +644,43 @@ geldi ve yalnız **hiçbir şey bağlı değilken** çalışır.
 - **Bilinen boşluk:** Dersi olan bir bölüm artık ne silinebilir ne pasife
   alınabilir (UI'dan). `departments.active` şemada ve API'de durmaya devam
   ediyor; ihtiyaç doğarsa "arşivle" eylemi geri getirilebilir.
+## K-39 · Çakışma motoru API'ye bağlandı: stub dönemi bitti [E]
+`feature/wp5-motor-entegrasyon` (24 Temmuz). C'nin motoru (WP5) artık
+`conflict_service.py` adaptörü üzerinden gerçekten çalışıyor; beş seam
+fonksiyonunun tamamı `[]` yerine gerçek sonuç döner. K-22'de kayıtlı
+"submit HARD engeli göremez" sınırlaması ve K-33'teki "dashboard sayaçları
+hep 0" sınırlaması **kapandı**.
+
+**Adaptör sözleşmesi:** ORM nesneleri motora düz dict olarak geçer; motor
+DB/ORM bilmez (saf Python kalır). Enum alanlar `.value` ile string'e çevrilir.
+Sınav dict'i `section_no` TAŞIMAZ (K-16), kontenjan için `capacity` değil
+`exam_capacity` besler (K-17/K-21).
+
+**Karşılaştırma evreni:** Her kontrol, adayı workgroup'un DRAFT + SUBMITTED
+tüm girişlerine karşı test eder; sonuçlar yalnız adayı (veya submit kümesini)
+ilgilendirenlere süzülür. Süzme olmasaydı kullanıcı kendi kaydını yaparken
+başkasının çakışmasını görürdü.
+
+**W8 (tamlık) hangi anlarda üretilir — K-20'nin kapsam netleştirmesi:**
+- `save` → HAYIR (yerleştirme sürerken "hâlâ eksik" uyarısı yağdırmamak için)
+- `submit` → EVET (WARNING, submit'i durdurmaz)
+- `GET /conflicts` tam tarama → **EVET**. Gerekçe: save'deki susma gerekçesi
+  "kullanıcıyı iş sürerken rahatsız etme"ydi; tam tarama ise kullanıcının
+  bilerek "bana tüm sorunları göster" dediği yerdir ve eksik ders saati de
+  çözülmesi gereken bir sorundur. Dashboard sayacı da bunu içerir.
+
+**Motor uyum düzeltmeleri (aynı branch):**
+- Sınav mesajları `course_label()` yerine `exam_label()` kullanır — eskisi
+  `section_no` istiyordu ve sınav dict'inde o alan olmadığı için KeyError
+  veriyordu. Hata, testteki sahte `section_no: 1` fixture'ı yüzünden
+  görünmüyordu; fixture da gerçek veriye uyacak şekilde düzeltildi.
+- Cohort mesajları bölüm ADINI yazar (ham `department_id` değil); adı adaptör
+  besler, yoksa id'ye düşer.
+- W3/W4'ün `affected` alanı temsili giriş yerine **çakışmayı kanıtlayan somut
+  oturum çiftini** taşır (kural seti §A şartı) — B raporda "hangi oturumlar"
+  gösterebilsin diye.
+- Kontrat §0 enum'una `E4a/E4b/E5a` eklendi (üç stajyerin haberi var).
+
+**Bilinen sınırlama:** Aday filtresi evrenin tamamını tarayıp süzdüğü için
+maliyet O(n²). MVP ölçeğinde ölçülebilir bir sorun değil; gerekirse
+aday-vs-evren için özel bir tarama yardımcısı eklenir (kural seti değişmez).

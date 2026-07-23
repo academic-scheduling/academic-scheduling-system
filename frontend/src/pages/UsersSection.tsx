@@ -17,7 +17,7 @@ const ALL = "__all__";
 
 /** Sayfa başına kullanıcı satırı. Dashboard tek sayfada dört blok taşıyor;
  *  kullanıcı tablosu diğerlerini aşağı itmemeli. */
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 7;
 
 const STATUS_META: Record<UserStatus, { label: string; color: string }> = {
   PENDING: { label: "Davetli", color: "yellow" },

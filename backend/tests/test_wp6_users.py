@@ -220,6 +220,41 @@ def test_promoting_to_admin_clears_capability_flags():
     db.close()
 
 
+def test_admin_invite_ignores_department_ids():
+    """ADMIN'e bölüm ataması yazılmaz — her bölümde zaten yetkili (K-34)."""
+    h = admin_headers()
+    dep = make_department(h)
+    davetli = invite(h, role="ADMIN", department_ids=[dep["id"]])
+    assert get_user(h, davetli["id"])["department_ids"] == []
+
+
+def test_promoting_to_admin_clears_department_memberships():
+    """Asıl tehlike: yükseltilen alt hesabın birikmiş atamaları kalmamalı.
+
+    Kalsaydı, hesap ileride tekrar alt hesaba düşürüldüğünde tam o bölümlerde
+    sessizce yetkili olurdu — bayrakların false'a çekilmesiyle aynı gerekçe.
+    """
+    h = admin_headers()
+    dep1, dep2 = make_department(h), make_department(h)
+    davetli = invite(h, department_ids=[dep1["id"], dep2["id"]])
+    assert len(get_user(h, davetli["id"])["department_ids"]) == 2
+
+    client.patch(f"/users/{davetli['id']}", json={"role": "ADMIN"}, headers=h)
+    assert get_user(h, davetli["id"])["department_ids"] == []
+
+
+def test_demoted_admin_starts_with_no_departments():
+    """Yükseltme atamaları sildiği için, geri düşürülen hesap boş başlar."""
+    h = admin_headers()
+    dep = make_department(h)
+    davetli = invite(h, department_ids=[dep["id"]])
+    client.patch(f"/users/{davetli['id']}", json={"role": "ADMIN"}, headers=h)
+
+    client.patch(f"/users/{davetli['id']}", json={"role": "SUB_ACCOUNT"}, headers=h)
+    assert get_user(h, davetli["id"])["department_ids"] == [], \
+        "düşürülen hesap eski bölümlerinde sessizce yetkili kaldı"
+
+
 def test_capability_flags_can_be_changed_for_sub_account():
     h = admin_headers()
     davetli = invite(h)

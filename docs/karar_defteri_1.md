@@ -362,6 +362,17 @@ hesabın yetenek bayrakları K-25 gereği `false`'a çekilir: rol muafiyeti zate
 her yetkiyi veriyor, DB'ye `true` yazmak "rol düşürülürse sessizce yetkili
 kalır" tuzağını kurardı.
 
+**ADMIN'e bölüm ataması YAPILMAZ** — bayrakların aynı gerekçesi.
+`_ensure_department_access` admin'i üyelik kontrolünden muaf tutuyor
+(`role != ADMIN and dep.id not in ...`), frontend'de `canWriteIn` de öyle.
+Yani admin için üyelik satırı **ölü veridir** ve aynı tuzağı kurar: hesap
+sonradan alt hesaba düşürülürse tam o bölümlerde sessizce yetkili kalır.
+- `POST /users/invite`: `role=ADMIN` ise `department_ids` yok sayılır.
+- `PATCH /users/{id}`: rol ADMIN'e **yükseltilirken mevcut üyelikler silinir** —
+  asıl tehlikeli durum bu, çünkü alt hesabın birikmiş atamaları vardır.
+- UI karşılığı: ADMIN seçilince bölüm alanı hiç gösterilmez, tabloda
+  "tümü" yazar.
+
 ## K-33 · Dashboard özeti: sekiz sayaç, yalnız aktif kayıtlar [E]
 `GET /dashboard/summary` — admin dashboard'unun en üst bloğu (kontrat §10).
 Sekiz kart: Bölümler · Derslikler · Öğretim Üyeleri · Dersler · Admin ·

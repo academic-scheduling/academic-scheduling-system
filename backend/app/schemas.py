@@ -441,7 +441,8 @@ class AuditLogOut(BaseModel):
     action: str
     entity_type: str
     entity_id: int
-    entity_label: str | None              # kayit silinmisse None (K-35)
+    entity_label: str | None              # HANGI kayit (K-36)
+    change_summary: str | None            # NE degisti: "Durum: Aktif → Pasif" (K-38)
 
 class AuditLogPage(BaseModel):
     """Sayfali cevap: log tek buyuyen tablodur, hepsi donmez (K-35)."""

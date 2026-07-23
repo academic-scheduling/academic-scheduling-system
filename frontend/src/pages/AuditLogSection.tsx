@@ -14,14 +14,15 @@ const PAGE_SIZE = 7;
 /** Sütun genişlikleri yüzde — kullanıcı tablosundaki gerekçenin aynısı:
  *  oran sabit kalsın (sayfa değişince kaymasın), genişlik ekrana göre esnesin. */
 const COL = {
-  zaman: "17%",
-  kim: "18%",
-  eylem: "13%",
-  tur: "16%",
-  kayit: "36%",
+  zaman: "14%",
+  kim: "14%",
+  eylem: "11%",
+  tur: "12%",
+  kayit: "21%",
+  degisiklik: "28%",
 } as const;
 
-const TABLE_MIN_WIDTH = 720;
+const TABLE_MIN_WIDTH = 900;
 
 /** Tarih + saat, tek satırda okunur biçimde. */
 const bicimle = (iso: string) =>
@@ -138,6 +139,7 @@ export default function AuditLogSection() {
                     <Table.Th w={COL.eylem}>Eylem</Table.Th>
                     <Table.Th w={COL.tur}>Tür</Table.Th>
                     <Table.Th w={COL.kayit}>Kayıt</Table.Th>
+                    <Table.Th w={COL.degisiklik}>Değişiklik</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -176,6 +178,19 @@ export default function AuditLogSection() {
                             <Text size="sm" c="dimmed" fs="italic">
                               silinmiş kayıt (#{k.entity_id})
                             </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          {/* "Ne değişti" ayrı sütunda: entity_label hangi
+                              kaydın etkilendiğini, bu sütun neyin değiştiğini
+                              söyler (K-38). Tek metne sıkıştırılsalardı ikisi
+                              de okunmaz olurdu. */}
+                          {k.change_summary ? (
+                            <Text size="sm" truncate title={k.change_summary}>
+                              {k.change_summary}
+                            </Text>
+                          ) : (
+                            <Text size="sm" c="dimmed">—</Text>
                           )}
                         </Table.Td>
                       </Table.Tr>

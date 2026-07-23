@@ -6,7 +6,7 @@ from app.models import (
     Building, Classroom, CourseSection, User, WeeklyScheduleEntry, exam_classrooms,
 )
 from app.schemas import ClassroomCreate, ClassroomUpdate, ClassroomOut
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/classrooms", tags=["classrooms"])
 
@@ -101,9 +101,10 @@ def update_classroom(
         if clash:
             raise HTTPException(status_code=409, detail="Bu binada bu oda kodu zaten kayıtlı")
 
+    ozet = build_change_summary(cls, data)
     for field, value in data.items():
         setattr(cls, field, value)
-    log_action(db, manager, "UPDATE", "classroom", cls.id, cls)
+    log_action(db, manager, "UPDATE", "classroom", cls.id, cls, ozet)
     db.commit()
     db.refresh(cls)
     return cls

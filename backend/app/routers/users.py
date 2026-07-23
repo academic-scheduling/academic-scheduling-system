@@ -12,7 +12,7 @@ from app.models import (
 from app.schemas import (
     InviteRequest, InviteResponse, MessageResponse, UserListItem, UserUpdate,
 )
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 from app.security import generate_invitation_token, hash_token
 from app.mailer import send_invitation_email
 
@@ -190,6 +190,11 @@ def update_user(
                    "Bunu başka bir admin yapmalı.",
         )
 
+    # Özet MUTASYONDAN ÖNCE: eski değerler hâlâ nesnenin üzerinde (K-38).
+    # Bayraklar da dahil edilir; hangi yetkinin açılıp kapandığı denetimin
+    # tam da bakmak isteyeceği şey.
+    ozet = build_change_summary(user, veri)
+
     if "name" in veri:
         user.name = veri["name"]
     if "status" in veri:
@@ -241,7 +246,7 @@ def update_user(
             for dep_id in istenen:
                 db.add(DepartmentMembership(user_id=user.id, department_id=dep_id))
 
-    log_action(db, admin, "UPDATE", "user", user.id, user)
+    log_action(db, admin, "UPDATE", "user", user.id, user, ozet)
     db.commit()
     db.refresh(user)
     return user

@@ -245,8 +245,10 @@ export type AuditLog = {
   action: AuditAction;
   entity_type: string;
   entity_id: number;
-  /** Okuma anında çözülür; kayıt SİLİNMİŞSE null gelir (K-35). */
+  /** HANGİ kayıt — işlem anındaki ad (K-36). */
   entity_label: string | null;
+  /** NE değişti — "Durum: Aktif → Pasif" (K-38). Yalnız UPDATE'te dolu. */
+  change_summary: string | null;
 };
 
 /** Sayfalı cevap: `total` sayfanın değil, filtre kümesinin büyüklüğü. */

@@ -679,6 +679,10 @@ class AuditLog(Base):
     # saglar: silinen kayit konusabilsin, degistirilen ad o gunku haliyle
     # kalsin. Nullable, cunku kolondan ONCE yazilmis satirlarda yok.
     entity_label: Mapped[str | None] = mapped_column(String(200))
+    # NEYIN degistigi: "Durum: Aktif → Pasif" (K-38). entity_label "hangi
+    # kayit" sorusunu cevapliyor, bu alan "ne degisti" sorusunu. Yalniz
+    # UPDATE'te dolar; CREATE/DELETE'te degisiklik kavrami yok.
+    change_summary: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

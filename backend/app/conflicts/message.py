@@ -7,8 +7,29 @@ DAY_NAMES = {1: "Pazartesi", 2: "Salı", 3: "Çarşamba", 4: "Perşembe", 5: "Cu
 # ---------- ortak etiket yardımcıları ----------
 
 def course_label(session):
-    # "CENG2001-1"
+    # "CENG2001-1" — haftalık oturum: ders kodu + şube no
     return f"{session['course_code']}-{session['section_no']}"
+
+
+def exam_label(exam):
+    """Sınav etiketi: yalnız ders kodu, şube YOK.
+
+    Sınav ders düzeyindedir (K-16) — tüm şubeler aynı sınava girer, dolayısıyla
+    şube numarası taşımaz. Sınav mesajlarında course_label() kullanılamaz:
+    exam dict'inde `section_no` yoktur, çağrılırsa KeyError verir.
+    """
+    return exam["course_code"]
+
+
+def dept_label(obj):
+    """Cohort mesajlarında bölüm: adı varsa ad, yoksa id'ye düşer.
+
+    Kural seti şablonu bölüm ADI istiyor ("Bilgisayar Mühendisliği 2. sınıf").
+    Adı adaptör besler (department_name); beslenmediği durumda mesaj ham id ile
+    de anlaşılır kalsın diye tolere ediyoruz.
+    """
+    name = obj.get("department_name")
+    return name if name else f"{obj['department_id']}. bölüm"
 
 
 def weekly_time_label(session):
@@ -39,12 +60,14 @@ def _msg_w2(a, b):
 
 
 def _msg_w3(a, b):
-    return (f"Öğrenci grubu çakışması: {course_label(a)} ve {course_label(b)}, zorunlu dersleri "
-            f"{weekly_time_label(a)}'te aynı öğrenci grubuna sahip.")
+    return (f"Cohort çakışması: {dept_label(a)} {a['year']}. sınıf {a['semester']} "
+            f"zorunlu dersleri {course_label(a)} ve {course_label(b)}, "
+            f"{weekly_time_label(a)}'te çakışıyor.")
 
 def _msg_w4(a, b):
-    return (f"Öğrenci grubu çakışması: {course_label(a)} ve {course_label(b)}, dersleri "
-            f"{weekly_time_label(a)}'te aynı öğrenci grubuna sahip.")
+    return (f"Cohort uyarısı: {dept_label(a)} {a['year']}. sınıf {a['semester']} "
+            f"dersleri {course_label(a)} ve {course_label(b)} (en az biri seçmeli), "
+            f"{weekly_time_label(a)}'te çakışıyor.")
 
 def _msg_w5(a, b):
     return (f"Tekrarlayan ders çakışması: {course_label(a)} ve {course_label(b)}, "
@@ -65,60 +88,62 @@ def _msg_w8(a, b):
 # ------------------------------------sınav kuralları mesajları --------------------------------------------
 
 def _msg_e1(a, b):
-    return (f"Sınav derslik çakışması: {course_label(a)} ve {course_label(b)}, derslerinin sınavları "
-            f"{a['exam_date']} tarihinde aynı dersliği kullanıyor.") 
+    return (f"Sınav çakışması: {exam_label(a)} ve {exam_label(b)} sınavları, "
+            f"{exam_time_label(a)}'te ortak derslik kullanıyor.")
 
-def _msg_e2(a, b): 
-    return (f"Mükerrer sınav: {course_label(a)} dersinin "
+def _msg_e2(a, b):
+    return (f"Mükerrer sınav: {exam_label(a)} dersinin "
             f"{a['exam_type']} sınavı zaten tanımlı.")
 
 def _msg_e3(a, b):
-    return (f"Sınav hoca çakışması: {course_label(a)} ve {course_label(b)} sınavları, "
+    return (f"Sınav hoca çakışması: {exam_label(a)} ve {exam_label(b)} sınavları, "
             f"{exam_time_label(a)}'te aynı sorumluya sahip.")
 
-def _msg_e4a(a, b):   
-    return (f"Cohort sınav çakışması: {a['department_id']}. bölüm {a['year']}. sınıf "
-            f"{a['semester']} zorunlu dersleri sınavları {course_label(a)} ve {course_label(b)},  "
-            f"{exam_time_label(a)}'te çakışıyor.")
+def _msg_e4a(a, b):
+    return (f"Cohort sınav çakışması: {dept_label(a)} {a['year']}. sınıf "
+            f"{a['semester']} zorunlu dersleri {exam_label(a)} ve {exam_label(b)} "
+            f"sınavları {exam_time_label(a)}'te çakışıyor.")
 
-def _msg_e4b(a, b):  
-    return (f"Cohort sınav çakışması: {a['department_id']}. bölüm {a['year']}. sınıf "
-            f"{a['semester']} sınavları {course_label(a)} ve {course_label(b)}, "
-            f"{exam_time_label(a)}'te çakışıyor.")
+def _msg_e4b(a, b):
+    return (f"Cohort sınav uyarısı: {dept_label(a)} {a['year']}. sınıf "
+            f"{a['semester']} sınavları {exam_label(a)} ve {exam_label(b)} "
+            f"(en az biri seçmeli), {exam_time_label(a)}'te çakışıyor.")
 
 def _msg_e5(a, b):
-    return (f"Sınav kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
-            f"({a['expected_students']}) toplam derslik kapasitesini aşıyor.")
+    return (f"Sınav kontenjanı yetersiz: {exam_label(a)} sınavına girecek "
+            f"{a['expected_students']} öğrenci, seçili dersliklerin toplam sınav "
+            f"kontenjanını aşıyor — ek derslik seçin.")
 
 
 def _msg_e5a(a, b):
-    return (f"Sınav kontenjanı eksik: {course_label(a)} sınavı için seçili "
-            f"dersliklerden en az birinin kontenjanı (exam_capacity) girilmemiş.")
-
+    return (f"Sınav kontenjanı girilmemiş: {exam_label(a)} sınavı için seçili "
+            f"dersliklerden en az birinin sınav kontenjanı boş; önce derslik "
+            f"kaydına kontenjanı girin.")
 
 
 def _msg_e6(a, b):
-    return (f"Hafta sonu sınavı: {course_label(a)} sınavı {a['exam_date']} "
+    return (f"Hafta sonu sınavı: {exam_label(a)} sınavı {a['exam_date']} "
             f"tarihinde hafta sonuna denk geliyor.")
 
 
 def _msg_e7(a, b):
-    return (f"Gereksiz derslik: {course_label(a)} sınavı için seçilen dersliklerden "
-            f"en küçüğü çıkarılsa da kalan kontenjan öğrenci sayısına yetiyor.")
+    return (f"Gereksiz derslik: {exam_label(a)} sınavı için seçilen dersliklerden "
+            f"en küçüğü çıkarılsa da kalan kontenjan {a['expected_students']} "
+            f"öğrenciye yetiyor.")
 
 # ---------- çapraz kural mesajları (sınav × ders) ----------
 
 def _msg_x1(exam, weekly):
-    return (f"Sınav-ders derslik çakışması: {course_label(exam)} sınavı ({exam_time_label(exam)}), "
-            f"farklı bir dersin ({course_label(weekly)}, {weekly_time_label(weekly)}) "
-            f"dersliğini işgal ediyor.")
+    return (f"Sınav-ders çakışması: {exam_label(exam)} sınavı ({exam_time_label(exam)}), "
+            f"aynı derslikteki {course_label(weekly)} dersiyle "
+            f"({weekly_time_label(weekly)}) çakışıyor.")
 
 def _msg_x2(exam, weekly):
-    return (f"Sınav-ders cohort çakışması: {course_label(exam)} sınavı, aynı grubun "
+    return (f"Sınav-ders cohort uyarısı: {exam_label(exam)} sınavı, aynı grubun "
             f"{course_label(weekly)} dersiyle ({weekly_time_label(weekly)}) çakışıyor.")
 
 def _msg_x3(exam, weekly):
-    return (f"Sınav-ders hoca çakışması: {course_label(exam)} sınav sorumlusu, "
+    return (f"Sınav-ders hoca uyarısı: {exam_label(exam)} sınav sorumlusu, "
             f"{course_label(weekly)} dersinde ({weekly_time_label(weekly)}) aynı anda görünüyor.")
 
 

@@ -33,6 +33,23 @@ def sections_conflict(sessions_a, sessions_b):
             if weekly_sessions_overlap(sa, sb):
                 return True
     return False
+
+
+def first_overlapping_sessions(sections_a, sections_b):
+    """Çakışmayı KANITLAYAN somut oturum çiftini bulur (kural seti §A notu).
+
+    W3/W4 ders (kod) düzeyinde üretilir ama `affected` temsili bir giriş yerine
+    gerçekten kesişen iki oturumu taşımalı ki B raporda "hangi oturumlar"
+    gösterebilsin. courses_conflict() True dönmüşse böyle bir çift mutlaka
+    vardır; yine de bulunamazsa None döner (çağıran tarafta yedek var).
+    """
+    for sa_sessions in sections_a:
+        for sb_sessions in sections_b:
+            for sa in sa_sessions:
+                for sb in sb_sessions:
+                    if weekly_sessions_overlap(sa, sb):
+                        return sa, sb
+    return None
   
 
 def w1_classroom_conflict(a, b):

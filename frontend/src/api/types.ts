@@ -230,7 +230,9 @@ export const CAPABILITIES = [
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
 
 /** Kontrat §12 · işlem kayıtları (K-35). */
-export type AuditAction = "CREATE" | "UPDATE" | "DELETE" | "SUBMIT";
+export type AuditAction =
+  | "CREATE" | "UPDATE" | "DELETE" | "SUBMIT"
+  | "INVITE" | "ACTIVATE";          // davet akışı (K-37)
 
 export type AuditEntityType =
   | "department" | "building" | "classroom" | "lecturer"
@@ -258,6 +260,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
   UPDATE: { label: "Düzenledi", color: "blue" },
   DELETE: { label: "Sildi", color: "red" },
   SUBMIT: { label: "Yayınladı", color: "violet" },
+  // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
+  INVITE: { label: "Davet etti", color: "cyan" },
+  ACTIVATE: { label: "Hesabını açtı", color: "teal" },
 };
 
 /** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */

@@ -379,7 +379,10 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
       "action": "DELETE", "entity_type": "course", "entity_id": 12,
       "entity_label": "CENG2001 — İstatistik" } ] }
 ```
-← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT`
+← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT` · `INVITE` · `ACTIVATE`
+  `INVITE`: davet gönderildi (ilk davet ve yeniden gönderim) — faili admin.
+  `ACTIVATE`: davet edilen kişi hesabını tamamladı — **faili kişinin kendisi**,
+  davet eden admin değil (K-37).
 ← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
   `course` · `course_section` · `exam` · `weekly_entry` · `user`
 ← `entity_label`: **işlem anındaki** insan-okur ad, satıra yazılır (K-36).

@@ -200,6 +200,68 @@ def test_labels_cover_every_entity_type():
         assert tur in gorulen, f"{tur} için etiket çözülemedi"
 
 
+# --- davet akışı (K-37) ---
+
+def test_invite_leaves_a_trace():
+    """Davet iz bırakmalı: hesabın DOĞUŞU görünmüyordu (K-37)."""
+    h = admin_headers()
+    davetli = client.post("/users/invite", json={
+        "name": "İzli Davetli",
+        "email": f"izli_{uuid.uuid4().hex[:8]}@muh.example.edu.tr",
+    }, headers=h).json()
+
+    body = logs(h, entity_type="user", action="INVITE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == davetli["id"])
+    assert satir["entity_label"] == "İzli Davetli"
+
+
+def test_resend_leaves_a_second_invite_trace():
+    """Yeniden gönderim de INVITE: davetin tekrarlandığı görünsün."""
+    h = admin_headers()
+    davetli = client.post("/users/invite", json={
+        "name": "Tekrar Davetli",
+        "email": f"tekrar_{uuid.uuid4().hex[:8]}@muh.example.edu.tr",
+    }, headers=h).json()
+    assert client.post(f"/users/{davetli['id']}/resend-invitation",
+                       headers=h).status_code == 200
+
+    body = logs(h, entity_type="user", action="INVITE", limit=50)
+    satirlar = [i for i in body["items"] if i["entity_id"] == davetli["id"]]
+    assert len(satirlar) == 2, "ilk davet + yeniden gönderim iki satır olmalı"
+
+
+def test_activation_is_logged_with_the_person_as_actor():
+    """K-37: aktifleşmenin faili davet EDEN admin değil, davet EDİLEN kişidir."""
+    from app.models import InvitationToken
+    from app.security import hash_token
+
+    h = admin_headers()
+    davetli = client.post("/users/invite", json={
+        "name": "Kendi Açan",
+        "email": f"acan_{uuid.uuid4().hex[:8]}@muh.example.edu.tr",
+    }, headers=h).json()
+
+    # Mailpit'e giden ham token'a testten erişemiyoruz; token'ı bilinen bir
+    # değerle değiştirip aktivasyonu o değerle tetikliyoruz.
+    ham = "test-token-" + uuid.uuid4().hex
+    db = SessionLocal()
+    tok = db.query(InvitationToken).filter(
+        InvitationToken.user_id == davetli["id"]).first()
+    tok.token_hash = hash_token(ham)
+    db.commit()
+    db.close()
+
+    r = client.post("/auth/complete-invitation",
+                    json={"token": ham, "password": "yenisifre123"})
+    assert r.status_code == 200, r.text
+
+    body = logs(h, entity_type="user", action="ACTIVATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == davetli["id"])
+    assert satir["user"]["id"] == davetli["id"], \
+        "aktifleşmenin faili kişinin kendisi olmalı, davet eden admin değil"
+    assert satir["entity_label"] == "Kendi Açan"
+
+
 # --- yetki ve izolasyon ---
 
 def test_sub_account_cannot_read_logs():

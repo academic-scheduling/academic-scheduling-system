@@ -5,7 +5,7 @@ from app.deps import get_db, get_current_user, require_lecturer_manager
 from app.models import CourseSection, Exam, Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/lecturers", tags=["lecturers"])
 
@@ -60,7 +60,7 @@ def create_lecturer(
     )
     db.add(lec)
     db.flush()
-    log_action(db, manager,"CREATE", "lecturer", lec.id)
+    log_action(db, manager,"CREATE", "lecturer", lec.id, lec)
     db.commit()
     db.refresh(lec)
     return lec
@@ -97,9 +97,10 @@ def update_lecturer(
                 )
         lec.normalized_name = normalized
 
+    ozet = build_change_summary(lec, data)
     for field, value in data.items():
         setattr(lec, field, value)
-    log_action(db, manager,"UPDATE", "lecturer", lec.id)
+    log_action(db, manager,"UPDATE", "lecturer", lec.id, lec, ozet)
     db.commit()
     db.refresh(lec)
     return lec
@@ -138,6 +139,6 @@ def delete_lecturer(
                    "Önce bu bağlantıları kaldırın.",
         )
 
-    log_action(db, manager, "DELETE", "lecturer", lec.id)
+    log_action(db, manager, "DELETE", "lecturer", lec.id, lec)
     db.delete(lec)
     db.commit()

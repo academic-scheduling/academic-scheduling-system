@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -78,6 +78,26 @@ class InvitationPreview(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+class UserUpdate(BaseModel):
+    """PATCH /users/{id} — hepsi opsiyonel, yalnız gönderilen alan değişir (K-34).
+
+    `email` BİLEREK yok: kimliktir ve davet token'ı ona bağlıdır. Yanlış
+    e-postanın çözümü düzenleme değil, daveti silip yeniden göndermektir.
+
+    `status` yalnız ACTIVE|DISABLED alır — PENDING'e geri dönülemez, çünkü
+    tamamlanmış bir hesap "henüz tamamlanmamış" haline getirilemez.
+    """
+    name: str | None = None
+    role: UserRole | None = None
+    department_ids: list[int] | None = None
+    status: Literal[UserStatus.ACTIVE, UserStatus.DISABLED] | None = None
+    can_manage_courses: bool | None = None
+    can_manage_weekly: bool | None = None
+    can_manage_exams: bool | None = None
+    can_manage_classrooms: bool | None = None
+    can_manage_lecturers: bool | None = None
+
 
 class UserListItem(BaseModel):
     id: int
@@ -376,3 +396,55 @@ class WeeklyEntrySubmitRequest(BaseModel):
 class WeeklyEntrySubmitResponse(BaseModel):
     submitted: list[int]
     warnings: list[ConflictResultOut]
+
+# --- Dashboard (WP6, K-33) ---
+
+class DashboardSummary(BaseModel):
+    """GET /dashboard/summary cevabi (kontrat 10, K-33).
+
+    Sekiz kart cizilir; weekly_entries kart degil ama alan korunuyor
+    (kontrat onu zaten vaat etmisti, kaldirmak kirici degisiklik olurdu).
+    """
+    departments: int
+    classrooms: int
+    lecturers: int
+    courses: int
+    admins: int
+    sub_accounts: int
+    weekly_entries: int
+    exams: int
+    unresolved_hard: int
+    unresolved_warnings: int
+
+
+class ConflictScanOut(BaseModel):
+    """GET /conflicts cevabi (kontrat 9).
+
+    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
+    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
+    """
+    hard: list[ConflictResultOut] = []
+    warnings: list[ConflictResultOut] = []
+
+
+# --- Islem kayitlari (WP6, K-35) ---
+
+class AuditActorOut(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class AuditLogOut(BaseModel):
+    id: int
+    created_at: datetime
+    user: AuditActorOut | None            # K-34 sayesinde pratikte hic null olmaz
+    action: str
+    entity_type: str
+    entity_id: int
+    entity_label: str | None              # HANGI kayit (K-36)
+    change_summary: str | None            # NE degisti: "Durum: Aktif → Pasif" (K-38)
+
+class AuditLogPage(BaseModel):
+    """Sayfali cevap: log tek buyuyen tablodur, hepsi donmez (K-35)."""
+    total: int
+    items: list[AuditLogOut]

@@ -48,6 +48,20 @@ def check_weekly_save(db: Session, entry: WeeklyScheduleEntry) -> list[dict]:
     return []
 
 
+def scan_workgroup(db: Session, workgroup_id: int) -> dict[str, list[dict]]:
+    """Workgroup'un TAMAMINI tarar (kontrat §9 + §10'un sayaclari).
+
+    Tek cagri iki tuketiciyi besler: dashboard ozeti yalnizca len() alir,
+    GET /conflicts (A-4) ayni listeleri oldugu gibi doner. Ikisi ayri ayri
+    tarasaydi ayni anda farkli sayi gosterebilirlerdi.
+
+    Stub: her zaman temiz. Sonucu K-33'te kayitli bilinen sinirlama —
+    dashboard motor baglanana dek "0 / 0" gosterir, yani "cakisma yok" gibi
+    okunur; oysa henuz bakilmadi.
+    """
+    return {"hard": [], "warnings": []}
+
+
 def check_weekly_submit(db: Session, entries: list[WeeklyScheduleEntry]) -> list[dict]:
     """Submit kumesinin kontrolu (kume ici + mevcut girislere karsi).
 

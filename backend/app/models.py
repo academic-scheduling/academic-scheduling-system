@@ -227,11 +227,16 @@ class User(Base):
     workgroup: Mapped["Workgroup | None"] = relationship(
         back_populates="users", foreign_keys="User.workgroup_id"
     )
+    # passive_deletes=True: silmeyi VERITABANINA birak (K-34).
+    # Iki tabloda da FK zaten ON DELETE CASCADE. Bu bayrak olmadan SQLAlchemy
+    # "yardimci" olmaya calisip once cocuk satirlarin user_id'sini NULL'a
+    # cekiyor; invitation_tokens.user_id NOT NULL oldugu icin silme
+    # IntegrityError ile patliyordu.
     invitation_tokens: Mapped[list["InvitationToken"]] = relationship(
-        back_populates="user"
+        back_populates="user", passive_deletes=True
     )
     memberships: Mapped[list["DepartmentMembership"]] = relationship(
-        back_populates="user"
+        back_populates="user", passive_deletes=True
     )
 
 
@@ -666,9 +671,23 @@ class AuditLog(Base):
     user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
-    action: Mapped[str] = mapped_column(String(10))  # CREATE/UPDATE/DELETE/SUBMIT
+    # CREATE/UPDATE/DELETE/SUBMIT + davet akisi: INVITE/ACTIVATE (K-37)
+    action: Mapped[str] = mapped_column(String(10))
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[int] = mapped_column(BigInteger)
+    # Islem ANINDAKI insan-okur ad (K-36). Log'un kendi kendine yetmesini
+    # saglar: silinen kayit konusabilsin, degistirilen ad o gunku haliyle
+    # kalsin. Nullable, cunku kolondan ONCE yazilmis satirlarda yok.
+    entity_label: Mapped[str | None] = mapped_column(String(200))
+    # NEYIN degistigi: "Durum: Aktif → Pasif" (K-38). entity_label "hangi
+    # kayit" sorusunu cevapliyor, bu alan "ne degisti" sorusunu. Yalniz
+    # UPDATE'te dolar; CREATE/DELETE'te degisiklik kavrami yok.
+    change_summary: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    # Tek yonlu (K-35): GET /audit-logs faili adiyla gosterir. User tarafinda
+    # karsiligi YOK -- kullaniciyi silmek zaten engelli (K-34), audit satirlari
+    # uzerinden gezinmeye ihtiyac yok.
+    user: Mapped["User | None"] = relationship()

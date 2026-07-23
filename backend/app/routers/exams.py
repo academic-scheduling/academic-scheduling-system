@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, selectinload
 
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 from app.conflict_service import check_exams_save, check_exams_submit
 from app.deps import get_db, get_current_user, require_exam_manager
 from app.models import (
@@ -190,7 +190,7 @@ def create_exam(
     exam.classrooms = _load_classrooms(db, classroom_ids)
     db.add(exam)
     db.flush()
-    log_action(db, user, "CREATE", "exam", exam.id)
+    log_action(db, user, "CREATE", "exam", exam.id, exam)
     db.commit()
 
     exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
@@ -228,9 +228,10 @@ def update_exam(
     classroom_ids = data.pop("classroom_ids", None)
     if classroom_ids is not None:  # verilirse liste TAM değişir (K-22)
         exam.classrooms = _load_classrooms(db, classroom_ids)
+    ozet = build_change_summary(exam, data)
     for field, value in data.items():
         setattr(exam, field, value)
-    log_action(db, user, "UPDATE", "exam", exam.id)
+    log_action(db, user, "UPDATE", "exam", exam.id, exam, ozet)
     db.commit()
 
     exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
@@ -275,7 +276,7 @@ def submit_exams(
     for exam in exams:
         exam.status = EntryStatus.SUBMITTED
         exam.submitted_at = now  # CHECK: status ile tutarlı olmak zorunda
-        log_action(db, user, "SUBMIT", "exam", exam.id)
+        log_action(db, user, "SUBMIT", "exam", exam.id, exam)
     db.commit()
     return {"submitted": [e.id for e in exams], "warnings": warnings}
 
@@ -293,7 +294,10 @@ def revert_exam_to_draft(
 
     exam.status = EntryStatus.DRAFT
     exam.submitted_at = None
-    log_action(db, user, "UPDATE", "exam", exam.id)
+    # Değişiklik sabit ve bilinen: SUBMITTED → DRAFT. Burada `data` sözlüğü
+    # yok, o yüzden özet elle veriliyor (K-38).
+    log_action(db, user, "UPDATE", "exam", exam.id, exam,
+               "Durum: Yayınlandı → Taslak")
     db.commit()
     return _eager_exam_query(db).filter(Exam.id == exam.id).first()
 
@@ -308,6 +312,6 @@ def delete_exam(
     _ensure_department_access(db, user, exam.course.department_id)
     _ensure_draft(exam)  # SUBMITTED silinemez; önce draft'a çevrilir
 
-    log_action(db, user, "DELETE", "exam", exam.id)
+    log_action(db, user, "DELETE", "exam", exam.id, exam)
     db.delete(exam)  # exam_classrooms satırları CASCADE ile gider
     db.commit()

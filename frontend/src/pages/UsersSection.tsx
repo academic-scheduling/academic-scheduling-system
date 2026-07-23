@@ -33,29 +33,31 @@ const STATUS_ORDER: Record<UserStatus, number> = {
   DISABLED: 2,
 };
 
-/** Sütun genişlikleri sabit (Table layout="fixed" ile birlikte).
- *  Aksi halde her sayfada içeriğe göre yeniden hesaplanır ve sayfa
- *  değiştirdikçe sütunlar kayar. */
+/** Sütun genişlikleri YÜZDE — piksel değil.
+ *
+ *  İlk sorun sütunların içeriğe göre ölçülmesiydi: her sayfanın içeriği
+ *  farklı olduğu için sütunlar sayfa değiştikçe kayıyordu. Çözümün piksel
+ *  olması gerekmiyor, İÇERİKTEN BAĞIMSIZ olması gerekiyor — yüzde ikisini
+ *  birden verir: oran sabittir (sayfa değişince kaymaz) ve genişlik
+ *  kapsayıcıya göre esner (her ekranda çalışır).
+ *
+ *  Sabit piksel kullanıldığında tablo dar ekranlarda kapsayıcıyı aşıyor,
+ *  geniş ekranlarda ise sağda boşluk bırakıyordu. Toplam 100 olmalı.
+ */
 const COL = {
-  ad: 160,
-  eposta: 230,
-  rol: 100,
-  durum: 90,
-  bolumler: 180,        // kısa kodlarda (CENG, EEE) satır başına 3-4 rozet
-  yetkiler: 210,
-  eylem: 90,
+  ad: "15%",
+  eposta: "22%",
+  rol: "10%",
+  durum: "9%",
+  bolumler: "17%",
+  yetkiler: "19%",
+  eylem: "8%",
 } as const;
 
-/** Tablonun ihtiyaç duyduğu en küçük genişlik.
- *
- *  layout="fixed" ile sabit genişlikler kapsayıcıyı aşarsa, genişlik
- *  verilmemiş sütun 0px'e ezilir — Yetkiler sütunu dar ekranda tamamen
- *  kayboluyordu. Bu yüzden HER sütunun genişliği sabit ve toplam,
- *  Table.ScrollContainer'a minWidth olarak veriliyor: dar ekranda sütun
- *  ezilmek yerine tablo yatay kayar.
- */
-const TABLE_MIN_WIDTH =
-  COL.ad + COL.eposta + COL.rol + COL.durum + COL.bolumler + COL.yetkiler + COL.eylem;
+/** Bu genişliğin altında sütunlar okunmaz hale gelir; tablo ezilmek yerine
+ *  yatay kayar. Telefonda veri tablosunu kaydırmak kabul gören bir desendir —
+ *  sütunu yok etmekten ya da 20px'e sıkıştırmaktan iyidir. */
+const TABLE_MIN_WIDTH = 820;
 
 type FormValues = {
   name: string;
@@ -73,25 +75,39 @@ const BOS_FORM: FormValues = {
   },
 };
 
+/** En fazla kaç bölüm rozeti çizilir (satır başına ~3 → iki satır). */
+const MAX_DEP_BADGE = 6;
+
 /** Bölüm hücresi: kodlar rozet olarak yan yana, sığmayan alt satıra geçer.
  *
- *  Bölüm kodları kısa (CENG, EEE), o yüzden sütuna satır başına 3-4 tanesi
- *  sığıyor ve kısaltmaya gerek kalmıyor. Rozetler DARALTILMAZ: sıkıştırmak
- *  "CE…" gibi okunamayan kodlar üretiyordu — kod zaten kısaltmadır, bir daha
- *  kısaltılırsa anlamı kalmaz. Sığmayan aşağı iner.
+ *  Rozetler DARALTILMAZ: sıkıştırmak "CE…" gibi okunamayan kodlar üretiyordu
+ *  ve kod zaten bir kısaltmadır, ikinci kez kısaltılırsa anlamı kalmaz.
+ *  Sığmayan aşağı iner.
+ *
+ *  Ama sarma SINIRSIZ değil: 20 bölüme atanmış bir hesap tek başına satırı
+ *  ekran boyu uzatıyordu. İlk altı rozet yazılır (iki satır), kalanı "+N"
+ *  olarak toplanır ve tam liste tooltip'te durur — bilgi kaybolmaz, satır
+ *  yüksekliği sınırlı kalır.
  */
 function DepartmentCell({
   ids, depById,
 }: { ids: number[]; depById: Record<number, Department> }) {
   if (ids.length === 0) return <Text size="sm" c="dimmed">—</Text>;
 
+  const kod = (id: number) => String(depById[id]?.code ?? id);
+  const gosterilen = ids.slice(0, MAX_DEP_BADGE);
+  const kalan = ids.slice(MAX_DEP_BADGE);
+
   return (
     <Group gap={4}>
-      {ids.map((id) => (
-        <Badge key={id} variant="outline" size="sm">
-          {depById[id]?.code ?? id}
-        </Badge>
+      {gosterilen.map((id) => (
+        <Badge key={id} variant="outline" size="sm">{kod(id)}</Badge>
       ))}
+      {kalan.length > 0 && (
+        <Tooltip label={kalan.map(kod).join(", ")} multiline maw={280}>
+          <Badge variant="light" color="gray" size="sm">+{kalan.length}</Badge>
+        </Tooltip>
+      )}
     </Group>
   );
 }
@@ -322,11 +338,14 @@ export default function UsersSection() {
       <Group mb="sm">
         {/* Filtre değişince ilk sayfaya dön: arama sonucu 3 kişiye düşerken
             5. sayfada kalmak kullanıcıyı "sonuç yok" sanısına düşürürdü. */}
+        {/* Genişlikler duyarlı: dar ekranda kutular tam genişlikte alt alta,
+            geniş ekranda sabit ölçüde yan yana. Sabit pikselde telefonda
+            yarım kalan, düzensiz bir sıra oluşuyordu. */}
         <TextInput
           placeholder="Ad veya e-posta ara"
           value={search}
           onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }}
-          w={240}
+          w={{ base: "100%", xs: 240 }}
         />
         <Select
           data={[
@@ -337,7 +356,7 @@ export default function UsersSection() {
           value={roleFilter}
           onChange={(v) => { setRoleFilter(v ?? ALL); setPage(1); }}
           allowDeselect={false}
-          w={160}
+          w={{ base: "100%", xs: 160 }}
         />
         <Select
           data={[
@@ -349,7 +368,7 @@ export default function UsersSection() {
           value={statusFilter}
           onChange={(v) => { setStatusFilter(v ?? ALL); setPage(1); }}
           allowDeselect={false}
-          w={160}
+          w={{ base: "100%", xs: 160 }}
         />
       </Group>
 

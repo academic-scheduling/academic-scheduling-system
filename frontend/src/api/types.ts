@@ -228,3 +228,47 @@ export const CAPABILITIES = [
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
+
+/** Kontrat §12 · işlem kayıtları (K-35). */
+export type AuditAction = "CREATE" | "UPDATE" | "DELETE" | "SUBMIT";
+
+export type AuditEntityType =
+  | "department" | "building" | "classroom" | "lecturer"
+  | "course" | "course_section" | "exam" | "weekly_entry" | "user";
+
+export type AuditLog = {
+  id: number;
+  created_at: string;
+  user: { id: number; name: string } | null;
+  action: AuditAction;
+  entity_type: string;
+  entity_id: number;
+  /** Okuma anında çözülür; kayıt SİLİNMİŞSE null gelir (K-35). */
+  entity_label: string | null;
+};
+
+/** Sayfalı cevap: `total` sayfanın değil, filtre kümesinin büyüklüğü. */
+export type AuditLogPage = {
+  total: number;
+  items: AuditLog[];
+};
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: string }> = {
+  CREATE: { label: "Ekledi", color: "green" },
+  UPDATE: { label: "Düzenledi", color: "blue" },
+  DELETE: { label: "Sildi", color: "red" },
+  SUBMIT: { label: "Yayınladı", color: "violet" },
+};
+
+/** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */
+export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
+  department: "Bölüm",
+  building: "Bina",
+  classroom: "Derslik",
+  lecturer: "Öğretim üyesi",
+  course: "Ders",
+  course_section: "Şube",
+  exam: "Sınav",
+  weekly_entry: "Haftalık giriş",
+  user: "Kullanıcı",
+};

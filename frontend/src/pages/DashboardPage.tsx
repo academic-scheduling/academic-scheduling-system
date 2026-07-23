@@ -6,6 +6,7 @@ import {
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import UsersSection from "./UsersSection";
+import AuditLogSection from "./AuditLogSection";
 import type { ConflictResult, ConflictScan, DashboardSummary } from "../api/types";
 
 /** Dashboard'da gösterilecek en fazla çakışma satırı.
@@ -158,9 +159,7 @@ export default function DashboardPage() {
 
       <UsersSection />
 
-      <Alert mt="lg" color="gray">
-        İşlem kayıtları bu bloğun altına gelecek.
-      </Alert>
+      <AuditLogSection />
     </>
   );
 }

@@ -9,6 +9,7 @@ from app.schemas import (
 )
 from app.security import verify_password, create_access_token, hash_password, hash_token
 from app.models import User, UserStatus, InvitationToken
+from app.audit import log_action
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -82,6 +83,12 @@ def complete_invitation(payload: CompleteInvitationRequest, db: Session = Depend
     user.password_hash = hash_password(payload.password)
     user.status = UserStatus.ACTIVE
     invite.used_at = datetime.now(timezone.utc)
+
+    # İz (K-37): FAİL kişinin KENDİSİ — davet eden admin değil. Linke tıklayıp
+    # şifresini belirleyen odur. log_action'ın JWT'li istek dışında çağrıldığı
+    # tek yer burası; fail yine de bir User nesnesi olduğu için imza değişmiyor.
+    # İzolasyon bozulmaz: workgroup_id davet anında yazılmıştı (K-35 join'i).
+    log_action(db, user, "ACTIVATE", "user", user.id, user)
     db.commit()
 
     return MessageResponse(message="Hesap aktifleştirildi")

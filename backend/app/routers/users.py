@@ -101,7 +101,12 @@ def invite_user(
     # 6. Token
     raw_token = _create_and_store_token(db, user.id)
 
-    # 7. Commit, sonra mail
+    # 7. İz (K-37): davet sıradan bir kayıt ekleme değil — e-posta gidiyor,
+    # süreli token üretiliyor ve karşı tarafa erişim veriliyor. "CREATE"
+    # yerine "INVITE" yazılmasının sebebi bu ağırlık.
+    log_action(db, admin, "INVITE", "user", user.id, user)
+
+    # 8. Commit, sonra mail
     db.commit()
     db.refresh(user)
     send_invitation_email(user.email, user.name, raw_token)
@@ -128,6 +133,10 @@ def resend_invitation(
             tok.used_at = now
 
     raw_token = _create_and_store_token(db, user.id)
+    # Yeniden gönderim de INVITE (K-37): yeni bir e-posta gidiyor ve eski
+    # token geçersiz kılınıyor. Aynı kullanıcı için ikinci bir INVITE satırı
+    # görmek doğru bilgidir — davetin tekrarlandığını gösterir.
+    log_action(db, admin, "INVITE", "user", user.id, user)
     db.commit()
     send_invitation_email(user.email, user.name, raw_token)
 

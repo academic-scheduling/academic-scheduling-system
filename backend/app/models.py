@@ -671,7 +671,8 @@ class AuditLog(Base):
     user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
-    action: Mapped[str] = mapped_column(String(10))  # CREATE/UPDATE/DELETE/SUBMIT
+    # CREATE/UPDATE/DELETE/SUBMIT + davet akisi: INVITE/ACTIVATE (K-37)
+    action: Mapped[str] = mapped_column(String(10))
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[int] = mapped_column(BigInteger)
     # Islem ANINDAKI insan-okur ad (K-36). Log'un kendi kendine yetmesini

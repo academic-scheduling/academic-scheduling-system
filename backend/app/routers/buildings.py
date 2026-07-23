@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_classroom_manager
 from app.models import Building, Classroom, User
 from app.schemas import BuildingCreate, BuildingUpdate, BuildingOut
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/buildings", tags=["buildings"])
 
@@ -69,9 +69,10 @@ def update_building(
         if clash:
             raise HTTPException(status_code=409, detail="Bu bina adı zaten kayıtlı")
 
+    ozet = build_change_summary(bld, data)
     for field, value in data.items():
         setattr(bld, field, value)
-    log_action(db, manager, "UPDATE", "building", bld.id, bld)
+    log_action(db, manager, "UPDATE", "building", bld.id, bld, ozet)
     db.commit()
     db.refresh(bld)
     return bld

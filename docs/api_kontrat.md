@@ -376,8 +376,9 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
   "items": [
     { "id": 9120, "created_at": "2026-07-23T09:14:22Z",
       "user": { "id": 3, "name": "Ayşe Yılmaz" },
-      "action": "DELETE", "entity_type": "course", "entity_id": 12,
-      "entity_label": "CENG2001 — İstatistik" } ] }
+      "action": "UPDATE", "entity_type": "user", "entity_id": 12,
+      "entity_label": "Ayşe Yılmaz",
+      "change_summary": "Durum: Aktif → Pasif" } ] }
 ```
 ← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT` · `INVITE` · `ACTIVATE`
   `INVITE`: davet gönderildi (ilk davet ve yeniden gönderim) — faili admin.
@@ -390,6 +391,9 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
   (UPDATE satırı o işlemden sonraki adı taşır).
   `null` yalnız K-36 öncesi yazılmış eski satırlarda görülür; onlarda varlık
   hâlâ duruyorsa ad okuma anında çözülür, yoksa UI `#12` gösterir.
+← `change_summary`: **ne değiştiği**, "Alan: eski → yeni" biçiminde (K-38).
+  Yalnız `UPDATE`'te dolu; CREATE/DELETE'te ve K-38 öncesi satırlarda `null`.
+  `entity_label` "hangi kayıt", bu alan "ne değişti" sorusunu cevaplar.
 ← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
 ← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
   `workgroup_id` kolonu yok.

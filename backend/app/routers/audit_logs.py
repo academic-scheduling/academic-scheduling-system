@@ -143,6 +143,7 @@ def list_audit_logs(
                 # Yoksa eski satırdır, okuma anında çözülmeye çalışılır.
                 entity_label=r.entity_label
                 or etiketler.get((r.entity_type, r.entity_id)),
+                change_summary=r.change_summary,
             )
             for r in rows
         ],

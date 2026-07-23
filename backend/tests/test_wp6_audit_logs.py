@@ -262,6 +262,84 @@ def test_activation_is_logged_with_the_person_as_actor():
     assert satir["entity_label"] == "Kendi Açan"
 
 
+# --- değişiklik özeti (K-38) ---
+
+def test_status_change_shows_old_and_new():
+    """Bildirilen sorun: satır yalnız kullanıcının ADINI gösteriyordu.
+
+    Erişim kapatıldığında "Düzenledi · Kullanıcı · Aktif" okunuyordu ve
+    buradaki "Aktif" kullanıcının adıydı — neyin değiştiği hiç görünmüyordu.
+    """
+    h = admin_headers()
+    davetli = client.post("/users/invite", json={
+        "name": "Durumu Değişen",
+        "email": f"durum_{uuid.uuid4().hex[:8]}@muh.example.edu.tr",
+    }, headers=h).json()
+    client.patch(f"/users/{davetli['id']}", json={"status": "DISABLED"}, headers=h)
+
+    body = logs(h, entity_type="user", action="UPDATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == davetli["id"])
+    assert satir["change_summary"] == "Durum: Davetli → Pasif"
+    assert satir["entity_label"] == "Durumu Değişen"      # hangi kayıt ayrı sütunda
+
+
+def test_rename_shows_old_and_new():
+    h = admin_headers()
+    course = make_course(h, make_department(h), name="İstatistik")
+    client.patch(f"/courses/{course['id']}", json={"name": "Olasılık"}, headers=h)
+
+    body = logs(h, entity_type="course", action="UPDATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == course["id"])
+    assert satir["change_summary"] == "Ad: İstatistik → Olasılık"
+
+
+def test_multiple_fields_are_joined():
+    h = admin_headers()
+    dep = make_department(h)
+    client.patch(f"/departments/{dep['id']}",
+                 json={"name": "Yeni Ad", "active": False}, headers=h)
+
+    body = logs(h, entity_type="department", action="UPDATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == dep["id"])
+    assert "Ad:" in satir["change_summary"]
+    assert "Aktiflik: evet → hayır" in satir["change_summary"]
+
+
+def test_capability_flag_change_is_summarised():
+    """K-25 bayrakları: hangi yetkinin açıldığı denetimin bakacağı şey."""
+    h = admin_headers()
+    davetli = client.post("/users/invite", json={
+        "name": "Yetkili Olan",
+        "email": f"yetki_{uuid.uuid4().hex[:8]}@muh.example.edu.tr",
+    }, headers=h).json()
+    client.patch(f"/users/{davetli['id']}",
+                 json={"can_manage_courses": True}, headers=h)
+
+    body = logs(h, entity_type="user", action="UPDATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == davetli["id"])
+    assert satir["change_summary"] == "Ders yetkisi: hayır → evet"
+
+
+def test_unchanged_field_produces_no_noise():
+    """Aynı değerle gönderilen alan özete girmez — "Ad: X → X" gürültüsü olmaz."""
+    h = admin_headers()
+    dep = make_department(h)
+    client.patch(f"/departments/{dep['id']}", json={"name": dep["name"]}, headers=h)
+
+    body = logs(h, entity_type="department", action="UPDATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == dep["id"])
+    assert satir["change_summary"] is None
+
+
+def test_create_and_delete_have_no_summary():
+    """Değişiklik kavramı yalnız UPDATE'te var."""
+    h = admin_headers()
+    dep = make_department(h)
+    body = logs(h, entity_type="department", action="CREATE", limit=20)
+    satir = next(i for i in body["items"] if i["entity_id"] == dep["id"])
+    assert satir["change_summary"] is None
+
+
 # --- yetki ve izolasyon ---
 
 def test_sub_account_cannot_read_logs():

@@ -10,7 +10,7 @@ from app.schemas import (
     CourseCreate, CourseUpdate, CourseOut,
     SectionCreate, SectionUpdate, SectionOut,
 )
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 
 router = APIRouter(tags=["courses"])
 
@@ -159,9 +159,10 @@ def update_course(
             raise HTTPException(status_code=409,
                                 detail="Bu bölüm+yıl+dönemde bu ders kodu zaten kayıtlı")
 
+    ozet = build_change_summary(course, data)
     for field, value in data.items():
         setattr(course, field, value)
-    log_action(db, user, "UPDATE", "course", course.id, course)
+    log_action(db, user, "UPDATE", "course", course.id, course, ozet)
     db.commit()
     db.refresh(course)
     return course
@@ -224,9 +225,10 @@ def update_section(
         if clash:
             raise HTTPException(status_code=409, detail="Bu derste bu şube no zaten var")
 
+    ozet = build_change_summary(sec, data)
     for field, value in data.items():
         setattr(sec, field, value)
-    log_action(db, user, "UPDATE", "course_section", sec.id, sec)
+    log_action(db, user, "UPDATE", "course_section", sec.id, sec, ozet)
     db.commit()
     db.refresh(sec)
     return sec

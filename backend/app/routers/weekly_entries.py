@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, selectinload
 
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 from app.conflict_service import check_weekly_save, check_weekly_submit
 from app.deps import get_db, get_current_user, require_weekly_manager
 from app.models import (
@@ -208,9 +208,10 @@ def update_weekly_entry(
         data.get("classroom_id", entry.classroom_id),
     )
 
+    ozet = build_change_summary(entry, data)
     for field, value in data.items():
         setattr(entry, field, value)
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry)
+    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry, ozet)
     db.commit()
 
     entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
@@ -273,7 +274,9 @@ def revert_weekly_entry_to_draft(
 
     entry.status = EntryStatus.DRAFT
     entry.submitted_at = None
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry)
+    # Değişiklik sabit ve bilinen: SUBMITTED → DRAFT (K-38).
+    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry,
+               "Durum: Yayınlandı → Taslak")
     db.commit()
     return _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
 

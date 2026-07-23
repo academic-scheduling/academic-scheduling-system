@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -425,3 +425,25 @@ class ConflictScanOut(BaseModel):
     """
     hard: list[ConflictResultOut] = []
     warnings: list[ConflictResultOut] = []
+
+
+# --- Islem kayitlari (WP6, K-35) ---
+
+class AuditActorOut(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class AuditLogOut(BaseModel):
+    id: int
+    created_at: datetime
+    user: AuditActorOut | None            # K-34 sayesinde pratikte hic null olmaz
+    action: str
+    entity_type: str
+    entity_id: int
+    entity_label: str | None              # kayit silinmisse None (K-35)
+
+class AuditLogPage(BaseModel):
+    """Sayfali cevap: log tek buyuyen tablodur, hepsi donmez (K-35)."""
+    total: int
+    items: list[AuditLogOut]

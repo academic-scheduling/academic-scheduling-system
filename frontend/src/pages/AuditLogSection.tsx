@@ -9,7 +9,7 @@ import type {
 } from "../api/types";
 
 const ALL = "__all__";
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 7;
 
 /** Sütun genişlikleri yüzde — kullanıcı tablosundaki gerekçenin aynısı:
  *  oran sabit kalsın (sayfa değişince kaymasın), genişlik ekrana göre esnesin. */

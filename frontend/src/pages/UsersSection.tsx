@@ -37,13 +37,25 @@ const STATUS_ORDER: Record<UserStatus, number> = {
  *  Aksi halde her sayfada içeriğe göre yeniden hesaplanır ve sayfa
  *  değiştirdikçe sütunlar kayar. */
 const COL = {
-  ad: 170,
+  ad: 160,
   eposta: 230,
-  rol: 110,
+  rol: 100,
   durum: 90,
-  bolumler: 190,        // kısa kodlarda (CENG, EEE) satır başına 3-4 rozet
-  eylem: 100,
+  bolumler: 180,        // kısa kodlarda (CENG, EEE) satır başına 3-4 rozet
+  yetkiler: 210,
+  eylem: 90,
 } as const;
+
+/** Tablonun ihtiyaç duyduğu en küçük genişlik.
+ *
+ *  layout="fixed" ile sabit genişlikler kapsayıcıyı aşarsa, genişlik
+ *  verilmemiş sütun 0px'e ezilir — Yetkiler sütunu dar ekranda tamamen
+ *  kayboluyordu. Bu yüzden HER sütunun genişliği sabit ve toplam,
+ *  Table.ScrollContainer'a minWidth olarak veriliyor: dar ekranda sütun
+ *  ezilmek yerine tablo yatay kayar.
+ */
+const TABLE_MIN_WIDTH =
+  COL.ad + COL.eposta + COL.rol + COL.durum + COL.bolumler + COL.yetkiler + COL.eylem;
 
 type FormValues = {
   name: string;
@@ -342,10 +354,10 @@ export default function UsersSection() {
       </Group>
 
       <Paper withBorder radius="md">
-        {/* layout="fixed": sütun genişlikleri içeriğe göre DEĞİL, aşağıdaki
+        {/* layout="fixed": sütun genişlikleri içeriğe göre DEĞİL, COL'daki
             sabit değerlere göre belirlenir. Otomatik yerleşimde her sayfanın
-            içeriği farklı olduğu için sütunlar sayfa değiştikçe kayıyordu.
-            Yetkiler sütunu genişlik almaz — kalan yeri o doldurur. */}
+            içeriği farklı olduğu için sütunlar sayfa değiştikçe kayıyordu. */}
+        <Table.ScrollContainer minWidth={TABLE_MIN_WIDTH} type="native">
         <Table verticalSpacing="xs" highlightOnHover layout="fixed">
           <Table.Thead>
             <Table.Tr>
@@ -354,7 +366,7 @@ export default function UsersSection() {
               <Table.Th w={COL.rol}>Rol</Table.Th>
               <Table.Th w={COL.durum}>Durum</Table.Th>
               <Table.Th w={COL.bolumler}>Bölümler</Table.Th>
-              <Table.Th>Yetkiler</Table.Th>
+              <Table.Th w={COL.yetkiler}>Yetkiler</Table.Th>
               <Table.Th w={COL.eylem} />
             </Table.Tr>
           </Table.Thead>
@@ -458,6 +470,7 @@ export default function UsersSection() {
             })}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
         {gorunen.length === 0 && (
           <Text c="dimmed" size="sm" p="md">Filtreye uyan kullanıcı yok.</Text>
         )}

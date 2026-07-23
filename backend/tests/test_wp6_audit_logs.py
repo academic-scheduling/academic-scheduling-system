@@ -117,12 +117,12 @@ def test_label_is_resolved_for_living_record():
     assert satir["entity_label"] == f"{course['code']} — {course['name']}"
 
 
-def test_label_is_null_for_deleted_record():
-    """K-35'in bilinen sınırı: silinen kaydın adı çözülemez, None döner.
+def test_deleted_record_still_has_its_name():
+    """K-36'nın kalbi: silinen kayıt konuşur.
 
-    Etiket yazma anında satıra denormalize edilseydi burada ad görünürdü —
-    ki DELETE satırı adını en çok merak ettiğimiz satırdır. Test bu sınırı
-    BELGELER; davranış değişirse (kolon eklenirse) burası da güncellenmeli.
+    K-35'te bu satır "silinmiş kayıt (#N)" oluyordu — üstelik adını en çok
+    merak ettiğimiz satır oydu. Etiket artık işlem anında yazıldığı için,
+    kaynağı silinse bile ad log'da duruyor.
     """
     h = admin_headers()
     course = make_course(h, make_department(h))
@@ -130,7 +130,57 @@ def test_label_is_null_for_deleted_record():
 
     body = logs(h, entity_type="course", action="DELETE", limit=20)
     satir = next(i for i in body["items"] if i["entity_id"] == course["id"])
-    assert satir["entity_label"] is None
+    assert satir["entity_label"] == f"{course['code']} — {course['name']}"
+
+
+def test_rename_history_is_preserved_row_by_row():
+    """K-36'nın ikinci kazanımı: log geçmişi anlatır, okuma anını değil.
+
+    Satır işlem SONRASI adı taşır; ardışık satırlar birlikte okununca yeniden
+    adlandırmanın izini verir. Kritik nokta: SONRAKİ değişiklikler eski
+    satırları BOZMAZ.
+
+    K-35'te (okuma anında çözme) üç satırın üçü de bugünkü adı — "Kuram" —
+    gösterirdi ve ara adımlar tamamen kaybolurdu.
+    """
+    h = admin_headers()
+    course = make_course(h, make_department(h), name="İstatistik")
+    client.patch(f"/courses/{course['id']}", json={"name": "Olasılık"}, headers=h)
+    client.patch(f"/courses/{course['id']}", json={"name": "Kuram"}, headers=h)
+
+    body = logs(h, entity_type="course", limit=50)
+    # Yeniden eskiye sıralı; bu dersin satırlarını eskiden yeniye çevir
+    adlar = [i["entity_label"] for i in body["items"]
+             if i["entity_id"] == course["id"]][::-1]
+
+    assert adlar[0].endswith("İstatistik"), f"oluşturma satırı: {adlar[0]}"
+    assert adlar[1].endswith("Olasılık"), \
+        f"ara adım kayboldu, satır bugünkü adı gösteriyor: {adlar[1]}"
+    assert adlar[2].endswith("Kuram"), f"son satır: {adlar[2]}"
+
+
+def test_old_rows_without_label_fall_back_to_read_time():
+    """K-36 öncesi satırlar: etiket yok, varlık duruyorsa okuma anında çözülür."""
+    h = admin_headers()
+    dep = make_department(h)
+
+    db = SessionLocal()
+    eski = AuditLog(user_id=client.get("/auth/me", headers=h).json()["id"],
+                    action="UPDATE", entity_type="department", entity_id=dep["id"],
+                    entity_label=None)
+    db.add(eski)
+    db.commit()
+    eski_id = eski.id
+    db.close()
+
+    body = logs(h, entity_type="department", limit=50)
+    satir = next(i for i in body["items"] if i["id"] == eski_id)
+    assert satir["entity_label"] == f"{dep['code']} — {dep['name']}"
+
+    db = SessionLocal()
+    db.delete(db.get(AuditLog, eski_id))
+    db.commit()
+    db.close()
 
 
 def test_labels_cover_every_entity_type():

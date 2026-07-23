@@ -130,7 +130,7 @@ def create_course(
     course = Course(**payload.model_dump())
     db.add(course)
     db.flush()
-    log_action(db, user, "CREATE", "course", course.id)
+    log_action(db, user, "CREATE", "course", course.id, course)
     db.commit()
     db.refresh(course)
     return course
@@ -161,7 +161,7 @@ def update_course(
 
     for field, value in data.items():
         setattr(course, field, value)
-    log_action(db, user, "UPDATE", "course", course.id)
+    log_action(db, user, "UPDATE", "course", course.id, course)
     db.commit()
     db.refresh(course)
     return course
@@ -195,7 +195,7 @@ def create_section(
     sec = CourseSection(course_id=course.id, **data)
     db.add(sec)
     db.flush()
-    log_action(db, user, "CREATE", "course_section", sec.id)
+    log_action(db, user, "CREATE", "course_section", sec.id, sec)
     db.commit()
     db.refresh(sec)
     return sec
@@ -226,7 +226,7 @@ def update_section(
 
     for field, value in data.items():
         setattr(sec, field, value)
-    log_action(db, user, "UPDATE", "course_section", sec.id)
+    log_action(db, user, "UPDATE", "course_section", sec.id, sec)
     db.commit()
     db.refresh(sec)
     return sec
@@ -248,7 +248,7 @@ def delete_section(
         raise HTTPException(status_code=409,
                             detail="Şubenin haftalık program girişi var; önce girişleri silin")
 
-    log_action(db, user, "DELETE", "course_section", sec.id)
+    log_action(db, user, "DELETE", "course_section", sec.id, sec)
     db.delete(sec)
     db.commit()
 
@@ -286,6 +286,6 @@ def delete_course(
                    "Önce bunları kaldırın.",
         )
 
-    log_action(db, user, "DELETE", "course", course.id)
+    log_action(db, user, "DELETE", "course", course.id, course)
     db.delete(course)
     db.commit()

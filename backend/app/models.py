@@ -674,6 +674,10 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(10))  # CREATE/UPDATE/DELETE/SUBMIT
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[int] = mapped_column(BigInteger)
+    # Islem ANINDAKI insan-okur ad (K-36). Log'un kendi kendine yetmesini
+    # saglar: silinen kayit konusabilsin, degistirilen ad o gunku haliyle
+    # kalsin. Nullable, cunku kolondan ONCE yazilmis satirlarda yok.
+    entity_label: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

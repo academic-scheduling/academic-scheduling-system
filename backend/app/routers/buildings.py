@@ -42,7 +42,7 @@ def create_building(
     )
     db.add(bld)
     db.flush()
-    log_action(db, manager, "CREATE", "building", bld.id)
+    log_action(db, manager, "CREATE", "building", bld.id, bld)
     db.commit()
     db.refresh(bld)
     return bld
@@ -71,7 +71,7 @@ def update_building(
 
     for field, value in data.items():
         setattr(bld, field, value)
-    log_action(db, manager, "UPDATE", "building", bld.id)
+    log_action(db, manager, "UPDATE", "building", bld.id, bld)
     db.commit()
     db.refresh(bld)
     return bld
@@ -99,6 +99,6 @@ def delete_building(
                    "Önce onları kaldırın.",
         )
 
-    log_action(db, manager, "DELETE", "building", bld.id)
+    log_action(db, manager, "DELETE", "building", bld.id, bld)
     db.delete(bld)
     db.commit()

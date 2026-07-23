@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_admin
 from app.models import Course, Department, DepartmentMembership, User
 from app.schemas import DepartmentCreate, DepartmentUpdate, DepartmentOut
-from app.audit import log_action
+from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -42,7 +42,7 @@ def create_department(
     )
     db.add(dep)
     db.flush()
-    log_action(db, admin, "CREATE", "department", dep.id)
+    log_action(db, admin, "CREATE", "department", dep.id, dep)
     db.commit()
     db.refresh(dep)
     return dep
@@ -69,9 +69,10 @@ def update_department(
         if clash:
             raise HTTPException(status_code=409, detail="Bu bölüm kodu zaten kayıtlı")
 
+    ozet = build_change_summary(dep, data)
     for field, value in data.items():
         setattr(dep, field, value)
-    log_action(db, admin, "UPDATE", "department", dep.id)
+    log_action(db, admin, "UPDATE", "department", dep.id, dep, ozet)
     db.commit()
     db.refresh(dep)
     return dep
@@ -110,6 +111,6 @@ def delete_department(
                    "Önce bunları kaldırın.",
         )
 
-    log_action(db, admin, "DELETE", "department", dep.id)
+    log_action(db, admin, "DELETE", "department", dep.id, dep)
     db.delete(dep)
     db.commit()

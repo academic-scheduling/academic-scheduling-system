@@ -94,13 +94,41 @@ Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 ← Yetenek bayrakları davet anında tek tek seçilir (K-25); hepsi opsiyonel,
   varsayılan `false`. `role: "ADMIN"` verilirse bayraklar YOK SAYILIR —
   admin her yetkiye zaten sahiptir.
+← `role: "ADMIN"` verilirse **`department_ids` de yok sayılır** (K-34): admin
+  her bölümde zaten yetkilidir, üyelik satırı yazmak rol düşürülürse sessiz
+  yetki bırakır.
 ← `department_ids` çoklu olabilir: bir alt hesap birden çok bölümden sorumlu
   olabilir (K-26). Yazma yetkisi bu bölümlerle sınırlıdır; okuma değil.
 Cevap 201: `{ "id": 5, "status": "PENDING" }` (e-posta Mailpit'e düşer)
 Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 
 ### POST /users/{id}/resend-invitation → 200
+Yalnız `PENDING`. Eski kullanılmamış token'lar geçersiz kılınır, yenisi gönderilir.
+
 ### GET /users → kullanıcı listesi (bölüm atamalarıyla)
+`[ { "id", "name", "email", "role", "status", "department_ids", "can_manage_*" } ]`
+`status`: `PENDING` (davet edildi, giriş yapmadı) · `ACTIVE` · `DISABLED`.
+
+### PATCH /users/{id}   ← K-34
+İstek (hepsi opsiyonel): `{ "name", "role", "department_ids", "status",
+  "can_manage_courses", "can_manage_weekly", "can_manage_exams",
+  "can_manage_classrooms", "can_manage_lecturers" }`
+← **E-posta değiştirilemez** — kimliktir, davet token'ı ona bağlıdır. Yanlış
+  e-postanın çözümü daveti silip yeniden göndermektir.
+← `status` yalnız `ACTIVE` | `DISABLED` alır. `PENDING`'e geri dönülemez:
+  tamamlanmış bir hesap "tamamlanmamış" yapılamaz.
+← `role: "ADMIN"` verilirse yetenek bayrakları `false`'a çekilir (K-25) **ve
+  mevcut bölüm atamaları silinir** (K-34) — yükseltilen alt hesabın birikmiş
+  üyelikleri kalırsa, ileride tekrar düşürüldüğünde sessizce yetkili olur.
+Cevap 200 · Hata 400: kendi rolünü/durumunu değiştiremezsin (K-34) ·
+  404: başka workgroup.
+
+### DELETE /users/{id}   ← K-34
+Yalnız **`PENDING`** hesap kalıcı silinir (yanlış adrese giden davet).
+Cevap 204 · Hata 409: `{ "detail": "Kullanılmış hesap silinemez: işlem
+  kayıtlarındaki izi kaybolur. Erişimi kapatın (status: DISABLED)." }`
+Not: `audit_logs.user_id` FK'si `ON DELETE SET NULL` — silme hata vermez,
+  sessizce log'un "kim" bilgisini siler. Engel bu yüzden uygulama katmanında.
 
 ---
 
@@ -307,14 +335,68 @@ Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": 
 - Alt hesabın çakışmayı çözebilmesi için karşı tarafı görmesi şarttır; ayrıca
   motor mesajları zaten diğer bölümün ders/derslik/saat bilgisini içerir.
 - Çözme (düzenleme) yetkisi yine bayrak + üyelikle sınırlıdır.
+- **Yetki notu:** dashboard özeti (§10) yalnız ADMIN'dir, bu uç DEĞİL — alt hesap
+  da okur (K-26). İki ucun yetkisi bilerek farklıdır.
+- Sonuç **canlı hesaplanır**, tabloda saklanmaz: çakışmanın id'si ve zaman
+  damgası yoktur, "en yeni çakışma" diye bir sıralama mümkün değildir.
+- Motor bağlanana dek iki liste de **boş** döner (`conflict_service` stub —
+  A-3/A-4). Cevap şekli şimdiden sabit, B mock'unu buna göre kurabilir.
 
 ---
 
 ## 10. Dashboard
 
-### GET /dashboard/summary
-Cevap: `{ "departments": 2, "courses": 24, "classrooms": 5,
-  "weekly_entries": 61, "exams": 18, "unresolved_hard": 3, "unresolved_warnings": 7 }`
+### GET /dashboard/summary   ← K-33 (yalnız ADMIN)
+Cevap:
+```json
+{ "departments": 2, "classrooms": 5, "lecturers": 9, "courses": 24,
+  "admins": 1, "sub_accounts": 3,
+  "weekly_entries": 61, "exams": 18,
+  "unresolved_hard": 3, "unresolved_warnings": 7 }
+```
+← **Yalnız aktif kayıtlar sayılır** (K-33): `active=false` bölüm/derslik/
+  öğretim üyesi/ders sayaca girmez — ekranlardaki liste uzunluklarıyla tutsun.
+← `admins` / `sub_accounts`: yalnız `status="ACTIVE"` hesaplar. PENDING davet
+  ve DISABLED hesap sayılmaz (ikisi de sisteme bir şey yapamaz).
+← `exams` ve `weekly_entries`: `active` bayrağı yok, DRAFT + SUBMITTED birlikte
+  sayılır (K-03).
+← `unresolved_hard` / `unresolved_warnings`: motor bağlanana dek **ikisi de 0**
+  döner (`conflict_service` stub — A-3/A-4). Alan adları şimdiden sabit.
+← Dashboard sekiz kart çizer; `weekly_entries` kart olarak gösterilmez ama
+  alan korunur (haftalık program ekranı gelince eklenecek).
+
+---
+
+## 12. İşlem Kayıtları (audit log)   ← K-35
+
+### GET /audit-logs?limit=20&offset=0&user_id=&action=&entity_type=&date_from=&date_to=
+Yalnız ADMIN. Yeniden eskiye sıralı.
+```json
+{ "total": 2613,
+  "items": [
+    { "id": 9120, "created_at": "2026-07-23T09:14:22Z",
+      "user": { "id": 3, "name": "Ayşe Yılmaz" },
+      "action": "UPDATE", "entity_type": "user", "entity_id": 12,
+      "entity_label": "Ayşe Yılmaz",
+      "change_summary": "Durum: Aktif → Pasif" } ] }
+```
+← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT` · `INVITE` · `ACTIVATE`
+  `INVITE`: davet gönderildi (ilk davet ve yeniden gönderim) — faili admin.
+  `ACTIVATE`: davet edilen kişi hesabını tamamladı — **faili kişinin kendisi**,
+  davet eden admin değil (K-37).
+← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
+  `course` · `course_section` · `exam` · `weekly_entry` · `user`
+← `entity_label`: **işlem anındaki** insan-okur ad, satıra yazılır (K-36).
+  Silinen kayıt da konuşur; sonraki değişiklikler eski satırları bozmaz
+  (UPDATE satırı o işlemden sonraki adı taşır).
+  `null` yalnız K-36 öncesi yazılmış eski satırlarda görülür; onlarda varlık
+  hâlâ duruyorsa ad okuma anında çözülür, yoksa UI `#12` gösterir.
+← `change_summary`: **ne değiştiği**, "Alan: eski → yeni" biçiminde (K-38).
+  Yalnız `UPDATE`'te dolu; CREATE/DELETE'te ve K-38 öncesi satırlarda `null`.
+  `entity_label` "hangi kayıt", bu alan "ne değişti" sorusunu cevaplar.
+← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
+← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
+  `workgroup_id` kolonu yok.
 
 ---
 

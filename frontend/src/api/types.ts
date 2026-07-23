@@ -146,3 +146,136 @@ export type Course = {
   active: boolean;
   sections: CourseSection[];
 };
+/** Kontrat §10 · GET /dashboard/summary (K-33).
+ *
+ *  Sekiz kart çizilir; `weekly_entries` kart değildir ama kontrat onu vaat
+ *  ettiği için alan burada da durur (haftalık program ekranı gelince kart olur).
+ *  Çakışma alanları motor bağlanana dek 0 döner — K-33'te kayıtlı sınırlama.
+ */
+export type DashboardSummary = {
+  departments: number;
+  classrooms: number;
+  lecturers: number;
+  courses: number;
+  admins: number;
+  sub_accounts: number;
+  weekly_entries: number;
+  exams: number;
+  unresolved_hard: number;
+  unresolved_warnings: number;
+};
+
+/** Kontrat §0 · ConflictResult — motorun ürettiği, UI'ın çizdiği ortak nesne. */
+export type ConflictSeverity = "HARD" | "WARNING";
+
+export type ConflictAffectedRef = {
+  type: "weekly_entry" | "exam";
+  id: number;
+  course_code: string | null;
+};
+
+export type ConflictResult = {
+  severity: ConflictSeverity;
+  rule_id: string;                  // "W1".."W8" | "E1".."E7" | "X1".."X3"
+  message: string;
+  affected: ConflictAffectedRef[];
+};
+
+/** Kontrat §9 · GET /conflicts — tam tarama, iki kovaya ayrılmış.
+ *
+ *  Ayrımı sunucu yapar (K-05): hard submit'i engeller, warning engellemez.
+ *  Sonuç canlı hesaplanır, saklanmaz — çakışmanın zaman damgası yoktur.
+ */
+export type ConflictScan = {
+  hard: ConflictResult[];
+  warnings: ConflictResult[];
+};
+
+/** Kontrat §2 · kullanıcı yaşam döngüsü.
+ *
+ *  PENDING: davet edildi, hiç giriş yapmadı → daveti silinebilir (K-34).
+ *  ACTIVE / DISABLED: hesap kullanılmış → silinmez, erişimi kapatılır.
+ */
+export type UserStatus = "PENDING" | "ACTIVE" | "DISABLED";
+
+/** Kontrat §2 · GET /users elemanı.
+ *
+ *  `User`den (auth) farkı: e-posta ve durum taşır, bayrakları OLDUĞU GİBİ
+ *  verir. /auth/me'deki "ADMIN'de hepsi true" dönüşümü burada YOKTUR —
+ *  yönetim ekranı DB'deki gerçeği göstermeli (K-34).
+ */
+export type ManagedUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  department_ids: number[];
+  can_manage_courses: boolean;
+  can_manage_weekly: boolean;
+  can_manage_exams: boolean;
+  can_manage_classrooms: boolean;
+  can_manage_lecturers: boolean;
+};
+
+/** K-25'in beş yetenek bayrağı — form ve rozet listelerinin tek kaynağı. */
+export const CAPABILITIES = [
+  { key: "can_manage_courses", label: "Dersler" },
+  { key: "can_manage_weekly", label: "Haftalık Program" },
+  { key: "can_manage_exams", label: "Sınavlar" },
+  { key: "can_manage_classrooms", label: "Derslikler" },
+  { key: "can_manage_lecturers", label: "Öğretim Üyeleri" },
+] as const;
+
+export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
+
+/** Kontrat §12 · işlem kayıtları (K-35). */
+export type AuditAction =
+  | "CREATE" | "UPDATE" | "DELETE" | "SUBMIT"
+  | "INVITE" | "ACTIVATE";          // davet akışı (K-37)
+
+export type AuditEntityType =
+  | "department" | "building" | "classroom" | "lecturer"
+  | "course" | "course_section" | "exam" | "weekly_entry" | "user";
+
+export type AuditLog = {
+  id: number;
+  created_at: string;
+  user: { id: number; name: string } | null;
+  action: AuditAction;
+  entity_type: string;
+  entity_id: number;
+  /** HANGİ kayıt — işlem anındaki ad (K-36). */
+  entity_label: string | null;
+  /** NE değişti — "Durum: Aktif → Pasif" (K-38). Yalnız UPDATE'te dolu. */
+  change_summary: string | null;
+};
+
+/** Sayfalı cevap: `total` sayfanın değil, filtre kümesinin büyüklüğü. */
+export type AuditLogPage = {
+  total: number;
+  items: AuditLog[];
+};
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: string }> = {
+  CREATE: { label: "Ekledi", color: "green" },
+  UPDATE: { label: "Düzenledi", color: "blue" },
+  DELETE: { label: "Sildi", color: "red" },
+  SUBMIT: { label: "Yayınladı", color: "violet" },
+  // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
+  INVITE: { label: "Davet etti", color: "cyan" },
+  ACTIVATE: { label: "Hesabını açtı", color: "teal" },
+};
+
+/** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */
+export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
+  department: "Bölüm",
+  building: "Bina",
+  classroom: "Derslik",
+  lecturer: "Öğretim üyesi",
+  course: "Ders",
+  course_section: "Şube",
+  exam: "Sınav",
+  weekly_entry: "Haftalık giriş",
+  user: "Kullanıcı",
+};

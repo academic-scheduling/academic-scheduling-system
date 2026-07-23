@@ -32,6 +32,15 @@ app.include_router(exams_router)
 from app.routers.weekly_entries import router as weekly_entries_router
 app.include_router(weekly_entries_router)
 
+from app.routers.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
+
+from app.routers.conflicts import router as conflicts_router
+app.include_router(conflicts_router)
+
+from app.routers.audit_logs import router as audit_logs_router
+app.include_router(audit_logs_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

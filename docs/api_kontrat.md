@@ -94,6 +94,9 @@ Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 ← Yetenek bayrakları davet anında tek tek seçilir (K-25); hepsi opsiyonel,
   varsayılan `false`. `role: "ADMIN"` verilirse bayraklar YOK SAYILIR —
   admin her yetkiye zaten sahiptir.
+← `role: "ADMIN"` verilirse **`department_ids` de yok sayılır** (K-34): admin
+  her bölümde zaten yetkilidir, üyelik satırı yazmak rol düşürülürse sessiz
+  yetki bırakır.
 ← `department_ids` çoklu olabilir: bir alt hesap birden çok bölümden sorumlu
   olabilir (K-26). Yazma yetkisi bu bölümlerle sınırlıdır; okuma değil.
 Cevap 201: `{ "id": 5, "status": "PENDING" }` (e-posta Mailpit'e düşer)
@@ -114,7 +117,9 @@ Yalnız `PENDING`. Eski kullanılmamış token'lar geçersiz kılınır, yenisi 
   e-postanın çözümü daveti silip yeniden göndermektir.
 ← `status` yalnız `ACTIVE` | `DISABLED` alır. `PENDING`'e geri dönülemez:
   tamamlanmış bir hesap "tamamlanmamış" yapılamaz.
-← `role: "ADMIN"` verilirse yetenek bayrakları `false`'a çekilir (K-25).
+← `role: "ADMIN"` verilirse yetenek bayrakları `false`'a çekilir (K-25) **ve
+  mevcut bölüm atamaları silinir** (K-34) — yükseltilen alt hesabın birikmiş
+  üyelikleri kalırsa, ileride tekrar düşürüldüğünde sessizce yetkili olur.
 Cevap 200 · Hata 400: kendi rolünü/durumunu değiştiremezsin (K-34) ·
   404: başka workgroup.
 

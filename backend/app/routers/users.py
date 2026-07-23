@@ -28,6 +28,11 @@ def check_email_domain(email: str) -> bool:
     domain = email.split("@")[-1].lower()
     return domain in domains
 
+def is_admin_role(role: UserRole) -> bool:
+    """ADMIN'de hem yetenek bayrakları hem bölüm atamaları yok sayılır (K-25, K-34)."""
+    return role == UserRole.ADMIN
+
+
 def _create_and_store_token(db: Session, user_id: int) -> str:
     """Yeni token üretir, hash'ini DB'ye yazar, ham token'ı döner."""
     raw = generate_invitation_token()
@@ -54,7 +59,11 @@ def invite_user(
         raise HTTPException(status_code=409, detail="Bu e-posta zaten kayıtlı")
 
     # 3. Bölüm kontrolü + workgroup izolasyonu
-    if payload.department_ids:
+    # ADMIN'de bölüm listesi YOK SAYILIR (K-34): admin zaten her bölümde
+    # yetkilidir (_ensure_department_access rol muafiyeti). Üyelik satırı
+    # yazmak bayrakları true yazmakla aynı tuzak — rol düşürülürse hesap
+    # tam o bölümlerde sessizce yetkili kalırdı.
+    if payload.department_ids and not is_admin_role(payload.role):
         wanted = set(payload.department_ids)
         found = db.query(Department).filter(
             Department.id.in_(wanted),
@@ -67,7 +76,7 @@ def invite_user(
     # K-25: ADMIN davet edildiyse bayraklar YOK SAYILIR — rol muafiyeti zaten
     # her yetkiyi veriyor; DB'ye true yazmak yanıltıcı bir ikinci gerçek üretir
     # (rol düşürülürse sessizce yetkili kalırdı).
-    is_admin = payload.role == UserRole.ADMIN
+    is_admin = is_admin_role(payload.role)
     user = User(
         workgroup_id=admin.workgroup_id,
         name=payload.name,
@@ -84,9 +93,10 @@ def invite_user(
     db.add(user)
     db.flush()  # user.id'yi almak için
 
-    # 5. Membership satırları
-    for dept_id in set(payload.department_ids):
-        db.add(DepartmentMembership(user_id=user.id, department_id=dept_id))
+    # 5. Membership satırları — ADMIN'de hiç yazılmaz (yukarıdaki gerekçe)
+    if not is_admin:
+        for dept_id in set(payload.department_ids):
+            db.add(DepartmentMembership(user_id=user.id, department_id=dept_id))
 
     # 6. Token
     raw_token = _create_and_store_token(db, user.id)
@@ -193,7 +203,17 @@ def update_user(
         elif bayrak in veri:
             setattr(user, bayrak, veri[bayrak])
 
-    if "department_ids" in veri:
+    if is_admin_role(yeni_rol):
+        # ADMIN'in bölüm ataması OLMAZ (K-34) — her bölümde zaten yetkili.
+        # Alt hesap admin'e YÜKSELTİLDİĞİNDE eski üyelikleri de silinir:
+        # kalsalardı, hesap ileride tekrar alt hesaba düşürüldüğünde tam o
+        # bölümlerde sessizce yetkili olurdu. Bayrakların false'a çekilmesiyle
+        # aynı gerekçe.
+        db.query(DepartmentMembership).filter(
+            DepartmentMembership.user_id == user.id
+        ).delete(synchronize_session=False)
+
+    elif "department_ids" in veri:
         # Üyelikler TOPLU değiştirilir: gönderilen liste yeni gerçektir.
         # Tek tek ekle/çıkar uçları olsaydı istemci iki isteği yarıda bırakıp
         # tutarsız bir ara duruma düşürebilirdi.

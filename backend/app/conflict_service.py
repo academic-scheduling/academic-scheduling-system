@@ -108,16 +108,24 @@ def _exam_to_dict(x: Exam) -> dict:
 # ==================================================================
 
 def _weekly_universe(db: Session, workgroup_id: int) -> list[dict]:
-    """Workgroup'un TUM haftalik girisleri (DRAFT + SUBMITTED).
+    """Workgroup'un cakisma evrenine giren haftalik girisleri.
 
-    Durum filtresi YOK: kural seti her iki anda da taslak+kilitli tumune
-    bakilmasini sart kosar. Eager yukleme N+1'i onler — adaptor her giris icin
+    DRAFT + SUBMITTED tumune bakilir (status filtresi YOK): kural seti her iki
+    anda da taslak+kilitli tumunu sart kosar. AMA pasif sube/ders DISLANIR
+    (K-39): girisi olan bir sube/ders pasife alindiginda o girisler artik
+    kimseyle cakismaz — projenin her yerinde "pasif = kapsam disi" (K-16
+    ogrenci sayisi, K-33 dashboard sayaci, K-15 "tum aktif sube ciftleri").
+    Eager yukleme N+1'i onler — adaptor her giris icin
     section/course/department/classroom'a dokunuyor.
     """
     entries = (
         db.query(WeeklyScheduleEntry)
         .join(CourseSection).join(Course).join(Department)
-        .filter(Department.workgroup_id == workgroup_id)
+        .filter(
+            Department.workgroup_id == workgroup_id,
+            CourseSection.active.is_(True),
+            Course.active.is_(True),
+        )
         .options(
             selectinload(WeeklyScheduleEntry.section)
             .selectinload(CourseSection.course)
@@ -130,11 +138,19 @@ def _weekly_universe(db: Session, workgroup_id: int) -> list[dict]:
 
 
 def _exam_universe(db: Session, workgroup_id: int) -> list[dict]:
-    """Workgroup'un TUM sinavlari (DRAFT + SUBMITTED)."""
+    """Workgroup'un cakisma evrenine giren sinavlari (DRAFT + SUBMITTED).
+
+    Pasif dersin sinavi evren disidir (K-39; sinav ders duzeyindedir, ders
+    pasifse sinav da kapsam disi). Sinavda `active` alani yok — pasiflik
+    dersten gelir.
+    """
     exams = (
         db.query(Exam)
         .join(Course).join(Department)
-        .filter(Department.workgroup_id == workgroup_id)
+        .filter(
+            Department.workgroup_id == workgroup_id,
+            Course.active.is_(True),
+        )
         .options(
             selectinload(Exam.course).selectinload(Course.department),
             selectinload(Exam.course).selectinload(Course.sections),

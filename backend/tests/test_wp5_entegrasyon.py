@@ -260,6 +260,81 @@ def test_other_workgroup_entries_never_enter_the_universe():
 
 
 # ==================================================================
+# Pasiflik: pasif şube/ders çakışma evreninden düşer (K-39)
+# ==================================================================
+
+def test_inactive_section_leaves_conflict_universe():
+    """Girişi olan şube pasife alınınca artık kimseyle çakışmaz.
+
+    Kural seti "tüm AKTİF şube çiftleri" der; K-16/K-33 de her yerde pasifi
+    kapsam dışı tutar. Motor da tutarlı olmalı: pasif şubenin girişi hayalet
+    çakışma üretmemeli.
+    """
+    h = admin_headers()
+    room = make_classroom(h)
+    ortak = {"classroom_id": room["id"], "day_of_week": 2, "start_slot": 3}
+
+    sec_eski = make_section(h)
+    make_entry(h, sec_eski, **ortak)
+
+    # Kontrol: aktifken W1 üretilir. Probe girişini SİL ki evreni kirletmesin —
+    # aksi halde bir sonraki probe bu aktif girişle çakışır, testi yanıltır.
+    probe = make_entry(h, make_section(h), **ortak).json()
+    assert "W1" in rule_ids(probe["conflicts"])
+    assert client.delete(f"/weekly-entries/{probe['entry']['id']}", headers=h).status_code == 204
+
+    # Şubeyi pasife al → sec_eski'nin girişi artık evren dışı → çakışma yok
+    assert client.patch(f"/course-sections/{sec_eski['id']}",
+                        json={"active": False}, headers=h).status_code == 200
+    conflicts2 = save_conflicts(make_entry(h, make_section(h), **ortak))
+    assert "W1" not in rule_ids(conflicts2)
+
+
+def test_inactive_course_leaves_conflict_universe():
+    """Ders pasife alınınca şubelerinin girişleri de evrenden düşer."""
+    h = admin_headers()
+    room = make_classroom(h)
+    ortak = {"classroom_id": room["id"], "day_of_week": 5, "start_slot": 2}
+
+    sec_eski = make_section(h)
+    make_entry(h, sec_eski, **ortak)
+    probe = make_entry(h, make_section(h), **ortak).json()
+    assert "W1" in rule_ids(probe["conflicts"])
+    assert client.delete(f"/weekly-entries/{probe['entry']['id']}", headers=h).status_code == 204
+
+    # Dersi pasife al (şube değil) → şubenin girişleri de evren dışı kalmalı
+    assert client.patch(f"/courses/{sec_eski['course']['id']}",
+                        json={"active": False}, headers=h).status_code == 200
+    assert "W1" not in rule_ids(save_conflicts(make_entry(h, make_section(h), **ortak)))
+
+
+def test_inactive_course_exam_leaves_scan():
+    """Pasif dersin sınavı tam taramada da görünmez (E-tarafı simetri)."""
+    h = admin_headers()
+    dep = make_department(h)
+    lec = make_lecturer(h)
+    room = make_classroom(h)
+
+    c1 = make_course(h, dep)
+    make_exam(h, c1["id"], lec["id"], classroom_ids=[room["id"]])
+    c2 = make_course(h, dep)
+    x2 = make_exam(h, c2["id"], lec["id"],
+                   classroom_ids=[room["id"]], exam_type="FINAL").json()["exam"]
+
+    # İkisi aktifken E1 var
+    r = client.get("/conflicts", headers=h)
+    hard_ids = {a["id"] for c in r.json()["hard"] for a in c["affected"]}
+    assert x2["id"] in hard_ids
+
+    # c1 pasife alınınca onun sınavı evrenden düşer → x2 artık çakışmaz
+    assert client.patch(f"/courses/{c1['id']}", json={"active": False},
+                        headers=h).status_code == 200
+    r = client.get("/conflicts", headers=h)
+    hard_ids = {a["id"] for c in r.json()["hard"] for a in c["affected"]}
+    assert x2["id"] not in hard_ids
+
+
+# ==================================================================
 # Tam tarama (kontrat §9)
 # ==================================================================
 

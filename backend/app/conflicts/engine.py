@@ -211,9 +211,15 @@ def e6_exam_out_of_window(a):
         return {"rule_id": "E6", "severity": "HARD"}
       
 
-def e7_excess_capacity(a, margin=0):
+def e7_excess_capacity(a, margin=10):
     """K-17: en kucuk exam_capacity'li derslik cikarilinca kalan hala
-    yetiyorsa israf -> WARNING. margin: hoca onayi bekleyen esik (varsayilan 0)."""
+    yetiyorsa israf -> WARNING.
+
+    margin: guvenlik payi (K-40). En kucuk derslik cikarildiktan sonra kalan
+    kontenjan, ogrenci sayisindan en az `margin` kadar FAZLAYSA israf sayilir.
+    Boylece tam sinirda (or. 80 kapasite / 75 ogrenci) oturan siniflar "gereksiz"
+    diye uyarilmaz; yalniz bariz fazlalik (>= ogrenci + 10) tetiklenir.
+    """
     rooms = a["rooms"]
     if len(rooms) <= 1:                                        # cikarilacak fazlalik yok
         return None

@@ -623,15 +623,25 @@ def test_e6_weekend_hard():
 
 
 def test_e7_excess_capacity_warning():
-    # 40+40+40=120, expected 75; en kucuk(40) cikinca 80 >= 75 -> E7
+    # 40+40+40=120, expected 60; en kucuk(40) cikinca 80 >= 60+10=70 -> E7 (K-40)
     a = base_exam()
-    a["expected_students"] = 75
+    a["expected_students"] = 60
     a["rooms"] = [{"classroom_id": 10, "exam_capacity": 40},
                   {"classroom_id": 11, "exam_capacity": 40},
                   {"classroom_id": 12, "exam_capacity": 40}]
     result = e7_excess_capacity(a)
     assert result is not None
     assert result["rule_id"] == "E7"
+
+def test_e7_margin_suppresses_marginal_waste():
+    # 40+40+40=120, expected 75; en kucuk cikinca 80. margin=10 -> 80 >= 85? HAYIR.
+    # margin=0 olsaydi (80>=75) E7 verirdi; guvenlik payi bunu bastirir (K-40).
+    a = base_exam()
+    a["expected_students"] = 75
+    a["rooms"] = [{"classroom_id": 10, "exam_capacity": 40},
+                  {"classroom_id": 11, "exam_capacity": 40},
+                  {"classroom_id": 12, "exam_capacity": 40}]
+    assert e7_excess_capacity(a) is None
 
 def test_e7_no_excess_all_needed():
     # 40+40=80, expected 75; en kucuk(40) cikinca 40 < 75 -> israf YOK

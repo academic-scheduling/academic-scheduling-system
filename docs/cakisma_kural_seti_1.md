@@ -90,11 +90,12 @@ expected_students)`.
 | E5 | Sınav kontenjanı yetersiz [K-17] | `SUM(seçili dersliklerin exam_capacity) < total_expected` → "ek derslik seçin" mesajı | WARNING | Derslik kümesi boşsa VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
 | E5a | Kontenjansız derslik seçimi [K-21] | Seçili dersliklerden birinin `exam_capacity` değeri NULL | WARNING — "sınav kontenjanı girilmemiş, önce derslik kaydına girin" | Derslik kümesi boşsa |
 | E6 | Hafta sonu tarihi | `exam_date` Cmt/Paz | **HARD** [K-06] | — (DB CHECK yedekli) |
-| E7 | Gereksiz kontenjan fazlası [K-17] | Derslik kümesinden EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam hâlâ `>= total_expected` ise (yani bir derslik tamamen gereksiz) | WARNING | Derslik sayısı <= 1 VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
+| E7 | Gereksiz kontenjan fazlası [K-17] | EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam `>= total_expected + 10` ise (bariz fazlalık, K-40) | WARNING | Derslik sayısı <= 1 VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
 
 Not: Sınavlarda **saat penceresi kuralı yoktur** — 17:30 sonrası serbesttir [K-06].
 Not: E5/E7'de `capacity` DEĞİL `exam_capacity` kullanılır (boşluklu oturma, K-17).
-E7 eşiği ekip önerisidir; hoca onayı bekliyor (karar defteri açık konu 5).
+E7 eşiği **margin=10** olarak sabitlendi (K-40): tam sınırda oturan sınav
+"gereksiz" diye uyarılmasın, yalnız bariz fazlalık tetiklensin.
 
 ## C. Çapraz Kural: Sınav × Haftalık Ders [K-06, AÇIK]
 
@@ -120,14 +121,15 @@ Karşılaştırma: yalnızca sınav tarihi hafta içiyse ve sınav saati 08:30-1
 penceresiyle kesişiyorsa anlamlıdır (17:30 sonrası sınav hiçbir dersle kesişemez —
 bu, ucuz bir ön-eleme optimizasyonudur).
 
-## Açık Kararlar (ekip onayı bekliyor)
+## Açık Kararlar — HEPSİ KAPANDI (24 Temmuz)
 
 1. ~~E3 / E4 / X2-X3 severity'leri~~ → K-12 ile onaylandı (v1.2).
-2. **v1.3 değişiklik seti** (şube-farkındalıklı W3/W4, asenkron ön-eleme, W8,
-   ders düzeyi sınav, E1/E5/E7): Stajyer A taslakladı; **Stajyer C gözden
-   geçirip onaylamalı** (motorun sahibi C'dir).
-3. **E7 israf eşiği:** "en küçük derslik çıkarılsa hâlâ yetiyor" kriteri ekip
-   önerisi; hoca onayı alınabilir.
+2. ~~v1.3 değişiklik seti~~ (şube-farkındalıklı W3/W4, asenkron ön-eleme, W8,
+   ders düzeyi sınav, E1/E5/E7) → Stajyer C onayladı ve `wp5-engine-v14`'te
+   uyguladı; `wp5-motor-entegrasyon`'da API'ye bağlandı (K-39).
+3. ~~E7 israf eşiği~~ → K-40 ile margin=10 olarak sabitlendi.
+
+Ek karar (K-40): **W8** save'de sessiz, submit'te ve tam taramada WARNING üretir.
 
 ## Unit Test Şablonu (Stajyer C)
 

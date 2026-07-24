@@ -681,6 +681,17 @@ başkasının çakışmasını görürdü.
   gösterebilsin diye.
 - Kontrat §0 enum'una `E4a/E4b/E5a` eklendi (üç stajyerin haberi var).
 
+**Pasif şube/ders çakışma evreni dışıdır:** Girişi olan bir şube veya ders
+pasife alındığında (`active=false`), o şubenin/dersin haftalık girişleri ve
+sınavları artık hiçbir çakışma karşılaştırmasına GİRMEZ. Motor stub'ken bu
+fark edilmiyordu; motor bağlanınca pasif şubenin girişi hayalet W1 üretiyordu.
+Gerekçe: proje pasifliği her yerde "kapsam dışı" sayar — K-16 sınav öğrenci
+sayısında yalnız aktif şubeleri toplar, K-33 dashboard yalnız aktif kayıtları
+sayar, K-15 "tüm AKTİF şube çiftleri" der. Motor da tutarlı olmalı.
+Uygulama: `_weekly_universe` `CourseSection.active AND Course.active`,
+`_exam_universe` `Course.active` ile süzer. Sınavda `active` alanı yok;
+pasiflik dersten miras alınır.
+
 **Bilinen sınırlama:** Aday filtresi evrenin tamamını tarayıp süzdüğü için
 maliyet O(n²). MVP ölçeğinde ölçülebilir bir sorun değil; gerekirse
 aday-vs-evren için özel bir tarama yardımcısı eklenir (kural seti değişmez).

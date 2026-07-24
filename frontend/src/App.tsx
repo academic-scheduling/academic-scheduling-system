@@ -7,6 +7,7 @@ import ActivatePage from "./pages/ActivatePage";
 import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import WeeklyPage from "./pages/WeeklyPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import LecturersPage from "./pages/LecturersPage";
 import ClassroomsPage from "./pages/ClassroomsPage";
@@ -25,7 +26,7 @@ export default function App() {
           <Route path="/courses" element={<CoursesPage />} />
           <Route path="/classrooms" element={<ClassroomsPage />} />
           <Route path="/lecturers" element={<LecturersPage />} />
-          <Route path="/weekly" element={<PlaceholderPage title="Haftalık Program" />} />
+          <Route path="/weekly" element={<WeeklyPage />} />
           <Route path="/exams" element={<PlaceholderPage title="Sınavlar" />} />
           <Route path="/conflicts" element={<PlaceholderPage title="Çakışma Raporu" />} />
 

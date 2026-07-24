@@ -355,3 +355,20 @@ def test_full_scan_reports_real_conflicts():
         assert c["message"] and not c["message"].startswith("Çakışma: ")
         for ref in c["affected"]:
             assert ref["type"] in ("weekly_entry", "exam")
+
+
+def test_w8_completeness_appears_in_full_scan():
+    """K-40: W8 tamlık uyarısı tam taramada da görünür (yalnız submit'te değil).
+
+    save'de susmasının sebebi "iş sürerken rahatsız etme"ydi; tam tarama ise
+    kullanıcının bilerek 'tüm sorunları göster' dediği yerdir — eksik ders saati
+    de bir sorundur. Bu davranış kararla sabitlendi.
+    """
+    h = admin_headers()
+    section = make_section(h)                 # ders 3+2+0 ister
+    # Tek slotluk teori girişi bırak → tamlık eksik (submit etmeye bile gerek yok)
+    make_entry(h, section, slot_count=1, day_of_week=1, start_slot=1)
+
+    r = client.get("/conflicts", headers=h)
+    assert r.status_code == 200, r.text
+    assert "W8" in rule_ids(r.json()["warnings"])

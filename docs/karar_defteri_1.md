@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 24 Temmuz 2026 (K-39: çakışma motoru API'ye bağlandı, stub dönemi bitti)
+**Son güncelleme:** 24 Temmuz 2026 (K-40: E7 payı=10, W8 tam taramada; K-39: motor bağlandı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -106,8 +106,7 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 2. XLSX/PDF ayrıntılı format şablonu (K-09) — Hafta 3
 3. `expected_students` zorunlu mu opsiyonel mi — ekip önerisi zorunlu, onay bekliyor (K-07)
 4. Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)
-5. E7 israf uyarısının eşiği ("bir derslik çıkarılsa hâlâ yetiyor" kriteri) —
-   ekip önerisi kural setinde, hoca onayı beklenebilir (K-17)
+5. ~~E7 israf uyarısının eşiği~~ → K-40 ile kapandı (margin=10 sabitlendi).
 6. **Çoklu workgroup [S] — hoca talebi, KARAR BEKLİYOR (17 Tem itibarıyla).**
    Bugünkü sistem tek workgroup varsayıyor: `users.workgroup_id` tekil FK,
    workgroup endpoint'i yok, workgroup'u `create_admin.py` yaratıyor. Brief
@@ -695,3 +694,22 @@ pasiflik dersten miras alınır.
 **Bilinen sınırlama:** Aday filtresi evrenin tamamını tarayıp süzdüğü için
 maliyet O(n²). MVP ölçeğinde ölçülebilir bir sorun değil; gerekirse
 aday-vs-evren için özel bir tarama yardımcısı eklenir (kural seti değişmez).
+
+## K-40 · E7 güvenlik payı = 10; W8 tam taramada da görünür [E]
+`feature/wp5-motor-entegrasyon` (24 Temmuz). Motorda iki açık ucun kapatılması.
+
+**E7 israf eşiği → margin=10 (açık konu 5 kapandı).** Hoca onayı beklenmeden
+ekip kararıyla sabitlendi. E7 artık ancak en küçük derslik çıkarıldıktan sonra
+kalan kontenjan öğrenci sayısından **en az 10 fazlaysa** tetiklenir. Gerekçe:
+tam sınırda (80 kontenjan / 75 öğrenci) oturan bir sınav "gereksiz derslik"
+diye uyarılmamalı; sınavda seyrek oturma için küçük bir tampon meşrudur.
+`margin=0` bariz doğru olmayan uyarılar üretiyordu. İhtiyaç olursa değer tek
+yerden (engine `e7_excess_capacity` varsayılanı) değişir.
+
+**W8 tam taramada da üretilir (K-20'nin kapsam kararı).** K-20 "W8 yalnız
+submit'te" diyordu; save'de susmasının sebebi "yerleştirme sürerken rahatsız
+etme"ydi. `GET /conflicts` tam taraması ise kullanıcının bilerek "bana tüm
+sorunları göster" dediği yerdir — eksik/fazla ders saati de çözülmesi gereken
+bir sorundur, orada gizlemek yanlış olur. Dolayısıyla W8 üç yerde farklı
+davranır: **save → sessiz**, **submit → WARNING**, **tam tarama → WARNING**.
+Dashboard uyarı sayacı da (K-33) tam taramadan beslendiği için W8'i içerir.

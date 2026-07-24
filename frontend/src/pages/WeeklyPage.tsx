@@ -26,10 +26,13 @@ const DELIVERY_LABELS: Record<DeliveryMode, string> = {
 };
 
 type Placed = WeeklyEntry & { lane: number; lanes: number };
-type DragPayload = { sectionId: number; courseId: number; label: string };
-type PlaceTarget = { drag: DragPayload; day: number; slot: number };
 
-/** Bir günün girişlerini yan yana şeritlere böler (takvim yerleşimi, K-15 paralel). */
+/** Sürüklenen şey: paletten YENİ giriş mi, yoksa var olan girişin TAŞINMASI mı. */
+type Drag =
+  | { kind: "new"; sectionId: number; label: string }
+  | { kind: "move"; entry: WeeklyEntry };
+
+/** Bir günün girişlerini yan yana şeritlere böler (takvim yerleşimi). */
 function layoutDay(entries: WeeklyEntry[]): Placed[] {
   const sorted = [...entries].sort((a, b) => a.start_slot - b.start_slot || a.id - b.id);
   const end = (e: WeeklyEntry) => e.start_slot + e.slot_count - 1;
@@ -73,9 +76,10 @@ export default function WeeklyPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [drag, setDrag] = useState<DragPayload | null>(null);
-  const [overCell, setOverCell] = useState<string | null>(null);   // "day-slot"
-  const [target, setTarget] = useState<PlaceTarget | null>(null);   // bırakma modalı
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [over, setOver] = useState<string | null>(null);           // "day-slot"
+  const [placing, setPlacing] = useState<{ drag: Drag; day: number; slot: number } | null>(null);
+  const [editing, setEditing] = useState<WeeklyEntry | null>(null);
 
   const canWrite = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
 
@@ -123,10 +127,41 @@ export default function WeeklyPage() {
     return m;
   }, [entries]);
 
+  const showConflicts = (conflicts: ConflictResult[], baslik: string) => {
+    if (!conflicts.length) {
+      notifications.show({ color: "green", message: `${baslik} — çakışma yok` });
+      return;
+    }
+    const hard = conflicts.some((c) => c.severity === "HARD");
+    notifications.show({
+      color: hard ? "red" : "orange",
+      title: baslik,
+      message: `${conflicts.length} çakışma: ${conflicts.map((c) => c.rule_id).join(", ")}`,
+    });
+  };
+
+  /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
+  const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
+    if (entry.day_of_week === day && entry.start_slot === slot) return;
+    try {
+      const res = await api.patch<{ conflicts: ConflictResult[] }>(
+        `/weekly-entries/${entry.id}`, { day_of_week: day, start_slot: slot },
+      );
+      reload();
+      showConflicts(res.conflicts, "Giriş taşındı");
+    } catch (err) {
+      // Pencere taşması (400) ve SUBMITTED kilidi (409) burada görünür.
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Taşınamadı" });
+    }
+  };
+
   const onDrop = (day: number, slot: number) => {
-    setOverCell(null);
-    if (drag && canWrite) setTarget({ drag, day, slot });
+    setOver(null);
+    const d = drag;
     setDrag(null);
+    if (!d || !canWrite) return;
+    if (d.kind === "move") void moveEntry(d.entry, day, slot);
+    else setPlacing({ drag: d, day, slot });
   };
 
   const deleteEntry = async (e: WeeklyEntry) => {
@@ -170,7 +205,7 @@ export default function WeeklyPage() {
                   onDragStart={(ev) => {
                     ev.dataTransfer.effectAllowed = "copy";
                     ev.dataTransfer.setData("text/plain", String(s.id));
-                    setDrag({ sectionId: s.id, courseId: c.id, label: `${c.code}-${s.section_no}` });
+                    setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
                   }}
                   onDragEnd={() => setDrag(null)}
                   style={{ cursor: canWrite ? "grab" : "default", fontSize: 12 }}>
@@ -199,27 +234,43 @@ export default function WeeklyPage() {
               {DAYS.map((d) => (
                 <div key={d} style={{ flex: 1, minWidth: 92 }}>
                   <div style={{ height: 24, textAlign: "center", fontSize: 12, color: "var(--mantine-color-dimmed)" }}>{DAY_SHORT[d]}</div>
-                  <div style={{ position: "relative", height: ROW_H * 9 }}>
-                    {/* Bırakma hücreleri (kartların ALTINDA; kartlar pointer-events:none) */}
-                    {SLOTS.map((s) => {
-                      const key = `${d}-${s}`;
-                      return (
-                        <div key={s}
-                          onDragOver={(ev) => { if (drag && canWrite) { ev.preventDefault(); setOverCell(key); } }}
-                          onDragLeave={() => setOverCell((c) => (c === key ? null : c))}
-                          onDrop={(ev) => { ev.preventDefault(); onDrop(d, s); }}
-                          style={{
-                            position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
-                            borderTop: "0.5px solid var(--mantine-color-default-border)",
-                            background: overCell === key ? "var(--mantine-color-blue-light)" : undefined,
-                          }} />
-                      );
-                    })}
+                  {/* Gün sütununun TAMAMI tek bırakma katmanı: slot imleç konumundan
+                      hesaplanır. Böylece kartlar tıklanabilir/sürüklenebilir kalır
+                      (drag olayları köpürüp buraya ulaşır). */}
+                  <div
+                    onDragOver={(ev) => {
+                      if (!drag || !canWrite) return;
+                      ev.preventDefault();
+                      const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                      const slot = Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1));
+                      setOver(`${d}-${slot}`);
+                    }}
+                    onDragLeave={(ev) => {
+                      if (!ev.currentTarget.contains(ev.relatedTarget as Node)) setOver(null);
+                    }}
+                    onDrop={(ev) => {
+                      ev.preventDefault();
+                      const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                      onDrop(d, Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1)));
+                    }}
+                    style={{ position: "relative", height: ROW_H * 9 }}
+                  >
+                    {SLOTS.map((s) => (
+                      <div key={s} style={{
+                        position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
+                        borderTop: "0.5px solid var(--mantine-color-default-border)",
+                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)" : undefined,
+                        pointerEvents: "none",
+                      }} />
+                    ))}
                     {byDay.get(d)!.map((e) => (
                       <EntryCard key={e.id} e={e}
                         elective={electiveOf.get(e.section.course.id) ?? false}
                         hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
-                        canDelete={canWrite && e.status === "DRAFT"}
+                        editable={canWrite && e.status === "DRAFT"}
+                        onDragStart={() => setDrag({ kind: "move", entry: e })}
+                        onDragEnd={() => setDrag(null)}
+                        onEdit={() => setEditing(e)}
                         onDelete={() => deleteEntry(e)} />
                     ))}
                   </div>
@@ -238,22 +289,33 @@ export default function WeeklyPage() {
         <Legend swatch={{ border: "1px dashed var(--mantine-color-blue-4)" }} label="Online (dersliksiz)" />
       </Group>
 
-      {target && (
-        <PlaceModal target={target} classrooms={classrooms} onClose={() => setTarget(null)}
-          onSaved={(conflicts) => {
-            setTarget(null);
-            reload();
-            if (conflicts.length) {
-              const hard = conflicts.filter((c) => c.severity === "HARD").length;
-              notifications.show({
-                color: hard ? "red" : "orange",
-                title: "Giriş kaydedildi (taslak)",
-                message: `${conflicts.length} çakışma: ${conflicts.map((c) => c.rule_id).join(", ")}`,
-              });
-            } else {
-              notifications.show({ color: "green", message: "Giriş kaydedildi — çakışma yok" });
-            }
-          }} />
+      {placing && placing.drag.kind === "new" && (
+        <EntryModal
+          title={`${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
+          classrooms={classrooms} startSlot={placing.slot}
+          onClose={() => setPlacing(null)}
+          onSubmit={(body) => api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
+            section_id: (placing.drag as { sectionId: number }).sectionId,
+            day_of_week: placing.day, start_slot: placing.slot, ...body,
+          })}
+          onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
+        />
+      )}
+
+      {editing && (
+        <EntryModal
+          title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
+          classrooms={classrooms} startSlot={editing.start_slot}
+          initial={{
+            classroomId: editing.classroom ? String(editing.classroom.id) : null,
+            sessionType: editing.session_type,
+            delivery: editing.delivery_mode,
+            slotCount: editing.slot_count,
+          }}
+          onClose={() => setEditing(null)}
+          onSubmit={(body) => api.patch<{ conflicts: ConflictResult[] }>(`/weekly-entries/${editing.id}`, body)}
+          onDone={(conflicts) => { setEditing(null); reload(); showConflicts(conflicts, "Giriş güncellendi"); }}
+        />
       )}
     </Stack>
   );
@@ -268,31 +330,38 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function EntryCard({ e, elective, hard, warn, canDelete, onDelete }: {
-  e: Placed; elective: boolean; hard: boolean; warn: boolean; canDelete: boolean; onDelete: () => void;
+function EntryCard({ e, elective, hard, warn, editable, onDragStart, onDragEnd, onEdit, onDelete }: {
+  e: Placed; elective: boolean; hard: boolean; warn: boolean; editable: boolean;
+  onDragStart: () => void; onDragEnd: () => void; onEdit: () => void; onDelete: () => void;
 }) {
   const online = e.delivery_mode !== "FACE_TO_FACE";
   const draft = e.status === "DRAFT";
   let style: React.CSSProperties;
   if (hard) style = { background: "var(--mantine-color-red-light)", border: "1px solid var(--mantine-color-red-4)" };
   else if (warn) style = { background: "var(--mantine-color-orange-light)", border: "1px solid var(--mantine-color-orange-4)" };
-  else if (online) style = { border: "1px dashed var(--mantine-color-blue-4)", background: "transparent" };
-  else if (draft) style = { border: "1px dashed var(--mantine-color-default-border)", background: "transparent" };
+  else if (online) style = { border: "1px dashed var(--mantine-color-blue-4)", background: "var(--mantine-color-body)" };
+  else if (draft) style = { border: "1px dashed var(--mantine-color-default-border)", background: "var(--mantine-color-body)" };
   else style = { background: "var(--mantine-color-blue-light)", border: "1px solid var(--mantine-color-blue-4)" };
 
   const widthPct = 100 / e.lanes;
   return (
-    <div style={{
-      position: "absolute", top: (e.start_slot - 1) * ROW_H + 1, height: e.slot_count * ROW_H - 2,
-      left: `calc(${e.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
-      borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
-      pointerEvents: "none", ...style,   // kartlar tıklamayı geçirir → drop hücreye ulaşır
-    }}>
+    <div
+      draggable={editable}
+      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(); }}
+      onDragEnd={onDragEnd}
+      onClick={() => editable && onEdit()}
+      title={editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
+      style={{
+        position: "absolute", top: (e.start_slot - 1) * ROW_H + 1, height: e.slot_count * ROW_H - 2,
+        left: `calc(${e.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
+        borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
+        cursor: editable ? "grab" : "default", ...style,
+      }}>
       <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
         <div style={{ fontWeight: 500 }}>{e.section.course.code}-{e.section.section_no}</div>
-        {canDelete && (
-          <ActionIcon size="xs" variant="subtle" color="gray" style={{ pointerEvents: "auto" }}
-            onClick={onDelete} aria-label="Sil">
+        {editable && (
+          <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Sil"
+            onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
             <IconTrash size={12} />
           </ActionIcon>
         )}
@@ -304,33 +373,38 @@ function EntryCard({ e, elective, hard, warn, canDelete, onDelete }: {
   );
 }
 
-function PlaceModal({ target, classrooms, onClose, onSaved }: {
-  target: PlaceTarget; classrooms: Classroom[]; onClose: () => void;
-  onSaved: (conflicts: ConflictResult[]) => void;
+type EntryBody = {
+  classroom_id: number | null; session_type: SessionType;
+  delivery_mode: DeliveryMode; slot_count: number;
+};
+
+/** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
+function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, onDone }: {
+  title: string;
+  classrooms: Classroom[];
+  startSlot: number;
+  initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
+  onClose: () => void;
+  onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
+  onDone: (conflicts: ConflictResult[]) => void;
 }) {
-  const { drag, day, slot } = target;
-  const [classroomId, setClassroomId] = useState<string | null>(null);
-  const [sessionType, setSessionType] = useState<SessionType>("THEORY");
-  const [delivery, setDelivery] = useState<DeliveryMode>("FACE_TO_FACE");
-  const [slotCount, setSlotCount] = useState<number>(2);
+  const [classroomId, setClassroomId] = useState<string | null>(initial?.classroomId ?? null);
+  const [sessionType, setSessionType] = useState<SessionType>(initial?.sessionType ?? "THEORY");
+  const [delivery, setDelivery] = useState<DeliveryMode>(initial?.delivery ?? "FACE_TO_FACE");
+  const [slotCount, setSlotCount] = useState<number>(initial?.slotCount ?? 2);
   const [busy, setBusy] = useState(false);
 
-  const online = delivery !== "FACE_TO_FACE";   // K-23: online → derslik yok
-  const maxSlots = 9 - slot + 1;
+  const online = delivery !== "FACE_TO_FACE";   // K-23: online girişte derslik olamaz
+  const maxSlots = 9 - startSlot + 1;
 
   const submit = async () => {
     setBusy(true);
     try {
-      const res = await api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
-        section_id: drag.sectionId,
+      const res = await onSubmit({
         classroom_id: online ? null : classroomId ? Number(classroomId) : null,
-        day_of_week: day,
-        start_slot: slot,
-        slot_count: slotCount,
-        session_type: sessionType,
-        delivery_mode: delivery,
+        session_type: sessionType, delivery_mode: delivery, slot_count: slotCount,
       });
-      onSaved(res.conflicts);
+      onDone(res.conflicts);
     } catch (err) {
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Kaydedilemedi" });
     } finally {
@@ -339,12 +413,12 @@ function PlaceModal({ target, classrooms, onClose, onSaved }: {
   };
 
   return (
-    <Modal opened onClose={onClose} title={`${drag.label} → ${DAY_SHORT[day]} ${SLOT_START[slot]}`} size="sm">
+    <Modal opened onClose={onClose} title={title} size="sm">
       <Stack gap="sm">
         <Select label="Yapılış şekli" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
           data={(Object.keys(DELIVERY_LABELS) as DeliveryMode[]).map((k) => ({ value: k, label: DELIVERY_LABELS[k] }))} />
-        <Select label="Derslik" value={classroomId} onChange={setClassroomId}
-          disabled={online} placeholder={online ? "Online — derslik yok" : "Derslik seç"}
+        <Select label="Derslik" value={online ? null : classroomId} onChange={setClassroomId}
+          disabled={online} placeholder={online ? "Online — derslik yok" : "Derslik seç"} clearable
           data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
         <Select label="Oturum türü (T/U/L)" value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
           data={(Object.keys(SESSION_LABELS) as SessionType[]).map((k) => ({ value: k, label: SESSION_LABELS[k] }))} />
@@ -352,7 +426,7 @@ function PlaceModal({ target, classrooms, onClose, onSaved }: {
           min={1} max={maxSlots} />
         <Group justify="flex-end" gap="xs" mt="xs">
           <Button variant="subtle" onClick={onClose} disabled={busy}>Vazgeç</Button>
-          <Button onClick={submit} loading={busy}>Kaydet (taslak)</Button>
+          <Button onClick={submit} loading={busy}>Kaydet</Button>
         </Group>
       </Stack>
     </Modal>

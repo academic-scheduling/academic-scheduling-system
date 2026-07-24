@@ -4,7 +4,7 @@ import {
   Paper, Select, Stack, Text, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { SEMESTER_LABELS } from "../api/types";
@@ -80,6 +80,7 @@ export default function WeeklyPage() {
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
   const [placing, setPlacing] = useState<{ drag: Drag; day: number; slot: number } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
+  const [submitOpen, setSubmitOpen] = useState(false);
 
   const canWrite = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
 
@@ -175,6 +176,21 @@ export default function WeeklyPage() {
     }
   };
 
+  /** Yayından taslağa geri al (K-03 değişiklik-seti modeli): kilidi açar,
+   *  giriş yeniden düzenlenebilir/taşınabilir hale gelir. */
+  const revertEntry = async (e: WeeklyEntry) => {
+    try {
+      await api.post(`/weekly-entries/${e.id}/revert-to-draft`);
+      notifications.show({ message: "Giriş taslağa çevrildi", color: "gray" });
+      reload();
+    } catch (err) {
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Çevrilemedi" });
+    }
+  };
+
+  // Yayınlanacak küme: bu cohort görünümündeki taslaklar.
+  const drafts = useMemo(() => entries.filter((e) => e.status === "DRAFT"), [entries]);
+
   return (
     <Stack gap="md">
       <Group justify="space-between" align="flex-end">
@@ -186,6 +202,12 @@ export default function WeeklyPage() {
             data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
           <Select label="Dönem" size="xs" w={110} value={sem} onChange={(v) => v && setSem(v as SemesterType)}
             data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
+          {canWrite && (
+            <Button size="xs" mt={22} disabled={drafts.length === 0}
+              onClick={() => setSubmitOpen(true)}>
+              Yayınla{drafts.length ? ` (${drafts.length})` : ""}
+            </Button>
+          )}
         </Group>
       </Group>
 
@@ -268,10 +290,12 @@ export default function WeeklyPage() {
                         elective={electiveOf.get(e.section.course.id) ?? false}
                         hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                         editable={canWrite && e.status === "DRAFT"}
+                        revertable={canWrite && e.status === "SUBMITTED"}
                         onDragStart={() => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
                         onEdit={() => setEditing(e)}
-                        onDelete={() => deleteEntry(e)} />
+                        onDelete={() => deleteEntry(e)}
+                        onRevert={() => revertEntry(e)} />
                     ))}
                   </div>
                 </div>
@@ -302,6 +326,21 @@ export default function WeeklyPage() {
         />
       )}
 
+      {submitOpen && (
+        <SubmitModal drafts={drafts} onClose={() => setSubmitOpen(false)}
+          onDone={(warnings) => {
+            setSubmitOpen(false);
+            reload();
+            notifications.show({
+              color: warnings.length ? "orange" : "green",
+              title: "Program yayınlandı",
+              message: warnings.length
+                ? `${warnings.length} uyarı görünür kalıyor: ${warnings.map((w) => w.rule_id).join(", ")}`
+                : "Çakışma yok",
+            });
+          }} />
+      )}
+
       {editing && (
         <EntryModal
           title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
@@ -330,9 +369,9 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function EntryCard({ e, elective, hard, warn, editable, onDragStart, onDragEnd, onEdit, onDelete }: {
-  e: Placed; elective: boolean; hard: boolean; warn: boolean; editable: boolean;
-  onDragStart: () => void; onDragEnd: () => void; onEdit: () => void; onDelete: () => void;
+function EntryCard({ e, elective, hard, warn, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+  e: Placed; elective: boolean; hard: boolean; warn: boolean; editable: boolean; revertable: boolean;
+  onDragStart: () => void; onDragEnd: () => void; onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
   const online = e.delivery_mode !== "FACE_TO_FACE";
   const draft = e.status === "DRAFT";
@@ -365,11 +404,95 @@ function EntryCard({ e, elective, hard, warn, editable, onDragStart, onDragEnd, 
             <IconTrash size={12} />
           </ActionIcon>
         )}
+        {revertable && (
+          <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Taslağa çevir"
+            title="Taslağa çevir (düzenlemek için)"
+            onClick={(ev) => { ev.stopPropagation(); onRevert(); }}>
+            <IconArrowBackUp size={12} />
+          </ActionIcon>
+        )}
       </Group>
       <div style={{ fontSize: 10, opacity: 0.85 }}>
         {online ? "online" : e.classroom?.room_code ?? "—"}{elective ? " · seçmeli" : ""}
       </div>
     </div>
+  );
+}
+
+/** Yayınlama kapısı (K-03): HARD çakışma varsa sunucu hep-veya-hiç reddeder.
+ *  Reddi sessiz "hata" olarak geçmek yerine SEBEBİYLE gösteriyoruz — brief §3.6
+ *  "genel hata mesajı değil, açık gerekçe" şartı tam da burada karşılanır. */
+function SubmitModal({ drafts, onClose, onDone }: {
+  drafts: WeeklyEntry[];
+  onClose: () => void;
+  onDone: (warnings: ConflictResult[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setBlockers(null);
+    try {
+      const res = await api.post<{ submitted: number[]; warnings: ConflictResult[] }>(
+        "/weekly-entries/submit", { entry_ids: drafts.map((d) => d.id) },
+      );
+      onDone(res.warnings);
+    } catch (err) {
+      // 409 gövdesi {detail, conflicts} taşır — listeyi modalda açık bırakırız
+      // ki kullanıcı neyi düzelteceğini görsün ve düzeltip tekrar denesin.
+      if (err instanceof ApiError && err.status === 409) {
+        const body = err.body as { conflicts?: ConflictResult[] } | null;
+        setBlockers(body?.conflicts ?? []);
+      } else {
+        notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Yayınlanamadı" });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal opened onClose={onClose} title="Programı yayınla" size="lg">
+      <Stack gap="sm">
+        <Text size="sm">
+          {drafts.length} taslak giriş yayınlanacak. Yayınlanan girişler kilitlenir;
+          düzenlemek için tekrar taslağa çevirmen gerekir.
+        </Text>
+
+        {blockers && (
+          <Alert color="red" variant="light" title="Yayınlama reddedildi">
+            <Text size="sm" mb={6}>
+              Engelleyici çakışmalar var — hiçbir giriş yayınlanmadı. Düzeltip tekrar dene.
+            </Text>
+            <Stack gap={4}>
+              {blockers.map((c, i) => (
+                <Group key={i} gap={6} wrap="nowrap" align="flex-start">
+                  <Badge size="xs" color="red">{c.rule_id}</Badge>
+                  <Text size="xs">{c.message}</Text>
+                </Group>
+              ))}
+            </Stack>
+          </Alert>
+        )}
+
+        <Stack gap={2} style={{ maxHeight: 200, overflowY: "auto" }}>
+          {drafts.map((d) => (
+            <Text key={d.id} size="xs" c="dimmed">
+              {d.section.course.code}-{d.section.section_no} · {DAY_SHORT[d.day_of_week]} {SLOT_START[d.start_slot]}
+              {d.classroom ? ` · ${d.classroom.room_code}` : " · online"}
+            </Text>
+          ))}
+        </Stack>
+
+        <Group justify="flex-end" gap="xs" mt="xs">
+          <Button variant="subtle" onClick={onClose} disabled={busy}>Vazgeç</Button>
+          <Button onClick={submit} loading={busy}>
+            {blockers ? "Tekrar dene" : "Yayınla"}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 

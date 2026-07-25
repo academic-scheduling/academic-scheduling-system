@@ -26,37 +26,69 @@ const DELIVERY_LABELS: Record<DeliveryMode, string> = {
   FACE_TO_FACE: "Yüz yüze", ONLINE_SYNC: "Online (eşzamanlı)", ONLINE_ASYNC: "Online (asenkron)",
 };
 
-type Placed = WeeklyEntry & { lane: number; lanes: number };
+/** Gridde çizilen birim: bir KÜME.
+ *
+ *  Aynı dersin aynı gün/saatteki paralel şubeleri TEK kümeye toplanır. Gerçek
+ *  veride servis derslerinin 7-8 şubesi aynı slotta olabiliyor (ENG1804, PHYS1852);
+ *  her şubeyi ayrı şeride açmak kartları ~11px'e düşürüp okunmaz hale getiriyordu.
+ *  Cohort görünümü "öğrencinin haftası"dır ve öğrenci o şubelerden BİRİNİ alır —
+ *  8'ini birden çizmek bilgi değil gürültü. */
+type Cluster = {
+  id: string;
+  entries: WeeklyEntry[];
+  start_slot: number;
+  slot_count: number;
+  lane: number;
+  lanes: number;
+};
 
 /** Sürüklenen şey: paletten YENİ giriş mi, yoksa var olan girişin TAŞINMASI mı. */
 type Drag =
   | { kind: "new"; sectionId: number; label: string }
   | { kind: "move"; entry: WeeklyEntry };
 
-/** Bir günün girişlerini yan yana şeritlere böler (takvim yerleşimi). */
-function layoutDay(entries: WeeklyEntry[]): Placed[] {
-  const sorted = [...entries].sort((a, b) => a.start_slot - b.start_slot || a.id - b.id);
-  const end = (e: WeeklyEntry) => e.start_slot + e.slot_count - 1;
-  const out: Placed[] = [];
-  let cluster: WeeklyEntry[] = [];
-  let clusterEnd = 0;
+/** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler. */
+function layoutDay(entries: WeeklyEntry[]): Cluster[] {
+  // 1) Aynı ders + aynı zaman + aynı oturum türü → tek küme (paralel şubeler)
+  const groups = new Map<string, WeeklyEntry[]>();
+  for (const e of entries) {
+    const key = `${e.section.course.id}|${e.start_slot}|${e.slot_count}|${e.session_type}`;
+    const arr = groups.get(key);
+    if (arr) arr.push(e);
+    else groups.set(key, [e]);
+  }
+  const items = [...groups.entries()]
+    .map(([id, es]) => ({
+      id,
+      entries: [...es].sort((a, b) => a.section.section_no - b.section.section_no),
+      start_slot: es[0].start_slot,
+      slot_count: es[0].slot_count,
+    }))
+    .sort((a, b) => a.start_slot - b.start_slot || a.id.localeCompare(b.id));
+
+  // 2) Kesişen kümeleri şeritlere dağıt (takvim yerleşimi)
+  const end = (c: { start_slot: number; slot_count: number }) =>
+    c.start_slot + c.slot_count - 1;
+  const out: Cluster[] = [];
+  let batch: typeof items = [];
+  let batchEnd = 0;
   const flush = () => {
-    if (!cluster.length) return;
+    if (!batch.length) return;
     const laneEnds: number[] = [];
-    const laneOf = new Map<number, number>();
-    for (const e of cluster) {
-      let lane = laneEnds.findIndex((le) => le < e.start_slot);
+    const laneOf = new Map<string, number>();
+    for (const c of batch) {
+      let lane = laneEnds.findIndex((le) => le < c.start_slot);
       if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
-      laneEnds[lane] = end(e);
-      laneOf.set(e.id, lane);
+      laneEnds[lane] = end(c);
+      laneOf.set(c.id, lane);
     }
-    for (const e of cluster) out.push({ ...e, lane: laneOf.get(e.id)!, lanes: laneEnds.length });
-    cluster = [];
+    for (const c of batch) out.push({ ...c, lane: laneOf.get(c.id)!, lanes: laneEnds.length });
+    batch = [];
   };
-  for (const e of sorted) {
-    if (cluster.length && e.start_slot > clusterEnd) flush();
-    cluster.push(e);
-    clusterEnd = Math.max(clusterEnd, end(e));
+  for (const c of items) {
+    if (batch.length && c.start_slot > batchEnd) flush();
+    batch.push(c);
+    batchEnd = Math.max(batchEnd, end(c));
   }
   flush();
   return out;
@@ -86,6 +118,7 @@ export default function WeeklyPage() {
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
   const [placing, setPlacing] = useState<{ drag: Drag; day: number; slot: number } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
+  const [group, setGroup] = useState<Cluster | null>(null);   // toplu kart detayı
   const [submitOpen, setSubmitOpen] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
 
@@ -154,7 +187,7 @@ export default function WeeklyPage() {
   }, [scan]);
 
   const byDay = useMemo(() => {
-    const m = new Map<number, Placed[]>();
+    const m = new Map<number, Cluster[]>();
     for (const d of DAYS) m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d)));
     return m;
   }, [entries]);
@@ -358,17 +391,17 @@ export default function WeeklyPage() {
                         pointerEvents: "none",
                       }} />
                     ))}
-                    {byDay.get(d)!.map((e) => (
-                      <EntryCard key={e.id} e={e}
-                        elective={electiveOf.get(e.section.course.id) ?? false}
-                        hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
-                        editable={canWrite && e.status === "DRAFT"}
-                        revertable={canWrite && e.status === "SUBMITTED"}
-                        onDragStart={() => setDrag({ kind: "move", entry: e })}
+                    {byDay.get(d)!.map((c) => (
+                      <ClusterCard key={c.id} c={c} canWrite={canWrite}
+                        elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
+                        hard={c.entries.some((e) => hardIds.has(e.id))}
+                        warn={c.entries.some((e) => warnIds.has(e.id))}
+                        onDragStart={(e) => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
-                        onEdit={() => setEditing(e)}
-                        onDelete={() => deleteEntry(e)}
-                        onRevert={() => revertEntry(e)} />
+                        onEdit={setEditing}
+                        onDelete={deleteEntry}
+                        onRevert={revertEntry}
+                        onOpenGroup={() => setGroup(c)} />
                     ))}
                   </div>
                 </div>
@@ -404,6 +437,11 @@ export default function WeeklyPage() {
           })}
           onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
         />
+      )}
+
+      {group && (
+        <GroupModal cluster={group} canWrite={canWrite} onClose={() => setGroup(null)}
+          onEdit={setEditing} onDelete={deleteEntry} onRevert={revertEntry} />
       )}
 
       {submitOpen && (
@@ -449,12 +487,19 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function EntryCard({ e, elective, hard, warn, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
-  e: Placed; elective: boolean; hard: boolean; warn: boolean; editable: boolean; revertable: boolean;
-  onDragStart: () => void; onDragEnd: () => void; onEdit: () => void; onDelete: () => void; onRevert: () => void;
+function ClusterCard({ c, elective, hard, warn, canWrite, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+  c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
+  onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
+  onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
+  onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
 }) {
+  const many = c.entries.length > 1;
+  const e = c.entries[0];
   const online = e.delivery_mode !== "FACE_TO_FACE";
-  const draft = e.status === "DRAFT";
+  // Kümede karışık durum olabilir; taslak DESENİ en az bir taslak varsa çizilir.
+  const draft = c.entries.some((x) => x.status === "DRAFT");
+  const editable = canWrite && !many && e.status === "DRAFT";
+  const revertable = canWrite && !many && e.status === "SUBMITTED";
 
   // İki BAĞIMSIZ görsel boyut:
   //  1) RENK  = durum (çakışma > online > normal) — dolgun tonlar, soluk değil
@@ -481,40 +526,111 @@ function EntryCard({ e, elective, hard, warn, editable, revertable, onDragStart,
       : undefined,
   };
 
-  const widthPct = 100 / e.lanes;
+  const widthPct = 100 / c.lanes;
+  // Toplu kartta tek derslik yazılamaz; kaç farklı derslik kullanıldığını söyler.
+  const rooms = new Set(c.entries.map((x) => x.classroom?.room_code).filter(Boolean));
+  const altSatir = many
+    ? `${c.entries.length} şube${rooms.size > 1 ? ` · ${rooms.size} derslik` : rooms.size === 1 ? ` · ${[...rooms][0]}` : ""}`
+    : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
+
   return (
     <div
       draggable={editable}
-      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(); }}
+      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(e); }}
       onDragEnd={onDragEnd}
-      onClick={() => editable && onEdit()}
-      title={editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
+      onClick={() => (many ? onOpenGroup() : editable && onEdit(e))}
+      title={many
+        ? `${c.entries.length} paralel şube — listelemek için tıkla`
+        : editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
       style={{
-        position: "absolute", top: (e.start_slot - 1) * ROW_H + 1, height: e.slot_count * ROW_H - 2,
-        left: `calc(${e.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
+        position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
+        left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
         borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
-        cursor: editable ? "grab" : "default", ...style,
+        cursor: many ? "pointer" : editable ? "grab" : "default", ...style,
       }}>
       <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
-        <div style={{ fontWeight: 500 }}>{e.section.course.code}-{e.section.section_no}</div>
+        <div style={{ fontWeight: 500 }}>
+          {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
+        </div>
+        {many && (
+          <Badge size="xs" variant="filled" color="gray" style={{ flexShrink: 0 }}>
+            {c.entries.length}
+          </Badge>
+        )}
         {editable && (
           <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Sil"
-            onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
+            onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}>
             <IconTrash size={12} />
           </ActionIcon>
         )}
         {revertable && (
           <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Taslağa çevir"
             title="Taslağa çevir (düzenlemek için)"
-            onClick={(ev) => { ev.stopPropagation(); onRevert(); }}>
+            onClick={(ev) => { ev.stopPropagation(); onRevert(e); }}>
             <IconArrowBackUp size={12} />
           </ActionIcon>
         )}
       </Group>
       <div style={{ fontSize: 10, opacity: 0.85 }}>
-        {online ? "online" : e.classroom?.room_code ?? "—"}{elective ? " · seçmeli" : ""}
+        {altSatir}{elective ? " · seçmeli" : ""}
       </div>
     </div>
+  );
+}
+
+/** Toplu kartın detayı: paralel şubeler burada tek tek listelenir ve yönetilir.
+ *  Gridde 8 şubeyi yan yana çizmek yerine buraya taşıdık — grid okunur kalıyor,
+ *  şube düzeyindeki işlemler (düzenle/sil/taslağa çevir) kaybolmuyor. */
+function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete, onRevert }: {
+  cluster: Cluster; canWrite: boolean; onClose: () => void;
+  onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
+  onRevert: (e: WeeklyEntry) => void;
+}) {
+  const first = cluster.entries[0];
+  return (
+    <Modal opened onClose={onClose} size="md"
+      title={`${first.section.course.code} · ${DAY_SHORT[first.day_of_week]} ${SLOT_START[cluster.start_slot]} · ${cluster.entries.length} şube`}>
+      <Stack gap={6}>
+        <Text size="xs" c="dimmed">{first.section.course.name}</Text>
+        {cluster.entries.map((e) => (
+          <Group key={e.id} gap="xs" wrap="nowrap" justify="space-between"
+            style={{ borderBottom: "1px solid var(--mantine-color-default-border)", paddingBottom: 6 }}>
+            <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+              <Badge size="sm" variant="outline">Şube {e.section.section_no}</Badge>
+              <Text size="sm" truncate>
+                {e.delivery_mode !== "FACE_TO_FACE"
+                  ? "online"
+                  : e.classroom
+                  ? `${e.classroom.building.name} ${e.classroom.room_code}`
+                  : "derslik yok"}
+              </Text>
+              <Badge size="xs" variant="light" color={e.status === "SUBMITTED" ? "green" : "yellow"}>
+                {e.status === "SUBMITTED" ? "yayında" : "taslak"}
+              </Badge>
+            </Group>
+            {canWrite && (
+              <Group gap={4} wrap="nowrap">
+                {e.status === "DRAFT" ? (
+                  <>
+                    <Button size="compact-xs" variant="subtle"
+                      onClick={() => { onClose(); onEdit(e); }}>Düzenle</Button>
+                    <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sil"
+                      onClick={() => { onClose(); onDelete(e); }}>
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  </>
+                ) : (
+                  <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
+                    onClick={() => { onClose(); onRevert(e); }}>
+                    <IconArrowBackUp size={14} />
+                  </ActionIcon>
+                )}
+              </Group>
+            )}
+          </Group>
+        ))}
+      </Stack>
+    </Modal>
   );
 }
 

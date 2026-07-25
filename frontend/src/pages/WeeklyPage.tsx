@@ -5,7 +5,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
@@ -142,7 +142,10 @@ export default function WeeklyPage() {
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
-  const [placing, setPlacing] = useState<{ drag: Drag; day: number; slot: number } | null>(null);
+  // Palette üzerinde gezinilen şube: gridde o şubenin kartları vurgulanır.
+  const [hoverSection, setHoverSection] = useState<number | null>(null);
+  // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
+  const [placing, setPlacing] = useState<{ day: number; slot: number; drag?: Drag } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
   const [group, setGroup] = useState<Cluster | null>(null);   // toplu kart detayı
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -300,18 +303,73 @@ export default function WeeklyPage() {
   // Yayınlanacak küme: bu cohort görünümündeki taslaklar.
   const drafts = useMemo(() => entries.filter((e) => e.status === "DRAFT"), [entries]);
 
+  /** Sayfa altındaki çakışma listesi.
+   *
+   *  Yalnız HAFTALIK tarafı ilgilendirenler (sınav-sınav çakışmaları Sınavlar
+   *  ekranının işi). Alt hesap için ayrıca "beni ilgilendiriyor mu" süzmesi:
+   *  kendi bölümünün dersini içeren çakışmaları görür — karşı taraf başka bölüm
+   *  olsa bile, çünkü çözebilmek için karşı tarafın kim olduğunu bilmesi gerekir.
+   *  İki YABANCI bölüm arasındaki çakışma ise onu ilgilendirmez, gizlenir.
+   *
+   *  Not: bu bir GÖRÜNÜM süzmesidir. Sunucu K-26 gereği workgroup'un tamamını
+   *  döndürmeye devam ediyor; gerçek bir yetki sınırı isteniyorsa K-26'nın
+   *  revizyonu + backend değişikliği gerekir (ayrı iş).
+   */
+  const weeklyConflicts = useMemo(() => {
+    const bolumOf = (courseCode: string) => {
+      const kod = courseCode.replace(/-\d+$/, "");     // "CENG2001-1" → "CENG2001"
+      return allCourses.find((c) => c.code === kod)?.department_id;
+    };
+    const benimBolumlerim = new Set(user?.department_ids ?? []);
+    const beniIlgilendirir = (c: ConflictResult) =>
+      user?.role === "ADMIN"
+      || c.affected.some((a) => {
+        const d = bolumOf(a.course_code ?? "");
+        return d != null && benimBolumlerim.has(d);
+      });
+
+    return [...scan.hard, ...scan.warnings]
+      .filter((c) => c.affected.some((a) => a.type === "weekly_entry"))
+      .filter(beniIlgilendirir);
+  }, [scan, allCourses, user]);
+
+  /** Şube başına yerleşen slot toplamı (T/U/L ayrı ayrı). */
+  const placedBySection = useMemo(() => {
+    const m = new Map<number, Record<SessionType, number>>();
+    for (const e of entries) {
+      const cur = m.get(e.section.id) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
+      cur[e.session_type] += e.slot_count;
+      m.set(e.section.id, cur);
+    }
+    return m;
+  }, [entries]);
+
   /** Palet öğeleri: ders × şube, koda VEYA ada göre süzülür.
-   *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart. */
+   *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart.
+   *  Sıralama: önce yerleşimi EKSİK olanlar (yapılacak iş), sonra tamamlananlar;
+   *  her grup kendi içinde ders koduna, aynı derste şube numarasına göre. */
   const paletteItems = useMemo(() => {
     const q = paletteSearch.trim().toLocaleLowerCase("tr");
+    const tamam = (c: Course, sid: number) => {
+      const p = placedBySection.get(sid) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
+      return p.THEORY >= c.hours_theory
+        && p.PRACTICE >= c.hours_practice
+        && p.LAB >= c.hours_lab;
+    };
     return courses
-      .flatMap((c) => c.sections.map((s) => ({ course: c, section: s })))
+      .flatMap((c) => c.sections.map((s) => ({
+        course: c, section: s, done: tamam(c, s.id),
+      })))
       .filter(({ course: c, section: s }) => {
         if (!q) return true;
         const hay = `${c.code}-${s.section_no} ${c.name}`.toLocaleLowerCase("tr");
         return hay.includes(q);
-      });
-  }, [courses, paletteSearch]);
+      })
+      .sort((a, b) =>
+        Number(a.done) - Number(b.done)
+        || a.course.code.localeCompare(b.course.code, "tr")
+        || a.section.section_no - b.section.section_no);
+  }, [courses, paletteSearch, placedBySection]);
 
   return (
     <Stack gap="lg">
@@ -381,7 +439,7 @@ export default function WeeklyPage() {
             {courses.length > 0 && paletteItems.length === 0 && (
               <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
             )}
-            {paletteItems.map(({ course: c, section: s }) => (
+            {paletteItems.map(({ course: c, section: s, done }) => (
               <Paper key={s.id} p={8} radius="md"
                 draggable={canWrite}
                 onDragStart={(ev) => {
@@ -390,12 +448,22 @@ export default function WeeklyPage() {
                   setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
                 }}
                 onDragEnd={() => setDrag(null)}
+                // Üzerine gelince gridde bu şubenin kartları vurgulanır: dersin
+                // haftada NEREYE düştüğü listeden ayrılmadan görülür.
+                onMouseEnter={() => setHoverSection(s.id)}
+                onMouseLeave={() => setHoverSection(null)}
                 style={{ cursor: canWrite ? "grab" : "default", fontSize: 12, flexShrink: 0,
                          background: "var(--mantine-color-body)",
-                         border: "1px solid var(--mantine-color-gray-2)" }}>
+                         border: "1px solid var(--mantine-color-gray-2)",
+                         // Yerleşimi tamamlanmış ders soluk: listenin altında ve
+                         // "bunu yaptım" bilgisini renk tonuyla veriyor.
+                         opacity: done ? 0.45 : 1 }}>
                 <Group gap={4} justify="space-between" wrap="nowrap">
                   <Text size="xs" fw={500}>{c.code}-{s.section_no}</Text>
-                  {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
+                  <Group gap={4} wrap="nowrap">
+                    {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
+                    {done && <IconCheck size={13} color="var(--mantine-color-teal-6)" />}
+                  </Group>
                 </Group>
                 <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
               </Paper>
@@ -462,6 +530,14 @@ export default function WeeklyPage() {
                       const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                       onDrop(d, Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1)));
                     }}
+                    // Boş slota tıklama = elle ders ekleme (sürüklemenin klavye/
+                    // fare dostu alternatifi). Kart üstüne tıklama buraya gelmez;
+                    // kartlar kendi onClick'inde olayı durduruyor.
+                    onClick={(ev) => {
+                      if (!canWrite) return;
+                      const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                      setPlacing({ day: d, slot: Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1)) });
+                    }}
                     style={{
                       position: "relative", height: ROW_H * 9,
                       // Kapanış çizgisi: 17:30 etiketi buraya hizalanır
@@ -479,6 +555,8 @@ export default function WeeklyPage() {
                     {byDay.get(d)!.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
+                        highlight={hoverSection != null
+                          && c.entries.some((x) => x.section.id === hoverSection)}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
@@ -511,13 +589,50 @@ export default function WeeklyPage() {
           background: "var(--mantine-color-cyan-2)", borderColor: "var(--mantine-color-cyan-7)" }} />
       </Group>
 
-      {placing && placing.drag.kind === "new" && (
+      <Paper p="md" radius="lg" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+        <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
+          <Text fw={500} size="sm">Çakışmalar</Text>
+          <Group gap={6}>
+            <Badge size="sm" color="red" variant="light">
+              {weeklyConflicts.filter((c) => c.severity === "HARD").length} engel
+            </Badge>
+            <Badge size="sm" color="orange" variant="light">
+              {weeklyConflicts.filter((c) => c.severity === "WARNING").length} uyarı
+            </Badge>
+          </Group>
+        </Group>
+        {weeklyConflicts.length === 0 ? (
+          <Text size="sm" c="dimmed">Haftalık programda çakışma yok.</Text>
+        ) : (
+          <Stack gap={8}>
+            {weeklyConflicts.map((c, i) => (
+              <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start">
+                <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                  color={c.severity === "HARD" ? "red" : "orange"}>
+                  {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                </Badge>
+                <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
+                {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
+                <Text size="sm">{c.message}</Text>
+              </Group>
+            ))}
+          </Stack>
+        )}
+      </Paper>
+
+      {placing && (
         <EntryModal
-          title={`${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
+          title={placing.drag?.kind === "new"
+            ? `${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
+            : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
+          // Sürükleyerek gelindiyse ders bellidir; boş slota tıklanarak
+          // gelindiyse modal dersi de sorar.
+          sections={placing.drag?.kind === "new" ? undefined : paletteItems.map(({ course: c, section: s }) => ({
+            value: String(s.id), label: `${c.code}-${s.section_no} — ${c.name}` }))}
           onClose={() => setPlacing(null)}
           onSubmit={(body) => api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
-            section_id: (placing.drag as { sectionId: number }).sectionId,
+            section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
             day_of_week: placing.day, start_slot: placing.slot, ...body,
           })}
           onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
@@ -693,9 +808,9 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, canWrite, view, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
-  view: ViewMode;
+  view: ViewMode; highlight: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
@@ -749,7 +864,9 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, onDragStart, onD
       draggable={editable}
       onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(e); }}
       onDragEnd={onDragEnd}
-      onClick={() => (many ? onOpenGroup() : editable && onEdit(e))}
+      // stopPropagation: yoksa tıklama gün sütununa köpürüp "boş slota ekle"
+      // modalını da açardı.
+      onClick={(ev) => { ev.stopPropagation(); many ? onOpenGroup() : editable && onEdit(e); }}
       title={many
         ? `${c.entries.length} paralel şube — listelemek için tıkla`
         : editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
@@ -758,6 +875,14 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, onDragStart, onD
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
         borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
         cursor: many ? "pointer" : editable ? "grab" : "default", ...style,
+        // Paletten gezinme vurgusu: hafif büyüme + halka. transition sayesinde
+        // ani sıçrama değil, yumuşak sinyal.
+        transition: "transform 120ms ease, box-shadow 120ms ease",
+        ...(highlight ? {
+          transform: "scale(1.04)",
+          boxShadow: "0 0 0 2px var(--mantine-color-blue-5)",
+          zIndex: 5,
+        } : null),
       }}>
       <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
         <div style={{ fontWeight: 500 }}>
@@ -925,18 +1050,23 @@ function SubmitModal({ drafts, onClose, onDone }: {
 type EntryBody = {
   classroom_id: number | null; session_type: SessionType;
   delivery_mode: DeliveryMode; slot_count: number;
+  /** Yalnız boş slota tıklayarak eklemede dolu: ders modalın içinde seçilir. */
+  section_id?: number;
 };
 
 /** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
-function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
+  /** Verilirse modal önce DERSİ sorar (boş slota tıklayarak ekleme). */
+  sections?: { value: string; label: string }[];
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
 }) {
+  const [sectionId, setSectionId] = useState<string | null>(null);
   const [classroomId, setClassroomId] = useState<string | null>(initial?.classroomId ?? null);
   const [sessionType, setSessionType] = useState<SessionType>(initial?.sessionType ?? "THEORY");
   const [delivery, setDelivery] = useState<DeliveryMode>(initial?.delivery ?? "FACE_TO_FACE");
@@ -945,6 +1075,7 @@ function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, 
 
   const online = delivery !== "FACE_TO_FACE";   // K-23: online girişte derslik olamaz
   const maxSlots = 9 - startSlot + 1;
+  const dersEksik = sections != null && !sectionId;
 
   const submit = async () => {
     setBusy(true);
@@ -952,6 +1083,7 @@ function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, 
       const res = await onSubmit({
         classroom_id: online ? null : classroomId ? Number(classroomId) : null,
         session_type: sessionType, delivery_mode: delivery, slot_count: slotCount,
+        ...(sectionId ? { section_id: Number(sectionId) } : null),
       });
       onDone(res.conflicts);
     } catch (err) {
@@ -964,6 +1096,10 @@ function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, 
   return (
     <Modal opened onClose={onClose} title={title} size="sm">
       <Stack gap="sm">
+        {sections && (
+          <Select label="Ders / şube" value={sectionId} onChange={setSectionId}
+            data={sections} searchable placeholder="Ders seç" nothingFoundMessage="Ders yok" />
+        )}
         <Select label="Yapılış şekli" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
           data={(Object.keys(DELIVERY_LABELS) as DeliveryMode[]).map((k) => ({ value: k, label: DELIVERY_LABELS[k] }))} />
         <Select label="Derslik" value={online ? null : classroomId} onChange={setClassroomId}
@@ -975,7 +1111,7 @@ function EntryModal({ title, classrooms, startSlot, initial, onClose, onSubmit, 
           min={1} max={maxSlots} />
         <Group justify="flex-end" gap="xs" mt="xs">
           <Button variant="subtle" onClick={onClose} disabled={busy}>Vazgeç</Button>
-          <Button onClick={submit} loading={busy}>Kaydet</Button>
+          <Button onClick={submit} loading={busy} disabled={dersEksik}>Kaydet</Button>
         </Group>
       </Stack>
     </Modal>

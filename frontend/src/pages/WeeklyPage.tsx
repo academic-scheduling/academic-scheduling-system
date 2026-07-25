@@ -384,7 +384,7 @@ export default function WeeklyPage() {
         <Legend label="Taslak (çapraz tarama)" swatch={{
           background: "var(--mantine-color-blue-2)", borderColor: "var(--mantine-color-blue-7)",
           borderStyle: "dashed",
-          backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 5px, transparent 5px 10px)" }} />
+          backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.5) 0 4px, transparent 4px 10px)" }} />
         <Legend label="Çakışma (engel)" swatch={{
           background: "var(--mantine-color-red-2)", borderColor: "var(--mantine-color-red-7)" }} />
         <Legend label="Uyarı" swatch={{
@@ -474,8 +474,10 @@ function EntryCard({ e, elective, hard, warn, editable, revertable, onDragStart,
     color: palette.fg,
     border: `1px ${draft ? "dashed" : "solid"} ${palette.bd}`,
     // Saydam çapraz tarama: rengin ÜSTÜNE biner, rengi değiştirmez.
+    // Bant kalın ve seyrek (10px bant / 26px periyot): ince-sık desen küçük
+    // kartlarda titreşim yapıp gözü yoruyordu.
     backgroundImage: draft
-      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 5px, transparent 5px 10px)"
+      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.5) 0 10px, transparent 10px 26px)"
       : undefined,
   };
 

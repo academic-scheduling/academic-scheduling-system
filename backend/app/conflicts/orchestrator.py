@@ -2,7 +2,7 @@ from app.conflicts.engine import (
     w1_classroom_conflict, w2_lecturer_conflict,
     w5_duplicate_session,
     w6_out_of_window, w7_capacity,
-    courses_conflict, is_async,
+    courses_conflict, first_overlapping_sessions, is_async,
     e1_exam_classroom_conflict, e2_duplicate_exam,
     e3_exam_lecturer_conflict, e4_exam_cohort_conflict,
     e5_exam_capacity, e5a_missing_exam_capacity,
@@ -119,13 +119,18 @@ def scan_cohort(entries):
             for j in range(i + 1, len(cids)):
                 A = courses[cids[i]]
                 B = courses[cids[j]]
-                if courses_conflict(list(A["sections"].values()),
-                                    list(B["sections"].values())):
+                sections_a = list(A["sections"].values())
+                sections_b = list(B["sections"].values())
+                if courses_conflict(sections_a, sections_b):
                     if not A["is_elective"] and not B["is_elective"]:
                         rule_id, severity = "W3", "HARD"
                     else:
                         rule_id, severity = "W4", "WARNING"
-                    results.append(build_result(rule_id, severity, A["rep"], B["rep"]))
+                    # affected: temsili giris DEGIL, cakismayi kanitlayan somut
+                    # oturum cifti (kural seti §A notu). Bulunamazsa rep'e duser.
+                    witness = first_overlapping_sessions(sections_a, sections_b)
+                    obj_a, obj_b = witness if witness else (A["rep"], B["rep"])
+                    results.append(build_result(rule_id, severity, obj_a, obj_b))
     return results
 
 

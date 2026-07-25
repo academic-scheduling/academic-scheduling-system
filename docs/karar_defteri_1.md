@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 23 Temmuz 2026 (K-38: UPDATE satırında eski → yeni özeti)
+**Son güncelleme:** 24 Temmuz 2026 (K-40: E7 payı=10, W8 tam taramada; K-39: motor bağlandı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -106,8 +106,7 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 2. XLSX/PDF ayrıntılı format şablonu (K-09) — Hafta 3
 3. `expected_students` zorunlu mu opsiyonel mi — ekip önerisi zorunlu, onay bekliyor (K-07)
 4. Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)
-5. E7 israf uyarısının eşiği ("bir derslik çıkarılsa hâlâ yetiyor" kriteri) —
-   ekip önerisi kural setinde, hoca onayı beklenebilir (K-17)
+5. ~~E7 israf uyarısının eşiği~~ → K-40 ile kapandı (margin=10 sabitlendi).
 6. **Çoklu workgroup [S] — hoca talebi, KARAR BEKLİYOR (17 Tem itibarıyla).**
    Bugünkü sistem tek workgroup varsayıyor: `users.workgroup_id` tekil FK,
    workgroup endpoint'i yok, workgroup'u `create_admin.py` yaratıyor. Brief
@@ -644,3 +643,73 @@ geldi ve yalnız **hiçbir şey bağlı değilken** çalışır.
 - **Bilinen boşluk:** Dersi olan bir bölüm artık ne silinebilir ne pasife
   alınabilir (UI'dan). `departments.active` şemada ve API'de durmaya devam
   ediyor; ihtiyaç doğarsa "arşivle" eylemi geri getirilebilir.
+## K-39 · Çakışma motoru API'ye bağlandı: stub dönemi bitti [E]
+`feature/wp5-motor-entegrasyon` (24 Temmuz). C'nin motoru (WP5) artık
+`conflict_service.py` adaptörü üzerinden gerçekten çalışıyor; beş seam
+fonksiyonunun tamamı `[]` yerine gerçek sonuç döner. K-22'de kayıtlı
+"submit HARD engeli göremez" sınırlaması ve K-33'teki "dashboard sayaçları
+hep 0" sınırlaması **kapandı**.
+
+**Adaptör sözleşmesi:** ORM nesneleri motora düz dict olarak geçer; motor
+DB/ORM bilmez (saf Python kalır). Enum alanlar `.value` ile string'e çevrilir.
+Sınav dict'i `section_no` TAŞIMAZ (K-16), kontenjan için `capacity` değil
+`exam_capacity` besler (K-17/K-21).
+
+**Karşılaştırma evreni:** Her kontrol, adayı workgroup'un DRAFT + SUBMITTED
+tüm girişlerine karşı test eder; sonuçlar yalnız adayı (veya submit kümesini)
+ilgilendirenlere süzülür. Süzme olmasaydı kullanıcı kendi kaydını yaparken
+başkasının çakışmasını görürdü.
+
+**W8 (tamlık) hangi anlarda üretilir — K-20'nin kapsam netleştirmesi:**
+- `save` → HAYIR (yerleştirme sürerken "hâlâ eksik" uyarısı yağdırmamak için)
+- `submit` → EVET (WARNING, submit'i durdurmaz)
+- `GET /conflicts` tam tarama → **EVET**. Gerekçe: save'deki susma gerekçesi
+  "kullanıcıyı iş sürerken rahatsız etme"ydi; tam tarama ise kullanıcının
+  bilerek "bana tüm sorunları göster" dediği yerdir ve eksik ders saati de
+  çözülmesi gereken bir sorundur. Dashboard sayacı da bunu içerir.
+
+**Motor uyum düzeltmeleri (aynı branch):**
+- Sınav mesajları `course_label()` yerine `exam_label()` kullanır — eskisi
+  `section_no` istiyordu ve sınav dict'inde o alan olmadığı için KeyError
+  veriyordu. Hata, testteki sahte `section_no: 1` fixture'ı yüzünden
+  görünmüyordu; fixture da gerçek veriye uyacak şekilde düzeltildi.
+- Cohort mesajları bölüm ADINI yazar (ham `department_id` değil); adı adaptör
+  besler, yoksa id'ye düşer.
+- W3/W4'ün `affected` alanı temsili giriş yerine **çakışmayı kanıtlayan somut
+  oturum çiftini** taşır (kural seti §A şartı) — B raporda "hangi oturumlar"
+  gösterebilsin diye.
+- Kontrat §0 enum'una `E4a/E4b/E5a` eklendi (üç stajyerin haberi var).
+
+**Pasif şube/ders çakışma evreni dışıdır:** Girişi olan bir şube veya ders
+pasife alındığında (`active=false`), o şubenin/dersin haftalık girişleri ve
+sınavları artık hiçbir çakışma karşılaştırmasına GİRMEZ. Motor stub'ken bu
+fark edilmiyordu; motor bağlanınca pasif şubenin girişi hayalet W1 üretiyordu.
+Gerekçe: proje pasifliği her yerde "kapsam dışı" sayar — K-16 sınav öğrenci
+sayısında yalnız aktif şubeleri toplar, K-33 dashboard yalnız aktif kayıtları
+sayar, K-15 "tüm AKTİF şube çiftleri" der. Motor da tutarlı olmalı.
+Uygulama: `_weekly_universe` `CourseSection.active AND Course.active`,
+`_exam_universe` `Course.active` ile süzer. Sınavda `active` alanı yok;
+pasiflik dersten miras alınır.
+
+**Bilinen sınırlama:** Aday filtresi evrenin tamamını tarayıp süzdüğü için
+maliyet O(n²). MVP ölçeğinde ölçülebilir bir sorun değil; gerekirse
+aday-vs-evren için özel bir tarama yardımcısı eklenir (kural seti değişmez).
+
+## K-40 · E7 güvenlik payı = 10; W8 tam taramada da görünür [E]
+`feature/wp5-motor-entegrasyon` (24 Temmuz). Motorda iki açık ucun kapatılması.
+
+**E7 israf eşiği → margin=10 (açık konu 5 kapandı).** Hoca onayı beklenmeden
+ekip kararıyla sabitlendi. E7 artık ancak en küçük derslik çıkarıldıktan sonra
+kalan kontenjan öğrenci sayısından **en az 10 fazlaysa** tetiklenir. Gerekçe:
+tam sınırda (80 kontenjan / 75 öğrenci) oturan bir sınav "gereksiz derslik"
+diye uyarılmamalı; sınavda seyrek oturma için küçük bir tampon meşrudur.
+`margin=0` bariz doğru olmayan uyarılar üretiyordu. İhtiyaç olursa değer tek
+yerden (engine `e7_excess_capacity` varsayılanı) değişir.
+
+**W8 tam taramada da üretilir (K-20'nin kapsam kararı).** K-20 "W8 yalnız
+submit'te" diyordu; save'de susmasının sebebi "yerleştirme sürerken rahatsız
+etme"ydi. `GET /conflicts` tam taraması ise kullanıcının bilerek "bana tüm
+sorunları göster" dediği yerdir — eksik/fazla ders saati de çözülmesi gereken
+bir sorundur, orada gizlemek yanlış olur. Dolayısıyla W8 üç yerde farklı
+davranır: **save → sessiz**, **submit → WARNING**, **tam tarama → WARNING**.
+Dashboard uyarı sayacı da (K-33) tam taramadan beslendiği için W8'i içerir.

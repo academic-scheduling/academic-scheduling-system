@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, Select, Stack, Text, Title,
+  Paper, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
@@ -81,6 +81,7 @@ export default function WeeklyPage() {
   const [placing, setPlacing] = useState<{ drag: Drag; day: number; slot: number } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [paletteSearch, setPaletteSearch] = useState("");
 
   const canWrite = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
 
@@ -191,6 +192,19 @@ export default function WeeklyPage() {
   // Yayınlanacak küme: bu cohort görünümündeki taslaklar.
   const drafts = useMemo(() => entries.filter((e) => e.status === "DRAFT"), [entries]);
 
+  /** Palet öğeleri: ders × şube, koda VEYA ada göre süzülür.
+   *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart. */
+  const paletteItems = useMemo(() => {
+    const q = paletteSearch.trim().toLocaleLowerCase("tr");
+    return courses
+      .flatMap((c) => c.sections.map((s) => ({ course: c, section: s })))
+      .filter(({ course: c, section: s }) => {
+        if (!q) return true;
+        const hay = `${c.code}-${s.section_no} ${c.name}`.toLocaleLowerCase("tr");
+        return hay.includes(q);
+      });
+  }, [courses, paletteSearch]);
+
   return (
     <Stack gap="md">
       <Group justify="space-between" align="flex-end">
@@ -213,32 +227,38 @@ export default function WeeklyPage() {
 
       {error && <Alert color="red" variant="light">{error}</Alert>}
 
-      <Group align="flex-start" gap="md" wrap="nowrap">
-        <Paper withBorder p="sm" w={190} style={{ flexShrink: 0 }}>
-          <Text size="xs" c="dimmed" mb={8}>
-            Derslerim {canWrite ? "· gride sürükle" : "· (yazma yetkiniz yok)"}
-          </Text>
-          <Stack gap={6}>
+      {/* align="stretch": palet, yanındaki grid ne kadar uzunsa o kadar uzar —
+          yüksekliği ders sayısına göre zıplamaz. */}
+      <Group align="stretch" gap="md" wrap="nowrap">
+        <Paper withBorder p="sm" w={190}
+          style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
+          <TextInput size="xs" mb={8} value={paletteSearch}
+            onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
+            placeholder="Ders kodu veya adı ara" />
+          {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
+          {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
+          <Stack gap={6} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
             {courses.length === 0 && <Text size="xs" c="dimmed">Bu cohort'ta ders yok.</Text>}
-            {courses.flatMap((c) =>
-              c.sections.map((s) => (
-                <Paper key={s.id} withBorder p={6} radius="sm"
-                  draggable={canWrite}
-                  onDragStart={(ev) => {
-                    ev.dataTransfer.effectAllowed = "copy";
-                    ev.dataTransfer.setData("text/plain", String(s.id));
-                    setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
-                  }}
-                  onDragEnd={() => setDrag(null)}
-                  style={{ cursor: canWrite ? "grab" : "default", fontSize: 12 }}>
-                  <Group gap={4} justify="space-between" wrap="nowrap">
-                    <Text size="xs" fw={500}>{c.code}-{s.section_no}</Text>
-                    {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
-                  </Group>
-                  <Text size="10px" c="dimmed" truncate>{c.name}</Text>
-                </Paper>
-              )),
+            {courses.length > 0 && paletteItems.length === 0 && (
+              <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
             )}
+            {paletteItems.map(({ course: c, section: s }) => (
+              <Paper key={s.id} withBorder p={6} radius="sm"
+                draggable={canWrite}
+                onDragStart={(ev) => {
+                  ev.dataTransfer.effectAllowed = "copy";
+                  ev.dataTransfer.setData("text/plain", String(s.id));
+                  setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
+                }}
+                onDragEnd={() => setDrag(null)}
+                style={{ cursor: canWrite ? "grab" : "default", fontSize: 12, flexShrink: 0 }}>
+                <Group gap={4} justify="space-between" wrap="nowrap">
+                  <Text size="xs" fw={500}>{c.code}-{s.section_no}</Text>
+                  {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
+                </Group>
+                <Text size="10px" c="dimmed" truncate>{c.name}</Text>
+              </Paper>
+            ))}
           </Stack>
         </Paper>
 

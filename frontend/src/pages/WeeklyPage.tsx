@@ -3,6 +3,7 @@ import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
   Paper, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
@@ -65,9 +66,14 @@ export default function WeeklyPage() {
   const { user } = useAuth();
 
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [dep, setDep] = useState<string | null>(null);
-  const [year, setYear] = useState<string>("2");
-  const [sem, setSem] = useState<SemesterType>("FALL");
+  // Cohort seçimi localStorage'da: başka sayfaya gidip dönünce kullanıcı
+  // kaldığı yerden devam etsin, her seferinde varsayılana düşmesin.
+  const [dep, setDep] = useLocalStorage<string | null>({
+    key: "weekly-dep", defaultValue: null, getInitialValueInEffect: false });
+  const [year, setYear] = useLocalStorage({
+    key: "weekly-year", defaultValue: "1", getInitialValueInEffect: false });
+  const [sem, setSem] = useLocalStorage<SemesterType>({
+    key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -106,7 +112,15 @@ export default function WeeklyPage() {
       api.get<Department[]>("/departments"),
       api.get<Classroom[]>("/classrooms"),
     ])
-      .then(([d, c]) => { setDepartments(d); setClassrooms(c); if (d.length) setDep(String(d[0].id)); })
+      .then(([d, c]) => {
+        setDepartments(d);
+        setClassrooms(c);
+        // Kayıtlı bölüm hâlâ geçerliyse ona dokunma; yoksa ilkine düş.
+        setDep((mevcut) =>
+          mevcut && d.some((x) => String(x.id) === mevcut)
+            ? mevcut
+            : d.length ? String(d[0].id) : null);
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
   }, []);
 
@@ -286,14 +300,30 @@ export default function WeeklyPage() {
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (
             <div style={{ display: "flex", minWidth: 520 }}>
-              <div style={{ width: 44, flexShrink: 0 }}>
-                <div style={{ height: 24 }} />
+              {/* Zaman cetveli: slot başlangıçları + pencerenin KAPANIŞI (17:30).
+                  Son etiket olmadan cetvel 16:30'da bitiyor ve son dersin nerede
+                  bittiği okunmuyordu (brief §3.4 penceresi 08:30-17:30). */}
+              <div style={{ width: 46, flexShrink: 0, position: "relative", height: 24 + ROW_H * 9 }}>
                 {SLOTS.map((s) => (
-                  <div key={s} style={{ height: ROW_H, fontSize: 10, color: "var(--mantine-color-dimmed)", textAlign: "right", paddingRight: 4, paddingTop: 2 }}>{SLOT_START[s]}</div>
+                  <div key={s} style={{
+                    position: "absolute", top: 24 + (s - 1) * ROW_H - 6, right: 6,
+                    fontSize: 10, color: "var(--mantine-color-dimmed)",
+                  }}>{SLOT_START[s]}</div>
                 ))}
+                <div style={{
+                  position: "absolute", top: 24 + ROW_H * 9 - 6, right: 6,
+                  fontSize: 10, color: "var(--mantine-color-dimmed)",
+                }}>17:30</div>
               </div>
               {DAYS.map((d) => (
-                <div key={d} style={{ flex: 1, minWidth: 92 }}>
+                // Günler dikey çizgiyle ayrılır; sonuncuya sağ çizgi de eklenir
+                // ki tablo kapansın.
+                <div key={d} style={{
+                  flex: 1, minWidth: 92,
+                  borderLeft: "1px solid var(--mantine-color-default-border)",
+                  borderRight: d === DAYS[DAYS.length - 1]
+                    ? "1px solid var(--mantine-color-default-border)" : undefined,
+                }}>
                   <div style={{ height: 24, textAlign: "center", fontSize: 12, color: "var(--mantine-color-dimmed)" }}>{DAY_SHORT[d]}</div>
                   {/* Gün sütununun TAMAMI tek bırakma katmanı: slot imleç konumundan
                       hesaplanır. Böylece kartlar tıklanabilir/sürüklenebilir kalır
@@ -314,7 +344,11 @@ export default function WeeklyPage() {
                       const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                       onDrop(d, Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1)));
                     }}
-                    style={{ position: "relative", height: ROW_H * 9 }}
+                    style={{
+                      position: "relative", height: ROW_H * 9,
+                      // Kapanış çizgisi: 17:30 etiketi buraya hizalanır
+                      borderBottom: "1px solid var(--mantine-color-default-border)",
+                    }}
                   >
                     {SLOTS.map((s) => (
                       <div key={s} style={{
@@ -345,11 +379,18 @@ export default function WeeklyPage() {
       </Group>
 
       <Group gap="lg" style={{ fontSize: 11, color: "var(--mantine-color-dimmed)" }}>
-        <Legend swatch={{ background: "var(--mantine-color-blue-light)" }} label="Yayınlanmış" />
-        <Legend swatch={{ border: "1px dashed var(--mantine-color-default-border)" }} label="Taslak" />
-        <Legend swatch={{ background: "var(--mantine-color-red-light)" }} label="Çakışma (engel)" />
-        <Legend swatch={{ background: "var(--mantine-color-orange-light)" }} label="Uyarı" />
-        <Legend swatch={{ border: "1px dashed var(--mantine-color-blue-4)" }} label="Online (dersliksiz)" />
+        <Legend label="Yayınlanmış" swatch={{
+          background: "var(--mantine-color-blue-2)", borderColor: "var(--mantine-color-blue-7)" }} />
+        <Legend label="Taslak (çapraz tarama)" swatch={{
+          background: "var(--mantine-color-blue-2)", borderColor: "var(--mantine-color-blue-7)",
+          borderStyle: "dashed",
+          backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 5px, transparent 5px 10px)" }} />
+        <Legend label="Çakışma (engel)" swatch={{
+          background: "var(--mantine-color-red-2)", borderColor: "var(--mantine-color-red-7)" }} />
+        <Legend label="Uyarı" swatch={{
+          background: "var(--mantine-color-orange-2)", borderColor: "var(--mantine-color-orange-7)" }} />
+        <Legend label="Online (dersliksiz)" swatch={{
+          background: "var(--mantine-color-cyan-2)", borderColor: "var(--mantine-color-cyan-7)" }} />
       </Group>
 
       {placing && placing.drag.kind === "new" && (
@@ -414,12 +455,29 @@ function EntryCard({ e, elective, hard, warn, editable, revertable, onDragStart,
 }) {
   const online = e.delivery_mode !== "FACE_TO_FACE";
   const draft = e.status === "DRAFT";
-  let style: React.CSSProperties;
-  if (hard) style = { background: "var(--mantine-color-red-light)", border: "1px solid var(--mantine-color-red-4)" };
-  else if (warn) style = { background: "var(--mantine-color-orange-light)", border: "1px solid var(--mantine-color-orange-4)" };
-  else if (online) style = { border: "1px dashed var(--mantine-color-blue-4)", background: "var(--mantine-color-body)" };
-  else if (draft) style = { border: "1px dashed var(--mantine-color-default-border)", background: "var(--mantine-color-body)" };
-  else style = { background: "var(--mantine-color-blue-light)", border: "1px solid var(--mantine-color-blue-4)" };
+
+  // İki BAĞIMSIZ görsel boyut:
+  //  1) RENK  = durum (çakışma > online > normal) — dolgun tonlar, soluk değil
+  //  2) DESEN = yaşam döngüsü (taslak → çapraz tarama, yayınlanmış → düz)
+  // Eskiden taslak "beyaz zemin"di; beyaz hem sayfa arkaplanıyla karışıyordu
+  // hem de çakışma rengini yutuyordu. Artık ikisi üst üste okunabiliyor.
+  const palette = hard
+    ? { bg: "var(--mantine-color-red-2)", bd: "var(--mantine-color-red-7)", fg: "var(--mantine-color-red-9)" }
+    : warn
+    ? { bg: "var(--mantine-color-orange-2)", bd: "var(--mantine-color-orange-7)", fg: "var(--mantine-color-orange-9)" }
+    : online
+    ? { bg: "var(--mantine-color-cyan-2)", bd: "var(--mantine-color-cyan-7)", fg: "var(--mantine-color-cyan-9)" }
+    : { bg: "var(--mantine-color-blue-2)", bd: "var(--mantine-color-blue-7)", fg: "var(--mantine-color-blue-9)" };
+
+  const style: React.CSSProperties = {
+    background: palette.bg,
+    color: palette.fg,
+    border: `1px ${draft ? "dashed" : "solid"} ${palette.bd}`,
+    // Saydam çapraz tarama: rengin ÜSTÜNE biner, rengi değiştirmez.
+    backgroundImage: draft
+      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 5px, transparent 5px 10px)"
+      : undefined,
+  };
 
   const widthPct = 100 / e.lanes;
   return (

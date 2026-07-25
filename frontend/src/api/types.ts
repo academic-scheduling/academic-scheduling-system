@@ -120,6 +120,46 @@ export type WeeklyEntry = {
   status: EntryStatus;
 };
 
+/** Kontrat §8 · Sınav türleri (K-16: sınav DERS düzeyindedir, şubeden bağımsız) */
+export type ExamType = "MIDTERM" | "FINAL" | "MAKEUP";
+
+export const EXAM_TYPE_LABELS: Record<ExamType, string> = {
+  MIDTERM: "Vize", FINAL: "Final", MAKEUP: "Bütünleme",
+};
+
+/** Sınav cevabının içine gömülen kısa ders gösterimi. */
+export type CourseRef = { id: number; code: string; name: string };
+
+/** K-17: sınav dersliği `exam_capacity` taşır — `capacity` DEĞİL (boşluklu oturma). */
+export type ExamClassroomRef = {
+  id: number;
+  building: BuildingRef;
+  room_code: string;
+  exam_capacity: number | null;
+};
+
+/** Kontrat §8 · GET /exams elemanı */
+export type Exam = {
+  id: number;
+  course: CourseRef;
+  exam_type: ExamType;
+  /** YYYY-MM-DD — haftalık programdan farkı: gerçek takvim tarihi */
+  exam_date: string;
+  /** HH:MM — slot yok, saat kısıtı yok (K-06: 17:30 sonrası serbest) */
+  start_time: string;
+  duration_minutes: number;
+  /** Çoklu derslik (K-17); boş liste = derslik henüz atanmadı */
+  classrooms: ExamClassroomRef[];
+  lecturer: SectionLecturerRef;
+  /** Türetilir: dersin aktif şubelerinin expected_students toplamı (K-16) */
+  total_expected_students: number;
+  notes: string | null;
+  status: EntryStatus;
+};
+
+/** POST/PATCH cevabı: conflicts dolu olsa bile kayıt BAŞARILIDIR (K-03). */
+export type ExamSaveResponse = { exam: Exam; conflicts: ConflictResult[] };
+
 export type SectionLecturerRef = { id: number; full_name: string };
 
 export type CourseSection = {

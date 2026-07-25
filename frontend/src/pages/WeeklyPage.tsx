@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, Select, Stack, Text, TextInput, Title,
+  Paper, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
@@ -82,6 +82,22 @@ export default function WeeklyPage() {
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
+
+  // Palet yüksekliği GRID'e bağlanır, kendi içeriğine değil: ders sayısı arttıkça
+  // uzamasın, kaydırsın. Ölçüyoruz çünkü sabit sayı yazmak grid'in iç yapısı
+  // (başlık yüksekliği, satır sayısı, Paper dolgusu) değişince sessizce bozulur.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridH, setGridH] = useState<number | undefined>();
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    // offsetHeight: kenarlık ve YATAY kaydırma çubuğu dahil. clientHeight ikisini
+    // de dışarıda bırakıp paleti grid'den ~17px kısa gösteriyordu.
+    const ro = new ResizeObserver(() => setGridH(el.offsetHeight));
+    ro.observe(el);
+    setGridH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   const canWrite = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
 
@@ -227,17 +243,18 @@ export default function WeeklyPage() {
 
       {error && <Alert color="red" variant="light">{error}</Alert>}
 
-      {/* align="stretch": palet, yanındaki grid ne kadar uzunsa o kadar uzar —
-          yüksekliği ders sayısına göre zıplamaz. */}
-      <Group align="stretch" gap="md" wrap="nowrap">
+      <Group align="flex-start" gap="md" wrap="nowrap">
+        {/* Yükseklik grid'den gelir (yukarıdaki ölçüm); içerik taşarsa kaydırılır. */}
         <Paper withBorder p="sm" w={190}
-          style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
+          style={{ flexShrink: 0, display: "flex", flexDirection: "column",
+                   height: gridH }}>
           <TextInput size="xs" mb={8} value={paletteSearch}
             onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
             placeholder="Ders kodu veya adı ara" />
           {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
-          <Stack gap={6} style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+          <Stack gap={6}>
             {courses.length === 0 && <Text size="xs" c="dimmed">Bu cohort'ta ders yok.</Text>}
             {courses.length > 0 && paletteItems.length === 0 && (
               <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
@@ -260,9 +277,11 @@ export default function WeeklyPage() {
               </Paper>
             ))}
           </Stack>
+          </ScrollArea>
         </Paper>
 
-        <Paper withBorder p="sm" style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+        <Paper ref={gridRef} withBorder p="sm"
+          style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
           {loading ? (
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (

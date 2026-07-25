@@ -22,7 +22,8 @@
 ```json
 {
   "severity": "HARD" | "WARNING",
-  "rule_id": "W1" | ... | "W8" | "E1" | ... | "E7" | "X1" | "X2" | "X3",
+  "rule_id": "W1".."W8" | "E1" | "E2" | "E3" | "E4a" | "E4b" | "E5" | "E5a"
+             | "E6" | "E7" | "X1" | "X2" | "X3",
   "message": "Derslik çakışması: CENG2001-1 ve MATH1001-2 ...",
   "affected": [
     { "type": "weekly_entry" | "exam", "id": 42, "course_code": "CENG2001-1" }
@@ -30,6 +31,17 @@
 }
 ```
 Bu şekil kural setindeki (cakisma_kural_seti.md) yapıya birebir bağlıdır.
+
+**Alt kimlikli kurallar (K-39):** Severity'si duruma göre değişen üç kural
+alt kimlik taşır — UI bunları da tanımalı:
+`E4a` (cohort sınav, zorunlu×zorunlu → HARD) · `E4b` (cohort sınav, seçmeli
+dahil → WARNING) · `E5a` (seçili dersliğin sınav kontenjanı girilmemiş →
+WARNING). Haftalık tarafta bu ayrım ayrı ID'lerle zaten vardı (W3/W4).
+
+**`affected` sözü:** Çiftli kurallar iki öğe taşır (çakışmanın iki tarafı),
+tekil kurallar (W6/W7/W8/E5/E5a/E6/E7) tek öğe. Sınav referanslarında
+`course_code` şube numarası TAŞIMAZ (K-16: sınav ders düzeyindedir);
+haftalık referanslarda `"KOD-şube"` biçimindedir.
 
 ---
 

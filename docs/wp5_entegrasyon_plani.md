@@ -203,6 +203,11 @@ Adaptör bunu DB'den çeker ve `scan_cross(..., flag)` olarak verir.
 
 ## 8. Intern A için adım adım checklist
 
+> **DURUM: TAMAMLANDI** — `feature/wp5-motor-entegrasyon` (24 Temmuz, K-39).
+> Aşağıdaki maddelerin hepsi yapıldı; §7'deki açık konulardan 1, 2, 3 ve 4
+> kapatıldı (5 — O(n²) maliyeti — bilinen sınırlama olarak K-39'da kayıtlı).
+> Uçtan uca doğrulama: `tests/test_wp5_entegrasyon.py` (13 test), tam paket 330 yeşil.
+
 - [ ] `conflict_service.py`: `_weekly_to_dict`, `_exam_to_dict` adaptörleri.
 - [ ] `_weekly_universe`, `_exam_universe` sorguları (workgroup izolasyonu + eager).
 - [ ] 4 seam fonksiyonunu doldur (§5): stub `[]` yerine gerçek tarama + aday filtresi.

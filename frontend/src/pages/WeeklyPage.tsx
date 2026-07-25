@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, ScrollArea, Select, Stack, Text, TextInput, Title,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -12,14 +12,16 @@ import { SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../lib/slots";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, DeliveryMode, Department,
-  SemesterType, SessionType, WeeklyEntry,
+  Lecturer, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
 const YEARS = ["1", "2", "3", "4"];
-const ROW_H = 46;
+const ROW_H = 54;          // ferah satır: 46'da kartlar sıkışık duruyordu
+const HEAD_H = 32;         // gün başlığı bandı
+const LINE = "var(--mantine-color-gray-2)";   // yumuşak ızgara çizgisi
 
 const SESSION_LABELS: Record<SessionType, string> = { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" };
 const DELIVERY_LABELS: Record<DeliveryMode, string> = {
@@ -46,6 +48,12 @@ type Cluster = {
 type Drag =
   | { kind: "new"; sectionId: number; label: string }
   | { kind: "move"; entry: WeeklyEntry };
+
+type ViewMode = "cohort" | "classroom" | "lecturer";
+
+const VIEW_LABELS: Record<ViewMode, string> = {
+  cohort: "Sınıf", classroom: "Derslik", lecturer: "Öğretim üyesi",
+};
 
 /** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler. */
 function layoutDay(entries: WeeklyEntry[]): Cluster[] {
@@ -98,6 +106,20 @@ export default function WeeklyPage() {
   const { user } = useAuth();
 
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
+
+  // Üç MERCEK, tek grid: aynı veriye kimin gözünden bakıldığı.
+  //  cohort   → öğrencinin haftası  (yazılabilir: palet, sürükle, yayınla)
+  //  classroom→ odanın doluluğu     } salt-okunur "kontrol" bakışları; hangi
+  //  lecturer → hocanın yükü        } cohort'a yazılacağı belirsiz olduğu için
+  //                                   buralarda düzenleme kapalı
+  const [view, setView] = useLocalStorage<ViewMode>({
+    key: "weekly-view", defaultValue: "cohort", getInitialValueInEffect: false });
+  const [roomFilter, setRoomFilter] = useLocalStorage<string | null>({
+    key: "weekly-room", defaultValue: null, getInitialValueInEffect: false });
+  const [lecFilter, setLecFilter] = useLocalStorage<string | null>({
+    key: "weekly-lec", defaultValue: null, getInitialValueInEffect: false });
+
   // Cohort seçimi localStorage'da: başka sayfaya gidip dönünce kullanıcı
   // kaldığı yerden devam etsin, her seferinde varsayılana düşmesin.
   const [dep, setDep] = useLocalStorage<string | null>({
@@ -138,16 +160,21 @@ export default function WeeklyPage() {
     return () => ro.disconnect();
   }, []);
 
-  const canWrite = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
+  // Yazma yalnız cohort bakışında: derslik/hoca mercekleri farklı cohort'ların
+  // derslerini bir arada gösterir, "bunu nereye yazıyorum" sorusu belirsizleşir.
+  const canWrite = view === "cohort"
+    && canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
 
   useEffect(() => {
     Promise.all([
       api.get<Department[]>("/departments"),
       api.get<Classroom[]>("/classrooms"),
+      api.get<Lecturer[]>("/lecturers?search="),
     ])
-      .then(([d, c]) => {
+      .then(([d, c, l]) => {
         setDepartments(d);
         setClassrooms(c);
+        setLecturers(l);
         // Kayıtlı bölüm hâlâ geçerliyse ona dokunma; yoksa ilkine düş.
         setDep((mevcut) =>
           mevcut && d.some((x) => String(x.id) === mevcut)
@@ -157,21 +184,30 @@ export default function WeeklyPage() {
       .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
   }, []);
 
+  /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
+  const activeQuery = (): string | null => {
+    if (view === "cohort") return dep ? `department_id=${dep}&year=${year}&semester=${sem}` : null;
+    if (view === "classroom") return roomFilter ? `classroom_id=${roomFilter}` : null;
+    return lecFilter ? `lecturer_id=${lecFilter}` : null;
+  };
+
   const reload = () => {
-    if (!dep) return;
-    const qs = `department_id=${dep}&year=${year}&semester=${sem}`;
+    const qs = activeQuery();
+    if (!qs) { setEntries([]); setCourses([]); return; }
     setLoading(true);
     setError(null);
+    // Palet yalnız cohort bakışında anlamlı; diğerlerinde ders listesi çekilmez.
+    const cohortQs = view === "cohort" ? qs : null;
     Promise.all([
       api.get<WeeklyEntry[]>(`/weekly-entries?${qs}`),
-      api.get<Course[]>(`/courses?${qs}`),
+      cohortQs ? api.get<Course[]>(`/courses?${cohortQs}`) : Promise.resolve([] as Course[]),
       api.get<ConflictScan>("/conflicts"),
     ])
       .then(([e, c, s]) => { setEntries(e); setCourses(c); setScan(s); })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Program yüklenemedi"))
       .finally(() => setLoading(false));
   };
-  useEffect(reload, [dep, year, sem]);
+  useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter]);
 
   const electiveOf = useMemo(() => {
     const m = new Map<number, boolean>();
@@ -269,18 +305,41 @@ export default function WeeklyPage() {
   }, [courses, paletteSearch]);
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="flex-end">
-        <Title order={3}>Haftalık Program</Title>
-        <Group gap="xs">
-          <Select label="Bölüm" size="xs" w={200} value={dep} onChange={setDep}
-            data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-          <Select label="Yıl" size="xs" w={90} value={year} onChange={(v) => v && setYear(v)}
-            data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
-          <Select label="Dönem" size="xs" w={110} value={sem} onChange={(v) => v && setSem(v as SemesterType)}
-            data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
+    <Stack gap="lg">
+      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+        <Group gap="sm" align="center">
+          <Title order={2} fw={500}>Haftalık Program</Title>
+          <SegmentedControl size="xs" radius="md" value={view}
+            onChange={(v) => setView(v as ViewMode)}
+            data={(Object.keys(VIEW_LABELS) as ViewMode[]).map((k) => ({
+              value: k, label: VIEW_LABELS[k] }))} />
+        </Group>
+
+        <Group gap="xs" align="center">
+          {view === "cohort" && (
+            <>
+              <Select size="xs" w={190} radius="md" value={dep} onChange={setDep}
+                data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+              <Select size="xs" w={95} radius="md" value={year} onChange={(v) => v && setYear(v)}
+                data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
+              <Select size="xs" w={100} radius="md" value={sem}
+                onChange={(v) => v && setSem(v as SemesterType)}
+                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
+            </>
+          )}
+          {view === "classroom" && (
+            <Select size="xs" w={280} radius="md" searchable clearable
+              placeholder="Derslik seç" value={roomFilter} onChange={setRoomFilter}
+              data={classrooms.map((c) => ({
+                value: String(c.id), label: `${c.building.name} · ${c.room_code}` }))} />
+          )}
+          {view === "lecturer" && (
+            <Select size="xs" w={280} radius="md" searchable clearable
+              placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
+              data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
+          )}
           {canWrite && (
-            <Button size="xs" mt={22} disabled={drafts.length === 0}
+            <Button size="xs" radius="md" disabled={drafts.length === 0}
               onClick={() => setSubmitOpen(true)}>
               Yayınla{drafts.length ? ` (${drafts.length})` : ""}
             </Button>
@@ -288,26 +347,33 @@ export default function WeeklyPage() {
         </Group>
       </Group>
 
-      {error && <Alert color="red" variant="light">{error}</Alert>}
+      {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
+      {view !== "cohort" && !activeQuery() && (
+        <Text size="sm" c="dimmed">
+          {view === "classroom" ? "Doluluğunu görmek için bir derslik seçin."
+            : "Haftalık yükünü görmek için bir öğretim üyesi seçin."}
+        </Text>
+      )}
 
-      <Group align="flex-start" gap="md" wrap="nowrap">
-        {/* Yükseklik grid'den gelir (yukarıdaki ölçüm); içerik taşarsa kaydırılır. */}
-        <Paper withBorder p="sm" w={190}
+      <Group align="flex-start" gap="lg" wrap="nowrap">
+        {/* Palet yalnız cohort bakışında: diğer mercekler salt-okunur. */}
+        {view === "cohort" && (
+        <Paper p="md" radius="lg" w={200}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-                   height: gridH }}>
-          <TextInput size="xs" mb={8} value={paletteSearch}
+                   height: gridH, background: "var(--mantine-color-gray-0)" }}>
+          <TextInput size="xs" mb={10} radius="md" variant="filled" value={paletteSearch}
             onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
             placeholder="Ders kodu veya adı ara" />
           {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
           <Stack gap={6}>
-            {courses.length === 0 && <Text size="xs" c="dimmed">Bu cohort'ta ders yok.</Text>}
+            {courses.length === 0 && <Text size="xs" c="dimmed">Bu sınıfta ders yok.</Text>}
             {courses.length > 0 && paletteItems.length === 0 && (
               <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
             )}
             {paletteItems.map(({ course: c, section: s }) => (
-              <Paper key={s.id} withBorder p={6} radius="sm"
+              <Paper key={s.id} p={8} radius="md"
                 draggable={canWrite}
                 onDragStart={(ev) => {
                   ev.dataTransfer.effectAllowed = "copy";
@@ -315,20 +381,24 @@ export default function WeeklyPage() {
                   setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
                 }}
                 onDragEnd={() => setDrag(null)}
-                style={{ cursor: canWrite ? "grab" : "default", fontSize: 12, flexShrink: 0 }}>
+                style={{ cursor: canWrite ? "grab" : "default", fontSize: 12, flexShrink: 0,
+                         background: "var(--mantine-color-body)",
+                         border: "1px solid var(--mantine-color-gray-2)" }}>
                 <Group gap={4} justify="space-between" wrap="nowrap">
                   <Text size="xs" fw={500}>{c.code}-{s.section_no}</Text>
                   {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
                 </Group>
-                <Text size="10px" c="dimmed" truncate>{c.name}</Text>
+                <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
               </Paper>
             ))}
           </Stack>
           </ScrollArea>
         </Paper>
+        )}
 
-        <Paper ref={gridRef} withBorder p="sm"
-          style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+        <Paper ref={gridRef} p="md" radius="lg"
+          style={{ flex: 1, minWidth: 0, overflowX: "auto",
+                   border: "1px solid var(--mantine-color-gray-2)" }}>
           {loading ? (
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (
@@ -336,28 +406,27 @@ export default function WeeklyPage() {
               {/* Zaman cetveli: slot başlangıçları + pencerenin KAPANIŞI (17:30).
                   Son etiket olmadan cetvel 16:30'da bitiyor ve son dersin nerede
                   bittiği okunmuyordu (brief §3.4 penceresi 08:30-17:30). */}
-              <div style={{ width: 46, flexShrink: 0, position: "relative", height: 24 + ROW_H * 9 }}>
+              <div style={{ width: 52, flexShrink: 0, position: "relative", height: HEAD_H + ROW_H * 9 }}>
                 {SLOTS.map((s) => (
                   <div key={s} style={{
-                    position: "absolute", top: 24 + (s - 1) * ROW_H - 6, right: 6,
-                    fontSize: 10, color: "var(--mantine-color-dimmed)",
+                    position: "absolute", top: HEAD_H + (s - 1) * ROW_H - 6, right: 10,
+                    fontSize: 11, color: "var(--mantine-color-gray-5)", fontVariantNumeric: "tabular-nums",
                   }}>{SLOT_START[s]}</div>
                 ))}
                 <div style={{
-                  position: "absolute", top: 24 + ROW_H * 9 - 6, right: 6,
-                  fontSize: 10, color: "var(--mantine-color-dimmed)",
+                  position: "absolute", top: HEAD_H + ROW_H * 9 - 6, right: 10,
+                  fontSize: 11, color: "var(--mantine-color-gray-5)", fontVariantNumeric: "tabular-nums",
                 }}>17:30</div>
               </div>
               {DAYS.map((d) => (
                 // Günler dikey çizgiyle ayrılır; sonuncuya sağ çizgi de eklenir
                 // ki tablo kapansın.
-                <div key={d} style={{
-                  flex: 1, minWidth: 92,
-                  borderLeft: "1px solid var(--mantine-color-default-border)",
-                  borderRight: d === DAYS[DAYS.length - 1]
-                    ? "1px solid var(--mantine-color-default-border)" : undefined,
-                }}>
-                  <div style={{ height: 24, textAlign: "center", fontSize: 12, color: "var(--mantine-color-dimmed)" }}>{DAY_SHORT[d]}</div>
+                <div key={d} style={{ flex: 1, minWidth: 104, borderLeft: `1px solid ${LINE}` }}>
+                  <div style={{
+                    height: HEAD_H, display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, fontWeight: 500, letterSpacing: "0.06em",
+                    textTransform: "uppercase", color: "var(--mantine-color-gray-6)",
+                  }}>{DAY_SHORT[d]}</div>
                   {/* Gün sütununun TAMAMI tek bırakma katmanı: slot imleç konumundan
                       hesaplanır. Böylece kartlar tıklanabilir/sürüklenebilir kalır
                       (drag olayları köpürüp buraya ulaşır). */}
@@ -380,19 +449,19 @@ export default function WeeklyPage() {
                     style={{
                       position: "relative", height: ROW_H * 9,
                       // Kapanış çizgisi: 17:30 etiketi buraya hizalanır
-                      borderBottom: "1px solid var(--mantine-color-default-border)",
+                      borderBottom: `1px solid ${LINE}`,
                     }}
                   >
                     {SLOTS.map((s) => (
                       <div key={s} style={{
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
-                        borderTop: "0.5px solid var(--mantine-color-default-border)",
-                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)" : undefined,
+                        borderTop: `1px solid ${LINE}`,
+                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)" : undefined,
                         pointerEvents: "none",
                       }} />
                     ))}
                     {byDay.get(d)!.map((c) => (
-                      <ClusterCard key={c.id} c={c} canWrite={canWrite}
+                      <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
@@ -487,8 +556,9 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, canWrite, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, canWrite, view, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
+  view: ViewMode;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
@@ -529,8 +599,12 @@ function ClusterCard({ c, elective, hard, warn, canWrite, onDragStart, onDragEnd
   const widthPct = 100 / c.lanes;
   // Toplu kartta tek derslik yazılamaz; kaç farklı derslik kullanıldığını söyler.
   const rooms = new Set(c.entries.map((x) => x.classroom?.room_code).filter(Boolean));
+  // Alt satır MERCEĞE göre değişir: derslik bakışında oda zaten filtreyle sabit,
+  // tekrarlamak yerine şube numarasını yazmak bilgi taşır.
   const altSatir = many
     ? `${c.entries.length} şube${rooms.size > 1 ? ` · ${rooms.size} derslik` : rooms.size === 1 ? ` · ${[...rooms][0]}` : ""}`
+    : view === "classroom"
+    ? `Şube ${e.section.section_no}`
     : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
 
   return (

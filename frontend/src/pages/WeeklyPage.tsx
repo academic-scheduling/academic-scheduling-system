@@ -5,7 +5,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconCheck, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
@@ -144,6 +144,8 @@ export default function WeeklyPage() {
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
   // Palette üzerinde gezinilen şube: gridde o şubenin kartları vurgulanır.
   const [hoverSection, setHoverSection] = useState<number | null>(null);
+  // Boş slot üzerinde gezinme: "buraya tıklayıp ekleyebilirsin" işareti.
+  const [hoverCell, setHoverCell] = useState<string | null>(null);   // "day-slot"
   // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
   const [placing, setPlacing] = useState<{ day: number; slot: number; drag?: Drag } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
@@ -538,6 +540,16 @@ export default function WeeklyPage() {
                       const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                       setPlacing({ day: d, slot: Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1)) });
                     }}
+                    onMouseMove={(ev) => {
+                      if (!canWrite || drag) return;
+                      const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                      const slot = Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1));
+                      // Dolu slotta işaret gösterme: orada tıklamak düzenlemeyi açar.
+                      const dolu = byDay.get(d)!.some(
+                        (c) => slot >= c.start_slot && slot < c.start_slot + c.slot_count);
+                      setHoverCell(dolu ? null : `${d}-${slot}`);
+                    }}
+                    onMouseLeave={() => setHoverCell(null)}
                     style={{
                       position: "relative", height: ROW_H * 9,
                       // Kapanış çizgisi: 17:30 etiketi buraya hizalanır
@@ -548,9 +560,17 @@ export default function WeeklyPage() {
                       <div key={s} style={{
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
-                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)" : undefined,
+                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)"
+                          // Boş slot işareti: hafif kararma + ortada artı.
+                          : hoverCell === `${d}-${s}` ? "var(--mantine-color-gray-1)" : undefined,
                         pointerEvents: "none",
-                      }} />
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        transition: "background 120ms ease",
+                      }}>
+                        {hoverCell === `${d}-${s}` && over == null && (
+                          <IconPlus size={18} color="var(--mantine-color-gray-5)" />
+                        )}
+                      </div>
                     ))}
                     {byDay.get(d)!.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}

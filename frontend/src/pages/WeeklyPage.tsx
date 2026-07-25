@@ -8,7 +8,7 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { SEMESTER_LABELS } from "../api/types";
+import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../lib/slots";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, DeliveryMode, Department,
@@ -130,7 +130,11 @@ export default function WeeklyPage() {
     key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  // Workgroup'un TÜM dersleri bir kez çekilir. Üç iş birden görür: paletin
+  // sınıf süzmesi, seçmeli rozeti (her mercekte) ve hoca panelindeki sayımlar.
+  // Cohort başına ayrı istek atılsaydı derslik/hoca bakışında elde ders olmaz,
+  // "seçmeli" rozeti sessizce kaybolurdu.
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [scan, setScan] = useState<ConflictScan>({ hard: [], warnings: [] });
   const [loading, setLoading] = useState(false);
@@ -170,11 +174,13 @@ export default function WeeklyPage() {
       api.get<Department[]>("/departments"),
       api.get<Classroom[]>("/classrooms"),
       api.get<Lecturer[]>("/lecturers?search="),
+      api.get<Course[]>("/courses"),
     ])
-      .then(([d, c, l]) => {
+      .then(([d, c, l, co]) => {
         setDepartments(d);
         setClassrooms(c);
         setLecturers(l);
+        setAllCourses(co);
         // Kayıtlı bölüm hâlâ geçerliyse ona dokunma; yoksa ilkine düş.
         setDep((mevcut) =>
           mevcut && d.some((x) => String(x.id) === mevcut)
@@ -193,27 +199,30 @@ export default function WeeklyPage() {
 
   const reload = () => {
     const qs = activeQuery();
-    if (!qs) { setEntries([]); setCourses([]); return; }
+    if (!qs) { setEntries([]); return; }
     setLoading(true);
     setError(null);
-    // Palet yalnız cohort bakışında anlamlı; diğerlerinde ders listesi çekilmez.
-    const cohortQs = view === "cohort" ? qs : null;
     Promise.all([
       api.get<WeeklyEntry[]>(`/weekly-entries?${qs}`),
-      cohortQs ? api.get<Course[]>(`/courses?${cohortQs}`) : Promise.resolve([] as Course[]),
       api.get<ConflictScan>("/conflicts"),
     ])
-      .then(([e, c, s]) => { setEntries(e); setCourses(c); setScan(s); })
+      .then(([e, s]) => { setEntries(e); setScan(s); })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Program yüklenemedi"))
       .finally(() => setLoading(false));
   };
   useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter]);
 
+  /** Paletin dersleri: seçili sınıfın (bölüm+yıl+dönem) dersleri. */
+  const courses = useMemo(
+    () => allCourses.filter((c) =>
+      String(c.department_id) === dep && String(c.year) === year && c.semester === sem),
+    [allCourses, dep, year, sem]);
+
   const electiveOf = useMemo(() => {
     const m = new Map<number, boolean>();
-    for (const c of courses) m.set(c.id, c.is_elective);
+    for (const c of allCourses) m.set(c.id, c.is_elective);
     return m;
-  }, [courses]);
+  }, [allCourses]);
 
   const { hardIds, warnIds } = useMemo(() => {
     const h = new Set<number>(), w = new Set<number>();
@@ -396,6 +405,13 @@ export default function WeeklyPage() {
         </Paper>
         )}
 
+        {view !== "cohort" && (
+          <InfoPanel view={view} height={gridH}
+            room={classrooms.find((c) => String(c.id) === roomFilter) ?? null}
+            lecturer={lecturers.find((l) => String(l.id) === lecFilter) ?? null}
+            entries={entries} courses={allCourses} departments={departments} />
+        )}
+
         <Paper ref={gridRef} p="md" radius="lg"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
                    border: "1px solid var(--mantine-color-gray-2)" }}>
@@ -544,6 +560,127 @@ export default function WeeklyPage() {
         />
       )}
     </Stack>
+  );
+}
+
+/** Sol paneldeki tek bilgi satırı (etiket · değer). */
+function Satir({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <Group justify="space-between" gap="xs" wrap="nowrap">
+      <Text size="xs" c="dimmed">{k}</Text>
+      <Text size="xs" fw={500} style={{ textAlign: "right" }}>{v}</Text>
+    </Group>
+  );
+}
+
+/** Derslik / öğretim üyesi merceklerinin sol paneli.
+ *
+ *  Sınıf bakışında sol panel PALETTİR (sürüklenecek dersler). Diğer iki bakış
+ *  salt-okunur olduğu için orada palet anlamsız — yerine seçilenin kimliğini ve
+ *  haftalık kullanımını koyuyoruz, böylece sol sütun boş kalmıyor ve grid'in
+ *  cevaplayamadığı sorular ("kapasite ne?", "kaç ders veriyor?") burada duruyor. */
+function InfoPanel({ view, room, lecturer, entries, courses, departments, height }: {
+  view: ViewMode;
+  room: Classroom | null;
+  lecturer: Lecturer | null;
+  entries: WeeklyEntry[];
+  courses: Course[];
+  departments: Department[];
+  height?: number;
+}) {
+  // Haftalık kullanım: her mercekte aynı hesap (kaç giriş, kaç gün, kaç slot).
+  const slotToplam = entries.reduce((t, e) => t + e.slot_count, 0);
+  const gunSayisi = new Set(entries.map((e) => e.day_of_week)).size;
+  const doluluk = Math.round((slotToplam / (9 * 5)) * 100);
+
+  // Hocanın dersleri: şubelerinden geriye yürüyerek ders ve bölüm çıkarılır.
+  const hocaOzet = useMemo(() => {
+    if (!lecturer) return null;
+    const dersler = courses.filter((c) =>
+      c.sections.some((s) => s.lecturer.id === lecturer.id));
+    const subeSayisi = dersler.reduce(
+      (t, c) => t + c.sections.filter((s) => s.lecturer.id === lecturer.id).length, 0);
+    const bolumler = [...new Set(dersler.map((c) => c.department_id))]
+      .map((id) => departments.find((d) => d.id === id)?.code)
+      .filter(Boolean) as string[];
+    return { dersler, subeSayisi, bolumler };
+  }, [lecturer, courses, departments]);
+
+  const secili = view === "classroom" ? room : lecturer;
+
+  return (
+    <Paper p="md" radius="lg" w={200}
+      style={{ flexShrink: 0, display: "flex", flexDirection: "column",
+               height, background: "var(--mantine-color-gray-0)" }}>
+      {!secili ? (
+        <Text size="xs" c="dimmed">
+          {view === "classroom" ? "Bir derslik seçin." : "Bir öğretim üyesi seçin."}
+        </Text>
+      ) : (
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+          <Stack gap="md">
+            {view === "classroom" && room && (
+              <>
+                <div>
+                  <Text size="xs" c="dimmed">{room.building.name}</Text>
+                  <Text size="lg" fw={500}>{room.room_code}</Text>
+                </div>
+                <Stack gap={6}>
+                  <Satir k="Tür" v={ROOM_TYPE_LABELS[room.room_type]} />
+                  <Satir k="Kapasite" v={`${room.capacity} kişi`} />
+                  <Satir k="Sınav kontenjanı"
+                    v={room.exam_capacity != null ? `${room.exam_capacity} kişi` : "girilmemiş"} />
+                  {!room.active && <Badge size="xs" color="gray">pasif</Badge>}
+                </Stack>
+              </>
+            )}
+
+            {view === "lecturer" && lecturer && hocaOzet && (
+              <>
+                <div>
+                  <Text size="sm" fw={500} style={{ lineHeight: 1.3 }}>{lecturer.full_name}</Text>
+                  <Group gap={4} mt={4}>
+                    {lecturer.is_external && (
+                      <Badge size="xs" variant="light" color="grape">fakülte dışı</Badge>
+                    )}
+                    {!lecturer.active && <Badge size="xs" color="gray">pasif</Badge>}
+                  </Group>
+                </div>
+                <Stack gap={6}>
+                  <Satir k="Bölüm"
+                    v={hocaOzet.bolumler.length ? hocaOzet.bolumler.join(", ") : "—"} />
+                  <Satir k="Ders" v={hocaOzet.dersler.length} />
+                  <Satir k="Şube" v={hocaOzet.subeSayisi} />
+                </Stack>
+                {hocaOzet.dersler.length > 0 && (
+                  <div>
+                    <Text size="xs" c="dimmed" mb={6}>Verdiği dersler</Text>
+                    <Stack gap={4}>
+                      {hocaOzet.dersler.map((c) => (
+                        <div key={c.id}>
+                          <Text size="xs" fw={500}>{c.code}</Text>
+                          <Text size="10px" c="dimmed" truncate>{c.name}</Text>
+                        </div>
+                      ))}
+                    </Stack>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div>
+              <Text size="xs" c="dimmed" mb={6}>Bu hafta</Text>
+              <Stack gap={6}>
+                <Satir k="Yerleşim" v={entries.length} />
+                <Satir k="Gün" v={`${gunSayisi} / 5`} />
+                <Satir k="Ders saati" v={`${slotToplam} slot`} />
+                {view === "classroom" && <Satir k="Doluluk" v={`%${doluluk}`} />}
+              </Stack>
+            </div>
+          </Stack>
+        </ScrollArea>
+      )}
+    </Paper>
   );
 }
 

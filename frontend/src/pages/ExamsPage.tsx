@@ -57,6 +57,11 @@ const addDays = (d: Date, n: number) => {
 
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
+/** Sürüklenen şey: paletten yeni sınav mı, var olan sınavın taşınması mı. */
+type ExamDrag =
+  | { kind: "new"; courseId: number; label: string }
+  | { kind: "move"; exam: Exam };
+
 /** Aynı gündeki sınavları kesişenler yan yana gelecek şekilde şeritlere böler. */
 type Placed = Exam & { lane: number; lanes: number };
 
@@ -108,7 +113,11 @@ export default function ExamsPage() {
   const [weekPinned, setWeekPinned] = useState(false);
 
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "gun-dakika"
-  const [placing, setPlacing] = useState<{ date: string; min: number } | null>(null);
+  // Sürüklenen: paletten YENİ sınav mı, var olanın TAŞINMASI mı
+  const [drag, setDrag] = useState<ExamDrag | null>(null);
+  const [over, setOver] = useState<string | null>(null);             // "gun|dakika"
+  const [placing, setPlacing] =
+    useState<{ date: string; min: number; courseId?: number } | null>(null);
   const [editing, setEditing] = useState<Exam | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -217,6 +226,29 @@ export default function ExamsPage() {
     }
   };
 
+  /** Taşıma: yalnız tarih ve saat değişir; derslik, süre, sorumlu korunur. */
+  const tasi = async (e: Exam, tarih: string, dk: number) => {
+    if (e.exam_date === tarih && toMin(e.start_time) === dk) return;
+    try {
+      const res = await api.patch<{ conflicts: ConflictResult[] }>(
+        `/exams/${e.id}`, { exam_date: tarih, start_time: fmt(dk) });
+      load();
+      showConflicts(res.conflicts, "Sınav taşındı");
+    } catch (err) {
+      // SUBMITTED kilidi (409) ve hafta sonu (400) burada görünür.
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Taşınamadı" });
+    }
+  };
+
+  const birak = (tarih: string, dk: number) => {
+    setOver(null);
+    const d = drag;
+    setDrag(null);
+    if (!d) return;
+    if (d.kind === "move") void tasi(d.exam, tarih, dk);
+    else setPlacing({ date: tarih, min: dk, courseId: d.courseId });
+  };
+
   const taslagaCevir = async (e: Exam) => {
     try {
       await api.post(`/exams/${e.id}/revert-to-draft`);
@@ -290,17 +322,29 @@ export default function ExamsPage() {
               {eksikDersler.length === 0 && (
                 <Text size="xs" c="dimmed">Tüm derslerin {EXAM_TYPE_LABELS[type].toLocaleLowerCase("tr")} sınavı tanımlı.</Text>
               )}
-              {eksikDersler.map((c) => (
-                <Paper key={c.id} p={8} radius="md"
-                  onClick={() => canWriteCourse(c.id)
-                    && setPlacing({ date: iso(gunler[0]), min: 9 * 60, courseId: c.id } as never)}
-                  style={{ fontSize: 12, flexShrink: 0, background: "var(--mantine-color-body)",
-                           border: "1px solid var(--mantine-color-gray-2)",
-                           cursor: canWriteCourse(c.id) ? "pointer" : "default" }}>
-                  <Text size="xs" fw={500}>{c.code}</Text>
-                  <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
-                </Paper>
-              ))}
+              {eksikDersler.map((c) => {
+                const yazabilir = canWriteCourse(c.id);
+                return (
+                  <Paper key={c.id} p={8} radius="md"
+                    draggable={yazabilir}
+                    onDragStart={(ev) => {
+                      ev.dataTransfer.effectAllowed = "copy";
+                      ev.dataTransfer.setData("text/plain", String(c.id));
+                      setDrag({ kind: "new", courseId: c.id, label: c.code });
+                    }}
+                    onDragEnd={() => setDrag(null)}
+                    // Sürüklemek istemeyen için tıklama da çalışsın: haftanın ilk
+                    // günü 09:00 ile modal açılır, kullanıcı orada değiştirir.
+                    onClick={() => yazabilir
+                      && setPlacing({ date: iso(gunler[0]), min: 9 * 60, courseId: c.id })}
+                    style={{ fontSize: 12, flexShrink: 0, background: "var(--mantine-color-body)",
+                             border: "1px solid var(--mantine-color-gray-2)",
+                             cursor: yazabilir ? "grab" : "default" }}>
+                    <Text size="xs" fw={500}>{c.code}</Text>
+                    <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
+                  </Paper>
+                );
+              })}
             </Stack>
           </ScrollArea>
         </Paper>
@@ -362,6 +406,20 @@ export default function ExamsPage() {
                         const dk = DAY_START + Math.floor(y / PX / 30) * 30;
                         setPlacing({ date: gun, min: dk });
                       }}
+                      onDragOver={(ev) => {
+                        if (!drag) return;
+                        ev.preventDefault();
+                        const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                        setOver(`${gun}|${DAY_START + Math.floor(y / PX / 30) * 30}`);
+                      }}
+                      onDragLeave={(ev) => {
+                        if (!ev.currentTarget.contains(ev.relatedTarget as Node)) setOver(null);
+                      }}
+                      onDrop={(ev) => {
+                        ev.preventDefault();
+                        const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                        birak(gun, DAY_START + Math.floor(y / PX / 30) * 30);
+                      }}
                     >
                       {HOURS.slice(0, -1).map((h, i) => (
                         <div key={h} style={{
@@ -369,8 +427,19 @@ export default function ExamsPage() {
                           borderTop: `1px solid ${LINE}`, pointerEvents: "none",
                         }} />
                       ))}
-                      {/* boş yer işareti */}
-                      {hoverCell?.startsWith(`${gun}-`) && (
+                      {/* bırakma hedefi (sürükleme sırasında) */}
+                      {over?.startsWith(`${gun}|`) && (
+                        <div style={{
+                          position: "absolute", left: 2, right: 2,
+                          top: (Number(over.split("|")[1]) - DAY_START) * PX,
+                          height: 90 * PX, borderRadius: 6,
+                          background: "var(--mantine-color-blue-0)",
+                          border: "1px dashed var(--mantine-color-blue-5)",
+                          pointerEvents: "none",
+                        }} />
+                      )}
+                      {/* boş yer işareti (sürükleme yokken) */}
+                      {!drag && hoverCell?.startsWith(`${gun}-`) && (
                         <div style={{
                           position: "absolute", left: 2, right: 2,
                           top: (Number(hoverCell.split("-").pop()) - DAY_START) * PX,
@@ -387,6 +456,8 @@ export default function ExamsPage() {
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
+                          onDragStart={() => setDrag({ kind: "move", exam: e })}
+                          onDragEnd={() => setDrag(null)}
                           onEdit={() => setEditing(e)}
                           onDelete={() => sil(e)}
                           onRevert={() => taslagaCevir(e)} />
@@ -444,6 +515,7 @@ export default function ExamsPage() {
           exam={editing}
           initialDate={placing?.date}
           initialMin={placing?.min}
+          initialCourseId={placing?.courseId}
           examType={type}
           courses={courses.filter((c) => canWriteCourse(c.id))}
           classrooms={classrooms}
@@ -486,8 +558,9 @@ function Legend({ label, bg, bd, hatch }: { label: string; bg: string; bd: strin
   );
 }
 
-function ExamCard({ e, hard, warn, editable, revertable, onEdit, onDelete, onRevert }: {
+function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
   e: Placed; hard: boolean; warn: boolean; editable: boolean; revertable: boolean;
+  onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
   const draft = e.status === "DRAFT";
@@ -504,8 +577,13 @@ function ExamCard({ e, hard, warn, editable, revertable, onEdit, onDelete, onRev
 
   return (
     <div
+      draggable={editable}
+      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(); }}
+      onDragEnd={onDragEnd}
       onClick={(ev) => { ev.stopPropagation(); if (editable) onEdit(); }}
-      title={`${e.course.code} · ${fmt(bas)}-${fmt(bas + e.duration_minutes)} · ${e.total_expected_students} öğrenci`}
+      title={editable
+        ? `${e.course.code} · ${fmt(bas)}-${fmt(bas + e.duration_minutes)} · düzenlemek için tıkla, taşımak için sürükle`
+        : `${e.course.code} · ${fmt(bas)}-${fmt(bas + e.duration_minutes)} · ${e.total_expected_students} öğrenci`}
       style={{
         position: "absolute",
         top: (bas - DAY_START) * PX + 1,
@@ -541,10 +619,12 @@ function ExamCard({ e, hard, warn, editable, revertable, onEdit, onDelete, onRev
   );
 }
 
-function ExamModal({ exam, initialDate, initialMin, examType, courses, classrooms, lecturers, onClose, onDone }: {
+function ExamModal({ exam, initialDate, initialMin, initialCourseId, examType, courses, classrooms, lecturers, onClose, onDone }: {
   exam: Exam | null;
   initialDate?: string;
   initialMin?: number;
+  /** Paletten sürüklenip/tıklanıp gelindiyse ders zaten belli. */
+  initialCourseId?: number;
   examType: ExamType;
   courses: Course[];
   classrooms: Classroom[];
@@ -553,7 +633,8 @@ function ExamModal({ exam, initialDate, initialMin, examType, courses, classroom
   onDone: (conflicts: ConflictResult[], baslik: string) => void;
 }) {
   const duzenle = exam != null;
-  const [courseId, setCourseId] = useState<string | null>(exam ? String(exam.course.id) : null);
+  const [courseId, setCourseId] = useState<string | null>(
+    exam ? String(exam.course.id) : initialCourseId != null ? String(initialCourseId) : null);
   const [tip, setTip] = useState<ExamType>(exam?.exam_type ?? examType);
   const [tarih, setTarih] = useState(exam?.exam_date ?? initialDate ?? "");
   const [saat, setSaat] = useState(exam?.start_time?.slice(0, 5) ?? fmt(initialMin ?? 9 * 60));

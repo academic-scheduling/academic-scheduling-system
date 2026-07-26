@@ -378,9 +378,9 @@ export default function CoursesPage() {
                                     color={e.status === "SUBMITTED" ? "green" : "yellow"}
                                     size="sm"
                                   >
-                                    {/* kısa gün adı: "Pzt 13:30-15:15" — satırda
+                                    {/* kısa gün adı: "Pzt 13:30 - 15:15" — satırda
                                         diğer sütunlara yer bırakır */}
-                                    {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, true)}
+                                    {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
                                   </Badge>
                                 ))}
                               </Group>
@@ -648,7 +648,7 @@ function SectionsModal({
                             {entries.map((e) => (
                               <Badge key={e.id} variant="light" size="sm"
                                 color={e.status === "SUBMITTED" ? "green" : "yellow"}>
-                                {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, true)}
+                                {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
                               </Badge>
                             ))}
                           </Group>

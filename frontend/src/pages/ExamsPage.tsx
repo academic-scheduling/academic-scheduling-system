@@ -10,11 +10,11 @@ import {
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { EXAM_TYPE_LABELS } from "../api/types";
+import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../lib/slots";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
-  Lecturer,
+  Lecturer, SemesterType,
 } from "../api/types";
 
 /* Haftalık programdan TEMEL FARK: burada slot yok, gerçek takvim var.
@@ -105,8 +105,15 @@ export default function ExamsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [type, setType] = useLocalStorage<ExamType>({
-    key: "exams-type", defaultValue: "FINAL", getInitialValueInEffect: false });
+  // Cohort seçimi (bölüm + yıl + dönem) — haftalık programdaki mercekle aynı.
+  // Sınav TÜRÜ artık burada süzgeç DEĞİL: takvimde vize/final/bütünleme bir
+  // arada görünür, tür sınav eklenirken soruluyor.
+  const [dep, setDep] = useLocalStorage<string | null>({
+    key: "exams-dep", defaultValue: null, getInitialValueInEffect: false });
+  const [year, setYear] = useLocalStorage({
+    key: "exams-year", defaultValue: "1", getInitialValueInEffect: false });
+  const [sem, setSem] = useLocalStorage<SemesterType>({
+    key: "exams-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
   // Hafta BİLEREK kalıcı değil: eski bir haftada takılı kalmak, sayfayı boş
   // açmak demek. Her girişte veriye göre anlamlı bir haftadan başlıyoruz.
   const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));
@@ -136,6 +143,9 @@ export default function ExamsPage() {
       .then(([x, c, cl, l, d, s]) => {
         setExams(x); setCourses(c); setClassrooms(cl);
         setLecturers(l); setDepartments(d); setScan(s);
+        setDep((mevcut) =>
+          mevcut && d.some((y) => String(y.id) === mevcut)
+            ? mevcut : d.length ? String(d[0].id) : null);
         // İlk yüklemede en erken sınavın haftasına git (veri neredeyse orada aç).
         if (!weekPinned && x.length) {
           const enErken = x.map((e) => e.exam_date).sort()[0];
@@ -150,15 +160,24 @@ export default function ExamsPage() {
   const gunler = useMemo(
     () => [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i)), [weekStart]);
 
-  /** Bu haftanın, seçili türdeki sınavları — gün gün, şeritlenmiş. */
+  /** Seçili cohort'un dersleri (bölüm + yıl + dönem). */
+  const cohortCourses = useMemo(
+    () => courses.filter((c) =>
+      String(c.department_id) === dep && String(c.year) === year && c.semester === sem),
+    [courses, dep, year, sem]);
+  const cohortCourseIds = useMemo(
+    () => new Set(cohortCourses.map((c) => c.id)), [cohortCourses]);
+
+  /** Bu haftanın sınavları — TÜM türler bir arada, cohort'a göre süzülmüş. */
   const byDay = useMemo(() => {
     const m = new Map<string, Placed[]>();
     for (const g of gunler) {
       const gun = iso(g);
-      m.set(gun, layoutDay(exams.filter((e) => e.exam_date === gun && e.exam_type === type)));
+      m.set(gun, layoutDay(exams.filter(
+        (e) => e.exam_date === gun && cohortCourseIds.has(e.course.id))));
     }
     return m;
-  }, [exams, gunler, type]);
+  }, [exams, gunler, cohortCourseIds]);
 
   const { hardIds, warnIds } = useMemo(() => {
     const h = new Set<number>(), w = new Set<number>();
@@ -167,15 +186,23 @@ export default function ExamsPage() {
     return { hardIds: h, warnIds: w };
   }, [scan]);
 
-  /** Sol panel: seçili türde HENÜZ SINAVI OLMAYAN dersler (yapılacak iş listesi). */
-  const eksikDersler = useMemo(() => {
-    const sinavli = new Set(exams.filter((e) => e.exam_type === type).map((e) => e.course.id));
+  /** Sol panel: cohort'un dersleri + her birinde HANGİ sınav türü tanımlı.
+   *  Üç türü de tanımlanmış ders "bitmiş" sayılır: soluk ve listenin altında
+   *  (haftalık programdaki tamamlanmış ders deseniyle aynı). */
+  const paletDersler = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("tr");
-    return courses
-      .filter((c) => c.active && !sinavli.has(c.id))
+    const turlerOf = (courseId: number) =>
+      new Set(exams.filter((e) => e.course.id === courseId).map((e) => e.exam_type));
+    return cohortCourses
+      .filter((c) => c.active)
       .filter((c) => !q || `${c.code} ${c.name}`.toLocaleLowerCase("tr").includes(q))
-      .sort((a, b) => a.code.localeCompare(b.code, "tr"));
-  }, [courses, exams, type, search]);
+      .map((c) => {
+        const turler = turlerOf(c.id);
+        return { course: c, turler, done: turler.size === 3 };
+      })
+      .sort((a, b) => Number(a.done) - Number(b.done)
+        || a.course.code.localeCompare(b.course.code, "tr"));
+  }, [cohortCourses, exams, search]);
 
   const bolumOf = (courseId: number) =>
     courses.find((c) => c.id === courseId)?.department_id;
@@ -186,10 +213,11 @@ export default function ExamsPage() {
   const canWriteAny = canWriteIn(user, "can_manage_exams")
     && (user?.role === "ADMIN" || (user?.department_ids.length ?? 0) > 0);
 
+  // Yayınlanacak küme: bu cohort'un, yazma yetkim olan taslak sınavları.
   const drafts = useMemo(
-    () => exams.filter((e) => e.exam_type === type && e.status === "DRAFT"
+    () => exams.filter((e) => cohortCourseIds.has(e.course.id) && e.status === "DRAFT"
       && canWriteCourse(e.course.id)),
-    [exams, type, user, courses]);
+    [exams, cohortCourseIds, user, courses]);
 
   /** Sayfa altındaki liste: SINAVI ilgilendiren çakışmalar.
    *  Alt hesap süzmesi haftalık ekrandakiyle aynı mantık (K-26 notu orada). */
@@ -272,12 +300,16 @@ export default function ExamsPage() {
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-        <Group gap="sm" align="center">
+        <Group gap="xs" align="center">
           <Title order={2} fw={500}>Sınav Takvimi</Title>
-          <Select size="xs" w={120} radius="md" value={type}
-            onChange={(v) => v && setType(v as ExamType)}
-            data={(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((k) => ({
-              value: k, label: EXAM_TYPE_LABELS[k] }))} />
+          <Select size="xs" w={190} radius="md" value={dep} onChange={setDep}
+            data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+          <Select size="xs" w={95} radius="md" value={year} onChange={(v) => v && setYear(v)}
+            data={["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))} />
+          <Select size="xs" w={100} radius="md" value={sem}
+            onChange={(v) => v && setSem(v as SemesterType)}
+            data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
+              value: s, label: SEMESTER_LABELS[s] }))} />
         </Group>
 
         <Group gap="xs" align="center">
@@ -311,18 +343,16 @@ export default function ExamsPage() {
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
                    height: HEAD_H + HOUR_H * (HOURS.length - 1) + 32,
                    background: "var(--mantine-color-gray-0)" }}>
-          <Text size="xs" c="dimmed" mb={6}>
-            {EXAM_TYPE_LABELS[type]} sınavı olmayan dersler
-          </Text>
+          <Text size="xs" c="dimmed" mb={6}>Dersler · gride sürükle</Text>
           <TextInput size="xs" mb={10} radius="md" variant="filled" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
             placeholder="Ders ara" />
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
             <Stack gap={6}>
-              {eksikDersler.length === 0 && (
-                <Text size="xs" c="dimmed">Tüm derslerin {EXAM_TYPE_LABELS[type].toLocaleLowerCase("tr")} sınavı tanımlı.</Text>
+              {paletDersler.length === 0 && (
+                <Text size="xs" c="dimmed">Bu sınıfta ders yok.</Text>
               )}
-              {eksikDersler.map((c) => {
+              {paletDersler.map(({ course: c, turler, done }) => {
                 const yazabilir = canWriteCourse(c.id);
                 return (
                   <Paper key={c.id} p={8} radius="md"
@@ -339,8 +369,21 @@ export default function ExamsPage() {
                       && setPlacing({ date: iso(gunler[0]), min: 9 * 60, courseId: c.id })}
                     style={{ fontSize: 12, flexShrink: 0, background: "var(--mantine-color-body)",
                              border: "1px solid var(--mantine-color-gray-2)",
-                             cursor: yazabilir ? "grab" : "default" }}>
-                    <Text size="xs" fw={500}>{c.code}</Text>
+                             cursor: yazabilir ? "grab" : "default",
+                             opacity: done ? 0.45 : 1 }}>
+                    <Group gap={4} justify="space-between" wrap="nowrap">
+                      <Text size="xs" fw={500}>{c.code}</Text>
+                      {/* Hangi sınav türü tanımlı: eksik olan bir bakışta görünsün */}
+                      <Group gap={2} wrap="nowrap">
+                        {(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((t) => (
+                          <Badge key={t} size="xs" variant={turler.has(t) ? "filled" : "outline"}
+                            color={turler.has(t) ? "violet" : "gray"}
+                            style={{ paddingInline: 5, opacity: turler.has(t) ? 1 : 0.4 }}>
+                            {EXAM_TYPE_LABELS[t][0]}
+                          </Badge>
+                        ))}
+                      </Group>
+                    </Group>
                     <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
                   </Paper>
                 );
@@ -516,7 +559,6 @@ export default function ExamsPage() {
           initialDate={placing?.date}
           initialMin={placing?.min}
           initialCourseId={placing?.courseId}
-          examType={type}
           courses={courses.filter((c) => canWriteCourse(c.id))}
           classrooms={classrooms}
           lecturers={lecturers}
@@ -599,6 +641,10 @@ function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd,
       }}>
       <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
         <div style={{ fontWeight: 500 }}>{e.course.code}</div>
+        {/* Takvimde üç tür bir arada durduğu için tür kartın üstünde yazılı */}
+        <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0, paddingInline: 5 }}>
+          {EXAM_TYPE_LABELS[e.exam_type]}
+        </Badge>
         {editable && (
           <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Sil"
             onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
@@ -619,13 +665,12 @@ function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd,
   );
 }
 
-function ExamModal({ exam, initialDate, initialMin, initialCourseId, examType, courses, classrooms, lecturers, onClose, onDone }: {
+function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, onClose, onDone }: {
   exam: Exam | null;
   initialDate?: string;
   initialMin?: number;
   /** Paletten sürüklenip/tıklanıp gelindiyse ders zaten belli. */
   initialCourseId?: number;
-  examType: ExamType;
   courses: Course[];
   classrooms: Classroom[];
   lecturers: Lecturer[];
@@ -635,7 +680,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, examType, c
   const duzenle = exam != null;
   const [courseId, setCourseId] = useState<string | null>(
     exam ? String(exam.course.id) : initialCourseId != null ? String(initialCourseId) : null);
-  const [tip, setTip] = useState<ExamType>(exam?.exam_type ?? examType);
+  const [tip, setTip] = useState<ExamType>(exam?.exam_type ?? "FINAL");
   const [tarih, setTarih] = useState(exam?.exam_date ?? initialDate ?? "");
   const [saat, setSaat] = useState(exam?.start_time?.slice(0, 5) ?? fmt(initialMin ?? 9 * 60));
   const [sure, setSure] = useState(exam?.duration_minutes ?? 90);

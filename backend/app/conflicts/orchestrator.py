@@ -71,14 +71,23 @@ def scan_exams(exams):
 
 def scan_cross(exams, weeklies, check_exam_vs_course):
     """Capraz tarama: her sinav x her haftalik ders icin X1/X2/X3.
-    K-06: bayrak kapaliysa hic calismaz.
+
+    IKI kapi birden:
+      1) check_exam_vs_course bayragi (K-06) — workgroup genelinde acik/kapali
+      2) sinav TURU: yalniz VIZE (K-41). Final ve butunleme donemlerinde ders
+         yapilmaz; o sinavlari haftalik programla karsilastirmak, olmayan bir
+         dersle cakisma uydurmak demektir. Gercek veride bu, final haftasi icin
+         onlarca sahte X2 uyarisi uretiyordu.
     K-19: asenkron haftalik girisler on-elenir.
-    K-13 (ayni ders atlamasi) kural fonksiyonlarinda."""
+    K-13 (ayni ders atlamasi) kural fonksiyonlarinda.
+    """
     results = []
     if not check_exam_vs_course:          # K-06: bayrak kapali -> X calismaz
         return results
     active_weeklies = [w for w in weeklies if not is_async(w)]   # K-19
     for exam in exams:
+        if exam.get("exam_type") != "MIDTERM":      # K-41
+            continue
         for weekly in active_weeklies:
             for rule in (x1_exam_weekly_classroom_conflict,
                          x2_exam_weekly_course_conflict,

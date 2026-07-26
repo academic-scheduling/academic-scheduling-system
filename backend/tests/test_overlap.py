@@ -937,13 +937,23 @@ def test_scan_cross_flag_off_no_results():
     assert scan_cross([exam], [weekly], False) == []
 
 def test_scan_cross_detects_x1():
-    # bayrak acik, farkli ders, ortak oda+zaman -> X1
-    exam = base_exam(); exam["course_id"] = 1
+    # bayrak acik, VIZE, farkli ders, ortak oda+zaman -> X1
+    exam = base_exam(); exam["course_id"] = 1; exam["exam_type"] = "MIDTERM"
     weekly = base_session(); weekly["course_id"] = 2
     assert any(r["rule_id"] == "X1" for r in scan_cross([exam], [weekly], True))
 
+def test_scan_cross_only_midterms():
+    """K-41: final ve butunlemede ders yapilmaz -> X kurallari calismaz.
+
+    Ayni kurgu VIZE'de X1 uretiyor (ustteki test); tek fark sinav turu.
+    """
+    weekly = base_session(); weekly["course_id"] = 2
+    for tur in ("FINAL", "MAKEUP"):
+        exam = base_exam(); exam["course_id"] = 1; exam["exam_type"] = tur
+        assert scan_cross([exam], [weekly], True) == [], f"{tur} X kurallarina girmemeli"
+
 def test_scan_cross_async_weekly_skipped():
     # asenkron haftalik giris X kurallarina girmez (K-19)
-    exam = base_exam(); exam["course_id"] = 1
+    exam = base_exam(); exam["course_id"] = 1; exam["exam_type"] = "MIDTERM"
     weekly = base_session(); weekly["course_id"] = 2; weekly["delivery_mode"] = "ONLINE_ASYNC"
     assert scan_cross([exam], [weekly], True) == []

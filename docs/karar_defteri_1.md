@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 24 Temmuz 2026 (K-40: E7 payı=10, W8 tam taramada; K-39: motor bağlandı)
+**Son güncelleme:** 25 Temmuz 2026 (K-41: X kuralları yalnız vizede)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -713,3 +713,21 @@ sorunları göster" dediği yerdir — eksik/fazla ders saati de çözülmesi ge
 bir sorundur, orada gizlemek yanlış olur. Dolayısıyla W8 üç yerde farklı
 davranır: **save → sessiz**, **submit → WARNING**, **tam tarama → WARNING**.
 Dashboard uyarı sayacı da (K-33) tam taramadan beslendiği için W8'i içerir.
+
+## K-41 · Sınav×ders (X) kuralları YALNIZ vizede çalışır [E] — K-06 kapsam düzeltmesi
+X1/X2/X3 çapraz kuralları artık iki kapıdan geçer: `check_exam_vs_course`
+bayrağı (K-06) **ve** sınavın türü **MIDTERM** olması.
+
+**Gerekçe:** K-06 "vizeler ders haftalarında yapılır → exam-vs-course kontrolü
+AÇIK" derken kastedilen zaten vizelerdi; ama kural sınav türünden bağımsız
+uygulanıyordu. Final ve bütünleme dönemlerinde **ders yapılmaz**, dolayısıyla o
+sınavları haftalık programla karşılaştırmak olmayan bir dersle çakışma
+uydurmaktır. Gerçek veride (CENG 2025-26 Bahar + Haziran final haftası) bu,
+19 sahte X2 uyarısı üretiyordu ve listeyi kullanılamaz hale getiriyordu.
+
+**Uygulama:** `orchestrator.scan_cross` MIDTERM olmayan sınavları atlar.
+Bayrak korunur — bir fakülte vize döneminde de kontrolü kapatmak isteyebilir.
+
+**Not:** Bu, `wp5-engine-v14` incelemesinde C'den "X kurallarını sınav tipine
+değil bayrağa bağla" diye istediğim değişikliğin kısmen geri alınmasıdır. O
+zamanki gerekçe "tür değil bayrak kontrol etmeli"ydi; doğrusu İKİSİ birden.

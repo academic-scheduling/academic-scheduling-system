@@ -11,7 +11,7 @@ import {
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
-import { DAY_SHORT } from "../lib/slots";
+import { DAY_SHORT } from "../utils/slots";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
   Lecturer, SemesterType,

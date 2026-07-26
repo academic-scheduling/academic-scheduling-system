@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Menu, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconCheck, IconDots, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
@@ -151,8 +151,6 @@ export default function WeeklyPage() {
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
   const [group, setGroup] = useState<Cluster | null>(null);   // toplu kart detayı
   const [submitOpen, setSubmitOpen] = useState(false);
-  const [clearOpen, setClearOpen] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
 
   // Palet yüksekliği GRID'e bağlanır, kendi içeriğine değil: ders sayısı arttıkça
@@ -292,31 +290,6 @@ export default function WeeklyPage() {
     }
   };
 
-  /** Tüm programı temizle: bu cohort'un TASLAK girişlerini siler.
-   *  Yayınlanmışlara dokunmaz — onlar için önce taslağa çevirmek gerekir (K-03),
-   *  zaten sunucu da 409 ile reddederdi. */
-  const tumunuTemizle = async () => {
-    setClearing(true);
-    let silinen = 0;
-    const hatalar: string[] = [];
-    for (const e of drafts) {
-      try {
-        await api.delete(`/weekly-entries/${e.id}`);
-        silinen++;
-      } catch (err) {
-        hatalar.push(`${e.section.course.code}: ${err instanceof ApiError ? err.message : "silinemedi"}`);
-      }
-    }
-    setClearing(false);
-    setClearOpen(false);
-    reload();
-    notifications.show({
-      color: hatalar.length ? "orange" : "gray",
-      title: `${silinen} giriş silindi`,
-      message: hatalar.length ? `${hatalar.length} tanesi silinemedi: ${hatalar[0]}` : "Taslak giriş kalmadı",
-    });
-  };
-
   /** Yayından taslağa geri al (K-03 değişiklik-seti modeli): kilidi açar,
    *  giriş yeniden düzenlenebilir/taşınabilir hale gelir. */
   const revertEntry = async (e: WeeklyEntry) => {
@@ -439,23 +412,6 @@ export default function WeeklyPage() {
               onClick={() => setSubmitOpen(true)}>
               Yayınla{drafts.length ? ` (${drafts.length})` : ""}
             </Button>
-          )}
-          {canWrite && (
-            <Menu position="bottom-end" withArrow>
-              <Menu.Target>
-                <ActionIcon variant="subtle" radius="md" aria-label="Diğer işlemler">
-                  <IconDots size={18} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Temizle</Menu.Label>
-                <Menu.Item color="red" leftSection={<IconTrash size={14} />}
-                  disabled={drafts.length === 0}
-                  onClick={() => setClearOpen(true)}>
-                  Tüm haftalık programı temizle
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
           )}
         </Group>
       </Group>
@@ -701,28 +657,6 @@ export default function WeeklyPage() {
           })}
           onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
         />
-      )}
-
-      {clearOpen && (
-        <Modal opened onClose={() => setClearOpen(false)} title="Tüm haftalık programı temizle" size="sm">
-          <Stack gap="sm">
-            <Alert color="red" variant="light">
-              Bu sınıfın <b>{drafts.length} taslak girişi</b> kalıcı olarak silinecek.
-              Bu işlem geri alınamaz.
-            </Alert>
-            <Text size="xs" c="dimmed">
-              Yayınlanmış girişlere dokunulmaz; onları silmek için önce taslağa çevirmen gerekir.
-            </Text>
-            <Group justify="flex-end" gap="xs">
-              <Button variant="subtle" onClick={() => setClearOpen(false)} disabled={clearing}>
-                Vazgeç
-              </Button>
-              <Button color="red" onClick={tumunuTemizle} loading={clearing}>
-                {drafts.length} girişi sil
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
       )}
 
       {group && (

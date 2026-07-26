@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
-  Menu, NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
+  NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
-  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconDots, IconPlus, IconTrash,
+  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconPlus, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -114,10 +114,15 @@ export default function ExamsPage() {
     key: "exams-year", defaultValue: "1", getInitialValueInEffect: false });
   const [sem, setSem] = useLocalStorage<SemesterType>({
     key: "exams-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
-  // Hafta BİLEREK kalıcı değil: eski bir haftada takılı kalmak, sayfayı boş
-  // açmak demek. Her girişte veriye göre anlamlı bir haftadan başlıyoruz.
-  const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));
-  const [weekPinned, setWeekPinned] = useState(false);
+  // Hafta da kalıcı: sekme değiştirip dönünce kullanıcı kaldığı haftada devam
+  // etsin. İLK açılışta (kayıt yokken) veriye atlıyoruz — boş takvimle
+  // karşılaşmasın diye; sonrasında seçim hatırlanır.
+  const [weekIso, setWeekIso] = useLocalStorage<string | null>({
+    key: "exams-week", defaultValue: null, getInitialValueInEffect: false });
+  const weekStart = useMemo(
+    () => (weekIso ? new Date(`${weekIso}T00:00:00`) : mondayOf(new Date())),
+    [weekIso]);
+  const setWeek = (d: Date) => setWeekIso(iso(mondayOf(d)));
 
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "gun-dakika"
   // Sürüklenen: paletten YENİ sınav mı, var olanın TAŞINMASI mı
@@ -128,8 +133,6 @@ export default function ExamsPage() {
   const [editing, setEditing] = useState<Exam | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [clearOpen, setClearOpen] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const [search, setSearch] = useState("");
 
   const load = () => {
@@ -149,10 +152,10 @@ export default function ExamsPage() {
         setDep((mevcut) =>
           mevcut && d.some((y) => String(y.id) === mevcut)
             ? mevcut : d.length ? String(d[0].id) : null);
-        // İlk yüklemede en erken sınavın haftasına git (veri neredeyse orada aç).
-        if (!weekPinned && x.length) {
+        // Yalnız İLK açılışta (kayıtlı hafta yokken) en erken sınavın haftasına git.
+        if (!weekIso && x.length) {
           const enErken = x.map((e) => e.exam_date).sort()[0];
-          setWeekStart(mondayOf(new Date(`${enErken}T00:00:00`)));
+          setWeek(new Date(`${enErken}T00:00:00`));
         }
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Sınavlar yüklenemedi"))
@@ -283,31 +286,6 @@ export default function ExamsPage() {
   /** Sınavı olan tarihler — hafta seçicideki kırmızı noktalar için. */
   const examDates = useMemo(() => new Set(exams.map((e) => e.exam_date)), [exams]);
 
-  /** Tüm programı temizle: bu cohort'un TASLAK sınavlarını siler.
-   *  Yayınlanmışlara dokunmaz — onlar için önce taslağa çevirmek gerekir (K-03),
-   *  zaten sunucu da 409 ile reddederdi. */
-  const tumunuTemizle = async () => {
-    setClearing(true);
-    let silinen = 0;
-    const hatalar: string[] = [];
-    for (const e of drafts) {
-      try {
-        await api.delete(`/exams/${e.id}`);
-        silinen++;
-      } catch (err) {
-        hatalar.push(`${e.course.code}: ${err instanceof ApiError ? err.message : "silinemedi"}`);
-      }
-    }
-    setClearing(false);
-    setClearOpen(false);
-    load();
-    notifications.show({
-      color: hatalar.length ? "orange" : "gray",
-      title: `${silinen} sınav silindi`,
-      message: hatalar.length ? `${hatalar.length} tanesi silinemedi: ${hatalar[0]}` : "Taslak sınav kalmadı",
-    });
-  };
-
   const taslagaCevir = async (e: Exam) => {
     try {
       await api.post(`/exams/${e.id}/revert-to-draft`);
@@ -326,7 +304,7 @@ export default function ExamsPage() {
       : `${weekStart.getDate()} ${AY[weekStart.getMonth()]} – ${son.getDate()} ${AY[son.getMonth()]} ${son.getFullYear()}`;
   };
 
-  const gitHafta = (n: number) => { setWeekPinned(true); setWeekStart((w) => addDays(w, n * 7)); };
+  const gitHafta = (n: number) => setWeek(addDays(weekStart, n * 7));
 
   return (
     <Stack gap="lg">
@@ -356,38 +334,21 @@ export default function ExamsPage() {
             </Popover.Target>
             <Popover.Dropdown p={6}>
               <WeekPicker weekStart={weekStart} examDates={examDates}
-                onPick={(pzt) => { setWeekPinned(true); setWeekStart(pzt); setPickerOpen(false); }} />
+                onPick={(pzt) => { setWeek(pzt); setPickerOpen(false); }} />
             </Popover.Dropdown>
           </Popover>
           <ActionIcon variant="subtle" radius="md" onClick={() => gitHafta(1)} aria-label="Sonraki hafta">
             <IconChevronRight size={18} />
           </ActionIcon>
           <Button size="xs" variant="subtle" radius="md"
-            onClick={() => { setWeekPinned(true); setWeekStart(mondayOf(new Date())); }}>
-            Bugün
+            onClick={() => setWeek(new Date())}>
+            Bu hafta
           </Button>
           {canWriteAny && (
             <Button size="xs" radius="md" disabled={drafts.length === 0}
               onClick={() => setSubmitOpen(true)}>
               Yayınla{drafts.length ? ` (${drafts.length})` : ""}
             </Button>
-          )}
-          {canWriteAny && (
-            <Menu position="bottom-end" withArrow>
-              <Menu.Target>
-                <ActionIcon variant="subtle" radius="md" aria-label="Diğer işlemler">
-                  <IconDots size={18} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Temizle</Menu.Label>
-                <Menu.Item color="red" leftSection={<IconTrash size={14} />}
-                  disabled={drafts.length === 0}
-                  onClick={() => setClearOpen(true)}>
-                  Tüm sınav programını temizle
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
           )}
         </Group>
       </Group>
@@ -610,28 +571,6 @@ export default function ExamsPage() {
           onDone={(conflicts, baslik) => {
             setPlacing(null); setEditing(null); load(); showConflicts(conflicts, baslik);
           }} />
-      )}
-
-      {clearOpen && (
-        <Modal opened onClose={() => setClearOpen(false)} title="Tüm sınav programını temizle" size="sm">
-          <Stack gap="sm">
-            <Alert color="red" variant="light">
-              Bu sınıfın <b>{drafts.length} taslak sınavı</b> kalıcı olarak silinecek.
-              Bu işlem geri alınamaz.
-            </Alert>
-            <Text size="xs" c="dimmed">
-              Yayınlanmış sınavlara dokunulmaz; onları silmek için önce taslağa çevirmen gerekir.
-            </Text>
-            <Group justify="flex-end" gap="xs">
-              <Button variant="subtle" onClick={() => setClearOpen(false)} disabled={clearing}>
-                Vazgeç
-              </Button>
-              <Button color="red" onClick={tumunuTemizle} loading={clearing}>
-                {drafts.length} sınavı sil
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
       )}
 
       {submitOpen && (

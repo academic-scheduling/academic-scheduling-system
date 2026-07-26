@@ -286,6 +286,13 @@ export default function ExamsPage() {
   /** Sınavı olan tarihler — hafta seçicideki kırmızı noktalar için. */
   const examDates = useMemo(() => new Set(exams.map((e) => e.exam_date)), [exams]);
 
+  /** Ekleme modalındaki ders listesi: SEÇİLİ SINIFIN, yazma yetkim olan dersleri.
+   *  Tüm derslere açık bırakılsaydı kullanıcı başka sınıfın dersine sınav koyup
+   *  onu bu takvimde göremez, "kaydettim ama yok" durumuna düşerdi. */
+  const secilebilirDersler = useMemo(
+    () => cohortCourses.filter((c) => canWriteCourse(c.id)),
+    [cohortCourses, user, courses]);
+
   const taslagaCevir = async (e: Exam) => {
     try {
       await api.post(`/exams/${e.id}/revert-to-draft`);
@@ -564,7 +571,7 @@ export default function ExamsPage() {
           initialDate={placing?.date}
           initialMin={placing?.min}
           initialCourseId={placing?.courseId}
-          courses={courses.filter((c) => canWriteCourse(c.id))}
+          courses={secilebilirDersler}
           classrooms={classrooms}
           lecturers={lecturers}
           onClose={() => { setPlacing(null); setEditing(null); }}

@@ -1,3 +1,10 @@
+/** Slot tablosu ve gün adları (brief §5.1).
+ *
+ *  9 slot, 45 dakikalık ders + 15 dakikalık ara. Bu tablo hem Haftalık Program
+ *  hem Sınav Takvimi ekranlarının temeli; tek kaynakta duruyor ki iki ekran
+ *  ayrışmasın.
+ */
+
 export const DAY_SHORT: Record<number, string> = {
   1: "Pzt",
   2: "Sal",
@@ -26,19 +33,41 @@ export const SLOT_TIMES: Record<number, { start: string; end: string }> = {
   9: { start: "16:30", end: "17:15" },
 };
 
+/** Günün son slotu — tablodan türetiliyor ki slot sayısı değişirse burası da
+ *  kendiliğinden güncellensin. */
+const MAX_SLOT = Math.max(...Object.keys(SLOT_TIMES).map(Number));
+
+/** Gün adının nasıl yazılacağı: kısa ("Çar"), uzun ("Çarşamba") ya da hiç. */
+export type DayFormat = "short" | "long" | "none";
+
+/**
+ * "Çarşamba 10:30 - 12:15" biçiminde okunur aralık üretir.
+ *
+ * Çok slotlu ders **son slotun bitişinde** biter: slot 3'ten başlayan 2 slotluk
+ * ders 10:30 - 12:15'tir, çünkü aradaki 15 dakikalık teneffüs de dersin
+ * kapladığı zamana dahildir.
+ *
+ * Gün son slotta biter; tablonun dışına taşan bir slotCount gelirse aralık
+ * MAX_SLOT'ta kırpılır (yanlış veride ders saatini kısa göstermek yerine günün
+ * sonuna kadar uzatmak daha doğru).
+ */
 export function formatSlotRange(
   dayOfWeek: number,
   startSlot: number,
   slotCount: number = 1,
-  showDay: boolean = true
+  dayFormat: DayFormat = "short"
 ): string {
-  const dayName = DAY_SHORT[dayOfWeek] || "";
   const startInfo = SLOT_TIMES[startSlot];
-  const endSlot = startSlot + slotCount - 1;
-  const endInfo = SLOT_TIMES[endSlot] || SLOT_TIMES[startSlot];
-
   if (!startInfo) return "";
 
+  const endSlot = Math.min(startSlot + slotCount - 1, MAX_SLOT);
+  const endInfo = SLOT_TIMES[endSlot] ?? startInfo;
+
   const timeRange = `${startInfo.start} - ${endInfo.end}`;
-  return showDay && dayName ? `${dayName} ${timeRange}` : timeRange;
+  if (dayFormat === "none") return timeRange;
+
+  // Bilinmeyen gün "?" ile görünür kalsın — sessizce düşerse hatalı veri
+  // ekranda normal bir kayıt gibi durur.
+  const dayName = (dayFormat === "long" ? DAY_FULL : DAY_SHORT)[dayOfWeek] ?? "?";
+  return `${dayName} ${timeRange}`;
 }

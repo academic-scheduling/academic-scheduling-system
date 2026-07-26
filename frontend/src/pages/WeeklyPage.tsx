@@ -257,6 +257,10 @@ export default function WeeklyPage() {
 
   /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
   const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
+    if (entry.status !== "DRAFT") {
+      notifications.show({ color: "red", message: "Yayınlanmış girişler taşınamaz. Önce taslağa çevirin." });
+      return;
+    }
     if (entry.day_of_week === day && entry.start_slot === slot) return;
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
@@ -275,8 +279,12 @@ export default function WeeklyPage() {
     const d = drag;
     setDrag(null);
     if (!d || !canWrite) return;
-    if (d.kind === "move") void moveEntry(d.entry, day, slot);
-    else setPlacing({ drag: d, day, slot });
+    if (d.kind === "move") {
+      if (d.entry.status !== "DRAFT") return;
+      void moveEntry(d.entry, day, slot);
+    } else {
+      setPlacing({ drag: d, day, slot });
+    }
   };
 
   const deleteEntry = async (e: WeeklyEntry) => {

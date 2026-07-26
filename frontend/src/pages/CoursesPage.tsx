@@ -353,20 +353,24 @@ export default function CoursesPage() {
                         const room = s.default_classroom_id ? roomById[s.default_classroom_id] : null;
                         const entries = entriesBySection[s.id] ?? [];
                         return (
-                          <Group key={s.id} gap="sm" wrap="nowrap">
-                            <Badge variant="outline" size="sm" w={70}>Şube {s.section_no}</Badge>
-                            <Text size="sm" style={{ minWidth: 190 }}>{s.lecturer.full_name}</Text>
-                            <Text size="sm" c="dimmed" style={{ minWidth: 80 }}>
-                              {s.expected_students} öğrenci
-                            </Text>
-                            <Text size="sm" c="dimmed" style={{ minWidth: 130 }}>
+                          // Sabit minWidth yerine ORANTILI ızgara: sütunlar pencere
+                          // genişledikçe birlikte büyür, dar ekranda birlikte küçülür.
+                          // Şube rozeti sabit kalır (içeriği hep aynı boyda).
+                          <div key={s.id} style={{
+                            display: "grid", alignItems: "center", gap: "var(--mantine-spacing-sm)",
+                            gridTemplateColumns: "76px 2.4fr 0.9fr 1.8fr 2.4fr",
+                          }}>
+                            <Badge variant="outline" size="sm">Şube {s.section_no}</Badge>
+                            <Text size="sm" truncate>{s.lecturer.full_name}</Text>
+                            <Text size="sm" c="dimmed">{s.expected_students} öğrenci</Text>
+                            <Text size="sm" c="dimmed" truncate>
                               {room ? `${room.building.name} ${room.room_code}` : "derslik yok"}
                             </Text>
                             {/* Haftalık programa yerleştiyse gün + saat aralığı */}
                             {entries.length === 0 ? (
                               <Text size="sm" c="dimmed">programda değil</Text>
                             ) : (
-                              <Group gap={4}>
+                              <Group gap={4} wrap="wrap">
                                 {entries.map((e) => (
                                   <Badge
                                     key={e.id}
@@ -374,12 +378,14 @@ export default function CoursesPage() {
                                     color={e.status === "SUBMITTED" ? "green" : "yellow"}
                                     size="sm"
                                   >
-                                    {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count)}
+                                    {/* kısa gün adı: "Pzt 13:30-15:15" — satırda
+                                        diğer sütunlara yer bırakır */}
+                                    {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, true)}
                                   </Badge>
                                 ))}
                               </Group>
                             )}
-                          </Group>
+                          </div>
                         );
                       })}
                   </Stack>

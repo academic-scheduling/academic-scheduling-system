@@ -24,4 +24,5 @@ services:
       - "1025:1025"
 
 volumes:
-  pgdata:
+  pgdata:source .venv/bin/activate
+  

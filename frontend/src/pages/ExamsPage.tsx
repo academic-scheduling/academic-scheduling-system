@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
-  NumberInput, Paper, ScrollArea, Select, Stack, Text, TextInput, Title,
+  Menu, NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
-  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconPlus, IconTrash,
+  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconDots, IconPlus, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -127,6 +127,9 @@ export default function ExamsPage() {
     useState<{ date: string; min: number; courseId?: number } | null>(null);
   const [editing, setEditing] = useState<Exam | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [search, setSearch] = useState("");
 
   const load = () => {
@@ -277,6 +280,34 @@ export default function ExamsPage() {
     else setPlacing({ date: tarih, min: dk, courseId: d.courseId });
   };
 
+  /** Sınavı olan tarihler — hafta seçicideki kırmızı noktalar için. */
+  const examDates = useMemo(() => new Set(exams.map((e) => e.exam_date)), [exams]);
+
+  /** Tüm programı temizle: bu cohort'un TASLAK sınavlarını siler.
+   *  Yayınlanmışlara dokunmaz — onlar için önce taslağa çevirmek gerekir (K-03),
+   *  zaten sunucu da 409 ile reddederdi. */
+  const tumunuTemizle = async () => {
+    setClearing(true);
+    let silinen = 0;
+    const hatalar: string[] = [];
+    for (const e of drafts) {
+      try {
+        await api.delete(`/exams/${e.id}`);
+        silinen++;
+      } catch (err) {
+        hatalar.push(`${e.course.code}: ${err instanceof ApiError ? err.message : "silinemedi"}`);
+      }
+    }
+    setClearing(false);
+    setClearOpen(false);
+    load();
+    notifications.show({
+      color: hatalar.length ? "orange" : "gray",
+      title: `${silinen} sınav silindi`,
+      message: hatalar.length ? `${hatalar.length} tanesi silinemedi: ${hatalar[0]}` : "Taslak sınav kalmadı",
+    });
+  };
+
   const taslagaCevir = async (e: Exam) => {
     try {
       await api.post(`/exams/${e.id}/revert-to-draft`);
@@ -316,9 +347,18 @@ export default function ExamsPage() {
           <ActionIcon variant="subtle" radius="md" onClick={() => gitHafta(-1)} aria-label="Önceki hafta">
             <IconChevronLeft size={18} />
           </ActionIcon>
-          <Text size="sm" fw={500} style={{ minWidth: 150, textAlign: "center" }}>
-            {haftaEtiketi()}
-          </Text>
+          <Popover opened={pickerOpen} onChange={setPickerOpen} position="bottom" withArrow shadow="md">
+            <Popover.Target>
+              <Button variant="subtle" size="xs" radius="md" onClick={() => setPickerOpen((o) => !o)}
+                style={{ minWidth: 150 }}>
+                {haftaEtiketi()}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown p={6}>
+              <WeekPicker weekStart={weekStart} examDates={examDates}
+                onPick={(pzt) => { setWeekPinned(true); setWeekStart(pzt); setPickerOpen(false); }} />
+            </Popover.Dropdown>
+          </Popover>
           <ActionIcon variant="subtle" radius="md" onClick={() => gitHafta(1)} aria-label="Sonraki hafta">
             <IconChevronRight size={18} />
           </ActionIcon>
@@ -332,6 +372,23 @@ export default function ExamsPage() {
               Yayınla{drafts.length ? ` (${drafts.length})` : ""}
             </Button>
           )}
+          {canWriteAny && (
+            <Menu position="bottom-end" withArrow>
+              <Menu.Target>
+                <ActionIcon variant="subtle" radius="md" aria-label="Diğer işlemler">
+                  <IconDots size={18} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Temizle</Menu.Label>
+                <Menu.Item color="red" leftSection={<IconTrash size={14} />}
+                  disabled={drafts.length === 0}
+                  onClick={() => setClearOpen(true)}>
+                  Tüm sınav programını temizle
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          )}
         </Group>
       </Group>
 
@@ -343,7 +400,6 @@ export default function ExamsPage() {
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
                    height: HEAD_H + HOUR_H * (HOURS.length - 1) + 32,
                    background: "var(--mantine-color-gray-0)" }}>
-          <Text size="xs" c="dimmed" mb={6}>Dersler · gride sürükle</Text>
           <TextInput size="xs" mb={10} radius="md" variant="filled" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
             placeholder="Ders ara" />
@@ -371,19 +427,7 @@ export default function ExamsPage() {
                              border: "1px solid var(--mantine-color-gray-2)",
                              cursor: yazabilir ? "grab" : "default",
                              opacity: done ? 0.45 : 1 }}>
-                    <Group gap={4} justify="space-between" wrap="nowrap">
-                      <Text size="xs" fw={500}>{c.code}</Text>
-                      {/* Hangi sınav türü tanımlı: eksik olan bir bakışta görünsün */}
-                      <Group gap={2} wrap="nowrap">
-                        {(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((t) => (
-                          <Badge key={t} size="xs" variant={turler.has(t) ? "filled" : "outline"}
-                            color={turler.has(t) ? "violet" : "gray"}
-                            style={{ paddingInline: 5, opacity: turler.has(t) ? 1 : 0.4 }}>
-                            {EXAM_TYPE_LABELS[t][0]}
-                          </Badge>
-                        ))}
-                      </Group>
-                    </Group>
+                    <Text size="xs" fw={500}>{c.code}</Text>
                     <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
                   </Paper>
                 );
@@ -568,6 +612,28 @@ export default function ExamsPage() {
           }} />
       )}
 
+      {clearOpen && (
+        <Modal opened onClose={() => setClearOpen(false)} title="Tüm sınav programını temizle" size="sm">
+          <Stack gap="sm">
+            <Alert color="red" variant="light">
+              Bu sınıfın <b>{drafts.length} taslak sınavı</b> kalıcı olarak silinecek.
+              Bu işlem geri alınamaz.
+            </Alert>
+            <Text size="xs" c="dimmed">
+              Yayınlanmış sınavlara dokunulmaz; onları silmek için önce taslağa çevirmen gerekir.
+            </Text>
+            <Group justify="flex-end" gap="xs">
+              <Button variant="subtle" onClick={() => setClearOpen(false)} disabled={clearing}>
+                Vazgeç
+              </Button>
+              <Button color="red" onClick={tumunuTemizle} loading={clearing}>
+                {drafts.length} sınavı sil
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
+
       {submitOpen && (
         <SubmitModal drafts={drafts} onClose={() => setSubmitOpen(false)}
           onDone={(warnings) => {
@@ -581,6 +647,79 @@ export default function ExamsPage() {
             });
           }} />
       )}
+    </Stack>
+  );
+}
+
+const AY_UZUN = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+/** Hafta seçici: ay ay gezinilir, HAFTA satırına tıklanır.
+ *
+ *  Gün değil HAFTA seçtiriyoruz çünkü takvim zaten hafta gösteriyor — gün
+ *  seçtirmek kullanıcıyı "hangi gün?" diye gereksiz bir karara zorlardı.
+ *  Sınavı olan haftalar kırmızı noktayla işaretli: kullanıcı boş haftalarda
+ *  dolaşmak yerine doğrudan dolu haftaya gidebilsin. */
+function WeekPicker({ weekStart, examDates, onPick }: {
+  weekStart: Date;
+  examDates: Set<string>;
+  onPick: (monday: Date) => void;
+}) {
+  const [ay, setAy] = useState(() => new Date(weekStart.getFullYear(), weekStart.getMonth(), 1));
+
+  // Ayı kapsayan tam haftalar (ilk günün pazartesisinden başlar)
+  const haftalar = useMemo(() => {
+    const ilk = mondayOf(new Date(ay.getFullYear(), ay.getMonth(), 1));
+    const out: Date[] = [];
+    for (let i = 0; i < 6; i++) {
+      const p = addDays(ilk, i * 7);
+      if (i > 0 && p.getMonth() !== ay.getMonth() && p > ay) break;
+      out.push(p);
+    }
+    return out;
+  }, [ay]);
+
+  const haftadaSinavVar = (pzt: Date) =>
+    [0, 1, 2, 3, 4].some((i) => examDates.has(iso(addDays(pzt, i))));
+
+  return (
+    <Stack gap={6} p={4} style={{ minWidth: 250 }}>
+      <Group justify="space-between">
+        <ActionIcon variant="subtle" size="sm" aria-label="Önceki ay"
+          onClick={() => setAy(new Date(ay.getFullYear(), ay.getMonth() - 1, 1))}>
+          <IconChevronLeft size={16} />
+        </ActionIcon>
+        <Text size="sm" fw={500}>{AY_UZUN[ay.getMonth()]} {ay.getFullYear()}</Text>
+        <ActionIcon variant="subtle" size="sm" aria-label="Sonraki ay"
+          onClick={() => setAy(new Date(ay.getFullYear(), ay.getMonth() + 1, 1))}>
+          <IconChevronRight size={16} />
+        </ActionIcon>
+      </Group>
+      <Stack gap={2}>
+        {haftalar.map((pzt) => {
+          const secili = iso(pzt) === iso(weekStart);
+          const dolu = haftadaSinavVar(pzt);
+          const son = addDays(pzt, 4);
+          return (
+            <Group key={iso(pzt)} justify="space-between" wrap="nowrap"
+              onClick={() => onPick(pzt)}
+              style={{
+                cursor: "pointer", borderRadius: 6, padding: "5px 8px",
+                background: secili ? "var(--mantine-color-blue-1)" : undefined,
+              }}>
+              <Text size="xs" fw={secili ? 600 : 400}>
+                {pzt.getDate()} {AY[pzt.getMonth()]} – {son.getDate()} {AY[son.getMonth()]}
+              </Text>
+              {dolu && (
+                <span title="Bu haftada sınav var" style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: "var(--mantine-color-red-6)", flexShrink: 0,
+                }} />
+              )}
+            </Group>
+          );
+        })}
+      </Stack>
     </Stack>
   );
 }

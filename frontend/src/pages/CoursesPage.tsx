@@ -9,7 +9,7 @@ import { IconPencil, IconTrash, IconUsers } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { SEMESTER_LABELS } from "../api/types";
-import { formatSlotRange } from "../lib/slots";
+import { formatSlotRange } from "../utils/slots";
 import type {
   Classroom, Course, CourseSection, Department, Lecturer, SemesterType, WeeklyEntry,
 } from "../api/types";

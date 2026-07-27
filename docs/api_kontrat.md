@@ -334,7 +334,7 @@ Alanlar POST ile aynı, hepsi opsiyonel; `classroom_ids` verilirse liste tam de�
 Cevap 200: `{ "exam": {...}, "conflicts": [...] }`
 Hata 409: sınav SUBMITTED — önce draft'a çevrilmeli.
 
-### POST /exams/submit — haftalıkla aynı sözleşme
+### POST /exams/submit — İstek: { "exam_ids": [12, 13] }, Cevap (200): { "submitted": [12, 13], "warnings": [ConflictResult...] }
 ### POST /exams/{id}/revert-to-draft · DELETE /exams/{id} (yalnız DRAFT)
 
 ---

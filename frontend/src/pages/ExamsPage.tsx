@@ -55,6 +55,14 @@ const addDays = (d: Date, n: number) => {
   return x;
 };
 
+/** K-06: Hafta sonu (Cumartesi / Pazar) sınav günü olarak seçilemez. */
+function isWeekend(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const d = new Date(`${dateStr}T00:00:00`);
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
 /** Sürüklenen şey: paletten yeni sınav mı, var olan sınavın taşınması mı. */
@@ -774,7 +782,8 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [not, setNot] = useState(exam?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
-  const eksik = !courseId || !tarih || !saat || !hoca;
+  const haftaSonu = isWeekend(tarih);
+  const eksik = !courseId || !tarih || !saat || !hoca || haftaSonu;
 
   const kaydet = async () => {
     setBusy(true);
@@ -809,6 +818,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
           data={(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((k) => ({
             value: k, label: EXAM_TYPE_LABELS[k] }))} />
         <TextInput label="Tarih" type="date" value={tarih}
+          error={haftaSonu ? "Hafta sonu (Cumartesi/Pazar) sınav günü olarak seçilemez (K-06)" : undefined}
           onChange={(ev) => setTarih(ev.currentTarget.value)} />
         <Group grow>
           <TextInput label="Başlangıç" type="time" value={saat}

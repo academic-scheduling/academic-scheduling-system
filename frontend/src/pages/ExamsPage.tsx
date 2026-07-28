@@ -55,6 +55,14 @@ const addDays = (d: Date, n: number) => {
   return x;
 };
 
+/** K-06: Hafta sonu (Cumartesi / Pazar) sınav günü olarak seçilemez. */
+function isWeekend(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const d = new Date(`${dateStr}T00:00:00`);
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
 /** Sürüklenen şey: paletten yeni sınav mı, var olan sınavın taşınması mı. */
@@ -773,13 +781,6 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [hoca, setHoca] = useState<string | null>(exam ? String(exam.lecturer.id) : null);
   const [not, setNot] = useState(exam?.notes ?? "");
   const [busy, setBusy] = useState(false);
-
-  const isWeekend = (dateStr: string) => {
-    if (!dateStr) return false;
-    const d = new Date(`${dateStr}T00:00:00`);
-    const day = d.getDay();
-    return day === 0 || day === 6;
-  };
 
   const haftaSonu = isWeekend(tarih);
   const eksik = !courseId || !tarih || !saat || !hoca || haftaSonu;

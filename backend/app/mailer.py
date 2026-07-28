@@ -3,7 +3,15 @@ from email.message import EmailMessage
 from app.config import settings
 
 def send_invitation_email(to_email: str, to_name: str, raw_token: str) -> None:
-    """Mailpit'e (dev SMTP) aktivasyon linkli davet maili gönderir."""
+    """Aktivasyon linkli davet maili gönderir.
+
+    Aynı fonksiyon iki ortamda da çalışır:
+      - Geliştirme: Mailpit (kimlik doğrulama yok, TLS yok) — .env'de bu üç
+        ayar boş kaldığı için aşağıdaki iki blok atlanır, davranış eskisiyle
+        birebir aynı kalır.
+      - Gerçek SMTP: SMTP_STARTTLS=true + SMTP_USER/SMTP_PASSWORD doldurulur.
+        Sağlayıcıların tamamı şifrelenmemiş ve kimliksiz gönderimi reddeder.
+    """
     activation_link = f"{settings.frontend_base_url}/activate?token={raw_token}"
 
     msg = EmailMessage()
@@ -18,5 +26,14 @@ def send_invitation_email(to_email: str, to_name: str, raw_token: str) -> None:
         f"Bu bağlantı {settings.invitation_expire_hours // 24} gün geçerlidir.\n"
     )
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+    # timeout: Mailpit aynı makinede olduğu için gecikme sorun değildi; uzaktaki
+    # bir sağlayıcı yanıt vermezse timeout'suz bağlantı isteği süresiz askıda
+    # bırakır ve davet ucu hiç dönmez.
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+        if settings.smtp_starttls:
+            server.starttls()
+        # Kullanıcı adı boşsa login() çağırmıyoruz: Mailpit kimlik doğrulama
+        # desteklemediği için boş login denemesi bağlantıyı düşürürdü.
+        if settings.smtp_user:
+            server.login(settings.smtp_user, settings.smtp_password)
         server.send_message(msg)

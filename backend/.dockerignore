@@ -1,0 +1,9 @@
+# Imaja girmemesi gerekenler: sanal ortam (imajin kendi pip kurulumu var),
+# derleme artiklari, testler ve HER SEYDEN ONCE .env -- sirlar imaja gomulmez,
+# platformun ortam degiskeni ekranindan verilir.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+tests/

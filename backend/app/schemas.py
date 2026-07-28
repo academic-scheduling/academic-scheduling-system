@@ -137,12 +137,14 @@ class LecturerCreate(BaseModel):
     full_name: str
     email: str | None = None
     is_external: bool = False
+    department_id: int | None = None          # bağlı bölüm (opsiyonel; UI zorunlu tutar)
 
 class LecturerUpdate(BaseModel):
     full_name: str | None = None
     email: str | None = None
     is_external: bool | None = None
     active: bool | None = None
+    department_id: int | None = None
 
 class LecturerOut(BaseModel):
     id: int
@@ -150,6 +152,7 @@ class LecturerOut(BaseModel):
     normalized_name: str                      # K-28: unvansız ad — istemci sıralaması bunu kullanır
     is_external: bool
     active: bool                              # K-28: yönetim ekranı pasifi ayırt eder
+    department: DepartmentOut | None = None    # bağlı bölüm (yoksa null)
     model_config = ConfigDict(from_attributes=True)
 
 # --- Binalar (WP2, K-18) ---

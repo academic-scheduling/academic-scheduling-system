@@ -31,6 +31,44 @@ def test_create_lecturer():
     r = client.post("/lecturers", json={"full_name": name}, headers=h)
     assert r.status_code == 201, r.text
     assert r.json()["is_external"] is False
+    assert r.json()["department"] is None       # bölüm opsiyonel
+
+
+def _make_department(h):
+    r = client.post("/departments", json={
+        "name": "Hoca Bölümü", "code": uuid.uuid4().hex[:6].upper(),
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_create_lecturer_with_department():
+    h = admin_headers()
+    dep = _make_department(h)
+    r = client.post("/lecturers", json={
+        "full_name": _uname("Dr. Bölümlü Hoca"), "department_id": dep["id"],
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    assert r.json()["department"]["id"] == dep["id"]
+    assert r.json()["department"]["code"] == dep["code"]
+
+
+def test_lecturer_foreign_department_rejected():
+    h = admin_headers()
+    foreign_dep = _make_department(foreign_admin_headers())   # başka workgroup
+    r = client.post("/lecturers", json={
+        "full_name": _uname("Dr. Yabancı Bağ"), "department_id": foreign_dep["id"],
+    }, headers=h)
+    assert r.status_code == 400
+
+
+def test_update_lecturer_department():
+    h = admin_headers()
+    dep = _make_department(h)
+    lec = client.post("/lecturers", json={"full_name": _uname("Dr. Güncel")}, headers=h).json()
+    r = client.patch(f"/lecturers/{lec['id']}", json={"department_id": dep["id"]}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["department"]["id"] == dep["id"]
 
 def test_duplicate_by_normalized_name():
     """Farklı unvan yazımı aynı kişiyse 409 — K-08'in asıl amacı."""

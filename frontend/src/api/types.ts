@@ -56,6 +56,8 @@ export type Lecturer = {
   normalized_name: string;
   is_external: boolean;
   active: boolean;
+  /** Bağlı olduğu bölüm (etiket; hoca başka bölümlerde de ders verebilir). */
+  department: Department | null;
 };
 
 /** Kontrat §5 · GET /buildings elemanı (K-18, K-30) */

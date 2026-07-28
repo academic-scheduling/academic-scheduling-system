@@ -333,10 +333,17 @@ class Lecturer(Base):
     normalized_name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str | None] = mapped_column(String(254))
     is_external: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # Hocanin BAGLI oldugu (asil) bolum. Yalniz bilgi/etiket amacli: hoca baska
+    # bolumlerin subelerine de atanabilir (K-08 workgroup geneli paylasim). Bolum
+    # silinirse hoca kalir, sadece bagi bosalir (SET NULL).
+    department_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("departments.id", ondelete="SET NULL")
+    )
     source: Mapped[str] = mapped_column(String(20), server_default=text("'IMPORT'"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="lecturers")
+    department: Mapped["Department | None"] = relationship()
     sections: Mapped[list["CourseSection"]] = relationship(
         back_populates="lecturer"
     )

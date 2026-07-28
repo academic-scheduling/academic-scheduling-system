@@ -1,13 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.deps import get_db, get_current_user, require_lecturer_manager
-from app.models import CourseSection, Exam, Lecturer, User
+from app.models import CourseSection, Department, Exam, Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
 from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/lecturers", tags=["lecturers"])
+
+
+def _validate_department(db: Session, user: User, department_id: int | None) -> None:
+    """Verilen bölüm bizim workgroup'ta mı? (Hoca başka bölümde ders verebilir
+    ama BAĞLI bölümü kendi workgroup'undan olmalı.) None ise kontrol yok."""
+    if department_id is None:
+        return
+    dep = db.get(Department, department_id)
+    if dep is None or dep.workgroup_id != user.workgroup_id:
+        raise HTTPException(status_code=400, detail="Geçersiz bölüm seçimi")
 
 
 @router.get("", response_model=list[LecturerOut])
@@ -21,7 +31,11 @@ def list_lecturers(
 ):
     # Varsayılan yalnız aktifler: ders formundaki autocomplete pasife alınmış
     # hocayı ÖNERMEMELİ (K-08/K-28). Yönetim ekranı include_inactive=true geçer.
-    q = db.query(Lecturer).filter(Lecturer.workgroup_id == user.workgroup_id)
+    q = (
+        db.query(Lecturer)
+        .options(joinedload(Lecturer.department))
+        .filter(Lecturer.workgroup_id == user.workgroup_id)
+    )
     if not include_inactive:
         q = q.filter(Lecturer.active.is_(True))
     if search:
@@ -50,12 +64,15 @@ def create_lecturer(
             detail=f"Bu hoca zaten kayıtlı: {clash.full_name}",
         )
 
+    _validate_department(db, manager, payload.department_id)
+
     lec = Lecturer(
         workgroup_id=manager.workgroup_id,
         full_name=payload.full_name,
         normalized_name=normalized,
         email=payload.email,
         is_external=payload.is_external,
+        department_id=payload.department_id,
         source="MANUAL",          # elle eklenen 40/a; web import'u IMPORT yazar
     )
     db.add(lec)
@@ -96,6 +113,9 @@ def update_lecturer(
                     detail=f"Bu hoca zaten kayıtlı: {clash.full_name}",
                 )
         lec.normalized_name = normalized
+
+    if "department_id" in data:
+        _validate_department(db, manager, data["department_id"])
 
     ozet = build_change_summary(lec, data)
     for field, value in data.items():

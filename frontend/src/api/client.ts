@@ -2,7 +2,17 @@
 // {detail} hata formatı, 401 oturum düşmesi) burada bir kez kodlanır;
 // ekranlar api.get/post/patch/delete dışında hiçbir şey bilmez.
 
-const BASE_URL = "/api"; // vite.config.ts proxy'si /api -> localhost:8000
+// Geliştirmede "/api" kalır ve vite.config.ts proxy'si isteği localhost:8000'e
+// taşır. Üretim derlemesinde proxy diye bir şey YOKTUR — dev sunucusuna aitti —
+// bu yüzden yayına çıkarken VITE_API_BASE_URL ile backend'in gerçek adresi
+// verilir. Değişken derleme anında gömülür (VITE_ öneki olmayanı Vite yaymaz).
+//
+// ?? DEĞİL: .env dosyasında "VITE_API_BASE_URL=" satırı değişkeni tanımsız
+// değil BOŞ STRING yapar; ?? yalnız null/undefined yakaladığı için adres boşa
+// düşer ve tüm istekler yanlış yola gider. Sondaki "/" da temizleniyor, yoksa
+// "https://api.x/" + "/courses" çift eğik çizgi üretir.
+const RAW_BASE = import.meta.env.VITE_API_BASE_URL?.trim();
+const BASE_URL = RAW_BASE ? RAW_BASE.replace(/\/+$/, "") : "/api";
 const TOKEN_KEY = "access_token";
 
 // --- Token saklama ---

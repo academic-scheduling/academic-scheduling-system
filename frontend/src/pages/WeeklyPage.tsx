@@ -257,6 +257,10 @@ export default function WeeklyPage() {
 
   /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
   const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
+    if (entry.status !== "DRAFT") {
+      notifications.show({ color: "red", message: "Yayınlanmış girişler taşınamaz. Önce taslağa çevirin." });
+      return;
+    }
     if (entry.day_of_week === day && entry.start_slot === slot) return;
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
@@ -275,8 +279,12 @@ export default function WeeklyPage() {
     const d = drag;
     setDrag(null);
     if (!d || !canWrite) return;
-    if (d.kind === "move") void moveEntry(d.entry, day, slot);
-    else setPlacing({ drag: d, day, slot });
+    if (d.kind === "move") {
+      if (d.entry.status !== "DRAFT") return;
+      void moveEntry(d.entry, day, slot);
+    } else {
+      setPlacing({ drag: d, day, slot });
+    }
   };
 
   const deleteEntry = async (e: WeeklyEntry) => {
@@ -575,8 +583,7 @@ export default function WeeklyPage() {
                     {byDay.get(d)!.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
-                        highlight={hoverSection != null
-                          && c.entries.some((x) => x.section.id === hoverSection)}
+                        highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
@@ -879,22 +886,55 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDra
     ? `Şube ${e.section.section_no}`
     : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
 
+  const canDrag = canWrite && !many;
+
   return (
     <div
-      draggable={editable}
-      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(e); }}
+      draggable={canDrag}
+      onDragStart={(ev) => {
+        if (!editable) {
+          ev.preventDefault();
+          if (revertable) {
+            notifications.show({
+              color: "orange",
+              title: "Kilitli Giriş",
+              message: "Yayınlanmış girişler taşınamaz. Önce kilit butonundan taslağa çevirin.",
+            });
+          }
+          return;
+        }
+        ev.dataTransfer.effectAllowed = "move";
+        onDragStart(e);
+      }}
       onDragEnd={onDragEnd}
       // stopPropagation: yoksa tıklama gün sütununa köpürüp "boş slota ekle"
       // modalını da açardı.
-      onClick={(ev) => { ev.stopPropagation(); many ? onOpenGroup() : editable && onEdit(e); }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        if (many) {
+          onOpenGroup();
+        } else if (editable) {
+          onEdit(e);
+        } else if (revertable) {
+          notifications.show({
+            color: "orange",
+            title: "Kilitli Giriş",
+            message: "Yayınlanmış girişler kilitlidir. Düzenlemek için önce kilit butonundan taslağa çevirin.",
+          });
+        }
+      }}
       title={many
         ? `${c.entries.length} paralel şube — listelemek için tıkla`
-        : editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
+        : editable
+        ? "Düzenlemek için tıkla, taşımak için sürükle"
+        : revertable
+        ? `${e.section.course.code} · Yayınlanmış (kilitli) — düzenlemek veya taşımak için önce taslağa çevirin`
+        : undefined}
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
         borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
-        cursor: many ? "pointer" : editable ? "grab" : "default", ...style,
+        cursor: many ? "pointer" : editable ? "grab" : revertable ? "not-allowed" : "default", ...style,
         // Paletten gezinme vurgusu: hafif büyüme + halka. transition sayesinde
         // ani sıçrama değil, yumuşak sinyal.
         transition: "transform 120ms ease, box-shadow 120ms ease",

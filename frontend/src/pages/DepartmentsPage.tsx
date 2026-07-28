@@ -6,7 +6,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Department, Course } from "../api/types";
+import type { Department, Course, Lecturer } from "../api/types";
 import { SimpleGrid, ActionIcon, Tooltip } from "@mantine/core";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
 
@@ -18,6 +18,7 @@ export default function DepartmentsPage() {
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -42,12 +43,14 @@ export default function DepartmentsPage() {
     try {
       // İki isteği paralel at (Promise.all): biri diğerini beklemesin.
       // K-26: alt hesap da tüm dersleri okur, sayımlar herkes için doğru çıkar.
-      const [deps, crs] = await Promise.all([
+      const [deps, crs, lecs] = await Promise.all([
         api.get<Department[]>("/departments"),
         api.get<Course[]>("/courses"),
+        api.get<Lecturer[]>("/lecturers?include_inactive=true"),
       ]);
       setDepartments(deps);
       setCourses(crs);
+      setLecturers(lecs);
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
     } finally {
@@ -57,22 +60,21 @@ export default function DepartmentsPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Sayımlar (Yol A: istemci tarafı). Pasif ders/şube sayıma girmez.
-  // Aynı hoca iki bölümün dersini veriyorsa her ikisinde de sayılır (Set bölüm bazlı).
+  // Sayımlar (istemci tarafı). Ders: aktif dersler bölüm bazında. Öğretim üyesi:
+  // BAĞLI bölümü bu olan aktif hocalar — şube açılmasını beklemez (kullanıcı şartı).
   const countsByDept = useMemo(() => {
-    const acc: Record<number, { courses: number; lecturers: Set<number> }> = {};
+    const out: Record<number, Counts> = {};
+    for (const d of departments) out[d.id] = { courses: 0, lecturers: 0 };
     for (const c of courses) {
       if (!c.active) continue;
-      const e = (acc[c.department_id] ??= { courses: 0, lecturers: new Set<number>() });
-      e.courses += 1;
-      for (const s of c.sections) if (s.active) e.lecturers.add(s.lecturer.id);
+      (out[c.department_id] ??= { courses: 0, lecturers: 0 }).courses += 1;
     }
-    const out: Record<number, Counts> = {};
-    for (const [id, v] of Object.entries(acc)) {
-      out[Number(id)] = { courses: v.courses, lecturers: v.lecturers.size };
+    for (const l of lecturers) {
+      if (!l.active || !l.department) continue;
+      (out[l.department.id] ??= { courses: 0, lecturers: 0 }).lecturers += 1;
     }
     return out;
-  }, [courses]);
+  }, [departments, courses, lecturers]);
 
   // Arama filtresi + sıralama: bölüm koduna göre alfabetik (K-27 sonrası
   // aktif/pasif ayrımı ekranda yok, tek katmanlı sıralama yeterli).

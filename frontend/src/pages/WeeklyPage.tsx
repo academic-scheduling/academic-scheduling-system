@@ -463,7 +463,12 @@ export default function WeeklyPage() {
           <Stack gap={6}>
             {courses.length === 0 && <Text size="xs" c="dimmed">Bu sınıfta ders yok.</Text>}
             {courses.length > 0 && paletteItems.length === 0 && (
-              <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
+              <Text size="xs" c="dimmed">
+                {paletteSearch.trim()
+                  ? "Eşleşen ders yok."
+                  : "Bu sınıftaki derslerin henüz şubesi yok. Palette görünüp haftalık "
+                    + "programa yerleştirmek için Dersler sayfasından derse tıklayıp şube ekleyin."}
+              </Text>
             )}
             {paletteItems.map(({ course: c, section: s, done }) => (
               <Paper key={s.id} p={8} radius="md"

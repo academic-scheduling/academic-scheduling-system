@@ -6,7 +6,9 @@ import {
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
@@ -120,6 +122,20 @@ export default function WeeklyPage() {
   const [lecFilter, setLecFilter] = useLocalStorage<string | null>({
     key: "weekly-lec", defaultValue: null, getInitialValueInEffect: false });
 
+  // Derslikler sayfasından "Programı Gör" ile gelinirse (/weekly?classroom=ID):
+  // derslik merceğini o oda seçili aç, sonra URL'i temizle ki yenile/geri'de
+  // takılı kalmasın.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const roomParam = searchParams.get("classroom");
+    if (!roomParam) return;
+    setView("classroom");
+    setRoomFilter(roomParam);
+    searchParams.delete("classroom");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Cohort seçimi localStorage'da: başka sayfaya gidip dönünce kullanıcı
   // kaldığı yerden devam etsin, her seferinde varsayılana düşmesin.
   const [dep, setDep] = useLocalStorage<string | null>({
@@ -200,6 +216,13 @@ export default function WeeklyPage() {
     if (view === "cohort") return dep ? `department_id=${dep}&year=${year}&semester=${sem}` : null;
     if (view === "classroom") return roomFilter ? `classroom_id=${roomFilter}` : null;
     return lecFilter ? `lecturer_id=${lecFilter}` : null;
+  };
+
+  /** Dışa aktarma yolu: gördüğün mercek neyse onu indirir. Derslik merceği,
+   *  ders listesi yerine derslik ızgarasını (build_classrooms_xlsx) verir. */
+  const exportPath = (format: "xlsx" | "csv"): string => {
+    if (view === "classroom") return `/export/classrooms?classroom_id=${roomFilter}&format=${format}`;
+    return `/export/weekly?${activeQuery()}&format=${format}`;
   };
 
   const reload = () => {
@@ -407,6 +430,7 @@ export default function WeeklyPage() {
               placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
               data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
           )}
+          <ExportMenu buildPath={exportPath} disabled={!activeQuery()} />
           {canWrite && (
             <Button size="xs" radius="md" disabled={drafts.length === 0}
               onClick={() => setSubmitOpen(true)}>

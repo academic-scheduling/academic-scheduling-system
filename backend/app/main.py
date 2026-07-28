@@ -41,6 +41,9 @@ app.include_router(conflicts_router)
 from app.routers.audit_logs import router as audit_logs_router
 app.include_router(audit_logs_router)
 
+from app.routers.export import router as export_router
+app.include_router(export_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

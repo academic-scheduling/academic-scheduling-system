@@ -6,10 +6,12 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconBuilding, IconChevronDown, IconChevronUp, IconCircleCheck, IconCircleOff,
-  IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
+  IconBuilding, IconCalendarWeek, IconChevronDown, IconChevronUp, IconCircleCheck,
+  IconCircleOff, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
 } from "@tabler/icons-react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import type { Building, Classroom, RoomType } from "../api/types";
 import { ROOM_TYPE_LABELS } from "../api/types";
@@ -58,6 +60,7 @@ function SortableTh({
 
 export default function ClassroomsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Derslik/bina workgroup geneli paylaşımlı kaynak: bölüm boyutu yok (K-25).
   const canWrite = canWriteIn(user, "can_manage_classrooms");
 
@@ -262,24 +265,36 @@ export default function ClassroomsPage() {
   if (loading) return <Loader mt="xl" />;
   if (loadError) return <Alert color="red" mt="md">{loadError}</Alert>;
 
+  /** Tüm derslikler için ızgara export (seçili bina filtresi varsa ona daralır). */
+  const exportPath = (format: "xlsx" | "csv"): string => {
+    const params = new URLSearchParams({ format });
+    if (buildingFilter && buildingFilter !== ALL_BUILDINGS && buildingFilter !== EXTERNAL_ONLY) {
+      params.set("building_id", buildingFilter);
+    }
+    return `/export/classrooms?${params.toString()}`;
+  };
+
   return (
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Derslikler</Title>
-        {canWrite && (
-          <Group gap="xs">
-            <Button
-              variant="default"
-              leftSection={<IconBuilding size={16} />}
-              onClick={() => setBuildingModal(true)}
-            >
-              Binaları Yönet
-            </Button>
-            <Button onClick={openAddRoom} disabled={buildings.length === 0}>
-              + Derslik Ekle
-            </Button>
-          </Group>
-        )}
+        <Group gap="xs">
+          <ExportMenu buildPath={exportPath} label="Derslik Programı" />
+          {canWrite && (
+            <>
+              <Button
+                variant="default"
+                leftSection={<IconBuilding size={16} />}
+                onClick={() => setBuildingModal(true)}
+              >
+                Binaları Yönet
+              </Button>
+              <Button onClick={openAddRoom} disabled={buildings.length === 0}>
+                + Derslik Ekle
+              </Button>
+            </>
+          )}
+        </Group>
       </Group>
 
       {buildings.length === 0 && (
@@ -346,7 +361,16 @@ export default function ClassroomsPage() {
             <Table.Tbody>
               {visible.map((c) => (
                 <Table.Tr key={c.id} opacity={c.active ? 1 : 0.55}>
-                  <Table.Td fw={500}>{c.room_code}</Table.Td>
+                  <Table.Td fw={500}>
+                    <Tooltip label="Haftalık programını gör">
+                      <UnstyledButton onClick={() => navigate(`/weekly?classroom=${c.id}`)}>
+                        <Group gap={5} wrap="nowrap">
+                          <IconCalendarWeek size={15} opacity={0.6} />
+                          <Text size="sm" fw={500} td="underline">{c.room_code}</Text>
+                        </Group>
+                      </UnstyledButton>
+                    </Tooltip>
+                  </Table.Td>
                   <Table.Td>
                     <Group gap={6} wrap="nowrap">
                       <Text size="sm">{c.building.name}</Text>

@@ -45,6 +45,9 @@ app.include_router(audit_logs_router)
 from app.routers.export import router as export_router
 app.include_router(export_router)
 
+from app.routers.import_courses import router as import_courses_router
+app.include_router(import_courses_router)
+
 # Izin verilen kaynaklar .env'den gelir (brief: yapilandirma koda gomulmez).
 # Dev'de varsayilan yine http://localhost:5173, yani yerel kurulumda hicbir sey
 # degismez; yayinda CORS_ORIGINS gercek alan adiyla doldurulur.

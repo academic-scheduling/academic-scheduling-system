@@ -254,9 +254,11 @@ def test_other_workgroup_entries_never_enter_the_universe():
 
     # Aynı gün/saat olmasına rağmen çakışma yok (farklı derslik + farklı evren)
     assert "W1" not in rule_ids(conflicts)
-    # Ve hiçbir sonuç yabancı workgroup'un girişine referans vermemeli
-    gecen_idler = {a["id"] for c in conflicts for a in c["affected"]}
-    assert foreign_entry["id"] not in gecen_idler
+    # Ve hiçbir sonuç yabancı workgroup'un girişine referans vermemeli.
+    # (tip, id) ÇİFTİ: sınav ve haftalık giriş id uzayları ayrıdır, ham id
+    # karşılaştırması aynı numarayı taşıyan farklı türde bir kaydı eşleştirir.
+    gecen = {(a["type"], a["id"]) for c in conflicts for a in c["affected"]}
+    assert ("weekly_entry", foreign_entry["id"]) not in gecen
 
 
 # ==================================================================
@@ -321,17 +323,20 @@ def test_inactive_course_exam_leaves_scan():
     x2 = make_exam(h, c2["id"], lec["id"],
                    classroom_ids=[room["id"]], exam_type="FINAL").json()["exam"]
 
+    # (tip, id) ÇİFTİ ile arıyoruz: sınav ve haftalık giriş ayrı id uzayları
+    # kullanır, ham id karşılaştırması aynı numaralı bir haftalık girişi sınav
+    # sanıp testi yanlış yere düşürür.
+    def hard_refs():
+        r = client.get("/conflicts", headers=h)
+        return {(a["type"], a["id"]) for c in r.json()["hard"] for a in c["affected"]}
+
     # İkisi aktifken E1 var
-    r = client.get("/conflicts", headers=h)
-    hard_ids = {a["id"] for c in r.json()["hard"] for a in c["affected"]}
-    assert x2["id"] in hard_ids
+    assert ("exam", x2["id"]) in hard_refs()
 
     # c1 pasife alınınca onun sınavı evrenden düşer → x2 artık çakışmaz
     assert client.patch(f"/courses/{c1['id']}", json={"active": False},
                         headers=h).status_code == 200
-    r = client.get("/conflicts", headers=h)
-    hard_ids = {a["id"] for c in r.json()["hard"] for a in c["affected"]}
-    assert x2["id"] not in hard_ids
+    assert ("exam", x2["id"]) not in hard_refs()
 
 
 # ==================================================================

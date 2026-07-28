@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.db import check_db_connection
 
 app = FastAPI(title="Akademik Program ve Sinav Cakisma Yonetimi", version="0.1.0")
@@ -41,9 +42,12 @@ app.include_router(conflicts_router)
 from app.routers.audit_logs import router as audit_logs_router
 app.include_router(audit_logs_router)
 
+# Izin verilen kaynaklar .env'den gelir (brief: yapilandirma koda gomulmez).
+# Dev'de varsayilan yine http://localhost:5173, yani yerel kurulumda hicbir sey
+# degismez; yayinda CORS_ORIGINS gercek alan adiyla doldurulur.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

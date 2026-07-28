@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
   Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
@@ -104,6 +105,9 @@ function layoutDay(entries: WeeklyEntry[]): Cluster[] {
 
 export default function WeeklyPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
+  const ruleParam = searchParams.get("rule");
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
@@ -144,6 +148,8 @@ export default function WeeklyPage() {
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
   // Palette üzerinde gezinilen şube: gridde o şubenin kartları vurgulanır.
   const [hoverSection, setHoverSection] = useState<number | null>(null);
+  // Çakışma Raporu'ndan gelen derin bağlantı vurgusu ID'si (hedef bulunduğunda başlar, 3.5s kalır)
+  const [deepHighlightId, setDeepHighlightId] = useState<number | null>(null);
   // Boş slot üzerinde gezinme: "buraya tıklayıp ekleyebilirsin" işareti.
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "day-slot"
   // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
@@ -194,6 +200,53 @@ export default function WeeklyPage() {
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
   }, []);
+
+  // deepHighlightId hedefe ulaştığında ve kart çizildiğinde 3.5 saniyelik halka zamanlayıcısını başlatır
+  useEffect(() => {
+    if (deepHighlightId == null) return;
+    const timer = setTimeout(() => setDeepHighlightId(null), 3500);
+    return () => clearTimeout(timer);
+  }, [deepHighlightId]);
+
+  // Highlight yönlendirmesi geldiğinde hedef kaydın cohort filtrelerini otomatik ayarla
+  useEffect(() => {
+    if (!highlightId || !allCourses.length) return;
+    let cancelled = false;
+
+    api.get<WeeklyEntry[]>("/weekly-entries")
+      .then((allEntries) => {
+        if (cancelled) return;
+        const target = allEntries.find((x) => x.id === highlightId);
+        if (target) {
+          const fullCourse = allCourses.find((c) => c.id === target.section.course.id);
+          if (fullCourse) {
+            setView("cohort");
+            setDep(String(fullCourse.department_id));
+            setYear(String(fullCourse.year));
+            setSem(fullCourse.semester);
+          }
+          if (ruleParam) {
+            notifications.show({
+              id: `highlight-${highlightId}`,
+              color: "blue",
+              title: `Çakışma Vurgulandı (${ruleParam})`,
+              message: `${target.section.course.code}-${target.section.section_no} girişi takvim üzerinde gösteriliyor.`,
+            });
+          }
+          // ✅ Geri sayım KART RENDER VE FİLTRE HİZALANMASI GERÇEKLEŞTİKTEN SONRA BURADA BAŞLAR!
+          setDeepHighlightId(highlightId);
+          setSearchParams({}, { replace: true });
+        } else {
+          notifications.show({ color: "yellow", message: "Vurgulanacak kayıt bulunamadı." });
+          setSearchParams({}, { replace: true });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightId, ruleParam, allCourses, setSearchParams]);
 
   /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
   const activeQuery = (): string | null => {
@@ -257,6 +310,10 @@ export default function WeeklyPage() {
 
   /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
   const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
+    if (entry.status !== "DRAFT") {
+      notifications.show({ color: "red", message: "Yayınlanmış girişler taşınamaz. Önce taslağa çevirin." });
+      return;
+    }
     if (entry.day_of_week === day && entry.start_slot === slot) return;
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
@@ -275,8 +332,12 @@ export default function WeeklyPage() {
     const d = drag;
     setDrag(null);
     if (!d || !canWrite) return;
-    if (d.kind === "move") void moveEntry(d.entry, day, slot);
-    else setPlacing({ drag: d, day, slot });
+    if (d.kind === "move") {
+      if (d.entry.status !== "DRAFT") return;
+      void moveEntry(d.entry, day, slot);
+    } else {
+      setPlacing({ drag: d, day, slot });
+    }
   };
 
   const deleteEntry = async (e: WeeklyEntry) => {
@@ -575,8 +636,8 @@ export default function WeeklyPage() {
                     {byDay.get(d)!.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
-                        highlight={hoverSection != null
-                          && c.entries.some((x) => x.section.id === hoverSection)}
+                        highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
+                        deepHighlight={deepHighlightId != null && c.entries.some((x) => x.id === deepHighlightId)}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
@@ -828,13 +889,20 @@ function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string 
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
-  view: ViewMode; highlight: boolean;
+  view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (deepHighlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [deepHighlight]);
+
   const many = c.entries.length > 1;
   const e = c.entries[0];
   const online = e.delivery_mode !== "FACE_TO_FACE";
@@ -879,26 +947,60 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDra
     ? `Şube ${e.section.section_no}`
     : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
 
+  const canDrag = canWrite && !many;
+
   return (
     <div
-      draggable={editable}
-      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(e); }}
+      ref={cardRef}
+      draggable={canDrag}
+      onDragStart={(ev) => {
+        if (!editable) {
+          ev.preventDefault();
+          if (revertable) {
+            notifications.show({
+              color: "orange",
+              title: "Kilitli Giriş",
+              message: "Yayınlanmış girişler taşınamaz. Önce kilit butonundan taslağa çevirin.",
+            });
+          }
+          return;
+        }
+        ev.dataTransfer.effectAllowed = "move";
+        onDragStart(e);
+      }}
       onDragEnd={onDragEnd}
       // stopPropagation: yoksa tıklama gün sütununa köpürüp "boş slota ekle"
       // modalını da açardı.
-      onClick={(ev) => { ev.stopPropagation(); many ? onOpenGroup() : editable && onEdit(e); }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        if (many) {
+          onOpenGroup();
+        } else if (editable) {
+          onEdit(e);
+        } else if (revertable) {
+          notifications.show({
+            color: "orange",
+            title: "Kilitli Giriş",
+            message: "Yayınlanmış girişler kilitlidir. Düzenlemek için önce kilit butonundan taslağa çevirin.",
+          });
+        }
+      }}
       title={many
         ? `${c.entries.length} paralel şube — listelemek için tıkla`
-        : editable ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
+        : editable
+        ? "Düzenlemek için tıkla, taşımak için sürükle"
+        : revertable
+        ? `${e.section.course.code} · Yayınlanmış (kilitli) — düzenlemek veya taşımak için önce taslağa çevirin`
+        : undefined}
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
         borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
-        cursor: many ? "pointer" : editable ? "grab" : "default", ...style,
+        cursor: many ? "pointer" : editable ? "grab" : revertable ? "not-allowed" : "default", ...style,
         // Paletten gezinme vurgusu: hafif büyüme + halka. transition sayesinde
         // ani sıçrama değil, yumuşak sinyal.
         transition: "transform 120ms ease, box-shadow 120ms ease",
-        ...(highlight ? {
+        ...(highlight || deepHighlight ? {
           transform: "scale(1.04)",
           boxShadow: "0 0 0 2px var(--mantine-color-blue-5)",
           zIndex: 5,

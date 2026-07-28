@@ -335,9 +335,12 @@ Cevap 200: `{ "exam": {...}, "conflicts": [...] }`
 Hata 409: sınav SUBMITTED — önce draft'a çevrilmeli.
 
 ### POST /exams/submit (KAPI BEKÇİSİ)
-- **İstek:** `{ "exam_ids": [12, 13] }`
-- **Cevap (200):** `{ "submitted": [12, 13], "warnings": [ConflictResult...] }` → WARNING'ler submit'i durdurmaz, görünür kalır.
-- **Cevap (409):** `{ "detail": "Hard çakışma nedeniyle submit reddedildi", "conflicts": [ConflictResult...] }` → Hep-veya-hiç: tek HARD bile tüm kümeyi düşürür (K-03). Zaten SUBMITTED bir sınav gönderilirse de 409.
+İstek: `{ "exam_ids": [12, 13] }`
+Cevap 200: `{ "submitted": [12, 13], "warnings": [ConflictResult...] }`
+  → WARNING'ler submit'i durdurmaz, görünür kalır.
+Cevap 409: `{ "detail": "Hard çakışma nedeniyle submit reddedildi",
+  "conflicts": [ConflictResult...] }` → hiçbir sınav submit edilmez (hep-veya-hiç, K-03).
+  → Zaten SUBMITTED bir sınav gönderilirse de 409.
 
 ### POST /exams/{id}/revert-to-draft · DELETE /exams/{id} (yalnız DRAFT)
 

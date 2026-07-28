@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
   NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
@@ -103,6 +104,9 @@ function layoutDay(exams: Exam[]): Placed[] {
 
 export default function ExamsPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
+  const ruleParam = searchParams.get("rule");
 
   const [exams, setExams] = useState<Exam[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -170,6 +174,36 @@ export default function ExamsPage() {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+
+  // Highlight yönlendirmesi geldiğinde hedef sınavın tarih ve cohort filtrelerini otomatik ayarla
+  useEffect(() => {
+    if (!highlightId) return;
+    api.get<Exam[]>("/exams")
+      .then((allExams) => {
+        const target = allExams.find((x) => x.id === highlightId);
+        if (target) {
+          const fullCourse = courses.find((c) => c.id === target.course.id);
+          if (fullCourse) {
+            setDep(String(fullCourse.department_id));
+            setYear(String(fullCourse.year));
+            setSem(fullCourse.semester);
+          }
+          setWeek(new Date(`${target.exam_date}T00:00:00`));
+          if (ruleParam) {
+            notifications.show({
+              id: `exam-highlight-${highlightId}`,
+              color: "blue",
+              title: `Çakışma Vurgulandı (${ruleParam})`,
+              message: `${target.course.code} ${EXAM_TYPE_LABELS[target.exam_type]} sınavı takvim üzerinde gösteriliyor.`,
+            });
+          }
+        } else {
+          notifications.show({ color: "yellow", message: "Vurgulanacak sınav bulunamadı." });
+        }
+        setSearchParams({}, { replace: true });
+      })
+      .catch(() => {});
+  }, [highlightId, ruleParam, courses, setSearchParams]);
 
   const gunler = useMemo(
     () => [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i)), [weekStart]);
@@ -517,6 +551,7 @@ export default function ExamsPage() {
                       {byDay.get(gun)!.map((e) => (
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
+                          highlight={e.id === highlightId}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
@@ -693,11 +728,18 @@ function Legend({ label, bg, bd, hatch }: { label: string; bg: string; bd: strin
   );
 }
 
-function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
-  e: Placed; hard: boolean; warn: boolean; editable: boolean; revertable: boolean;
+function ExamCard({ e, hard, warn, highlight, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+  e: Placed; hard: boolean; warn: boolean; highlight?: boolean; editable: boolean; revertable: boolean;
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
+
   const draft = e.status === "DRAFT";
   // Sınavın kendi rengi MOR: haftalık dersten (mavi) ilk bakışta ayrılsın.
   const p = hard
@@ -712,6 +754,7 @@ function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd,
 
   return (
     <div
+      ref={cardRef}
       draggable={editable}
       onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(); }}
       onDragEnd={onDragEnd}
@@ -731,6 +774,12 @@ function ExamCard({ e, hard, warn, editable, revertable, onDragStart, onDragEnd,
           : undefined,
         borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.25,
         overflow: "hidden", cursor: editable ? "pointer" : "default",
+        transition: "transform 120ms ease, box-shadow 120ms ease",
+        ...(highlight ? {
+          transform: "scale(1.04)",
+          boxShadow: "0 0 0 2px var(--mantine-color-blue-5)",
+          zIndex: 5,
+        } : null),
       }}>
       <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
         <div style={{ fontWeight: 500 }}>{e.course.code}</div>

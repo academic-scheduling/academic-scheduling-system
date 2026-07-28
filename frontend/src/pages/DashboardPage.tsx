@@ -113,11 +113,17 @@ export default function DashboardPage() {
         <StatCard label="Sınavlar" value={data.exams} />
 
         {/* Çakışma tek kart ama iki sayı: hard submit'i engeller, warning
-            engellemez (K-05). Tek toplam sayı bu ayrımı silerdi — 10 warning
-            normal bir programdır, 10 hard ise program hiç yayınlanamaz. */}
-        <StatCard
-          label="Çakışma (engel / uyarı)"
-          value={
+            engellemez (K-05). Kartın kendisine tıklanınca Çakışma Raporu'na gider. */}
+        <Paper
+          component={Link}
+          to="/conflicts"
+          withBorder
+          radius="md"
+          p="lg"
+          ta="center"
+          style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
+        >
+          <Text component="div" fw={700} fz={36} lh={1.1}>
             <Group gap={6} align="baseline" justify="center">
               <Text span inherit c={data.unresolved_hard > 0 ? "red" : undefined}>
                 {data.unresolved_hard}
@@ -127,8 +133,9 @@ export default function DashboardPage() {
                 {data.unresolved_warnings}
               </Text>
             </Group>
-          }
-        />
+          </Text>
+          <Text size="sm" c="dimmed" mt={6}>Çakışma (engel / uyarı)</Text>
+        </Paper>
       </SimpleGrid>
 
       <Group justify="space-between" align="baseline" mt="xl" mb="sm">

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
   Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
@@ -104,6 +105,9 @@ function layoutDay(entries: WeeklyEntry[]): Cluster[] {
 
 export default function WeeklyPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
+  const ruleParam = searchParams.get("rule");
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
@@ -194,6 +198,36 @@ export default function WeeklyPage() {
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
   }, []);
+
+  // Highlight yönlendirmesi geldiğinde hedef kaydın cohort filtrelerini otomatik ayarla
+  useEffect(() => {
+    if (!highlightId) return;
+    api.get<WeeklyEntry[]>("/weekly-entries")
+      .then((allEntries) => {
+        const target = allEntries.find((x) => x.id === highlightId);
+        if (target) {
+          const fullCourse = allCourses.find((c) => c.id === target.section.course.id);
+          if (fullCourse) {
+            setView("cohort");
+            setDep(String(fullCourse.department_id));
+            setYear(String(fullCourse.year));
+            setSem(fullCourse.semester);
+          }
+          if (ruleParam) {
+            notifications.show({
+              id: `highlight-${highlightId}`,
+              color: "blue",
+              title: `Çakışma Vurgulandı (${ruleParam})`,
+              message: `${target.section.course.code}-${target.section.section_no} girişi takvim üzerinde gösteriliyor.`,
+            });
+          }
+        } else {
+          notifications.show({ color: "yellow", message: "Vurgulanacak kayıt bulunamadı." });
+        }
+        setSearchParams({}, { replace: true });
+      })
+      .catch(() => {});
+  }, [highlightId, ruleParam, allCourses, setSearchParams]);
 
   /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
   const activeQuery = (): string | null => {
@@ -583,7 +617,12 @@ export default function WeeklyPage() {
                     {byDay.get(d)!.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
+<<<<<<< HEAD
                         highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
+=======
+                        highlight={(hoverSection != null && c.entries.some((x) => x.section.id === hoverSection))
+                          || (highlightId != null && c.entries.some((x) => x.id === highlightId))}
+>>>>>>> b5a0e3a (feat(frontend): implement F-WP5 conflict report and dashboard UI with filter sync)
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
@@ -842,6 +881,13 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDra
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
+
   const many = c.entries.length > 1;
   const e = c.entries[0];
   const online = e.delivery_mode !== "FACE_TO_FACE";
@@ -890,6 +936,7 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, onDra
 
   return (
     <div
+      ref={cardRef}
       draggable={canDrag}
       onDragStart={(ev) => {
         if (!editable) {

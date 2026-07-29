@@ -29,7 +29,7 @@ export default function DepartmentsPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const form = useForm({
-    initialValues: { name: "", code: "" },
+    initialValues: { name: "", code: "", name_en: "", faculty_en: "" },
     validate: {
       name: (v) => (v.trim() ? null : "Bölüm adı boş olamaz"),
       code: (v) => (v.trim() ? null : "Bölüm kodu boş olamaz"),
@@ -89,23 +89,31 @@ export default function DepartmentsPage() {
 
   function openAdd() {
     setEditing(null);
-    form.setValues({ name: "", code: "" });
+    form.setValues({ name: "", code: "", name_en: "", faculty_en: "" });
     setModalOpen(true);
   }
   function openEdit(dep: Department) {
     setEditing(dep);
-    form.setValues({ name: dep.name, code: dep.code });
+    form.setValues({
+      name: dep.name, code: dep.code,
+      name_en: dep.name_en ?? "", faculty_en: dep.faculty_en ?? "",
+    });
     setModalOpen(true);
   }
 
   async function handleSubmit(values: typeof form.values) {
     setSubmitting(true);
+    const payload = {
+      ...values,
+      name_en: values.name_en.trim() || null,       // boşsa null (export TR ad'a düşer)
+      faculty_en: values.faculty_en.trim() || null,
+    };
     try {
       if (editing) {
-        await api.patch<Department>(`/departments/${editing.id}`, values);
+        await api.patch<Department>(`/departments/${editing.id}`, payload);
         notifications.show({ color: "green", message: "Bölüm güncellendi" });
       } else {
-        await api.post<Department>("/departments", values);
+        await api.post<Department>("/departments", payload);
         notifications.show({ color: "green", message: "Bölüm eklendi" });
       }
       setModalOpen(false);
@@ -208,6 +216,17 @@ export default function DepartmentsPage() {
           <Stack>
             <TextInput label="Bölüm Adı" placeholder="Bilgisayar Mühendisliği" {...form.getInputProps("name")} />
             <TextInput label="Bölüm Kodu" placeholder="CENG" {...form.getInputProps("code")} />
+            <TextInput
+              label="İngilizce Ad (opsiyonel)"
+              description="Resmi sınav programı başlığında kullanılır: DEPARTMENT OF …"
+              placeholder="Computer Engineering"
+              {...form.getInputProps("name_en")}
+            />
+            <TextInput
+              label="Fakülte (İngilizce, opsiyonel)"
+              placeholder="Faculty of Engineering"
+              {...form.getInputProps("faculty_en")}
+            />
             <Button type="submit" loading={submitting} mt="sm">
               {editing ? "Kaydet" : "Ekle"}
             </Button>

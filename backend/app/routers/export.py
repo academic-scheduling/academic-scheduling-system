@@ -5,15 +5,13 @@ Besleyen sorgular list_weekly_entries / list_exams ile ayni (K-26 izolasyonu).
 Format: xlsx (tercih) | csv (minimum). PDF MVP disi (K-09 -> backlog).
 """
 
-from datetime import date
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user
 from app.export_service import (
     CLASSROOM_HEADERS, EXAM_HEADERS, WEEKLY_HEADERS,
-    build_classrooms_xlsx, classrooms_rows,
+    build_classrooms_xlsx, build_exam_schedule_xlsx, classrooms_rows,
     exams_rows, to_csv_bytes, to_xlsx_bytes, weekly_rows,
 )
 from app.models import (
@@ -82,33 +80,53 @@ def export_weekly(
 def export_exams(
     format: str = Query("xlsx"),
     department_id: int | None = Query(None),
-    exam_type: ExamType | None = Query(None),
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
-    year: int | None = Query(None),
     semester: SemesterType | None = Query(None),
+    schedule: str = Query("midterm"),   # "midterm" | "final" (final = final + but)
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    q = _eager_exam_query(db).filter(Department.workgroup_id == user.workgroup_id)
+    # Universite formati: bir bolumun bir donemdeki TUM yillarinin sinavlari.
+    # midterm -> yalniz vize; final -> final + butunleme (ders bazinda eslenir).
+    types = ([ExamType.MIDTERM] if schedule == "midterm"
+             else [ExamType.FINAL, ExamType.MAKEUP])
+    q = (
+        _eager_exam_query(db)
+        .filter(Department.workgroup_id == user.workgroup_id)
+        .filter(Exam.exam_type.in_(types))
+    )
     if department_id is not None:
         q = q.filter(Course.department_id == department_id)
-    if exam_type is not None:
-        q = q.filter(Exam.exam_type == exam_type)
-    if date_from is not None:
-        q = q.filter(Exam.exam_date >= date_from)
-    if date_to is not None:
-        q = q.filter(Exam.exam_date <= date_to)
-    if year is not None:
-        q = q.filter(Course.year == year)
     if semester is not None:
         q = q.filter(Course.semester == semester)
-    exams = q.order_by(Exam.exam_date, Exam.start_time).all()
+    exams = q.order_by(Course.year, Course.code, Exam.exam_type).all()
 
-    return _spreadsheet_response(
-        format, EXAM_HEADERS, exams_rows(exams),
-        "sinav_programi", "Sınav Programı",
-    )
+    # Resmi baslik ingilizce: bolumun ingilizce adi/fakultesi (yoksa TR ad'a duser).
+    dep_en = ""
+    faculty_en = ""
+    if department_id is not None:
+        dep = db.get(Department, department_id)
+        if dep is not None and dep.workgroup_id == user.workgroup_id:
+            dep_en = dep.name_en or dep.name
+            faculty_en = dep.faculty_en or ""
+    sem_value = semester.value if semester is not None else ""
+    fname = "final_butunleme_programi" if schedule == "final" else "vize_programi"
+
+    if format == "csv":
+        # CSV: resmi izgara CSV'ye sigmaz; duz liste (veri) doner.
+        return Response(
+            content=to_csv_bytes(EXAM_HEADERS, exams_rows(exams)),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
+        )
+    if format == "xlsx":
+        return Response(
+            content=build_exam_schedule_xlsx(
+                exams, faculty_en=faculty_en, department_en=dep_en,
+                semester_value=sem_value, schedule=schedule),
+            media_type=_XLSX_MIME,
+            headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'},
+        )
+    raise HTTPException(status_code=400, detail=f"Desteklenmeyen format: {format}")
 
 
 @router.get("/export/classrooms")

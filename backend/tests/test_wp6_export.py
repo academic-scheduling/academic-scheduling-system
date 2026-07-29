@@ -90,6 +90,22 @@ def test_weekly_xlsx():
     assert s["course"]["code"] in _all_cell_text(r.content)
 
 
+def test_weekly_cohort_grid_xlsx():
+    # Bolum + sinif + donem birlikte -> resmi IZGARA programi (duz liste degil).
+    h = admin_headers()
+    s = _setup(h)   # ders yil 2 GUZ, Pazartesi 1. slot haftalik giris
+    r = client.get("/export/weekly", params={
+        "format": "xlsx", "department_id": s["dep"]["id"],
+        "year": 2, "semester": "FALL",
+    }, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.content[:2] == b"PK"
+    body = _all_cell_text(r.content)
+    assert "WEEKLY SCHEDULE" in body           # resmi izgara basligi
+    assert "MONDAY" in body                     # gun basligi
+    assert s["course"]["code"] in body          # ders hucresi
+
+
 # --- sinav programi ---
 
 def test_exams_midterm_schedule_xlsx():

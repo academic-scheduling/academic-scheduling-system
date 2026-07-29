@@ -130,6 +130,9 @@ export default function WeeklyPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
   const ruleParam = searchParams.get("rule");
+  const classroomParam = searchParams.get("classroom_id");
+  const lecturerParam = searchParams.get("lecturer_id");
+  const viewParam = searchParams.get("view");
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
@@ -154,6 +157,21 @@ export default function WeeklyPage() {
     key: "weekly-year", defaultValue: "1", getInitialValueInEffect: false });
   const [sem, setSem] = useLocalStorage<SemesterType>({
     key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
+
+  // Derslik listesinden gelen bağlantı, doğru merceği ve dersliği açar.
+  // URL kaynak kabul edilir: paylaşım, yenileme ve tarayıcı geri/ileri akışı
+  // localStorage'daki son tercihten bağımsız olarak aynı programı gösterir.
+  useEffect(() => {
+    if (viewParam !== "classroom" || !classroomParam) return;
+    setView("classroom");
+    setRoomFilter(classroomParam);
+  }, [viewParam, classroomParam, setView, setRoomFilter]);
+
+  useEffect(() => {
+    if (viewParam !== "lecturer" || !lecturerParam) return;
+    setView("lecturer");
+    setLecFilter(lecturerParam);
+  }, [viewParam, lecturerParam, setView, setLecFilter]);
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   // Workgroup'un TÜM dersleri bir kez çekilir. Üç iş birden görür: paletin

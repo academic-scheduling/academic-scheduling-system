@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 29 Temmuz 2026 (K-42: test izolasyonu — ayrı test veritabanı)
+**Son güncelleme:** 29 Temmuz 2026 (K-44: şifre sıfırlamaya CAPTCHA + hız sınırı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -777,3 +777,124 @@ ilk denemede engine `app:***` ile bağlanmaya çalışıp auth hatası verdi. Do
 **Kanıt:** 336 test yeşil kaldı; koşum öncesi/sonrası dev veritabanı sayaçları
 **bit bit aynı** (test verisi yalnız `scheduling_test`'e yazıldı). `scheduling_test`
 kendini yönetir — her koşum başında sıfırlandığı için orada da birikme olmaz.
+
+## K-43 · Şifre sıfırlama: davet akışının ikizi, ayrı token tablosuyla [E]
+Kontrat §1'e üç public uç eklendi: `POST /auth/forgot-password`,
+`GET /auth/reset/{token}`, `POST /auth/reset-password`. Migration `a1fc8eee1f4c`.
+
+**Neden şimdi:** Brief §6.1 minimum ekranlar listesinde *"forgot password or
+password reset placeholder"* geçiyordu ve bugüne dek hiçbir karşılığı yoktu —
+şifresini unutan kullanıcının tek çaresi admin'e gitmekti. Placeholder brief'in
+lafzını karşılardı; ekip tam akışı seçti çünkü altyapı (token üretimi, hash,
+mailer, süre/tek-kullanım deseni) davet akışından **hazır** geliyordu.
+
+**Ayrı `password_reset_tokens` tablosu — `invitation_tokens`'a `purpose` kolonu
+DEĞİL.** Reddedilen alternatif tek tabloydu. Gerekçe: iki token farklı şeyler
+yapar — davet token'ı **hesabı aktifleştirir**, sıfırlama token'ı **mevcut
+şifreyi değiştirir**. Tek tabloda tutulsalardı `_resolve_invitation` ve davet
+oluşturma yollarının hepsi `purpose`'a göre süzülmek zorunda kalırdı; bir yerde
+süzme unutulursa davet token'ıyla şifre sıfırlama (veya tersi) mümkün olurdu.
+Ayrı tablo bu karışmayı **şema düzeyinde** imkânsız kılar ve çalışan davet
+akışının kod yoluna hiç dokunmaz. Bedeli: bir migration + paralel bir resolver.
+
+**Hesap sayımı (enumeration) koruması:** `forgot-password` **her zaman** 200 ve
+**aynı gövdeyi** döner. E-posta kayıtlı olmasa da. Farklı cevap vermek —hatta
+sadece farklı metin— sistemi "bu adres kayıtlı mı" sorusuna cevap veren bir
+sorgulama aracına çevirirdi. Mail yalnız eşleşen **ACTIVE** hesaba gider.
+
+**Hangi hesap sıfırlayamaz ve neden:**
+- `PENDING`: hesabın henüz şifresi yok; yolu davet linkidir (`resend-invitation`).
+  Sıfırlama izni verilseydi davet akışının yanında ikinci bir aktivasyon kapısı
+  açılırdı.
+- `DISABLED`: erişimi K-34 gereği **bilerek** kapatılmış. Kendi kendine
+  sıfırlayabilseydi kapatma kararı delinirdi.
+- Kontrol iki yerde: mail gönderiminde ve `reset-password` anında. İkincisi
+  şart, çünkü token alındıktan sonra hesap kapatılmış olabilir (TOCTOU).
+
+**Token ömrü davetten KISA: 2 saat** (`PASSWORD_RESET_EXPIRE_HOURS`, davet 7 gün).
+Gerekçe: çalınan bir sıfırlama linki **aktif** bir hesabı doğrudan ele geçirir;
+çalınan davet linki ise henüz sahibi olmayan bir hesabı açar. Risk aynı değil,
+ömür de aynı olmamalı.
+
+**Tek kullanımlık + kardeş token'lar da yanar.** Başarılı sıfırlamada yalnız
+kullanılan token değil, o kullanıcının **bekleyen tüm** sıfırlama token'ları
+mühürlenir. Aksi halde linki ele geçiren kişi, kullanıcı şifresini düzelttikten
+sonra elindeki ikinci linkle tekrar değiştirebilirdi. Ayrıca yeni bir talep
+eskileri geçersiz kılar (`resend-invitation` deseni).
+
+**Önizleme ucu daha dar (K-24'ten sapma):** `GET /auth/reset/{token}` yalnız
+`email` döner, `name` DÖNMEZ. Davet önizlemesi adı veriyordu çünkü orada ekran
+"seni davet ettik" diyordu; burada token'ı ele geçirene kişi adı sızdırmanın
+hiçbir faydası yok.
+
+**Audit: iki ayrı eylem** — `RESET_REQUEST` ve `RESET_PASSWORD`, ikisinin de
+faili hesabın **sahibi** (K-37'deki `ACTIVATE` gerekçesi). Ayrı olmalarının
+sebebi: "link istendi ama hiç kullanılmadı" durumu görünür kalsın; birikmiş
+talep satırları olası bir saldırının ilk işaretidir.
+- **Yan etki:** `audit_logs.action` kolonu `VARCHAR(10)` idi ve `RESET_PASSWORD`
+  (14 karakter) **sığmıyordu**; kolon 20'ye genişletildi (aynı migration).
+  Migration'ın `downgrade`'i RESET_* satırları varken hata verir — sessiz veri
+  kaybı yerine açık hata doğru davranıştır.
+
+**Mailer tek gönderim yoluna indirildi** (`_send`): davet ve sıfırlama aynı
+SMTP/TLS/timeout mantığını paylaşır. Kopyalansaydı biri düzeltilirken diğeri
+unutulurdu (timeout eklenmesi tam da böyle bir düzeltmeydi).
+
+**Test:** `tests/test_wp1_password_reset.py` — 15 test; mutlu yol, hash
+doğrulaması, enumeration, geçersiz/kullanılmış/süresi dolmuş token, önizlemenin
+tüketmemesi, kardeş token yanması, PENDING/DISABLED atlamaları, TOCTOU ve iz
+kaydı. Tam paket **351 yeşil**.
+
+## K-44 · Şifre sıfırlamaya CAPTCHA + saatlik talep sınırı [E] — K-43'ün sertleştirmesi
+`POST /auth/forgot-password` public, kimliksiz ve **her çağrıda mail gönderiyor**.
+K-43 bu ucu açtı ama istismara karşı hiçbir katman koymamıştı: bir saldırgan
+ucu döngüye alıp bir kullanıcının posta kutusunu doldurabilir (mail
+bombardımanı) ya da adres deneyerek sistemi yoklayabilirdi. İki katman eklendi.
+
+**1. Google reCAPTCHA v2 ("Ben robot değilim" kutusu).** v3 (görünmez, skor)
+reddedildi: skor eşiği yanlış ayarlandığında gerçek kullanıcıyı **sessizce**
+engeller ve demoda gösterilecek bir şeyi yoktur. v2 ikili cevap verir, eşik
+ayarı gerektirmez ve süpervizöre "şu koruma var" diye gösterilebilir — brief
+§10.3'ün demo edilebilirlik çıtasıyla uyumlu.
+- **Doğrulama e-postadan ÖNCE:** CAPTCHA başarısızsa 400 döner ve hiçbir DB
+  sorgusu/mail yapılmaz. Bu 400 hiçbir şey sızdırmaz, çünkü e-posta henüz
+  sorgulanmamıştır — bilinmeyen adres de kayıtlı adres de aynı 400'ü alır.
+- **Ağ hatasında KAPALI kapı** (`verify_captcha` → `False`): Google'a
+  ulaşılamıyorsa istek geçmez. Geçirseydik koruma, Google'ı erişilemez kılarak
+  (veya sadece şansla) atlatılabilir olurdu.
+- **Anahtar yoksa doğrulama ATLANIR** [bilinçli]: yerel geliştirme, testler ve
+  internetsiz demo makinesi eskisi gibi çalışsın. Yayında korumasız kalmasın
+  diye `config.py`'nin üretim denetçisine eklendi — `ENVIRONMENT=production`
+  iken `RECAPTCHA_SECRET_KEY` boşsa uygulama **açılmaz**. Sessiz bir güvenlik
+  boşluğu yerine açılışta patlayan bir hata (K-01'deki `SECRET_KEY` deseni).
+- **Kütüphane eklenmedi:** doğrulama tek bir `httpx.post` (httpx zaten
+  bağımlılıkta), istemci tarafı ~90 satırlık bir bileşen. Bir react wrapper
+  paketi tek bir form için bağımlılık maliyetine değmiyordu.
+- **Google'ın test anahtarları HER token'ı geçirir** (`hostname:
+  testkey.google.com`) — boru hattını kanıtlar ama **sıfır koruma** sağlar.
+  Yayında gerçek anahtar şart; `.env.example` bunu açıkça yazar.
+
+**2. Saatlik talep sınırı (`PASSWORD_RESET_MAX_PER_HOUR`, varsayılan 3).**
+CAPTCHA'yı elle geçen birine karşı ikinci katman.
+- **Yeni tablo YOK:** `password_reset_tokens`'ın kendisi talep geçmişidir —
+  her talep bir satır yazar ve `created_at` taşır. Son bir saatteki satırlar
+  sayılır. (Kullanılmış/geçersiz kılınmış satırlar da sayılır; önemli olan
+  MAIL'in kaç kez gönderildiği, token'ın akıbeti değil.)
+- **SESSİZ sınır — 429 DEĞİL** [en kritik karar]: sınır aşıldığında yine aynı
+  200 döner, yalnızca mail gönderilmez. Farklı bir kod/mesaj dönmek K-43'ün
+  hesap sayımı korumasını **delerdi**, çünkü sınır yalnızca gerçek ve ACTIVE
+  hesaplarda tetiklenebilir: "429 aldıysan bu adres kayıtlıdır" demek olurdu.
+  Korumanın amacı mail bombardımanını durdurmak; susarak durdurmak bunu sağlar
+  ve hiçbir şey sızdırmaz.
+- **Hesap başına**, IP başına değil: korunan şey kullanıcının posta kutusudur.
+  Pencere kayan bir saattir, kalıcı ceza değil.
+
+**Bilinçli olarak yapılmayanlar:** `POST /auth/login` CAPTCHA'sız kaldı (kaba
+kuvvet koruması ayrı bir iş, kapsam genişletilmedi). IP bazlı genel hız sınırı
+yok — ters vekil/altyapı katmanının işi.
+
+**Test:** `test_wp1_password_reset.py` 15 → **24 test**. Yeni olanlar: anahtar
+yokken atlama, anahtar varken zorunluluk, geçerli token'ın geçmesi, CAPTCHA
+hatasının sızdırmaması, ağ hatasında kapalı kapı, sınırın maili kesmesi,
+sınırın cevabı DEĞİŞTİRMEMESİ, sınırın hesap başına olması, eski taleplerin
+pencereden düşmesi. Tam paket **360 yeşil**.

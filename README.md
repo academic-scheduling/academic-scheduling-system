@@ -211,6 +211,9 @@ Hiçbir sır kaynak koda gömülmez.
 | `SMTP_USER` / `SMTP_PASSWORD` | boş | Gerçek SMTP kimlik bilgileri. Boşsa giriş denenmez (Mailpit kimlik doğrulama istemez). |
 | `SMTP_STARTTLS` | `false` | Gerçek sağlayıcılarda `true`. |
 | `INVITATION_EXPIRE_HOURS` | `168` | Davet bağlantısının geçerlilik süresi (7 gün). |
+| `PASSWORD_RESET_EXPIRE_HOURS` | `2` | Şifre sıfırlama bağlantısının süresi. Davetten bilerek kısa (K-43): çalınan sıfırlama linki aktif bir hesabı doğrudan ele geçirir. |
+| `PASSWORD_RESET_MAX_PER_HOUR` | `3` | Aynı hesaba saatte gönderilecek en fazla sıfırlama maili (K-44). Sınır aşılırsa cevap değişmez, yalnızca mail gitmez. |
+| `RECAPTCHA_SECRET_KEY` | boş | Google reCAPTCHA v2 gizli anahtarı (K-44). **Boşsa doğrulama atlanır** — yerel geliştirme ve testler internetsiz çalışır. `ENVIRONMENT=production` iken boş bırakılırsa uygulama açılmaz. |
 | `FRONTEND_BASE_URL` | `http://localhost:5173` | Davet mailindeki aktivasyon linki buradan üretilir. |
 | `MAIL_FROM` | `no-reply@muh.example.edu.tr` | Gönderen adresi. |
 | `CORS_ORIGINS` | `http://localhost:5173` | API'yi çağırabilecek kaynaklar (virgüllü). |
@@ -221,6 +224,24 @@ Frontend'in tek değişkeni `frontend/.env` dosyasındadır:
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
 | `VITE_API_BASE_URL` | (tanımsız) | Tanımsızken `/api` kullanılır ve Vite proxy'si devreye girer. Yayında backend'in gerçek adresi yazılır. |
+| `VITE_RECAPTCHA_SITE_KEY` | (tanımsız) | reCAPTCHA v2 site anahtarı (K-44). Tanımsızken kutu hiç çizilmez. Backend'in `RECAPTCHA_SECRET_KEY`'i ile **çift halinde** ayarlanır. |
+
+### CAPTCHA'yı açmak (K-44)
+
+Şifre sıfırlama formundaki "Ben robot değilim" kutusu varsayılan olarak
+**kapalıdır** — anahtar tanımlı değilken ne çizilir ne doğrulanır, böylece
+yerel kurulum ve internetsiz demo etkilenmez.
+
+Açmak için <https://www.google.com/recaptcha/admin> adresinden bir **v2
+("I'm not a robot")** anahtar çifti alın ve ikisini birlikte doldurun:
+
+    RECAPTCHA_SECRET_KEY=...        # repo kökündeki .env  (backend)
+    VITE_RECAPTCHA_SITE_KEY=...     # frontend/.env        (istemci)
+
+Yalnız biri doldurulursa form çalışmaz: istemci token göndermezken sunucu
+bekler (veya tersi). Google'ın herkese açık test anahtarları
+(`.env.example`'da yazılı) boru hattını denemek içindir — **her token'ı
+geçirirler, gerçek koruma sağlamazlar.**
 
 ---
 

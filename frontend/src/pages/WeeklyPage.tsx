@@ -18,6 +18,7 @@ import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   HEAD_H, HEADER_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR, WEEKLY_ROW_H,
+  paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, DeliveryMode, Department,
@@ -566,11 +567,8 @@ export default function WeeklyPage() {
                 // haftada NEREYE düştüğü listeden ayrılmadan görülür.
                 onMouseEnter={() => setHoverSection(s.id)}
                 onMouseLeave={() => setHoverSection(null)}
-                style={{ cursor: canWrite ? "grab" : "default", flexShrink: 0,
-                         padding: "7px 8px", borderRadius: 8, border: "none",
-                         background: hoverSection === s.id ? "#FFFFFF" : "transparent",
-                         borderLeft: `2px solid ${hoverSection === s.id ? ACCENT.normal : "transparent"}`,
-                         transition: "background 120ms ease, border-color 120ms ease" }}>
+                style={{ ...paletteItemStyle(hoverSection === s.id),
+                         cursor: canWrite ? "grab" : "default", flexShrink: 0 }}>
                 <Group gap={6} wrap="nowrap" align="center">
                   <Text fz={12} fw={600}
                     style={{ color: done ? TEXT_MUTED : "#0F172A" }}>
@@ -739,7 +737,8 @@ export default function WeeklyPage() {
         <Legend label="Online" color="#64748B" />
       </Group>
 
-      <Paper p="md" radius="lg" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+      <Paper p="md" radius="md"
+        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
           <Text fw={500} size="sm">Çakışmalar</Text>
           <Group gap={6}>

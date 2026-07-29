@@ -18,6 +18,7 @@ import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   EXAM_HOUR_H, HEAD_H, HEADER_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR,
+  paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
@@ -455,7 +456,7 @@ export default function ExamsPage() {
                                borderColor: BORDER, background: "#FFFFFF" } }}
             placeholder="Ders ara" />
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
-            <Stack gap={2}>
+            <Stack gap={6}>
               {paletDersler.length === 0 && (
                 <Text size="xs" c="dimmed" px={4}>Bu sınıfta ders yok.</Text>
               )}
@@ -793,13 +794,8 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
       onMouseEnter={() => { setHover(true); onHover(c.id); }}
       onMouseLeave={() => { setHover(false); onHover(null); }}
       style={{
-        padding: "7px 8px", borderRadius: 8,
-        // Satır kenarlığı YOK: 20 dersin her birine çerçeve çizmek paneli
-        // ızgaraya çeviriyordu. Ayrım boşluk ve hover zemininden geliyor.
-        borderLeft: `2px solid ${hover ? ACCENT.normal : "transparent"}`,
-        background: hover ? "#F8FAFC" : "transparent",
+        ...paletteItemStyle(hover),
         cursor: draggable ? "grab" : "default",
-        transition: "background 120ms ease, border-color 120ms ease",
       }}>
       <Group gap={6} wrap="nowrap" align="center">
         <Text fz={12} fw={600} style={{ color: done ? TEXT_MUTED : "#0F172A" }}>

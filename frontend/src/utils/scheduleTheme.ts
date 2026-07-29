@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 /** Haftalık Program ve Sınav Takvimi ekranlarının ORTAK görsel belirteçleri.
  *
  *  Neden ayrı dosya: iki ekran aynı takvim dilini konuşuyor ama sabitleri
@@ -67,3 +69,33 @@ export const EXAM_HOUR_H = 63;    // bir saat
 /** Kart iç yerleşimi — iki ekranda da aynı. */
 export const CARD_RADIUS = 10;
 export const CARD_PADDING = "8px 9px";
+
+/** Sol paneldeki ders satırının kart görünümü — iki ekranda da birebir aynı.
+ *
+ *  Satır, gri panelin üzerinde BEYAZ ve çerçeveli durur: zeminle aynı renk
+ *  olduğunda nerede başlayıp bittiği belirsizdi ve liste tek bir metin
+ *  yığınına dönüşüyordu.
+ *
+ *  Sol kenar HER ZAMAN 2px: yalnız rengi değişir. Kalınlığı hover'da
+ *  büyütmek satırı yatayda oynatır ve liste titrer.
+ *
+ *  Kenarlar uzun formda yazılır — `border` kısayolu ile `borderLeftColor`
+ *  birlikte kullanılırsa React yeniden render'da kısayolu uygulayıp uzun
+ *  formu atlar ve vurgu sessizce kaybolur (kart tarafında yaşanan hata).
+ */
+export function paletteItemStyle(hover: boolean): CSSProperties {
+  return {
+    padding: "7px 9px",
+    borderRadius: 8,
+    background: PAGE_SURFACE,
+    borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 2,
+    borderTopStyle: "solid", borderRightStyle: "solid",
+    borderBottomStyle: "solid", borderLeftStyle: "solid",
+    borderTopColor: hover ? BORDER_HOVER : BORDER,
+    borderRightColor: hover ? BORDER_HOVER : BORDER,
+    borderBottomColor: hover ? BORDER_HOVER : BORDER,
+    borderLeftColor: hover ? ACCENT.normal : BORDER,
+    boxShadow: hover ? SHADOW_HOVER : SHADOW,
+    transition: "box-shadow 120ms ease, border-color 120ms ease",
+  };
+}

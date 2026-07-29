@@ -25,7 +25,10 @@ interface ImportMeta {
  *  bir react wrapper paketi bağımlılık maliyetine değmez. */
 interface Window {
   grecaptcha?: {
-    render: (
+    /** Yükleyici script'in ilk anda tanımladığı taslakta DA bulunur; `render`
+     *  ise asıl paket inince belirir. Bu yüzden ikisi ayrı opsiyonel. */
+    ready?: (callback: () => void) => void;
+    render?: (
       container: HTMLElement,
       params: {
         sitekey: string;

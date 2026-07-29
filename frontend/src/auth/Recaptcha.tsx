@@ -11,28 +11,53 @@ export const captchaEnabled = () => RECAPTCHA_SITE_KEY.length > 0;
 
 const SCRIPT_ID = "recaptcha-api";
 const SCRIPT_SRC = "https://www.google.com/recaptcha/api.js?render=explicit";
+const READY_TIMEOUT_MS = 15000;
 
-/** Script'i bir kez yükler; sonraki çağrılar aynı sözü paylaşır. */
-function loadScript(): Promise<void> {
+/**
+ * `grecaptcha.render` GERÇEKTEN çağrılabilir olana kadar bekler.
+ *
+ * Neden script'in `onload`'u YETMEZ: Google'ın api.js'i (~1 KB) asıl
+ * kütüphane değil, bir YÜKLEYİCİDİR. Çalıştığı anda `window.grecaptcha`
+ * nesnesini yalnızca `ready` taşıyan bir TASLAK olarak tanımlar; `render`
+ * asıl paket arkadan indikten sonra belirir. `onload`'da "hazır" sayıp
+ * `render()` çağırmak bu yüzden `undefined is not a function` veriyordu —
+ * ve hata, bileşenin "yüklenemedi" dalına düşüyordu.
+ *
+ * Yoklama (poll) tercih edildi: hem taslak→tam geçişini, hem script'in
+ * zaten yüklü olduğu durumu (sayfa içi ikinci mount) tek kodla karşılar.
+ */
+function whenRenderReady(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (window.grecaptcha) return resolve();
+    const started = Date.now();
+    const tick = () => {
+      if (typeof window.grecaptcha?.render === "function") return resolve();
+      if (Date.now() - started > READY_TIMEOUT_MS) {
+        // Buraya düşmenin tipik sebebi script'in hiç inememesidir
+        // (ağ yok, kurumsal güvenlik duvarı, reklam/gizlilik engelleyici).
+        return reject(new Error("recaptcha-timeout"));
+      }
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
 
-    const existing = document.getElementById(SCRIPT_ID);
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("script")));
-      return;
-    }
+/** Script'i bir kez enjekte eder, sonra API'nin hazır olmasını bekler. */
+function loadScript(): Promise<void> {
+  if (typeof window.grecaptcha?.render === "function") return Promise.resolve();
 
+  if (!document.getElementById(SCRIPT_ID)) {
     const el = document.createElement("script");
     el.id = SCRIPT_ID;
     el.src = SCRIPT_SRC;
     el.async = true;
     el.defer = true;
-    el.onload = () => resolve();
-    el.onerror = () => reject(new Error("script"));
     document.head.appendChild(el);
-  });
+  }
+
+  // Yükleme hatası ayrı bir dal gerektirmez: script inemezse `render` hiç
+  // tanımlanmaz ve zaman aşımı devreye girer.
+  return whenRenderReady();
 }
 
 type Props = {
@@ -59,7 +84,8 @@ export default function Recaptcha({ onChange }: Props) {
       .then(() => {
         // StrictMode geliştirmede efektleri iki kez çalıştırır; grecaptcha
         // aynı kutuyu ikinci kez render etmeyi hata sayar.
-        if (cancelled || rendered.current || !holder.current || !window.grecaptcha) return;
+        if (cancelled || rendered.current || !holder.current) return;
+        if (typeof window.grecaptcha?.render !== "function") return;
         rendered.current = true;
         window.grecaptcha.render(holder.current, {
           sitekey: RECAPTCHA_SITE_KEY,
@@ -87,8 +113,8 @@ export default function Recaptcha({ onChange }: Props) {
   if (failed) {
     return (
       <Text c="red" size="sm" mt="md">
-        Doğrulama bileşeni yüklenemedi. İnternet bağlantınızı kontrol edip
-        sayfayı yenileyin.
+        Doğrulama bileşeni yüklenemedi. Reklam/gizlilik engelleyicisi ya da ağ
+        kısıtı Google'a erişimi kesiyor olabilir; kontrol edip sayfayı yenileyin.
       </Text>
     );
   }

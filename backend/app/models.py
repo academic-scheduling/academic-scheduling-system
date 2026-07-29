@@ -235,6 +235,9 @@ class User(Base):
     invitation_tokens: Mapped[list["InvitationToken"]] = relationship(
         back_populates="user", passive_deletes=True
     )
+    password_reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
     memberships: Mapped[list["DepartmentMembership"]] = relationship(
         back_populates="user", passive_deletes=True
     )
@@ -257,6 +260,36 @@ class InvitationToken(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="invitation_tokens")
+
+
+class PasswordResetToken(Base):
+    """password_reset_tokens — sifre sifirlama icin tek kullanimlik, sureli link.
+
+    invitation_tokens'in ikizi ama AYRI tablo (K-43): davet token'i hesabi
+    aktiflestirir, sifirlama token'i mevcut sifreyi degistirir. Tek tabloda
+    'purpose' kolonuyla tutulsalardi bir davet token'iyla sifre sifirlama
+    (veya tersi) mumkun olabilirdi; ayri tablo bu karismayi sema duzeyinde
+    imkansiz kilar ve calisan davet akisinin kod yoluna hic dokunulmaz.
+
+    Omru davetten KISADIR (PASSWORD_RESET_EXPIRE_HOURS, varsayilan 2 saat):
+    sifirlama linki calinirsa hesabi dogrudan ele gecirir, davet linki ise
+    zaten sahipsiz bir hesabi acar.
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="password_reset_tokens")
 
 
 class Department(Base):
@@ -672,7 +705,10 @@ class AuditLog(Base):
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
     # CREATE/UPDATE/DELETE/SUBMIT + davet akisi: INVITE/ACTIVATE (K-37)
-    action: Mapped[str] = mapped_column(String(10))
+    # + sifre sifirlama: RESET_REQUEST/RESET_PASSWORD (K-43). Uzunluk 10'dan
+    # 20'ye cikti — en uzun deger 14 karakter ('RESET_PASSWORD') ve 10'a
+    # sigmiyordu.
+    action: Mapped[str] = mapped_column(String(20))
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[int] = mapped_column(BigInteger)
     # Islem ANINDAKI insan-okur ad (K-36). Log'un kendi kendine yetmesini

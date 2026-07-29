@@ -211,6 +211,7 @@ Hiçbir sır kaynak koda gömülmez.
 | `SMTP_USER` / `SMTP_PASSWORD` | boş | Gerçek SMTP kimlik bilgileri. Boşsa giriş denenmez (Mailpit kimlik doğrulama istemez). |
 | `SMTP_STARTTLS` | `false` | Gerçek sağlayıcılarda `true`. |
 | `INVITATION_EXPIRE_HOURS` | `168` | Davet bağlantısının geçerlilik süresi (7 gün). |
+| `PASSWORD_RESET_EXPIRE_HOURS` | `2` | Şifre sıfırlama bağlantısının süresi. Davetten bilerek kısa (K-43): çalınan sıfırlama linki aktif bir hesabı doğrudan ele geçirir. |
 | `FRONTEND_BASE_URL` | `http://localhost:5173` | Davet mailindeki aktivasyon linki buradan üretilir. |
 | `MAIL_FROM` | `no-reply@muh.example.edu.tr` | Gönderen adresi. |
 | `CORS_ORIGINS` | `http://localhost:5173` | API'yi çağırabilecek kaynaklar (virgüllü). |

@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
 
     invitation_expire_hours: int = 168          # 7 gün = 7 * 24
+
+    # Sifre sifirlama linki davetten KISA omurludur (K-43): calinan bir
+    # sifirlama linki AKTIF bir hesabi dogrudan ele gecirir; davet linki ise
+    # henuz sahibi olmayan bir hesabi acar. 2 saat, kullanicinin postasini
+    # acip tiklamasi icin fazlasiyla yeterli.
+    password_reset_expire_hours: int = 2
     frontend_base_url: str = "http://localhost:5173"
     mail_from: str = "no-reply@muh.example.edu.tr"
 

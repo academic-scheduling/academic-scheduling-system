@@ -3,9 +3,11 @@
 **Amaç:** Frontend/backend'in ayrışmadan önce anlaştığı sözleşme (doküman WP0 + risk maddesi).
 **Durum:** Taslak — ekip ilk toplantıda gözden geçirip dondurur. Değişiklik = karar defterine kayıt.
 **Genel kurallar:**
-- Tüm istekler `Authorization: Bearer <JWT>` başlığı taşır. Tek istisna, kimliğin
-  henüz oluşmadığı üç public uçtur: `POST /auth/login`, `GET /auth/invitation/{token}`,
-  `POST /auth/complete-invitation`.
+- Tüm istekler `Authorization: Bearer <JWT>` başlığı taşır. İstisna, kimliğin
+  henüz oluşmadığı ya da kullanıcının giriş yapamadığı **altı public uçtur**:
+  `POST /auth/login`, `GET /auth/invitation/{token}`, `POST /auth/complete-invitation`,
+  `POST /auth/forgot-password`, `GET /auth/reset/{token}`, `POST /auth/reset-password`
+  (son üçü K-43).
 - Workgroup izolasyonu token'dan gelir; istemci hiçbir yerde workgroup_id GÖNDERMEZ.
 - **Okuma/yazma ayrımı (K-25, K-26):** Workgroup içindeki her kullanıcı, tüm
   bölümlerin verisini OKUR. Yazma yetkisi iki koşula bağlıdır:
@@ -89,6 +91,41 @@ Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 **Davet linkinin adresi:** `backend/app/mailer.py` maili
 `{FRONTEND_BASE_URL}/activate?token=<ham token>` olarak kurar. Frontend'in
 `/activate` route'u token'ı **query string'den** okur; değişirse mailer da değişir.
+
+### POST /auth/forgot-password   ← K-43
+Şifre sıfırlama bağlantısı talep eder. **Public** (dördüncü public uç).
+İstek: `{ "email": "..." }`
+Cevap 200 (**HER ZAMAN**): `{ "message": "E-posta kayıtlıysa sıfırlama bağlantısı gönderildi" }`
+  ← E-postanın kayıtlı olup olmadığı **ayırt edilmez** (hesap sayımı koruması):
+    bilinmeyen adres de, kayıtlı adres de aynı kodu ve aynı gövdeyi alır.
+  ← Mail yalnız **ACTIVE** hesaba gider: `PENDING`'in yolu davet linkidir
+    (`resend-invitation`), `DISABLED` hesabın erişimi bilerek kapatılmıştır.
+  ← Yeni talep, o kullanıcının bekleyen eski sıfırlama token'larını geçersiz
+    kılar (aynı anda birden çok geçerli link dolaşmaz).
+
+### GET /auth/reset/{token}   ← K-43
+Sıfırlama ekranı AÇILIRKEN çağrılır (K-24'ün ikizi): token'ı doğrular, sahibinin
+e-postasını döner. Token'ı **tüketmez**.
+Cevap 200: `{ "email": "ceng@muh.example.edu.tr" }`
+  ← Davet önizlemesinden **dar**: `name` DÖNMEZ. Token'ı ele geçirene kişi adı
+    sızdırmanın faydası yok.
+Hata 400: `{ "detail": "Geçersiz sıfırlama bağlantısı" | "Sıfırlama bağlantısı zaten kullanılmış" | "Sıfırlama bağlantısının süresi dolmuş" }`
+  → B bu üç durumda form yerine tam sayfa hata + "yeni bağlantı iste" linki gösterir.
+Not: 404 kullanılmaz — davet uçlarıyla aynı desen.
+
+### POST /auth/reset-password   ← K-43
+İstek: `{ "token": "...", "password": "..." }` (şifre en az 8 karakter)
+Cevap 200: `{ "message": "Şifre güncellendi" }`
+Hata 400: token geçersiz/kullanılmış/süresi dolmuş (mesajlar GET ile aynı) ·
+  `{ "detail": "Hesap aktif değil" }` — token alındıktan sonra hesap kapatılmışsa.
+Hata 422: şifre 8 karakterden kısa.
+Not: GET ön-doğrulama yapmış olsa bile bu uç tüm kontrolleri **TEKRAR** eder
+  (K-24 ile aynı TOCTOU gerekçesi). Başarılı sıfırlamada kullanıcının **diğer**
+  bekleyen sıfırlama token'ları da yanar.
+
+**Sıfırlama linkinin adresi:** `{FRONTEND_BASE_URL}/reset-password?token=<ham token>`.
+Ömrü `PASSWORD_RESET_EXPIRE_HOURS` (varsayılan **2 saat**) — davetin 7 gününden
+bilerek kısa (K-43).
 
 ---
 
@@ -400,9 +437,14 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
       "change_summary": "Durum: Aktif → Pasif" } ] }
 ```
 ← `action`: `CREATE` · `UPDATE` · `DELETE` · `SUBMIT` · `INVITE` · `ACTIVATE`
+  · `RESET_REQUEST` · `RESET_PASSWORD`
   `INVITE`: davet gönderildi (ilk davet ve yeniden gönderim) — faili admin.
   `ACTIVATE`: davet edilen kişi hesabını tamamladı — **faili kişinin kendisi**,
   davet eden admin değil (K-37).
+  `RESET_REQUEST` / `RESET_PASSWORD` (K-43): şifre sıfırlama talebi ve
+  gerçekleşmesi. İkisinin de faili hesabın **sahibidir**. Ayrı iki eylem
+  olmalarının sebebi: "link istendi ama hiç kullanılmadı" durumu denetimde
+  görünür kalsın (istenmeyen talep yığını olası saldırı işaretidir).
 ← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
   `course` · `course_section` · `exam` · `weekly_entry` · `user`
 ← `entity_label`: **işlem anındaki** insan-okur ad, satıra yazılır (K-36).

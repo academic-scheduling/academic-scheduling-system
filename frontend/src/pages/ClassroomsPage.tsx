@@ -279,7 +279,10 @@ export default function ClassroomsPage() {
       <Group justify="space-between" mb="md">
         <Title order={3}>Derslikler</Title>
         <Group gap="xs">
-          <ExportMenu buildPath={exportPath} label="Derslik Programı" />
+          <ExportMenu label="Derslik Programı" items={[
+            { label: "Excel (.xlsx)", path: exportPath("xlsx") },
+            { label: "CSV (.csv)", path: exportPath("csv") },
+          ]} />
           {canWrite && (
             <>
               <Button

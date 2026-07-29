@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user
 from app.export_service import (
     CLASSROOM_HEADERS, EXAM_HEADERS, WEEKLY_HEADERS,
-    build_classrooms_xlsx, build_exam_schedule_xlsx, classrooms_rows,
-    exams_rows, to_csv_bytes, to_xlsx_bytes, weekly_rows,
+    build_classrooms_xlsx, build_exam_schedule_xlsx, build_weekly_grid_xlsx,
+    classrooms_rows, exams_rows, to_csv_bytes, to_xlsx_bytes, weekly_rows,
 )
 from app.models import (
     Classroom, Course, CourseSection, Department, Exam, ExamType, SemesterType,
@@ -70,6 +70,24 @@ def export_weekly(
     entries = q.order_by(
         WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot
     ).all()
+
+    # Cohort (bolum + sinif + donem birlikte) + xlsx -> RESMI IZGARA programi.
+    # Aksi halde (derslik/hoca mercegi ya da csv) duz liste doner.
+    is_cohort = department_id is not None and year is not None and semester is not None
+    if format == "xlsx" and is_cohort:
+        dep_en = ""
+        faculty_en = ""
+        dep = db.get(Department, department_id)
+        if dep is not None and dep.workgroup_id == user.workgroup_id:
+            dep_en = dep.name_en or dep.name
+            faculty_en = dep.faculty_en or ""
+        return Response(
+            content=build_weekly_grid_xlsx(
+                entries, faculty_en=faculty_en, department_en=dep_en,
+                semester_value=semester.value, year=year),
+            media_type=_XLSX_MIME,
+            headers={"Content-Disposition": 'attachment; filename="haftalik_program.xlsx"'},
+        )
 
     return _spreadsheet_response(
         format, WEEKLY_HEADERS, weekly_rows(entries),

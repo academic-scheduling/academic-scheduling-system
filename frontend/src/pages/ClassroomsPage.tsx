@@ -7,10 +7,11 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconBuilding, IconChevronDown, IconChevronUp, IconCircleCheck, IconCircleOff,
-  IconCalendarWeek, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
+  IconBuilding, IconCalendarWeek, IconChevronDown, IconChevronUp, IconCircleCheck,
+  IconCircleOff, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import type { Building, Classroom, RoomType } from "../api/types";
 import { ROOM_TYPE_LABELS } from "../api/types";
@@ -264,24 +265,36 @@ export default function ClassroomsPage() {
   if (loading) return <Loader mt="xl" />;
   if (loadError) return <Alert color="red" mt="md">{loadError}</Alert>;
 
+  /** Tüm derslikler için ızgara export (seçili bina filtresi varsa ona daralır). */
+  const exportPath = (format: "xlsx" | "csv"): string => {
+    const params = new URLSearchParams({ format });
+    if (buildingFilter && buildingFilter !== ALL_BUILDINGS && buildingFilter !== EXTERNAL_ONLY) {
+      params.set("building_id", buildingFilter);
+    }
+    return `/export/classrooms?${params.toString()}`;
+  };
+
   return (
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Derslikler</Title>
-        {canWrite && (
-          <Group gap="xs">
-            <Button
-              variant="default"
-              leftSection={<IconBuilding size={16} />}
-              onClick={() => setBuildingModal(true)}
-            >
-              Binaları Yönet
-            </Button>
-            <Button onClick={openAddRoom} disabled={buildings.length === 0}>
-              + Derslik Ekle
-            </Button>
-          </Group>
-        )}
+        <Group gap="xs">
+          <ExportMenu buildPath={exportPath} label="Derslik Programı" />
+          {canWrite && (
+            <>
+              <Button
+                variant="default"
+                leftSection={<IconBuilding size={16} />}
+                onClick={() => setBuildingModal(true)}
+              >
+                Binaları Yönet
+              </Button>
+              <Button onClick={openAddRoom} disabled={buildings.length === 0}>
+                + Derslik Ekle
+              </Button>
+            </>
+          )}
+        </Group>
       </Group>
 
       {buildings.length === 0 && (

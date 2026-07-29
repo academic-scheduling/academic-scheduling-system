@@ -52,6 +52,9 @@ export type Department = {
   name: string;
   code: string;
   active: boolean;
+  /** Resmi sınav programı başlığı için İngilizce ad + fakülte (opsiyonel). */
+  name_en: string | null;
+  faculty_en: string | null;
 };
 
 /** Kontrat §4 · GET /lecturers elemanı (K-28: active dahil) */

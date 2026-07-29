@@ -1,4 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { PAGE_BG } from "../utils/scheduleTheme";
 import {
   ActionIcon,
   AppShell,
@@ -144,7 +145,11 @@ export default function AppLayout() {
         })}
       </AppShell.Navbar>
 
-      <AppShell.Main>
+      {/* Sayfa zemini hafif gri: içerik kartları (takvim, paneller, tablolar)
+          beyaz kaldığı için üzerinde "yüzer" ve sınırları belli olur. Her şey
+          beyaz olduğunda kartın nerede bitip sayfanın nerede başladığı
+          okunmuyordu. */}
+      <AppShell.Main style={{ background: PAGE_BG }}>
         <Outlet />
       </AppShell.Main>
     </AppShell>

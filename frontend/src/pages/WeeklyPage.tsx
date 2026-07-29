@@ -16,7 +16,7 @@ import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  HEAD_H, HEADER_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
+  HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR, WEEKLY_ROW_H,
   paletteItemStyle,
 } from "../utils/scheduleTheme";
@@ -471,16 +471,26 @@ export default function WeeklyPage() {
       <Paper radius="md" px="md" py={10}
         style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
-            Haftalık Program
-          </Title>
-
-          <Group gap={8} align="center" wrap="wrap">
+          {/* Mercek seçici BAŞLIKLA BİRLİKTE solda sabitlenir. Ortadaki
+              süzgeç grubunda dururken, mercek değişince süzgeçlerin toplam
+              genişliği de değiştiği için (3 kutu ↔ 1 kutu) grup yeniden
+              ortalanıyor ve sekmeler yana kayıyordu — kullanıcı tam da
+              tıkladığı düğmenin yer değiştirdiğini görüyordu. */}
+          <Group gap="md" align="center" wrap="nowrap">
+            <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
+              Haftalık Program
+            </Title>
             <SegmentedControl size="xs" radius="md" value={view}
               onChange={(v) => setView(v as ViewMode)}
               styles={{ root: { height: CONTROL_H }, label: { paddingBlock: 4 } }}
               data={(Object.keys(VIEW_LABELS) as ViewMode[]).map((k) => ({
                 value: k, label: VIEW_LABELS[k] }))} />
+          </Group>
+
+          {/* Sabit genişlik: mercek değişince süzgeç sayısı değişiyor, alan
+              sabit kalmazsa çubuğun tamamı her geçişte yeniden diziliyor. */}
+          <Group gap={8} align="center" wrap="wrap" justify="center"
+            style={{ minWidth: 424 }}>
             {view === "cohort" && (
               <>
                 <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
@@ -675,12 +685,18 @@ export default function WeeklyPage() {
                     }}
                     onMouseMove={(ev) => {
                       if (!canWrite || drag) return;
+                      /* İmleç bir KARTIN üzerindeyse işaret gösterme (orada
+                         tıklamak düzenlemeyi açar). Slot aralığına bakmak
+                         YETMEZ: yan yana şeritlerde bir kart sütunun yalnız
+                         bir bölümünü kaplar, kalan boşluğa paralel şube
+                         eklenebilir. Aralığa bakan eski kontrol o boşlukları
+                         "dolu" sayıp artıyı hiç göstermiyordu.
+                         Arka plan hücreleri pointer-events:none olduğu için
+                         hedef ya kartın kendisidir ya da bu kapsayıcı. */
+                      if (ev.target !== ev.currentTarget) { setHoverCell(null); return; }
                       const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                       const slot = Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1));
-                      // Dolu slotta işaret gösterme: orada tıklamak düzenlemeyi açar.
-                      const dolu = dayClusters.some(
-                        (c) => slot >= c.start_slot && slot < c.start_slot + c.slot_count);
-                      setHoverCell(dolu ? null : `${d}-${slot}`);
+                      setHoverCell(`${d}-${slot}`);
                     }}
                     onMouseLeave={() => setHoverCell(null)}
                     style={{
@@ -694,8 +710,8 @@ export default function WeeklyPage() {
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)"
-                          // Boş slot işareti: hafif kararma + ortada artı.
-                          : hoverCell === `${d}-${s}` ? "#F8FAFC" : "#FFFFFF",
+                          // Boş slot işareti: alan grileşir + ortada artı.
+                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : "#FFFFFF",
                         pointerEvents: "none",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "background 120ms ease",

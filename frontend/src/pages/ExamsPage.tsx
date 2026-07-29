@@ -16,7 +16,7 @@ import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  EXAM_HOUR_H, HEAD_H, HEADER_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
+  EXAM_HOUR_H, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR,
   paletteItemStyle,
 } from "../utils/scheduleTheme";
@@ -532,14 +532,16 @@ export default function ExamsPage() {
                                borderBottom: `1px solid ${LINE}` }}
                       onMouseMove={(ev) => {
                         if (!canWriteAny) return;
+                        /* İmleç bir KARTIN üzerindeyse işaret gösterme. Saat
+                           aralığına bakmak YETMEZ: yan yana şeritlerde bir kart
+                           sütunun yalnız bir bölümünü kaplar, kalan boşluğa
+                           başka sınav konabilir (bkz. haftalık programdaki
+                           aynı düzeltme). */
+                        if (ev.target !== ev.currentTarget) { setHoverCell(null); return; }
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                         // 30 dakikalık adımlara yuvarla — sınavlar genelde tam/buçukta
                         const dk = DAY_START + Math.floor(y / PX / 30) * 30;
-                        const dolu = dayExams.some((e) => {
-                          const s = toMin(e.start_time);
-                          return dk >= s && dk < s + e.duration_minutes;
-                        });
-                        setHoverCell(dolu ? null : `${gun}-${dk}`);
+                        setHoverCell(`${gun}-${dk}`);
                       }}
                       onMouseLeave={() => setHoverCell(null)}
                       onClick={(ev) => {
@@ -587,7 +589,7 @@ export default function ExamsPage() {
                           position: "absolute", left: 2, right: 2,
                           top: (Number(hoverCell.split("-").pop()) - DAY_START) * PX,
                           height: 30 * PX, borderRadius: 6,
-                          background: "#F8FAFC",
+                          background: HOVER_CELL_BG,
                           display: "flex", alignItems: "center", justifyContent: "center",
                           pointerEvents: "none",
                         }}>

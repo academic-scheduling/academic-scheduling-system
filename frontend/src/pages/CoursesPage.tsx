@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Alert, Badge, Button, Divider, Group, Loader, Modal,
-  NumberInput, Paper, Select, Stack, Table, Text, TextInput, Title, Tooltip,
+  NumberInput, Paper, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { IconPencil, IconTrash, IconUsers } from "@tabler/icons-react";
+import { IconChevronRight, IconDownload, IconPencil, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
+import ImportCoursesModal from "../components/ImportCoursesModal";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { SEMESTER_LABELS } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
@@ -19,6 +20,12 @@ const ALL = "__all__";
 /** Lisans programı 4 yıl. Backend ge=1,le=6 kabul eder — daha uzun programlar
  *  (hazırlık, 5-6 yıllık bölümler) gerekirse tek yerden büyütülür. */
 const YEARS = [1, 2, 3, 4];
+
+/** Yıl + dönem → sıralı dönem numarası: 1.sınıf Güz=1, 1.sınıf Bahar=2,
+ *  2.sınıf Güz=3 … Böylece dersler 1., 2., 3. … dönem gruplarına ayrılır. */
+function donemNo(year: number, semester: SemesterType): number {
+  return (year - 1) * 2 + (semester === "FALL" ? 1 : 2);
+}
 
 type CourseFormValues = {
   department_id: string;
@@ -52,6 +59,7 @@ export default function CoursesPage() {
 
   // Bölüm/yıl/dönem/arama SUNUCU tarafında (kontrat §6 bu dördünü sunuyor).
   const [depFilter, setDepFilter] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [yearFilter, setYearFilter] = useState<string | null>(null);
   const [semFilter, setSemFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -126,12 +134,6 @@ export default function CoursesPage() {
     return m;
   }, [departments]);
 
-  const roomById = useMemo(() => {
-    const m: Record<number, Classroom> = {};
-    for (const c of classrooms) m[c.id] = c;
-    return m;
-  }, [classrooms]);
-
   /** Şube id → haftalık program girişleri (bir şube birden çok slota yerleşebilir). */
   const entriesBySection = useMemo(() => {
     const m: Record<number, WeeklyEntry[]> = {};
@@ -148,6 +150,21 @@ export default function CoursesPage() {
     const id = Number(lecFilter);
     return courses.filter((c) => c.sections.some((s) => s.lecturer.id === id));
   }, [courses, lecFilter]);
+
+  /** Dersleri döneme göre grupla, dönemleri artan sırala, her grup içinde koda göre. */
+  const grouped = useMemo(() => {
+    const m = new Map<number, Course[]>();
+    for (const c of visible) {
+      const k = donemNo(c.year, c.semester);
+      const list = m.get(k) ?? [];
+      list.push(c);
+      m.set(k, list);
+    }
+    for (const list of m.values()) {
+      list.sort((a, b) => a.code.localeCompare(b.code, "tr"));
+    }
+    return [...m.entries()].sort((a, b) => a[0] - b[0]);
+  }, [visible]);
 
   function canEdit(course: Course) {
     return canWriteIn(user, "can_manage_courses", course.department_id);
@@ -239,8 +256,27 @@ export default function CoursesPage() {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Dersler</Title>
-        {writableDepartments.length > 0 && <Button onClick={openAddCourse}>+ Ders Ekle</Button>}
+        {writableDepartments.length > 0 && (
+          <Group gap="xs">
+            <Button
+              variant="default"
+              leftSection={<IconDownload size={16} />}
+              onClick={() => setImportOpen(true)}
+            >
+              İçe Aktar
+            </Button>
+            <Button onClick={openAddCourse}>+ Ders Ekle</Button>
+          </Group>
+        )}
       </Group>
+
+      <ImportCoursesModal
+        opened={importOpen}
+        onClose={() => setImportOpen(false)}
+        departments={writableDepartments}
+        defaultDepartmentId={depFilter}
+        onImported={load}
+      />
 
       <Group mb="md">
         <TextInput
@@ -293,118 +329,45 @@ export default function CoursesPage() {
             : "Henüz ders yok."}
         </Text>
       ) : (
-        <Stack gap="md">
-          {visible.map((course) => {
-            const dep = depById[course.department_id];
-            const editable = canEdit(course);
-            return (
-              <Paper key={course.id} withBorder p="md" opacity={course.active ? 1 : 0.6}>
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <div style={{ minWidth: 0 }}>
-                    <Group gap="xs" mb={4}>
-                      <Text fw={700} size="lg">{course.code}</Text>
-                      <Text size="lg">{course.name}</Text>
-                      {/* Zorunlu da açıkça yazılır — "rozet yoksa zorunludur" çıkarımı
-                          kullanıcıya bırakılmaz (K-05 severity'sini etkileyen bir alan). */}
-                      <Badge
-                        variant="light"
-                        color={course.is_elective ? "orange" : "blue"}
-                        size="sm"
-                      >
-                        {course.is_elective ? "Seçmeli" : "Zorunlu"}
-                      </Badge>
-                      {!course.active && <Badge color="gray" size="sm">Pasif</Badge>}
+        <Stack gap="lg">
+          {grouped.map(([donem, list]) => (
+            <div key={donem}>
+              <Group gap="xs" mb="xs">
+                <Text fw={700} size="sm">{donem}. Dönem</Text>
+                <Text size="xs" c="dimmed">({list.length} ders)</Text>
+              </Group>
+              {/* Kompakt kart: sadece kod, ad, sınıf, dönem. Detay + şubeler
+                  karta tıklayınca açılan modalda (SectionsModal). */}
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                {list.map((course) => (
+                  <Paper
+                    key={course.id}
+                    withBorder
+                    p="sm"
+                    onClick={() => setSectionsCourseId(course.id)}
+                    style={{ cursor: "pointer" }}
+                    opacity={course.active ? 1 : 0.6}
+                  >
+                    <Group justify="space-between" wrap="nowrap" gap="xs">
+                      <div style={{ minWidth: 0 }}>
+                        <Text fw={700} size="sm">{course.code}</Text>
+                        <Text size="sm" truncate>{course.name}</Text>
+                      </div>
+                      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+                        <Stack gap={3} align="flex-end">
+                          <Badge size="xs" variant="light">{course.year}. sınıf</Badge>
+                          <Badge size="xs" variant="light" color="grape">
+                            {SEMESTER_LABELS[course.semester]}
+                          </Badge>
+                        </Stack>
+                        <IconChevronRight size={16} style={{ opacity: 0.35 }} />
+                      </Group>
                     </Group>
-                    <Group gap="xs">
-                      <Badge variant="light" color="gray" size="sm">{dep?.code ?? "?"}</Badge>
-                      <Text size="sm" c="dimmed">
-                        {course.year}. sınıf · {SEMESTER_LABELS[course.semester]} ·
-                        {" "}T{course.hours_theory}+U{course.hours_practice}+L{course.hours_lab}
-                      </Text>
-                    </Group>
-                  </div>
-                  {editable && (
-                    <Group gap={4} wrap="nowrap">
-                      <Tooltip label="Dersi düzenle">
-                        <ActionIcon variant="subtle" onClick={() => openEditCourse(course)}>
-                          <IconPencil size={18} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Dersi sil">
-                        <ActionIcon variant="subtle" color="red" onClick={() => setDeletingCourse(course)}>
-                          <IconTrash size={18} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Group>
-                  )}
-                </Group>
-
-                <Divider my="sm" />
-                {/* Şubeler bloğu: eylem butonu bu bloğun hizasında, sağ üstte */}
-                <Group justify="space-between" align="flex-start" wrap="nowrap">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                {course.sections.length === 0 ? (
-                  <Text size="sm" c="dimmed">Henüz şube yok.</Text>
-                ) : (
-                  <Stack gap={6}>
-                    {[...course.sections]
-                      .sort((a, b) => a.section_no - b.section_no)
-                      .map((s) => {
-                        const room = s.default_classroom_id ? roomById[s.default_classroom_id] : null;
-                        const entries = entriesBySection[s.id] ?? [];
-                        return (
-                          // Sabit minWidth yerine ORANTILI ızgara: sütunlar pencere
-                          // genişledikçe birlikte büyür, dar ekranda birlikte küçülür.
-                          // Şube rozeti sabit kalır (içeriği hep aynı boyda).
-                          <div key={s.id} style={{
-                            display: "grid", alignItems: "center", gap: "var(--mantine-spacing-sm)",
-                            gridTemplateColumns: "76px 2.4fr 0.9fr 1.8fr 2.4fr",
-                          }}>
-                            <Badge variant="outline" size="sm">Şube {s.section_no}</Badge>
-                            <Text size="sm" truncate>{s.lecturer.full_name}</Text>
-                            <Text size="sm" c="dimmed">{s.expected_students} öğrenci</Text>
-                            <Text size="sm" c="dimmed" truncate>
-                              {room ? `${room.building.name} ${room.room_code}` : "derslik yok"}
-                            </Text>
-                            {/* Haftalık programa yerleştiyse gün + saat aralığı */}
-                            {entries.length === 0 ? (
-                              <Text size="sm" c="dimmed">programda değil</Text>
-                            ) : (
-                              <Group gap={4} wrap="wrap">
-                                {entries.map((e) => (
-                                  <Badge
-                                    key={e.id}
-                                    variant="light"
-                                    color={e.status === "SUBMITTED" ? "green" : "yellow"}
-                                    size="sm"
-                                  >
-                                    {/* kısa gün adı: "Pzt 13:30 - 15:15" — satırda
-                                        diğer sütunlara yer bırakır */}
-                                    {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
-                                  </Badge>
-                                ))}
-                              </Group>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </Stack>
-                )}
-                  </div>
-                  {editable && (
-                    <Button
-                      variant="light"
-                      size="xs"
-                      leftSection={<IconUsers size={15} />}
-                      onClick={() => setSectionsCourseId(course.id)}
-                    >
-                      Şubeleri Düzenle
-                    </Button>
-                  )}
-                </Group>
-              </Paper>
-            );
-          })}
+                  </Paper>
+                ))}
+              </SimpleGrid>
+            </div>
+          ))}
         </Stack>
       )}
 
@@ -486,6 +449,10 @@ export default function CoursesPage() {
 
       <SectionsModal
         course={sectionsCourse}
+        depName={sectionsCourse ? depById[sectionsCourse.department_id]?.name : undefined}
+        canEdit={sectionsCourse ? canEdit(sectionsCourse) : false}
+        onEditCourse={(c) => { setSectionsCourseId(null); openEditCourse(c); }}
+        onDeleteCourse={(c) => { setSectionsCourseId(null); setDeletingCourse(c); }}
         onClose={() => setSectionsCourseId(null)}
         lecturers={lecturers}
         classrooms={classrooms}
@@ -496,16 +463,21 @@ export default function CoursesPage() {
   );
 }
 
-/** Şube yönetimi — ders kartındaki "Şubeleri Düzenle" ile açılır.
+/** Ders detay + şube yönetimi — ders kartına tıklayınca açılır.
  *
- *  Ekle/düzenle/sil buradadır; ders kartındaki şube satırları salt-okunur
- *  kalır. Böylece liste sade durur, eylemler tek yerde toplanır
- *  (Derslikler'deki "Binaları Yönet" modalıyla aynı desen).
+ *  Üstte dersin detayları (bölüm, sınıf, dönem, T+U+L, tür) ve yazma yetkisi
+ *  varsa ders düzenle/sil. Altında şubeler: ekle/düzenle/sil yine yalnız
+ *  yetkiliye açıktır (canEdit). Kart sade kalır, ayrıntı tek yerde toplanır.
  */
 function SectionsModal({
-  course, onClose, lecturers, classrooms, entriesBySection, onChanged,
+  course, depName, canEdit, onEditCourse, onDeleteCourse,
+  onClose, lecturers, classrooms, entriesBySection, onChanged,
 }: {
   course: Course | null;
+  depName?: string;
+  canEdit: boolean;
+  onEditCourse: (c: Course) => void;
+  onDeleteCourse: (c: Course) => void;
   onClose: () => void;
   lecturers: Lecturer[];
   classrooms: Classroom[];
@@ -610,8 +582,34 @@ function SectionsModal({
 
   return (
     <>
-      <Modal opened onClose={onClose} title={`${course.code} — Şubeler`} size="xl">
+      <Modal opened onClose={onClose} title={`${course.code} — ${course.name}`} size="xl">
         <Stack>
+          {/* Ders detayları */}
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Group gap="xs">
+              <Badge variant="light" color={course.is_elective ? "orange" : "blue"} size="sm">
+                {course.is_elective ? "Seçmeli" : "Zorunlu"}
+              </Badge>
+              {!course.active && <Badge color="gray" size="sm">Pasif</Badge>}
+              <Text size="sm" c="dimmed">
+                {depName ? `${depName} · ` : ""}{course.year}. sınıf ·{" "}
+                {SEMESTER_LABELS[course.semester]} · T{course.hours_theory}+U
+                {course.hours_practice}+L{course.hours_lab}
+              </Text>
+            </Group>
+            {canEdit && (
+              <Group gap={6} wrap="nowrap">
+                <Button size="xs" variant="light" leftSection={<IconPencil size={14} />}
+                  onClick={() => onEditCourse(course)}>Düzenle</Button>
+                <Button size="xs" variant="light" color="red" leftSection={<IconTrash size={14} />}
+                  onClick={() => onDeleteCourse(course)}>Sil</Button>
+              </Group>
+            )}
+          </Group>
+
+          <Divider />
+          <Text fw={600} size="sm">Şubeler</Text>
+
           {sections.length === 0 ? (
             <Text c="dimmed" size="sm">Henüz şube yok.</Text>
           ) : (
@@ -655,18 +653,20 @@ function SectionsModal({
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Group gap={2} wrap="nowrap">
-                          <Tooltip label="Düzenle">
-                            <ActionIcon variant="subtle" size="sm" onClick={() => startEdit(s)}>
-                              <IconPencil size={15} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Sil">
-                            <ActionIcon variant="subtle" size="sm" color="red" onClick={() => setDeleting(s)}>
-                              <IconTrash size={15} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Group>
+                        {canEdit && (
+                          <Group gap={2} wrap="nowrap">
+                            <Tooltip label="Düzenle">
+                              <ActionIcon variant="subtle" size="sm" onClick={() => startEdit(s)}>
+                                <IconPencil size={15} />
+                              </ActionIcon>
+                            </Tooltip>
+                            <Tooltip label="Sil">
+                              <ActionIcon variant="subtle" size="sm" color="red" onClick={() => setDeleting(s)}>
+                                <IconTrash size={15} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Group>
+                        )}
                       </Table.Td>
                     </Table.Tr>
                   );
@@ -675,6 +675,7 @@ function SectionsModal({
             </Table>
           )}
 
+          {canEdit && (
           <Paper withBorder p="sm">
             <form onSubmit={form.onSubmit(submit)}>
               <Stack gap="xs">
@@ -721,6 +722,7 @@ function SectionsModal({
               </Stack>
             </form>
           </Paper>
+          )}
         </Stack>
       </Modal>
 

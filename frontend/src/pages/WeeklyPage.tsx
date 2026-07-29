@@ -8,6 +8,7 @@ import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
@@ -273,6 +274,13 @@ export default function WeeklyPage() {
     return lecFilter ? `lecturer_id=${lecFilter}` : null;
   };
 
+  /** Dışa aktarma yolu: gördüğün mercek neyse onu indirir. Derslik merceği,
+   *  ders listesi yerine derslik ızgarasını (build_classrooms_xlsx) verir. */
+  const exportPath = (format: "xlsx" | "csv"): string => {
+    if (view === "classroom") return `/export/classrooms?classroom_id=${roomFilter}&format=${format}`;
+    return `/export/weekly?${activeQuery()}&format=${format}`;
+  };
+
   const reload = () => {
     const qs = activeQuery();
     if (!qs) { setEntries([]); return; }
@@ -486,6 +494,7 @@ export default function WeeklyPage() {
               placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
               data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
           )}
+          <ExportMenu buildPath={exportPath} disabled={!activeQuery()} />
           {canWrite && (
             <Button size="xs" radius="md" disabled={drafts.length === 0}
               onClick={() => setSubmitOpen(true)}>

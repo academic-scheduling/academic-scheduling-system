@@ -548,7 +548,10 @@ export default function WeeklyPage() {
           </Group>
 
           <Group gap={6} align="center" wrap="nowrap">
-            <ExportMenu buildPath={exportPath} disabled={!activeQuery()} />
+            <ExportMenu disabled={!activeQuery()} items={[
+              { label: "Excel (.xlsx)", path: exportPath("xlsx") },
+              { label: "CSV (.csv)", path: exportPath("csv") },
+            ]} />
             {canWrite && (
               <Button size="xs" radius="md" disabled={drafts.length === 0}
                 style={{ height: CONTROL_H }}

@@ -52,7 +52,7 @@ def _setup(h):
         "exam_date": "2026-11-12", "start_time": "10:00", "duration_minutes": 90,
         "classroom_ids": [room["id"]], "lecturer_id": lec["id"],
     })
-    return {"dep": dep, "course": course, "room": room, "building": building}
+    return {"dep": dep, "course": course, "room": room, "building": building, "lec": lec}
 
 
 def _all_cell_text(content: bytes) -> str:
@@ -92,27 +92,80 @@ def test_weekly_xlsx():
 
 # --- sinav programi ---
 
-def test_exams_xlsx():
+def test_exams_midterm_schedule_xlsx():
     h = admin_headers()
-    s = _setup(h)
-    r = client.get("/export/exams", params={"format": "xlsx"}, headers=h)
+    s = _setup(h)   # MIDTERM sinavi, ders yil 2 GUZ
+    r = client.get("/export/exams", params={
+        "format": "xlsx", "department_id": s["dep"]["id"],
+        "semester": "FALL", "schedule": "midterm",
+    }, headers=h)
     assert r.status_code == 200, r.text
-    assert "sinav_programi.xlsx" in r.headers["content-disposition"]
+    assert "vize_programi.xlsx" in r.headers["content-disposition"]
     assert r.content[:2] == b"PK"
     body = _all_cell_text(r.content)
+    assert "MIDTERM EXAM SCHEDULE" in body      # ingilizce baslik
+    assert "SECOND" in body                      # yil 2 -> SECOND grubu
     assert s["course"]["code"] in body
-    assert "Vize" in body                      # MIDTERM -> Vize cevirisi
 
 
-def test_exams_type_filter():
+def test_exams_final_schedule_pairs_makeup():
     h = admin_headers()
     s = _setup(h)
-    # Kurulan sinav MIDTERM: FINAL filtresi bizim dersi getirmemeli.
-    r = client.get("/export/exams", params={"format": "csv", "exam_type": "FINAL"}, headers=h)
-    assert r.status_code == 200
-    assert s["course"]["code"] not in r.content.decode("utf-8-sig")
-    r = client.get("/export/exams", params={"format": "csv", "exam_type": "MIDTERM"}, headers=h)
-    assert s["course"]["code"] in r.content.decode("utf-8-sig")
+    # Ayni derse FINAL + MAKEUP ekle.
+    for typ, day in (("FINAL", "2026-11-12"), ("MAKEUP", "2026-11-19")):
+        r = client.post("/exams", json={
+            "course_id": s["course"]["id"], "exam_type": typ,
+            "exam_date": day, "start_time": "10:00", "duration_minutes": 90,
+            "classroom_ids": [s["room"]["id"]], "lecturer_id": s["lec"]["id"],
+        }, headers=h)
+        assert r.status_code == 201, r.text
+
+    r = client.get("/export/exams", params={
+        "format": "xlsx", "department_id": s["dep"]["id"],
+        "semester": "FALL", "schedule": "final",
+    }, headers=h)
+    assert r.status_code == 200, r.text
+    assert "final_butunleme_programi.xlsx" in r.headers["content-disposition"]
+    body = _all_cell_text(r.content)
+    assert "FINAL AND MAKE UP EXAM SCHEDULE" in body
+    assert "MAKE UP" in body                     # super-baslik blogu
+    assert s["course"]["code"] in body
+
+    # Vize programinda final/but GORUNMEZ (tur ayrimi).
+    rm = client.get("/export/exams", params={
+        "format": "xlsx", "department_id": s["dep"]["id"],
+        "semester": "FALL", "schedule": "midterm",
+    }, headers=h)
+    mid_body = _all_cell_text(rm.content)
+    assert "MIDTERM EXAM SCHEDULE" in mid_body   # vize var
+    assert "MAKE UP" not in mid_body             # ama makeup blogu yok
+
+
+def test_exams_header_uses_english_names():
+    h = admin_headers()
+    dep = _post(h, "/departments", {
+        "name": "Bilgisayar Mühendisliği", "code": _u("CE"),
+        "name_en": "Computer Engineering", "faculty_en": "Faculty of Engineering",
+    })
+    lec = _post(h, "/lecturers", {"full_name": f"Dr. {_u('')}"})
+    course = _post(h, "/courses", {
+        "department_id": dep["id"], "year": 1, "semester": "SPRING",
+        "code": _u("CE"), "name": "Intro",
+    })
+    _post(h, "/exams", {
+        "course_id": course["id"], "exam_type": "MIDTERM",
+        "exam_date": "2026-04-20", "start_time": "10:00", "duration_minutes": 60,
+        "classroom_ids": [], "lecturer_id": lec["id"],
+    })
+    r = client.get("/export/exams", params={
+        "format": "xlsx", "department_id": dep["id"],
+        "semester": "SPRING", "schedule": "midterm",
+    }, headers=h)
+    assert r.status_code == 200, r.text
+    body = _all_cell_text(r.content)
+    assert "FACULTY OF ENGINEERING" in body                  # fakülte satırı
+    assert "DEPARTMENT OF COMPUTER ENGINEERING" in body      # ingilizce bölüm adı
+    assert "FIRST" in body                                   # yıl 1 grubu
 
 
 # --- derslik programi (izgara) ---

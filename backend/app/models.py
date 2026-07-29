@@ -275,6 +275,11 @@ class Department(Base):
     )
     name: Mapped[str] = mapped_column(String(200))
     code: Mapped[str] = mapped_column(String(20))
+    # Resmi sinav programi basligi ingilizce basiliyor: bolumun ve fakultenin
+    # ingilizce adi burada saklanir (or. "Computer Engineering" / "Faculty of
+    # Engineering"). Bos ise export basliginda TR ad'a duser.
+    name_en: Mapped[str | None] = mapped_column(String(200))
+    faculty_en: Mapped[str | None] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="departments")

@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
+  ActionIcon, Alert, Badge, Button, Group, Loader, Menu, Modal, MultiSelect,
   NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
-  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconPlus, IconTrash,
+  IconArrowBackUp, IconChevronLeft, IconChevronRight, IconDownload, IconPlus, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
-import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
@@ -314,11 +313,29 @@ export default function ExamsPage() {
 
   const gitHafta = (n: number) => setWeek(addDays(weekStart, n * 7));
 
-  /** Dışa aktarma: seçili cohort (bölüm + yıl + dönem) sınavlarını indirir. */
-  const exportPath = (format: "xlsx" | "csv"): string => {
-    const params = new URLSearchParams({ year: String(year), semester: sem, format });
-    if (dep) params.set("department_id", dep);
-    return `/export/exams?${params.toString()}`;
+  /** Resmi sınav programı indir: seçili bölüm + dönemin TÜM yıllarını,
+   *  üniversite formatında (yıla göre gruplu). schedule=midterm → Vize;
+   *  final → Final + Bütünleme (ders bazında eşlenir). */
+  const [exportBusy, setExportBusy] = useState(false);
+  const downloadSchedule = async (schedule: "midterm" | "final") => {
+    if (!dep) {
+      notifications.show({ color: "red", message: "Önce bir bölüm seçin" });
+      return;
+    }
+    setExportBusy(true);
+    try {
+      const params = new URLSearchParams({
+        department_id: dep, semester: sem, schedule, format: "xlsx",
+      });
+      await api.download(`/export/exams?${params.toString()}`);
+    } catch (e) {
+      notifications.show({
+        color: "red",
+        message: e instanceof ApiError ? e.message : "İndirme başarısız",
+      });
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   return (
@@ -337,7 +354,18 @@ export default function ExamsPage() {
         </Group>
 
         <Group gap="xs" align="center">
-          <ExportMenu buildPath={exportPath} />
+          <Menu shadow="md" position="bottom-end" withinPortal>
+            <Menu.Target>
+              <Button size="xs" radius="md" variant="light" loading={exportBusy}
+                leftSection={<IconDownload size={16} />}>
+                Dışa Aktar
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => downloadSchedule("midterm")}>Vize Programı (Excel)</Menu.Item>
+              <Menu.Item onClick={() => downloadSchedule("final")}>Final + Bütünleme (Excel)</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
           <ActionIcon variant="subtle" radius="md" onClick={() => gitHafta(-1)} aria-label="Önceki hafta">
             <IconChevronLeft size={18} />
           </ActionIcon>

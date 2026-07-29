@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ders Programı — UI Prototipi (Google Calendar tarzı)</title>
+<style>
+/* ============================================================================
+   Ders & Sınav Programı — Google Calendar tabanlı arayüz prototipi
+
+   Tasarım dili: Material Design 3'ün sadeleştirilmiş hâli.
+     · Zemin beyaz, ayrımlar 1px gri çizgiyle; gölge yalnız YÜZEN katmanlarda
+       (üst bar kaydırınca, "Oluştur" butonu, kart hover).
+     · Renk yalnız ANLAM taşıdığı yerde: ders rengi = bölüm/ders kimliği,
+       kırmızı = sınav, gri = pasif.
+     · Tipografi tek ailede üç kademe: 22 / 14 / 12.
+
+   Bağımlılık YOK: tek dosya, saf CSS, inline SVG ikon. CDN/font indirmesi
+   olmadığı için çevrimdışı da birebir aynı görünür — prototipin tarayıcıda
+   gördüğün hâli, ekibe gönderdiğinde de aynı hâl.
+   ========================================================================= */
+
+:root {
+  /* Google'ın yüzey kademeleri */
+  --surface:        #ffffff;
+  --surface-1:      #f8f9fa;   /* sol panel, hover zemini */
+  --surface-2:      #f1f3f4;   /* seçili chip, ikon hover */
+  --line:           #dadce0;   /* ana ayraç */
+  --line-soft:      #e8eaed;   /* grid içi saat çizgileri */
+
+  --text:           #202124;
+  --text-2:         #5f6368;   /* ikincil metin, ikon */
+  --text-3:         #80868b;   /* cetvel saatleri */
+
+  --blue:           #1a73e8;   /* birincil eylem */
+  --blue-soft:      #e8f0fe;   /* seçili gün / aktif sekme zemini */
+  --red:            #d93025;   /* sınav, şimdi çizgisi, çakışma */
+  --amber:          #f9ab00;   /* uyarı */
+  --green:          #188038;   /* yayınlandı */
+
+  /* Ders renkleri — Google Calendar paleti */
+  --c-peacock:      #039be5;
+  --c-blueberry:    #3f51b5;
+  --c-basil:        #0b8043;
+  --c-tangerine:    #f4511e;
+  --c-grape:        #8e24aa;
+  --c-sage:         #33b679;
+  --c-banana:       #f6bf26;
+  --c-graphite:     #616161;
+
+  --shadow-1: 0 1px 2px 0 rgba(60,64,67,.30), 0 1px 3px 1px rgba(60,64,67,.15);
+  --shadow-2: 0 1px 3px 0 rgba(60,64,67,.30), 0 4px 8px 3px rgba(60,64,67,.15);
+
+  --topbar-h: 64px;
+  --rail-w:   256px;    /* sol filtre paneli */
+  --gutter-w: 60px;     /* saat cetveli sütunu */
+  --head-h:   64px;     /* gün başlığı bandı */
+  --row-h:    56px;     /* bir ders slotu */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Google Sans", Roboto, -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; }
+
+/* Google'ın ikon düğmesi: 40px dokunma alanı, 24px ikon, dairesel hover. */
+.icon-btn {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease;
+}
+.icon-btn:hover  { background: var(--surface-2); }
+.icon-btn:active { background: #e0e3e6; }
+.icon-btn svg    { width: 22px; height: 22px; fill: currentColor; }
+
+/* Anahat (outlined) düğme — Material'ın ikincil eylemi. */
+.btn {
+  height: 36px;
+  padding: 0 16px;
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+.btn:hover  { background: var(--surface-1); box-shadow: var(--shadow-1); }
+.btn svg    { width: 18px; height: 18px; fill: currentColor; }
+.btn--primary {
+  background: var(--blue); border-color: var(--blue); color: #fff;
+}
+.btn--primary:hover { background: #1b66c9; }
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar {
+  height: var(--topbar-h);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky; top: 0; z-index: 30;
+}
+
+/* Üst bardaki her kontrol sabit boy: dar ekranda ezilmek yerine, esneyen
+   tek öğe (marka adı) kısalır. Aksi hâlde overflow:hidden olan anahtar
+   sessizce içeriğini yutuyor. */
+.topbar > *, .topbar .menu, .topbar .toggle { flex-shrink: 0; }
+
+.brand {
+  display: flex; align-items: center; gap: 8px; margin-right: 8px;
+  min-width: 0; flex-shrink: 1;     /* daralan tek öğe burası */
+}
+.brand__mark {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--blue);
+  color: #fff;
+  display: grid; place-items: center;
+  font-size: 15px; font-weight: 500;
+  letter-spacing: .5px;
+}
+.brand__name {
+  font-size: 20px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex-shrink: 1; min-width: 0;
+}
+
+.topbar__range {
+  font-size: 20px; font-weight: 400;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+.topbar__range small {
+  display: block;
+  font-size: 12px; color: var(--text-2);
+  margin-top: 1px;
+}
+
+.spacer { flex: 1; }
+
+/* Görünüm anahtarı (Ders / Sınav) — Calendar'ın takvim/görev toggle'ı gibi. */
+.toggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+}
+.toggle button {
+  height: 38px; padding: 0 16px;
+  border: 0; background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.toggle button { white-space: nowrap; }
+.toggle button + button { border-left: 1px solid var(--line); }
+.toggle button:hover { background: var(--surface-1); }
+.toggle button[aria-pressed="true"] { background: var(--blue-soft); color: var(--blue); }
+.toggle svg { width: 18px; height: 18px; fill: currentColor; }
+
+/* Açılır menü (Hafta ▾ / İçe aktar ▾ / Dışa aktar ▾) */
+.menu { position: relative; }
+.menu__panel {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 208px;
+  padding: 8px 0;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: var(--shadow-2);
+  display: none;
+  z-index: 40;
+}
+.menu:hover .menu__panel,
+.menu:focus-within .menu__panel { display: block; }
+.menu__item {
+  width: 100%;
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 12px;
+  border: 0; background: transparent;
+  font-size: 14px; text-align: left;
+  cursor: pointer;
+}
+.menu__item:hover { background: var(--surface-1); }
+.menu__item svg { width: 18px; height: 18px; fill: var(--text-2); flex-shrink: 0; }
+.menu__item span.hint { margin-left: auto; color: var(--text-3); font-size: 12px; }
+.menu__sep { height: 1px; background: var(--line); margin: 8px 0; }
+
+.avatar {
+  width: 32px; height: 32px; margin-left: 8px;
+  border-radius: 50%;
+  background: #7b1fa2; color: #fff;
+  display: grid; place-items: center;
+  font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.shell {
+  display: flex;
+  height: calc(100vh - var(--topbar-h));
+}
+
+/* ------------------------------------------------------------- left rail  */
+
+.rail {
+  width: var(--rail-w);
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 8px 0 32px;
+}
+.rail::-webkit-scrollbar { width: 8px; }
+.rail::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 4px; }
+
+/* Calendar'ın "Oluştur" düğmesi: yükseltilmiş, pill, sol üstte. */
+.create {
+  margin: 8px 16px 16px;
+  height: 48px; padding: 0 20px 0 16px;
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 0; border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  transition: box-shadow 120ms ease, background 120ms ease;
+}
+.create:hover { box-shadow: var(--shadow-2); background: var(--surface-1); }
+.create svg { width: 22px; height: 22px; }
+
+/* Dönem / bölüm / sınıf seçicileri */
+.rail__selects { padding: 0 16px 8px; display: grid; gap: 8px; }
+.field { position: relative; }
+.field select {
+  width: 100%; height: 40px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: 13px;
+  appearance: none;
+  cursor: pointer;
+}
+.field select:hover  { background: var(--surface-1); }
+.field select:focus  { outline: none; border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.field::after {
+  content: ""; position: absolute; right: 12px; top: 17px;
+  width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-2);
+  pointer-events: none;
+}
+
+/* Arama kutusu — Calendar'ın "Search for people" alanı */
+.search {
+  margin: 4px 16px 16px;
+  height: 40px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.search svg { width: 18px; height: 18px; fill: var(--text-2); flex-shrink: 0; }
+.search input {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent;
+  font: inherit; font-size: 13px; color: var(--text);
+}
+.search input:focus { outline: none; }
+.search input::placeholder { color: var(--text-2); }
+
+/* Katlanır filtre bölümü — "My calendars" başlığı gibi */
+.group { border-top: 1px solid var(--line); padding: 8px 0; }
+.group:first-of-type { border-top: 0; }
+.group__head {
+  width: 100%;
+  height: 40px; padding: 0 12px 0 16px;
+  display: flex; align-items: center; gap: 8px;
+  border: 0; background: transparent;
+  font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  border-radius: 0 20px 20px 0;
+}
+.group__head:hover { background: var(--surface-1); }
+.group__count {
+  margin-left: auto; margin-right: 4px;
+  font-size: 12px; font-weight: 400; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.group__caret { width: 20px; height: 20px; fill: var(--text-2); transition: transform 160ms ease; }
+.group[data-open="false"] .group__caret { transform: rotate(-90deg); }
+.group[data-open="false"] .group__body { display: none; }
+.group__body { padding: 2px 0 4px; }
+
+/* Renkli onay kutusu satırı — filtrenin kendisi */
+.check {
+  display: flex; align-items: center; gap: 12px;
+  height: 36px; padding: 0 12px 0 16px;
+  border-radius: 0 20px 20px 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.check:hover { background: var(--surface-1); }
+.check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.check__box {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: 3px;
+  border: 2px solid var(--dot, var(--text-2));
+  background: var(--dot, transparent);
+  display: grid; place-items: center;
+  transition: background 120ms ease;
+}
+.check__box svg { width: 14px; height: 14px; fill: #fff; opacity: 1; }
+.check input:not(:checked) + .check__box { background: transparent; }
+.check input:not(:checked) + .check__box svg { opacity: 0; }
+.check input:not(:checked) ~ .check__label { color: var(--text-2); }
+.check__label {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.check__meta { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------- grid */
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.gridwrap {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.gridwrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.gridwrap::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 5px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: var(--gutter-w) repeat(5, minmax(140px, 1fr));
+  min-width: 760px;
+}
+
+/* Gün başlığı bandı: kaydırınca yapışır. */
+.grid__head {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  height: var(--head-h);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+}
+.grid__head--gutter { justify-content: flex-end; padding-bottom: 6px; }
+.grid__head--gutter span { font-size: 10px; color: var(--text-3); letter-spacing: .3px; }
+.day__name {
+  font-size: 11px; font-weight: 500; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text-2);
+}
+.day__num {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 22px; color: var(--text);
+}
+.grid__head--today .day__name { color: var(--blue); }
+.grid__head--today .day__num  { background: var(--blue); color: #fff; }
+
+/* Saat cetveli: etiketler çizginin ÜSTÜNE oturur (Calendar'daki gibi). */
+.gutter { position: relative; }
+.gutter__label {
+  position: absolute; right: 8px;
+  transform: translateY(-50%);
+  font-size: 10px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  padding: 0 2px;
+}
+/* İlk etiket ortalanırsa yapışkan gün başlığının altına girer: onu çizginin
+   altına oturtuyoruz, günün ilk saati okunur kalsın. */
+.gutter__label:first-child { transform: translateY(2px); }
+
+/* Gün sütunu */
+.col {
+  position: relative;
+  border-left: 1px solid var(--line-soft);
+  /* Kapanış çizgisi: 17:30 etiketi buraya hizalanır, yoksa tablo günün
+     sonunda açıkta kalıyor. */
+  border-bottom: 1px solid var(--line-soft);
+}
+.col:last-child { border-right: 1px solid var(--line-soft); }
+
+/* Saat çizgileri: her satırın üst kenarı. */
+.slot {
+  height: var(--row-h);
+  border-top: 1px solid var(--line-soft);
+  transition: background 100ms ease;
+}
+.col .slot:hover { background: rgba(26,115,232,.06); }
+/* Öğle arası (12:30) — çalışılmayan değil ama "tercih edilmeyen" bant. */
+.slot--lunch { background: repeating-linear-gradient(45deg,#fafafa 0 6px,transparent 6px 12px); }
+
+/* --------------------------------------------------------------- olaylar  */
+
+/* Google Calendar kartı: dolgun renk, 4px köşe, 11px metin, iki satır. */
+.ev {
+  position: absolute;
+  left: 2px; right: 2px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--ev, var(--c-peacock));
+  color: #fff;
+  font-size: 11px; line-height: 1.35;
+  overflow: hidden;
+  cursor: pointer;
+  z-index: 5;
+  transition: box-shadow 120ms ease, filter 120ms ease;
+}
+.ev:hover { box-shadow: var(--shadow-2); filter: brightness(1.06); z-index: 12; }
+.ev__title {
+  font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ev__meta { opacity: .92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev__badge {
+  display: inline-block;
+  margin-left: 4px; padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.28);
+  font-size: 10px;
+}
+
+/* Taslak: aynı renk, beyaz zemin + renkli kenarlık (Calendar'ın "geçici" hâli) */
+.ev--draft {
+  background: #fff;
+  color: var(--ev);
+  border: 1px dashed var(--ev);
+}
+.ev--draft .ev__badge { background: color-mix(in srgb, var(--ev) 14%, transparent); }
+
+/* Sınav: kırmızı ve SOL ŞERİTLİ — dersten bir bakışta ayrılsın. */
+.ev--exam {
+  --ev: var(--red);
+  border-left: 4px solid #8c1d18;
+}
+
+/* Çakışma: kartın üstünde uyarı halkası. */
+.ev--clash { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--red); z-index: 10; }
+
+/* "Şimdi" çizgisi */
+.now {
+  position: absolute; left: 0; right: 0;
+  height: 2px; background: var(--red);
+  z-index: 15; pointer-events: none;
+}
+.now::before {
+  content: ""; position: absolute; left: -5px; top: -4px;
+  width: 10px; height: 10px; border-radius: 50%; background: var(--red);
+}
+
+/* --------------------------------------------------------------- altbilgi */
+
+.legend {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-2);
+}
+.legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.legend__swatch {
+  width: 18px; height: 11px; border-radius: 3px;
+  background: var(--sw, var(--c-peacock));
+}
+.legend__swatch--draft { background: #fff; border: 1px dashed var(--c-peacock); }
+.legend__swatch--exam  { background: var(--red); border-left: 3px solid #8c1d18; }
+.legend__stat { margin-left: auto; display: flex; gap: 16px; }
+.legend__stat b { color: var(--text); font-weight: 500; }
+
+@media (max-width: 1100px) {
+  .rail { position: absolute; left: -9999px; }   /* prototipte panel gizlenir */
+  .topbar__range small { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ========================================================== ÜST ÇUBUK -->
+<header class="topbar">
+  <button class="icon-btn" aria-label="Menü">
+    <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+  </button>
+
+  <div class="brand">
+    <div class="brand__mark">MÜ</div>
+    <div class="brand__name">Ders Programı</div>
+  </div>
+
+  <button class="btn" style="margin-left:8px">Bu Hafta</button>
+
+  <button class="icon-btn" aria-label="Önceki hafta">
+    <svg viewBox="0 0 24 24"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+  </button>
+  <button class="icon-btn" aria-label="Sonraki hafta">
+    <svg viewBox="0 0 24 24"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+  </button>
+
+  <div class="topbar__range">
+    3. Hafta
+    <small>2025–2026 Bahar · 09–13 Mart</small>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- Ders / Sınav merceği -->
+  <div class="toggle" role="group" aria-label="Program türü">
+    <button aria-pressed="true">
+      <svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V8h14v11z"/></svg>
+      Ders
+    </button>
+    <button aria-pressed="false">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+      Sınav
+    </button>
+  </div>
+
+  <!-- Görünüm -->
+  <div class="menu">
+    <button class="btn" style="margin-left:8px">
+      Hafta
+      <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+    </button>
+    <div class="menu__panel">
+      <button class="menu__item">Gün <span class="hint">G</span></button>
+      <button class="menu__item">Hafta <span class="hint">H</span></button>
+      <button class="menu__item">Derslik <span class="hint">D</span></button>
+      <button class="menu__item">Öğretim üyesi <span class="hint">Ö</span></button>
+    </div>
+  </div>
+
+  <!-- İçe / dışa aktar -->
+  <div class="menu">
+    <button class="btn">
+      <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+      İçe aktar
+      <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+    </button>
+    <div class="menu__panel">
+      <button class="menu__item">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13z"/></svg>
+        Excel'den ders yükle <span class="hint">.xlsx</span>
+      </button>
+      <button class="menu__item">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13z"/></svg>
+        CSV'den ders yükle <span class="hint">.csv</span>
+      </button>
+      <div class="menu__sep"></div>
+      <button class="menu__item">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+        Şablonu indir
+      </button>
+    </div>
+  </div>
+
+  <div class="menu">
+    <button class="btn">
+      <svg viewBox="0 0 24 24"><path d="M15 8h-4v6H9l3 3 3-3h-2V8zM5 18h14v2H5v-2z"/><path d="M12 2 8 6h3v2h2V6h3z" opacity=".35"/></svg>
+      Dışa aktar
+      <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+    </button>
+    <div class="menu__panel">
+      <button class="menu__item">Ders programı <span class="hint">.xlsx</span></button>
+      <button class="menu__item">Ders programı <span class="hint">.csv</span></button>
+      <div class="menu__sep"></div>
+      <button class="menu__item">Sınav programı <span class="hint">.xlsx</span></button>
+      <button class="menu__item">Derslik doluluğu <span class="hint">.xlsx</span></button>
+    </div>
+  </div>
+
+  <button class="icon-btn" aria-label="Ara">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+  </button>
+  <button class="icon-btn" aria-label="Ayarlar">
+    <svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.62l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.24-1.12.55-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.86a.5.5 0 0 0 .12.62l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.62l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.39 1.04.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.24 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.62l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z"/></svg>
+  </button>
+  <div class="avatar">Ö</div>
+</header>
+
+<div class="shell">
+
+  <!-- ==================================================== SOL FİLTRE PANELİ -->
+  <aside class="rail">
+
+    <button class="create">
+      <svg viewBox="0 0 24 24">
+        <path fill="#34a853" d="M12 5v14"/><path fill="#4285f4" d="M5 12h14"/>
+        <path fill="#5f6368" d="M11 5h2v14h-2z"/><path fill="#5f6368" d="M5 11h14v2H5z"/>
+      </svg>
+      Ders ekle
+    </button>
+
+    <div class="rail__selects">
+      <div class="field">
+        <select aria-label="Bölüm">
+          <option>CENG · Bilgisayar Müh.</option>
+          <option>EE · Elektrik-Elektronik Müh.</option>
+          <option>ME · Makine Müh.</option>
+        </select>
+      </div>
+      <div class="field">
+        <select aria-label="Sınıf">
+          <option>2. sınıf</option>
+          <option>1. sınıf</option>
+          <option>3. sınıf</option>
+          <option>4. sınıf</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+      <input placeholder="Hoca, ders, derslik ara" />
+    </div>
+
+    <!-- Öğretim üyeleri -->
+    <section class="group" data-open="true">
+      <button class="group__head">
+        <svg class="group__caret" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+        Öğretim Üyeleri
+        <span class="group__count">4/6</span>
+      </button>
+      <div class="group__body">
+        <label class="check" style="--dot: var(--c-blueberry)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Prof. Dr. Ayşe Demir</span><span class="check__meta">5</span>
+        </label>
+        <label class="check" style="--dot: var(--c-basil)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Doç. Dr. Mehmet Yılmaz</span><span class="check__meta">4</span>
+        </label>
+        <label class="check" style="--dot: var(--c-tangerine)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Dr. Öğr. Ü. Elif Kaya</span><span class="check__meta">3</span>
+        </label>
+        <label class="check" style="--dot: var(--c-grape)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Öğr. Gör. Can Aydın</span><span class="check__meta">3</span>
+        </label>
+        <label class="check" style="--dot: var(--c-sage)">
+          <input type="checkbox" /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Dr. Öğr. Ü. Zeynep Arslan</span><span class="check__meta">2</span>
+        </label>
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Öğr. Gör. Deniz Şahin</span><span class="check__meta">1</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Dersler -->
+    <section class="group" data-open="true">
+      <button class="group__head">
+        <svg class="group__caret" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+        Dersler
+        <span class="group__count">6/7</span>
+      </button>
+      <div class="group__body">
+        <label class="check" style="--dot: var(--c-peacock)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">CENG2001 · Veri Yapıları</span><span class="check__meta">3Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-blueberry)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">CENG2003 · Ayrık Matematik</span><span class="check__meta">2Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-basil)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">CENG2005 · Nesneye Yön. Prog.</span><span class="check__meta">2Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-tangerine)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">MATH2011 · Diferansiyel Denk.</span><span class="check__meta">1Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-grape)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">PHYS1852 · Fizik II</span><span class="check__meta">6Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-sage)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">ENG1804 · İngilizce II</span><span class="check__meta">8Ş</span>
+        </label>
+        <label class="check" style="--dot: var(--c-banana)">
+          <input type="checkbox" /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">CENG2099 · Seçmeli Proje</span><span class="check__meta">1Ş</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Derslikler -->
+    <section class="group" data-open="true">
+      <button class="group__head">
+        <svg class="group__caret" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5z"/></svg>
+        Derslikler
+        <span class="group__count">5/5</span>
+      </button>
+      <div class="group__body">
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">A Blok · A-101</span><span class="check__meta">60</span>
+        </label>
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">A Blok · A-204</span><span class="check__meta">45</span>
+        </label>
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">B Blok · B-Lab1</span><span class="check__meta">30</span>
+        </label>
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">B Blok · B-Amfi</span><span class="check__meta">180</span>
+        </label>
+        <label class="check" style="--dot: var(--c-graphite)">
+          <input type="checkbox" checked /><span class="check__box"><svg viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span>
+          <span class="check__label">Online · uzaktan</span><span class="check__meta">∞</span>
+        </label>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ========================================================== ÇİZELGE -->
+  <main class="main">
+    <div class="gridwrap">
+      <div class="grid">
+
+        <!-- başlık satırı -->
+        <div class="grid__head grid__head--gutter"><span>GMT+3</span></div>
+        <div class="grid__head"><div class="day__name">Pzt</div><div class="day__num">9</div></div>
+        <div class="grid__head"><div class="day__name">Sal</div><div class="day__num">10</div></div>
+        <div class="grid__head grid__head--today"><div class="day__name">Çar</div><div class="day__num">11</div></div>
+        <div class="grid__head"><div class="day__name">Per</div><div class="day__num">12</div></div>
+        <div class="grid__head"><div class="day__name">Cum</div><div class="day__num">13</div></div>
+
+        <!-- saat cetveli -->
+        <div class="gutter" id="gutter"></div>
+
+        <!-- Pazartesi -->
+        <div class="col" data-day="1">
+          <div class="ev" style="--ev: var(--c-peacock); top: 2px; height: 108px;">
+            <div class="ev__title">CENG2001-1</div>
+            <div class="ev__meta">08:30 · A-101</div>
+            <div class="ev__meta">Prof. Dr. A. Demir</div>
+          </div>
+          <div class="ev" style="--ev: var(--c-basil); top: 226px; height: 108px;">
+            <div class="ev__title">CENG2005-1<span class="ev__badge">Lab</span></div>
+            <div class="ev__meta">12:30 · B-Lab1</div>
+          </div>
+          <div class="ev" style="--ev: var(--c-sage); top: 394px; height: 52px;">
+            <div class="ev__title">ENG1804-3</div>
+            <div class="ev__meta">15:30 · A-204</div>
+          </div>
+        </div>
+
+        <!-- Salı -->
+        <div class="col" data-day="2">
+          <div class="ev" style="--ev: var(--c-blueberry); top: 58px; height: 108px;">
+            <div class="ev__title">CENG2003-1</div>
+            <div class="ev__meta">09:30 · A-204</div>
+            <div class="ev__meta">Doç. Dr. M. Yılmaz</div>
+          </div>
+          <div class="ev ev--clash" style="--ev: var(--c-grape); top: 282px; height: 108px;">
+            <div class="ev__title">PHYS1852<span class="ev__badge">6 şube</span></div>
+            <div class="ev__meta">13:30 · B-Amfi</div>
+            <div class="ev__meta">⚠ Derslik çakışması</div>
+          </div>
+          <div class="ev ev--draft" style="--ev: var(--c-tangerine); top: 394px; height: 108px;">
+            <div class="ev__title">MATH2011-1<span class="ev__badge">taslak</span></div>
+            <div class="ev__meta">15:30 · A-101</div>
+          </div>
+        </div>
+
+        <!-- Çarşamba (bugün) -->
+        <div class="col" data-day="3">
+          <div class="ev" style="--ev: var(--c-peacock); top: 58px; height: 108px;">
+            <div class="ev__title">CENG2001-1<span class="ev__badge">Uyg.</span></div>
+            <div class="ev__meta">09:30 · B-Lab1</div>
+          </div>
+          <div class="ev" style="--ev: var(--c-tangerine); top: 170px; height: 108px;">
+            <div class="ev__title">MATH2011-1</div>
+            <div class="ev__meta">11:30 · A-101</div>
+            <div class="ev__meta">Dr. Öğr. Ü. E. Kaya</div>
+          </div>
+          <div class="ev ev--exam" style="top: 338px; height: 108px;">
+            <div class="ev__title">CENG2003 · Vize</div>
+            <div class="ev__meta">14:30 – 16:15 · B-Amfi</div>
+            <div class="ev__meta">2 gözetmen</div>
+          </div>
+          <div class="now" style="top: 244px;"></div>
+        </div>
+
+        <!-- Perşembe -->
+        <div class="col" data-day="4">
+          <div class="ev" style="--ev: var(--c-blueberry); top: 2px; height: 108px;">
+            <div class="ev__title">CENG2003-2</div>
+            <div class="ev__meta">08:30 · A-204</div>
+          </div>
+          <!-- yan yana iki şerit: aynı saatte iki farklı ders -->
+          <div class="ev" style="--ev: var(--c-basil); top: 170px; height: 108px; left:2px; right:50%;">
+            <div class="ev__title">CENG2005-2</div>
+            <div class="ev__meta">11:30 · A-101</div>
+          </div>
+          <div class="ev" style="--ev: var(--c-sage); top: 170px; height: 108px; left:50%; right:2px;">
+            <div class="ev__title">ENG1804-5</div>
+            <div class="ev__meta">11:30 · A-204</div>
+          </div>
+          <div class="ev" style="--ev: var(--c-grape); top: 338px; height: 108px;">
+            <div class="ev__title">PHYS1852-2<span class="ev__badge">Lab</span></div>
+            <div class="ev__meta">14:30 · B-Lab1</div>
+          </div>
+        </div>
+
+        <!-- Cuma -->
+        <div class="col" data-day="5">
+          <div class="ev" style="--ev: var(--c-peacock); top: 114px; height: 108px;">
+            <div class="ev__title">CENG2001-2</div>
+            <div class="ev__meta">10:30 · A-101</div>
+          </div>
+          <div class="ev ev--draft" style="--ev: var(--c-blueberry); top: 282px; height: 52px;">
+            <div class="ev__title">CENG2003-1<span class="ev__badge">taslak</span></div>
+            <div class="ev__meta">13:30 · online</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================================================== ALT BİLGİ BANDI -->
+    <footer class="legend">
+      <span class="legend__item"><span class="legend__swatch"></span> Yayınlanmış ders</span>
+      <span class="legend__item"><span class="legend__swatch legend__swatch--draft"></span> Taslak</span>
+      <span class="legend__item"><span class="legend__swatch legend__swatch--exam"></span> Sınav</span>
+      <span class="legend__item"><span class="legend__swatch" style="--sw: var(--red)"></span> Çakışma</span>
+      <span class="legend__stat">
+        <span><b>14</b> yerleşim</span>
+        <span><b>2</b> taslak</span>
+        <span style="color: var(--red)"><b>1</b> çakışma</span>
+        <span>Doluluk <b>%31</b></span>
+      </span>
+    </footer>
+  </main>
+</div>
+
+<script>
+/* Saat cetveli ve slot çizgileri koddan üretilir: 9 slot × 56px.
+   Elle 45 <div> yazmak yerine tek kaynaktan — slot tablosu değişirse
+   (utils/slots.ts ile aynı tablo) burası da tek satırla güncellenir. */
+const SLOTS = ["08:30","09:30","10:30","11:30","12:30","13:30","14:30","15:30","16:30"];
+const CLOSE = "17:30";
+const ROW = 56;
+
+const gutter = document.getElementById("gutter");
+gutter.style.height = SLOTS.length * ROW + "px";
+[...SLOTS, CLOSE].forEach((t, i) => {
+  const el = document.createElement("div");
+  el.className = "gutter__label";
+  el.style.top = i * ROW + "px";
+  el.textContent = t;
+  gutter.appendChild(el);
+});
+
+document.querySelectorAll(".col").forEach((col) => {
+  SLOTS.forEach((_, i) => {
+    const s = document.createElement("div");
+    s.className = "slot" + (i === 4 ? " slot--lunch" : "");   // 12:30 bandı
+    col.appendChild(s);
+  });
+});
+
+/* Filtre bölümleri katlanır */
+document.querySelectorAll(".group__head").forEach((h) => {
+  h.addEventListener("click", () => {
+    const g = h.closest(".group");
+    g.dataset.open = g.dataset.open === "true" ? "false" : "true";
+  });
+});
+
+/* Toggle: Ders / Sınav */
+document.querySelectorAll(".toggle button").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".toggle button")
+      .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  });
+});
+</script>
+</body>
+</html>

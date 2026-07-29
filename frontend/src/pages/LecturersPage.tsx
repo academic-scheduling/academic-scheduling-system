@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Checkbox, Group, Loader, Modal, Paper,
   Select, Stack, Table, Text, TextInput, Title, Tooltip, UnstyledButton,
@@ -7,7 +8,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconChevronDown, IconChevronUp, IconCircleCheck, IconCircleOff,
-  IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
+  IconCalendarWeek, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -65,6 +66,7 @@ function SortableTh({
 
 export default function LecturersPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Workgroup geneli paylaşımlı kaynak: bölüm boyutu YOK (K-25).
   const canWrite = canWriteIn(user, "can_manage_lecturers");
 
@@ -308,7 +310,7 @@ export default function LecturersPage() {
                   onClick={() => toggleSort("courses")}
                 />
                 <Table.Th>Durum</Table.Th>
-                {canWrite && <Table.Th w={130}>İşlemler</Table.Th>}
+                <Table.Th w={canWrite ? 170 : 44}>İşlemler</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -341,9 +343,20 @@ export default function LecturersPage() {
                         )}
                       </Group>
                     </Table.Td>
-                    {canWrite && (
-                      <Table.Td>
-                        <Group gap={4} wrap="nowrap">
+                    <Table.Td>
+                      <Group gap={4} wrap="nowrap">
+                        <Tooltip label="Haftalık programı görüntüle">
+                          <ActionIcon
+                            variant="subtle"
+                            color="blue"
+                            aria-label={`${lec.full_name} haftalık programını görüntüle`}
+                            onClick={() => navigate(`/weekly?view=lecturer&lecturer_id=${lec.id}`)}
+                          >
+                            <IconCalendarWeek size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                        {canWrite && (
+                          <>
                           <Tooltip label="Düzenle">
                             <ActionIcon variant="subtle" onClick={() => openEdit(lec)}>
                               <IconPencil size={18} />
@@ -355,9 +368,10 @@ export default function LecturersPage() {
                               <IconTrash size={18} />
                             </ActionIcon>
                           </Tooltip>
-                        </Group>
-                      </Table.Td>
-                    )}
+                          </>
+                        )}
+                      </Group>
+                    </Table.Td>
                   </Table.Tr>
                 );
               })}

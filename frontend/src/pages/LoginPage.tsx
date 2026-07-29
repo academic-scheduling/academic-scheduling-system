@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useForm } from "@mantine/form";
-import { Alert, Button, Container, Paper, PasswordInput, TextInput, Title } from "@mantine/core";
+import {
+  Alert, Anchor, Button, Container, Paper, PasswordInput, TextInput, Title,
+} from "@mantine/core";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 
@@ -57,6 +59,11 @@ export default function LoginPage() {
           <Button type="submit" fullWidth mt="lg" loading={submitting}>
             Giriş
           </Button>
+          {/* Kayıt ol linki YOK — hesaplar yalnız davetle açılır (wireframe §1).
+              Şifre sıfırlama ise hesabı olan kullanıcının kendi yolu (K-43). */}
+          <Anchor component={Link} to="/forgot-password" size="sm" mt="md" display="block" ta="center">
+            Şifremi unuttum
+          </Anchor>
         </form>
       </Paper>
     </Container>

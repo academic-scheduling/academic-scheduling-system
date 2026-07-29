@@ -10,8 +10,10 @@ Slot tablosu degisirse iki yer birlikte guncellenir.
 
 import csv
 import io
-from openpyxl import Workbook
 from collections import defaultdict
+from datetime import date as _date, datetime as _datetime, timedelta
+
+from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -251,3 +253,144 @@ def classrooms_rows(entries) -> list[list]:
             SESSION_TR.get(e.session_type.value, e.session_type.value),
         ])
     return rows
+
+# ------------------------------------------------------------------
+# Universite formatinda sinav programi (yila gore gruplu, resmi cikti)
+# ------------------------------------------------------------------
+
+YEAR_ORDINAL_EN = {1: "FIRST", 2: "SECOND", 3: "THIRD", 4: "FOURTH", 5: "FIFTH", 6: "SIXTH"}
+SEASON_EN = {"FALL": "FALL", "SPRING": "SPRING", "SUMMER": "SUMMER"}
+
+
+def _exam_date(exam) -> str:
+    return exam.exam_date.strftime("%d.%m.%Y")
+
+
+def _exam_time_range(exam) -> str:
+    """'16:30 - 17:30' — baslangic + sure'den bitisi hesaplar."""
+    end = (_datetime.combine(_date.min, exam.start_time)
+           + timedelta(minutes=exam.duration_minutes)).time()
+    return f"{exam.start_time.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+
+
+def _academic_year(exams, semester_value: str) -> str:
+    """Sinav tarihlerinden akademik yil: bahar Y -> (Y-1)-Y, guz Y -> Y-(Y+1)."""
+    dates = [e.exam_date for e in exams if e.exam_date]
+    if not dates:
+        return ""
+    y = min(dates).year
+    return f"{y - 1}-{y}" if semester_value == "SPRING" else f"{y}-{y + 1}"
+
+
+def build_exam_schedule_xlsx(exams, *, faculty_en: str, department_en: str,
+                             semester_value: str, schedule: str) -> bytes:
+    """Universite RESMI sinav programi — orijinal PDF ile ayni yapi.
+
+    2 satirlik baslik (akademik yil + sezon + FAKULTE / DEPARTMENT OF ... + tur),
+    yila gore gruplar (FIRST/SECOND/THIRD/FORTH), iki satirlik sutun basligi
+    (No/Kod/Ad/Hoca dikey birlesik + ustte MIDTERM ya da FINAL / MAKE UP).
+    schedule='final': FINAL + MAKE UP iki blok, ders bazinda eslenir.
+    """
+    is_final = schedule == "final"
+    ncols = 10 if is_final else 7
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Final ve Butunleme" if is_final else "Vize"
+
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    bold = Font(bold=True, size=9)
+
+    def _border_range(r1, c1, r2, c2):
+        # openpyxl: birlestirilmis hucrede kenarlik her hucreye ayri verilmeli.
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                ws.cell(row=r, column=c).border = border
+
+    def merged(r1, c1, r2, c2, value, *, font=bold, align=center):
+        ws.cell(row=r1, column=c1, value=value)
+        if (r1, c1) != (r2, c2):
+            ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        top = ws.cell(row=r1, column=c1)
+        top.font = font
+        top.alignment = align
+        _border_range(r1, c1, r2, c2)
+
+    def data_row(r, values):
+        for i, v in enumerate(values, start=1):
+            cell = ws.cell(row=r, column=i, value=v)
+            cell.border = border
+            cell.font = Font(size=9)
+            text_cols = {3, 4, 7, 10} if is_final else {3, 4, 7}
+            cell.alignment = left if i in text_cols else center
+        return r + 1
+
+    # --- Baslik: 2 satir, tam genislik (orijinaldeki gibi) ---
+    ay = _academic_year(exams, semester_value)
+    season = SEASON_EN.get(semester_value, "")
+    title = "FINAL AND MAKE UP EXAM SCHEDULE" if is_final else "MIDTERM EXAM SCHEDULE"
+    line1 = " ".join(x for x in [ay, season, "SEMESTER", faculty_en.upper()] if x)
+    line2 = " ".join(x for x in [f"DEPARTMENT OF {department_en.upper()}".strip(), title] if x)
+    merged(1, 1, 1, ncols, line1)
+    merged(2, 1, 2, ncols, line2)
+    row = 3
+
+    by_year = defaultdict(list)
+    for e in exams:
+        by_year[e.course.year].append(e)
+
+    for year in sorted(by_year):
+        merged(row, 1, row, ncols, YEAR_ORDINAL_EN.get(year, f"{year}."))
+        row += 1
+
+        # Iki satirlik sutun basligi
+        hr1, hr2 = row, row + 1
+        for i, h in enumerate(["No", "Course Code", "Course Name", "Instructor"], start=1):
+            merged(hr1, i, hr2, i, h)
+        if is_final:
+            merged(hr1, 5, hr1, 7, "FINAL")
+            merged(hr1, 8, hr1, 10, "MAKE UP")
+            for j, h in enumerate(["Date", "Time", "Classroom"] * 2, start=5):
+                merged(hr2, j, hr2, j, h)
+        else:
+            merged(hr1, 5, hr1, 7, "MIDTERM")
+            for j, h in enumerate(["Date", "Time", "Classroom"], start=5):
+                merged(hr2, j, hr2, j, h)
+        row = hr2 + 1
+
+        if is_final:
+            by_course: dict = {}
+            for e in by_year[year]:
+                item = by_course.setdefault(
+                    e.course.id, {"course": e.course, "final": None, "makeup": None})
+                if e.exam_type.value == "FINAL":
+                    item["final"] = e
+                elif e.exam_type.value == "MAKEUP":
+                    item["makeup"] = e
+            for n, it in enumerate(sorted(by_course.values(), key=lambda x: x["course"].code), start=1):
+                c, f_e, m_e = it["course"], it["final"], it["makeup"]
+                instr = (f_e or m_e).lecturer.full_name if (f_e or m_e) else ""
+                row = data_row(row, [
+                    n, c.code, c.name, instr,
+                    _exam_date(f_e) if f_e else "", _exam_time_range(f_e) if f_e else "",
+                    _rooms_label(f_e.classrooms) if f_e else "",
+                    _exam_date(m_e) if m_e else "", _exam_time_range(m_e) if m_e else "",
+                    _rooms_label(m_e.classrooms) if m_e else "",
+                ])
+        else:
+            for n, e in enumerate(sorted(by_year[year], key=lambda e: e.course.code), start=1):
+                row = data_row(row, [
+                    n, e.course.code, e.course.name, e.lecturer.full_name,
+                    _exam_date(e), _exam_time_range(e), _rooms_label(e.classrooms),
+                ])
+
+    widths = ([5, 13, 26, 30, 12, 13, 20, 12, 13, 20] if is_final
+              else [5, 14, 34, 34, 13, 15, 26])
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

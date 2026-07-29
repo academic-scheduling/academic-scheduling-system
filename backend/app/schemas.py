@@ -144,17 +144,23 @@ class UserListItem(BaseModel):
 class DepartmentCreate(BaseModel):
     name: str
     code: str
+    name_en: str | None = None       # resmi sinav programi ingilizce basligi icin
+    faculty_en: str | None = None
 
 class DepartmentUpdate(BaseModel):
     name: str | None = None
     code: str | None = None
     active: bool | None = None
+    name_en: str | None = None
+    faculty_en: str | None = None
 
 class DepartmentOut(BaseModel):
     id: int
     name: str
     code: str
     active: bool
+    name_en: str | None = None
+    faculty_en: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
 # --- Lecturers (WP2) ---

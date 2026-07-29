@@ -7,7 +7,6 @@ import {
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
-import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -128,20 +127,6 @@ export default function WeeklyPage() {
     key: "weekly-room", defaultValue: null, getInitialValueInEffect: false });
   const [lecFilter, setLecFilter] = useLocalStorage<string | null>({
     key: "weekly-lec", defaultValue: null, getInitialValueInEffect: false });
-
-  // Derslikler sayfasından "Programı Gör" ile gelinirse (/weekly?classroom=ID):
-  // derslik merceğini o oda seçili aç, sonra URL'i temizle ki yenile/geri'de
-  // takılı kalmasın.
-  const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => {
-    const roomParam = searchParams.get("classroom");
-    if (!roomParam) return;
-    setView("classroom");
-    setRoomFilter(roomParam);
-    searchParams.delete("classroom");
-    setSearchParams(searchParams, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Cohort seçimi localStorage'da: başka sayfaya gidip dönünce kullanıcı
   // kaldığı yerden devam etsin, her seferinde varsayılana düşmesin.

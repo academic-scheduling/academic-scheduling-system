@@ -394,3 +394,190 @@ def build_exam_schedule_xlsx(exams, *, faculty_en: str, department_en: str,
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ------------------------------------------------------------------
+# Haftalik program IZGARA export'u (universite formati, tek cohort)
+# ------------------------------------------------------------------
+
+WEEK_DAYS_EN = {1: "MONDAY", 2: "TUESDAY", 3: "WEDNESDAY", 4: "THURSDAY", 5: "FRIDAY"}
+DAY_HEADER_FILL = {1: "FFFF00", 2: "C27BA0", 3: "00FFFF", 4: "F6B26B", 5: "FF00FF"}
+GRID_START_MIN = 8 * 60 + 30     # 08:30
+GRID_ROWS = 36                    # 08:30..17:30, 15 dk'lik satirlar
+# Ders koduna gore deterministik renk paleti (pastel tonlar).
+_WEEK_PALETTE = [
+    "9FC5E8", "FFF2CC", "D0CECE", "FFC000", "F4CCCC", "2E75B5",
+    "B6D7A8", "D9D2E9", "F9CB9C", "C9DAF8", "EAD1DC", "A2C4C9",
+]
+
+
+def _hhmm(mins: int) -> str:
+    return f"{mins // 60:02d}:{mins % 60:02d}"
+
+
+def _slot_minutes(entry):
+    """Girisin baslangic ve bitis dakikasi (SLOT_TIMES'tan)."""
+    start = SLOT_TIMES.get(entry.start_slot)
+    last = min(entry.start_slot + entry.slot_count - 1, MAX_SLOT)
+    end = SLOT_TIMES.get(last, start)
+    to_min = lambda s: int(s[:2]) * 60 + int(s[3:])
+    return to_min(start[0]), to_min(end[1])
+
+
+def _week_color(code: str) -> str:
+    import hashlib
+    h = int(hashlib.md5(code.encode("utf-8")).hexdigest(), 16)
+    return _WEEK_PALETTE[h % len(_WEEK_PALETTE)]
+
+
+def _assign_lanes(day_entries):
+    """Ayni gunde cakisan girisleri alt-sutunlara (lane) dagitir (interval boyama)."""
+    lanes: list[int] = []          # her lane'in bittigi dakika
+    placed = []
+    for e in sorted(day_entries, key=lambda e: _slot_minutes(e)[0]):
+        s, en = _slot_minutes(e)
+        lane = next((i for i, end in enumerate(lanes) if end <= s), None)
+        if lane is None:
+            lane = len(lanes)
+            lanes.append(en)
+        else:
+            lanes[lane] = en
+        placed.append((e, lane))
+    return placed, max(1, len(lanes))
+
+
+def build_weekly_grid_xlsx(entries, *, faculty_en: str, department_en: str,
+                           semester_value: str, year: int) -> bytes:
+    """Tek cohort (bolum+yil+donem) haftalik programi — orijinal Excel ile ayni yapi.
+
+    15 dk'lik satir izgarasi (08:30-17:30), sol tarafta Morning/BREAK/Afternoon +
+    saat araliklari, ustte MONDAY-FRIDAY (renkli), her gun paralel sube sayisi kadar
+    alt-sutun. Ders hucresi dikey birlesik, koda gore renkli.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{YEAR_ORDINAL_EN.get(year, str(year))} YEAR"[:31]
+
+    thin = Side(style="thin", color="808080")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    bold = Font(bold=True, size=9)
+
+    # Gunlere gore grupla + lane ata
+    by_day = defaultdict(list)
+    for e in entries:
+        by_day[e.day_of_week].append(e)
+    lanes_of = {}
+    placed_of = {}
+    for d in range(1, 6):
+        placed_of[d], lanes_of[d] = _assign_lanes(by_day.get(d, []))
+
+    # Gun baslangic sutunlari (C=3'ten itibaren)
+    day_start = {}
+    col = 3
+    for d in range(1, 6):
+        day_start[d] = col
+        col += lanes_of[d]
+    ncols = col - 1                      # son dolu sutun
+    last_col = get_column_letter(ncols)
+
+    def fill(hexrgb):
+        return PatternFill(fill_type="solid", fgColor="FF" + hexrgb)
+
+    def _brange(r1, c1, r2, c2):
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                ws.cell(row=r, column=c).border = border
+
+    def merged(r1, c1, r2, c2, value, *, font=bold, patternfill=None):
+        ws.cell(row=r1, column=c1, value=value)
+        if (r1, c1) != (r2, c2):
+            ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        cell = ws.cell(row=r1, column=c1)
+        cell.font = font
+        cell.alignment = center
+        if patternfill:
+            cell.fill = patternfill
+        _brange(r1, c1, r2, c2)
+
+    # --- Baslik (satir 1) ---
+    ay = _current_academic_year(semester_value)
+    season = SEASON_EN.get(semester_value, "")
+    title = " ".join(x for x in [
+        ay, season, "SEMESTER", faculty_en.upper(),
+        department_en.upper(), f"{YEAR_ORDINAL_EN.get(year, str(year))} YEAR WEEKLY SCHEDULE",
+    ] if x)
+    merged(1, 1, 1, ncols, title, font=Font(bold=True, size=12))
+
+    # --- Satir 2: HOURS + gun basliklari ---
+    merged(2, 1, 2, 2, "HOURS")
+    for d in range(1, 6):
+        c1 = day_start[d]
+        # Renk YOK (kullanici istegi): gun basliklari beyaz, kalin + kenarlik.
+        merged(2, c1, 2, c1 + lanes_of[d] - 1, WEEK_DAYS_EN[d],
+               patternfill=fill("FFFFFF"))
+
+    # --- Sol taraf: period etiketleri + saat araliklari (15 dk) ---
+    # Period bloklari: Morning 08:30-12:30, BREAK 12:30-13:30, Afternoon 13:30-17:30
+    def row_of(minute):
+        return 3 + (minute - GRID_START_MIN) // 15
+    rot = Alignment(horizontal="center", vertical="center", text_rotation=90)
+    for r1r, r2r, label in [(row_of(510), row_of(750) - 1, "Morning"),   # 08:30-12:30
+                            (row_of(750), row_of(810) - 1, "BREAK"),      # 12:30-13:30
+                            (row_of(810), 2 + GRID_ROWS, "Afternoon")]:   # 13:30-17:30
+        merged(r1r, 1, r2r, 1, label)
+        ws.cell(row=r1r, column=1).alignment = rot                       # yan (dik) yazi
+    for i in range(GRID_ROWS):
+        r = 3 + i
+        m = GRID_START_MIN + i * 15
+        c = ws.cell(row=r, column=2, value=f"{_hhmm(m)} - {_hhmm(m + 15)}")
+        c.font = Font(size=8)
+        c.alignment = center
+        c.border = border
+        # Bos ders hucreleri BEYAZ: teneffusler ve bos slotlar beyaz gorunsun.
+        for cc in range(3, ncols + 1):
+            cell = ws.cell(row=r, column=cc)
+            cell.border = border
+            cell.fill = fill("FFFFFF")
+
+    # --- Ders hucreleri: her 45 dk'lik slot AYRI renkli blok; aradaki teneffusler
+    #     beyaz kalir (orijinaldeki gibi). Cok slotlu ders her slotta tekrar yazilir.
+    def _min(s):
+        return int(s[:2]) * 60 + int(s[3:])
+    for d in range(1, 6):
+        for e, lane in placed_of[d]:
+            col = day_start[d] + lane
+            sec = e.section
+            crs = sec.course
+            room = e.classroom
+            lines = [f"{crs.code} - Section {sec.section_no}", crs.name, sec.lecturer.full_name]
+            if room:
+                lines.append(f"{room.building.name} {room.room_code}")
+            text = "\n".join(lines)
+            last = min(e.start_slot + e.slot_count - 1, MAX_SLOT)
+            for slot in range(e.start_slot, last + 1):
+                r1 = row_of(_min(SLOT_TIMES[slot][0]))
+                # Renk YOK: ders hucreleri beyaz, yalniz kenarlik + metin (kullanici istegi).
+                merged(r1, col, r1 + 2, col, text, font=Font(size=8),
+                       patternfill=fill("FFFFFF"))
+
+    # Sutun genislikleri (period etiketleri DIK yazildigindan A dar kalir)
+    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["B"].width = 13
+    for c in range(3, ncols + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 24
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _current_academic_year(semester_value: str) -> str:
+    """Haftalik girislerde tarih yoktur; akademik yili GUNCEL takvimden turetir.
+    Guz: Eylul-Aralik -> Y-(Y+1), Ocak-Agustos -> (Y-1)-Y. Bahar: (Y-1)-Y."""
+    from datetime import date as _d
+    t = _d.today()
+    y = t.year
+    if semester_value == "FALL":
+        return f"{y}-{y + 1}" if t.month >= 9 else f"{y - 1}-{y}"
+    return f"{y - 1}-{y}" if t.month <= 8 else f"{y}-{y + 1}"

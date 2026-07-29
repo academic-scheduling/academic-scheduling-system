@@ -11,6 +11,7 @@ import {
   IconMapPin, IconPlus, IconTrash, IconWorld,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
@@ -295,6 +296,13 @@ export default function WeeklyPage() {
     return lecFilter ? `lecturer_id=${lecFilter}` : null;
   };
 
+  /** Dışa aktarma yolu: gördüğün mercek neyse onu indirir. Derslik merceği,
+   *  ders listesi yerine derslik ızgarasını (build_classrooms_xlsx) verir. */
+  const exportPath = (format: "xlsx" | "csv"): string => {
+    if (view === "classroom") return `/export/classrooms?classroom_id=${roomFilter}&format=${format}`;
+    return `/export/weekly?${activeQuery()}&format=${format}`;
+  };
+
   const reload = () => {
     const qs = activeQuery();
     if (!qs) { setEntries([]); return; }
@@ -540,6 +548,7 @@ export default function WeeklyPage() {
           </Group>
 
           <Group gap={6} align="center" wrap="nowrap">
+            <ExportMenu buildPath={exportPath} disabled={!activeQuery()} />
             {canWrite && (
               <Button size="xs" radius="md" disabled={drafts.length === 0}
                 style={{ height: CONTROL_H }}

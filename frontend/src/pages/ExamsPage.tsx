@@ -16,7 +16,8 @@ import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  EXAM_HOUR_H, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
+  EXAM_HOUR_H, GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR,
   paletteItemStyle,
 } from "../utils/scheduleTheme";
@@ -569,7 +570,7 @@ export default function ExamsPage() {
                         <div key={h} style={{
                           position: "absolute", top: i * HOUR_H, left: 0, right: 0, height: HOUR_H,
                           borderTop: `1px solid ${LINE}`, pointerEvents: "none",
-                          background: "#FFFFFF",
+                          background: GRID_CELL_BG,
                         }} />
                       ))}
                       {/* bırakma hedefi (sürükleme sırasında) */}

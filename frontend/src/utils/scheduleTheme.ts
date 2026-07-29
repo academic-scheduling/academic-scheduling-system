@@ -20,18 +20,22 @@ export const LINE = "#F1F5F9";
  *  yatay saat çizgileriyle yakın tonda olunca sütunlar birbirine akıyordu. */
 export const DAY_LINE = "#94A3B8";
 
-/** Sayfa zemini. İçerik kartları beyaz kaldığı için üzerinde yüzer. */
-export const PAGE_BG = "#F1F5F9";
-
 /** İmleç boş bir slotun üzerindeyken o alana düşen vurgu — "buraya
  *  eklenebilir" sinyali. Artı işaretiyle birlikte görünür. */
 export const HOVER_CELL_BG = "#E9EEF5";
 
 export const BORDER = "#E2E8F0";        // kart ve panel kenarı
 export const BORDER_HOVER = "#CBD5E1";  // hover'da bir tık koyulaşır
-export const HEADER_BG = "#F8FAFC";     // gün başlığı bandı
+export const HEADER_BG = "#EEF2F7";     // gün başlığı bandı — hücrelerden koyu
 export const SIDEBAR_BG = "#F8FAFC";    // sol panel zemini
-export const PAGE_SURFACE = "#FFFFFF";  // takvim ve kart zemini
+export const PAGE_SURFACE = "#FFFFFF";  // kart zemini
+
+/** BOŞ slotun zemini. Izgara gövdesi hafif gri, kartlar beyaz: böylece kart
+ *  "dolu", boşluk "boş" olarak okunur. Her ikisi de beyazken slotun dolu mu
+ *  boş mu olduğu ancak kenarlığa bakılarak anlaşılıyordu.
+ *  Tonlar bilerek kademeli: başlık (#EEF2F7) > hover (#E9EEF5 koyu vurgu)
+ *  ... boş hücre (#F8FAFC) > kart (beyaz). */
+export const GRID_CELL_BG = "#F8FAFC";
 
 export const TIME_COLOR = "#94A3B8";    // saat cetveli — susturulmuş
 export const TEXT_MUTED = "#64748B";    // ikincil metin (derslik, hoca)

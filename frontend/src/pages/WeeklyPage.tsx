@@ -16,7 +16,8 @@ import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR, WEEKLY_ROW_H,
   paletteItemStyle,
 } from "../utils/scheduleTheme";
@@ -710,8 +711,8 @@ export default function WeeklyPage() {
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)"
-                          // Boş slot işareti: alan grileşir + ortada artı.
-                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : "#FFFFFF",
+                          // İmleç boş slottayken bir tık daha koyu + ortada artı.
+                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : GRID_CELL_BG,
                         pointerEvents: "none",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "background 120ms ease",

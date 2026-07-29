@@ -80,8 +80,14 @@ class MessageResponse(BaseModel):
     message: str
 
 class ForgotPasswordRequest(BaseModel):
-    """POST /auth/forgot-password (K-43). Yalnız e-posta."""
+    """POST /auth/forgot-password (K-43, K-44)."""
     email: str = Field(..., description="Hesabın e-posta adresi")
+    # K-44: Google reCAPTCHA v2 cevabı. Opsiyonel, çünkü anahtar tanımlı
+    # değilken (yerel geliştirme) doğrulama atlanır ve istemci bu alanı hiç
+    # göndermez. Anahtar tanımlıyken eksikliği 400 ile reddedilir.
+    captcha_token: str | None = Field(
+        default=None, description="reCAPTCHA v2 istemci cevabı (g-recaptcha-response)"
+    )
 
 class ResetPasswordRequest(BaseModel):
     """POST /auth/reset-password (K-43). Davet tamamlamanın ikizi."""

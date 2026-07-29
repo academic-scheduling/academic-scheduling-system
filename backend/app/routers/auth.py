@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.deps import get_db, get_current_user
@@ -14,6 +15,7 @@ from app.security import (
     generate_invitation_token,
 )
 from app.mailer import send_password_reset_email
+from app.recaptcha import verify_captcha
 from app.models import User, UserStatus, InvitationToken, PasswordResetToken
 from app.audit import log_action
 
@@ -110,6 +112,29 @@ def complete_invitation(payload: CompleteInvitationRequest, db: Session = Depend
 _RESET_GENERIC_MESSAGE = "E-posta kayıtlıysa sıfırlama bağlantısı gönderildi"
 
 
+def _reset_rate_limited(db: Session, user: User) -> bool:
+    """Bu hesap son bir saatteki sifirlama talebi sinirini asti mi? (K-44)
+
+    Sayac icin AYRI bir tabloya gerek yok: password_reset_tokens'in kendisi
+    talep gecmisidir — her talep bir satir yazar ve created_at tasir.
+    (Kullanilmis/gecersiz kilinmis satirlar da sayilir; onemli olan MAIL'in
+    kac kez gonderildigi, token'in akibeti degil.)
+
+    SESSIZ sinir — 429 DEGIL: sinir asildiginda cagriya yine ayni 200 doner,
+    yalnizca mail gonderilmez. Farkli bir kod/mesaj donmek K-43'un hesap
+    sayimi korumasini delerdi, cunku sinir YALNIZCA gercek ve ACTIVE
+    hesaplarda tetiklenebilir: "429 aldiysan bu adres kayitlidir" demek
+    olurdu. Korumanin amaci mail bombardimanini durdurmak; susarak durdurmak
+    bunu saglar ve hicbir sey sizdirmaz.
+    """
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent = db.query(func.count(PasswordResetToken.id)).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.created_at >= since,
+    ).scalar()
+    return recent >= settings.password_reset_max_per_hour
+
+
 def _resolve_reset_token(db: Session, raw_token: str) -> PasswordResetToken:
     """Ham sifirlama token'ini cozer; gecersiz/kullanilmis/dolmus ise 400.
 
@@ -136,8 +161,12 @@ def _resolve_reset_token(db: Session, raw_token: str) -> PasswordResetToken:
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """Sifirlama linki talep eder (kontrat §1, K-43).
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Sifirlama linki talep eder (kontrat §1, K-43, K-44).
 
     HER ZAMAN 200 ve ayni mesaji doner — e-postanin kayitli olup olmadigi
     disaridan anlasilamaz (hesap sayimi/enumeration korumasi). Bu, brief
@@ -146,10 +175,20 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     Mail YALNIZ ACTIVE hesaba gider:
       - PENDING hesabin zaten sifresi yok; yolu davet linkidir (resend-invitation).
       - DISABLED hesabin erisimi bilerek kapatilmis; sifirlatmak onu geri acardi.
+
+    K-44 iki koruma katmani:
+      1. CAPTCHA — e-postadan ONCE dogrulanir; basarisizsa 400. Bu 400 hicbir
+         sey sizdirmaz, cunku e-posta daha hic sorgulanmadi.
+      2. Saatlik talep siniri — asilirsa mail gonderilMEZ ama cevap yine
+         ayni 200'dur (asagida).
     """
+    # CAPTCHA once: gecersizse hicbir DB sorgusu/mail yapmadan don.
+    if not verify_captcha(payload.captcha_token, request.client.host if request.client else None):
+        raise HTTPException(status_code=400, detail="Doğrulama başarısız, lütfen tekrar deneyin")
+
     user = db.query(User).filter(User.email == payload.email).first()
 
-    if user is not None and user.status == UserStatus.ACTIVE:
+    if user is not None and user.status == UserStatus.ACTIVE and not _reset_rate_limited(db, user):
         # Bekleyen eski sifirlama token'lari gecersiz kilinir: ayni anda birden
         # cok gecerli link dolasmasin (resend-invitation ile ayni desen).
         now = datetime.now(timezone.utc)

@@ -6,6 +6,7 @@ import {
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import type { MessageResponse } from "../api/types";
+import Recaptcha, { captchaEnabled } from "../auth/Recaptcha";
 
 /**
  * Şifremi unuttum — sıfırlama linki talebi (K-43, kontrat §1).
@@ -19,6 +20,8 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // K-44: CAPTCHA kapalıyken null kalır ve gönderime hiç karışmaz.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const form = useForm({
     initialValues: { email: "" },
@@ -31,12 +34,20 @@ export default function ForgotPasswordPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await api.post<MessageResponse>("/auth/forgot-password", { email: values.email });
+      await api.post<MessageResponse>("/auth/forgot-password", {
+        email: values.email,
+        // Kapalıyken alan hiç gönderilmez; backend de beklemez (K-44).
+        ...(captchaEnabled() ? { captcha_token: captchaToken } : {}),
+      });
       setSent(true);
     } catch (e) {
       // Sunucu bu uçta e-posta bilinmese bile 200 döner; buraya ancak
-      // gerçek bir arıza (ağ/500) düşer.
+      // gerçek bir arıza (ağ/500) veya CAPTCHA reddi (400) düşer.
       setError(e instanceof ApiError ? e.message : "Beklenmeyen bir hata oluştu");
+      // Kullanılan/başarısız token bir daha geçerli değil: kullanıcı kutuyu
+      // yeniden işaretlemeli, yoksa aynı ölü token'la tekrar 400 alır.
+      setCaptchaToken(null);
+      window.grecaptcha?.reset();
     } finally {
       setSubmitting(false);
     }
@@ -80,12 +91,22 @@ export default function ForgotPasswordPage() {
             placeholder="ad@muh.example.edu.tr"
             {...form.getInputProps("email")}
           />
+          <Recaptcha onChange={setCaptchaToken} />
           {error && (
             <Alert color="red" mt="md">
               {error}
             </Alert>
           )}
-          <Button type="submit" fullWidth mt="lg" loading={submitting}>
+          {/* CAPTCHA açıkken kutu işaretlenmeden gönderim kapalı. Bu bir
+              güvenlik önlemi DEĞİL (otorite sunucuda) — boşuna istek atıp
+              400 yemesini engelleyen bir kolaylık. */}
+          <Button
+            type="submit"
+            fullWidth
+            mt="lg"
+            loading={submitting}
+            disabled={captchaEnabled() && !captchaToken}
+          >
             Sıfırlama Bağlantısı Gönder
           </Button>
           <Anchor component={Link} to="/login" size="sm" mt="md" display="block">

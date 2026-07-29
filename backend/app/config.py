@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # henuz sahibi olmayan bir hesabi acar. 2 saat, kullanicinin postasini
     # acip tiklamasi icin fazlasiyla yeterli.
     password_reset_expire_hours: int = 2
+
+    # K-44 · CAPTCHA. BOS = dogrulama atlanir (yerel gelistirme ve testler
+    # internetsiz calissin). Uretimde asagidaki denetci ZORUNLU tutar.
+    recaptcha_secret_key: str = ""
+
+    # K-44 · Ayni hesap icin saatte en fazla kac sifirlama maili. CAPTCHA'yi
+    # elle gecen birine karsi ikinci katman: mail bombardimanini durdurur.
+    password_reset_max_per_hour: int = 3
     frontend_base_url: str = "http://localhost:5173"
     mail_from: str = "no-reply@muh.example.edu.tr"
 
@@ -82,6 +90,13 @@ class Settings(BaseSettings):
 
         if any("localhost" in o for o in self.cors_origin_list):
             hatalar.append("CORS_ORIGINS hala localhost iceriyor")
+
+        if not self.recaptcha_secret_key:
+            # K-44: CAPTCHA dogrulamasi anahtar yokken ATLANIR. Bu, yerel
+            # gelistirmede dogru davranis ama yayinda public bir ucu
+            # (forgot-password) korumasiz birakir — sessizce degil, acilista
+            # patlayarak fark edilmeli.
+            hatalar.append("RECAPTCHA_SECRET_KEY bos (sifre sifirlama korumasiz kalir)")
 
         if hatalar:
             raise ValueError(

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Checkbox, Group, Loader, Modal, NumberInput,
   Paper, Select, Stack, Table, Text, TextInput, Title, Tooltip, UnstyledButton,
@@ -7,7 +8,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBuilding, IconChevronDown, IconChevronUp, IconCircleCheck, IconCircleOff,
-  IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
+  IconCalendarWeek, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -58,6 +59,7 @@ function SortableTh({
 
 export default function ClassroomsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Derslik/bina workgroup geneli paylaşımlı kaynak: bölüm boyutu yok (K-25).
   const canWrite = canWriteIn(user, "can_manage_classrooms");
 
@@ -340,7 +342,7 @@ export default function ClassroomsPage() {
                 <SortableTh label="Kapasite" active={sortBy === "capacity"} dir={sortDir} onClick={() => toggleSort("capacity")} />
                 <SortableTh label="Sınav Kont." active={sortBy === "exam"} dir={sortDir} onClick={() => toggleSort("exam")} />
                 <Table.Th>Durum</Table.Th>
-                {canWrite && <Table.Th w={130}>İşlemler</Table.Th>}
+                <Table.Th w={canWrite ? 170 : 44}>İşlemler</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -377,9 +379,20 @@ export default function ClassroomsPage() {
                   <Table.Td>
                     {!c.active && <Badge color="gray" size="sm">Pasif</Badge>}
                   </Table.Td>
-                  {canWrite && (
-                    <Table.Td>
-                      <Group gap={4} wrap="nowrap">
+                  <Table.Td>
+                    <Group gap={4} wrap="nowrap">
+                      <Tooltip label="Haftalık programı görüntüle">
+                        <ActionIcon
+                          variant="subtle"
+                          color="blue"
+                          aria-label={`${c.building.name} ${c.room_code} haftalık programını görüntüle`}
+                          onClick={() => navigate(`/weekly?view=classroom&classroom_id=${c.id}`)}
+                        >
+                          <IconCalendarWeek size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                      {canWrite && (
+                        <>
                         <Tooltip label="Düzenle">
                           <ActionIcon variant="subtle" onClick={() => openEditRoom(c)}>
                             <IconPencil size={18} />
@@ -391,9 +404,10 @@ export default function ClassroomsPage() {
                             <IconTrash size={18} />
                           </ActionIcon>
                         </Tooltip>
-                      </Group>
-                    </Table.Td>
-                  )}
+                        </>
+                      )}
+                    </Group>
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

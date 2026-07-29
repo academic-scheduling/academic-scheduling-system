@@ -39,6 +39,8 @@ def create_department(
         workgroup_id=admin.workgroup_id,   # istemciden DEĞİL, token'dan
         name=payload.name,
         code=payload.code,
+        name_en=payload.name_en,
+        faculty_en=payload.faculty_en,
     )
     db.add(dep)
     db.flush()

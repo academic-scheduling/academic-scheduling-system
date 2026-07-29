@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 25 Temmuz 2026 (K-41: X kuralları yalnız vizede)
+**Son güncelleme:** 29 Temmuz 2026 (K-42: test izolasyonu — ayrı test veritabanı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -731,3 +731,49 @@ Bayrak korunur — bir fakülte vize döneminde de kontrolü kapatmak isteyebili
 **Not:** Bu, `wp5-engine-v14` incelemesinde C'den "X kurallarını sınav tipine
 değil bayrağa bağla" diye istediğim değişikliğin kısmen geri alınmasıdır. O
 zamanki gerekçe "tür değil bayrak kontrol etmeli"ydi; doğrusu İKİSİ birden.
+
+## K-42 · Test izolasyonu: testler ayrı `scheduling_test` veritabanında koşar [E]
+`backend/conftest.py`. Test paketi artık dev veritabanına (`scheduling`) değil,
+onun yanında duran ayrı bir `scheduling_test` veritabanına yazar. Uygulama
+koduna ve 336 testin hiçbirine dokunulmadı; değişen tek dosya `conftest.py`.
+
+**Sorun:** Test paketinde izolasyon yoktu. `tests/helpers.py` doğrudan
+`app.db.SessionLocal` ile dev Postgres'e bağlanıp `commit()` ediyor, teardown
+yapmıyordu (`foreign_admin_headers`/`sub_headers` her çağrıda yeni workgroup +
+kullanıcı yaratıyor). Sonuç: her `pytest` koşumu dev veritabanına kalıcı çöp
+bırakıyordu — bir noktada ~2 bölüm olması gereken yerde **130 bölüm**, 1
+workgroup yerine **22 workgroup** birikmişti. `test_wp0_smoke.py` kendi
+transaction-rollback fixture'ını yaptığı için kirletmeyen tek dosyaydı; kirlilik
+API testlerinden (wp1–wp6) geliyordu. Brief §10.2 ve WP7 açısından bu bir
+altyapı eksikliğiydi (ilk proje analizinde işaret edilmişti).
+
+**Karar — ayrı test veritabanı, transaction-rollback DEĞİL.** İki yol vardı:
+(a) her testi bir transaction'a sarıp geri almak, (b) ayrı bir throwaway
+veritabanı. (a) reddedildi: testler bolca `commit()` ediyor ve `helpers` ile
+router'lar sürekli TAZE `SessionLocal()` açıyor; hepsini tek bir bağlantıda
+iç-içe savepoint'lerle sarmak (commit'te savepoint'i yeniden başlatan klasik
+desen) 336 test için kırılgan olurdu. (b) sıfır test/uygulama değişikliğiyle
+sağlam çalışır — seçildi.
+
+**Nasıl çalışır (`conftest.py`):**
+- Dev URL'inin veritabanı adına `_test` eklenerek test URL'i türetilir
+  (`scheduling` → `scheduling_test`). `TEST_DATABASE_URL` env'i verilirse
+  doğrudan o kullanılır (CI için).
+- Bu veritabanı yoksa bakım bağlantısıyla (`postgres`) `CREATE DATABASE` edilir.
+- `settings.database_url` + `DATABASE_URL` env test URL'ine çevrilir; böylece
+  `get_db`, `helpers.SessionLocal` ve testlerin açtığı her oturum tek yerden
+  test veritabanına bağlanır.
+- Her oturumun başında `DROP SCHEMA public CASCADE` + `create_all` ile şema
+  sıfırdan kurulur (crash'e dayanıklı temiz başlangıç), sonra asgari seed:
+  9 slot referans satırı + testlerin login olduğu admin (`admin@muh...`).
+- **Güvenlik kilidi:** test veritabanı adı `_test` ile bitmiyorsa `assert`
+  durdurur — `DROP SCHEMA`'nın yanlışlıkla gerçek bir veritabanını sıfırlaması
+  imkânsız.
+
+**Tuzak (kayda değer):** `str(URL)` SQLAlchemy'de parolayı `***` ile maskeler;
+ilk denemede engine `app:***` ile bağlanmaya çalışıp auth hatası verdi. Doğrusu
+`URL.render_as_string(hide_password=False)`.
+
+**Kanıt:** 336 test yeşil kaldı; koşum öncesi/sonrası dev veritabanı sayaçları
+**bit bit aynı** (test verisi yalnız `scheduling_test`'e yazıldı). `scheduling_test`
+kendini yönetir — her koşum başında sıfırlandığı için orada da birikme olmaz.

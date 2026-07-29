@@ -92,9 +92,12 @@ Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 `{FRONTEND_BASE_URL}/activate?token=<ham token>` olarak kurar. Frontend'in
 `/activate` route'u token'ı **query string'den** okur; değişirse mailer da değişir.
 
-### POST /auth/forgot-password   ← K-43
+### POST /auth/forgot-password   ← K-43, K-44
 Şifre sıfırlama bağlantısı talep eder. **Public** (dördüncü public uç).
-İstek: `{ "email": "..." }`
+İstek: `{ "email": "...", "captcha_token": "..." }`
+  ← `captcha_token` (K-44): Google reCAPTCHA v2 istemci cevabı. **Opsiyonel** —
+    sunucuda `RECAPTCHA_SECRET_KEY` tanımlı değilse doğrulama atlanır ve
+    istemci bu alanı hiç göndermez. Tanımlıyken eksik/geçersiz → **400**.
 Cevap 200 (**HER ZAMAN**): `{ "message": "E-posta kayıtlıysa sıfırlama bağlantısı gönderildi" }`
   ← E-postanın kayıtlı olup olmadığı **ayırt edilmez** (hesap sayımı koruması):
     bilinmeyen adres de, kayıtlı adres de aynı kodu ve aynı gövdeyi alır.
@@ -102,6 +105,12 @@ Cevap 200 (**HER ZAMAN**): `{ "message": "E-posta kayıtlıysa sıfırlama bağl
     (`resend-invitation`), `DISABLED` hesabın erişimi bilerek kapatılmıştır.
   ← Yeni talep, o kullanıcının bekleyen eski sıfırlama token'larını geçersiz
     kılar (aynı anda birden çok geçerli link dolaşmaz).
+  ← **Saatlik sınır (K-44):** aynı hesaba `PASSWORD_RESET_MAX_PER_HOUR`
+    (varsayılan 3) mailden fazlası gönderilmez. Sınır aşıldığında cevap
+    **DEĞİŞMEZ** — 429 değil, yine aynı 200. Farklı kod dönmek hesap sayımı
+    korumasını delerdi (sınır yalnız gerçek+ACTIVE hesapta tetiklenebilir).
+Hata 400: `{ "detail": "Doğrulama başarısız, lütfen tekrar deneyin" }` — CAPTCHA
+  geçersiz. Bu 400 hiçbir şey sızdırmaz: e-posta henüz sorgulanmamıştır.
 
 ### GET /auth/reset/{token}   ← K-43
 Sıfırlama ekranı AÇILIRKEN çağrılır (K-24'ün ikizi): token'ı doğrular, sahibinin

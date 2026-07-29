@@ -40,6 +40,12 @@ export type MessageResponse = {
   message: string;
 };
 
+/** Kontrat §1 · GET /auth/reset/{token} cevabı (K-43).
+ *  Davet önizlemesinden dar: yalnız e-posta, ad yok. */
+export type PasswordResetPreview = {
+  email: string;
+};
+
 /** Kontrat §3 · GET /departments elemanı */
 export type Department = {
   id: number;
@@ -272,7 +278,8 @@ export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
 /** Kontrat §12 · işlem kayıtları (K-35). */
 export type AuditAction =
   | "CREATE" | "UPDATE" | "DELETE" | "SUBMIT"
-  | "INVITE" | "ACTIVATE";          // davet akışı (K-37)
+  | "INVITE" | "ACTIVATE"           // davet akışı (K-37)
+  | "RESET_REQUEST" | "RESET_PASSWORD";   // şifre sıfırlama (K-43)
 
 export type AuditEntityType =
   | "department" | "building" | "classroom" | "lecturer"
@@ -305,6 +312,11 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
   // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
   INVITE: { label: "Davet etti", color: "cyan" },
   ACTIVATE: { label: "Hesabını açtı", color: "teal" },
+  // K-43: şifre sıfırlama. İkisinin de faili hesabın sahibidir. Talep ve
+  // gerçekleşme AYRI satırlar: "link istendi ama kullanılmadı" durumu
+  // denetimde görünmeli (istenmeyen talep = olası saldırı işareti).
+  RESET_REQUEST: { label: "Şifre sıfırlama istedi", color: "orange" },
+  RESET_PASSWORD: { label: "Şifresini yeniledi", color: "grape" },
 };
 
 /** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */

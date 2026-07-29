@@ -79,6 +79,32 @@ class InvitationPreview(BaseModel):
 class MessageResponse(BaseModel):
     message: str
 
+class ForgotPasswordRequest(BaseModel):
+    """POST /auth/forgot-password (K-43, K-44)."""
+    email: str = Field(..., description="Hesabın e-posta adresi")
+    # K-44: Google reCAPTCHA v2 cevabı. Opsiyonel, çünkü anahtar tanımlı
+    # değilken (yerel geliştirme) doğrulama atlanır ve istemci bu alanı hiç
+    # göndermez. Anahtar tanımlıyken eksikliği 400 ile reddedilir.
+    captcha_token: str | None = Field(
+        default=None, description="reCAPTCHA v2 istemci cevabı (g-recaptcha-response)"
+    )
+
+class ResetPasswordRequest(BaseModel):
+    """POST /auth/reset-password (K-43). Davet tamamlamanın ikizi."""
+    token: str = Field(..., description="Şifre sıfırlama tokeni")
+    password: str = Field(min_length=8, description="Yeni şifre")
+
+class PasswordResetPreview(BaseModel):
+    """GET /auth/reset/{token} cevabı (K-43).
+
+    Yalnız e-posta: sıfırlama ekranı "hangi hesap" olduğunu salt-okunur
+    gösterir. Ad bile DIŞARIDA — davet önizlemesinden (K-24) daha dar,
+    çünkü burada karşı taraf hesabın sahibi olduğunu henüz kanıtlamadı;
+    token'ı ele geçirene kişi adı sızdırmanın bir faydası yok.
+    """
+    email: str
+    model_config = ConfigDict(from_attributes=True)
+
 class UserUpdate(BaseModel):
     """PATCH /users/{id} — hepsi opsiyonel, yalnız gönderilen alan değişir (K-34).
 

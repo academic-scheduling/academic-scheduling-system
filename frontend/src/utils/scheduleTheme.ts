@@ -15,10 +15,17 @@ import type { CSSProperties } from "react";
  *  ızgara okunmayı desteklemeli, dikkati kendine çekmemeli. */
 export const LINE = "#F1F5F9";
 
-/** Günleri ayıran DİKEY çizgi. Yataydan koyu: bir günün nerede bitip
- *  diğerinin nerede başladığı takvimin en temel okuma sınırıdır; yatay
- *  saat çizgileriyle aynı tonda olunca sütunlar birbirine akıyordu. */
-export const DAY_LINE = "#E2E8F0";
+/** Günleri ayıran DİKEY çizgi. Yataydan belirgin biçimde koyu: bir günün
+ *  nerede bitip diğerinin nerede başladığı takvimin en temel okuma sınırıdır;
+ *  yatay saat çizgileriyle yakın tonda olunca sütunlar birbirine akıyordu. */
+export const DAY_LINE = "#94A3B8";
+
+/** Sayfa zemini. İçerik kartları beyaz kaldığı için üzerinde yüzer. */
+export const PAGE_BG = "#F1F5F9";
+
+/** İmleç boş bir slotun üzerindeyken o alana düşen vurgu — "buraya
+ *  eklenebilir" sinyali. Artı işaretiyle birlikte görünür. */
+export const HOVER_CELL_BG = "#E9EEF5";
 
 export const BORDER = "#E2E8F0";        // kart ve panel kenarı
 export const BORDER_HOVER = "#CBD5E1";  // hover'da bir tık koyulaşır

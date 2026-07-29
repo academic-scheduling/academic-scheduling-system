@@ -4,6 +4,8 @@ import RequireAdmin from "./auth/RequireAdmin";
 import AppLayout from "./layout/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import ActivatePage from "./pages/ActivatePage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
@@ -20,6 +22,10 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/activate" element={<ActivatePage />} />
+      {/* Şifre sıfırlama (K-43) — davet uçları gibi PUBLIC: şifresini
+          unutan kullanıcı tanımıyla giriş yapamaz. */}
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>

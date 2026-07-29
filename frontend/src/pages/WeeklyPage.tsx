@@ -890,9 +890,14 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
   const secili = view === "classroom" ? room : lecturer;
 
   return (
-    <Paper p="md" radius="lg" w={200}
+    // Cohort görünümündeki ders paneliyle BİREBİR aynı kabuk: aynı genişlik
+    // (SIDE_W), aynı köşe (md), aynı gri zemin, aynı çerçeve + gölge. Önceden
+    // farklıydı (w=200, radius lg, gray-0, çerçevesiz) ve mercek değişince sol
+    // sütun görünüş değiştiriyordu.
+    <Paper p="sm" radius="md" w={SIDE_W}
       style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-               height, background: "var(--mantine-color-gray-0)" }}>
+               height, background: SIDEBAR_BG,
+               border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
       {!secili ? (
         <Text size="xs" c="dimmed">
           {view === "classroom" ? "Bir derslik seçin." : "Bir öğretim üyesi seçin."}
@@ -936,11 +941,13 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
                 {hocaOzet.dersler.length > 0 && (
                   <div>
                     <Text size="xs" c="dimmed" mb={6}>Verdiği dersler</Text>
-                    <Stack gap={4}>
+                    <Stack gap={6}>
+                      {/* Paletteki ders satırıyla aynı çerçeveli kart standardı
+                          (paletteItemStyle) — tıklanamaz olduğu için hover yok. */}
                       {hocaOzet.dersler.map((c) => (
-                        <div key={c.id}>
-                          <Text size="xs" fw={500}>{c.code}</Text>
-                          <Text size="10px" c="dimmed" truncate>{c.name}</Text>
+                        <div key={c.id} style={paletteItemStyle(false)}>
+                          <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{c.code}</Text>
+                          <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
                         </div>
                       ))}
                     </Stack>

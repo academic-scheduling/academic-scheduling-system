@@ -117,9 +117,58 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+// --- Dosya indirme (blob) ---
+// request() gövdeyi JSON okur; export uçları dosya döndürdüğü için ayrı bir
+// yol gerekir. Auth başlığı + 401 oturum düşmesi burada da aynı kodlanır.
+// Dosya adı sunucunun Content-Disposition başlığından alınır (tek kaynak).
+async function download(path: string): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { headers });
+  } catch (cause) {
+    console.error(`[api] indirme gönderilemedi ${path}:`, cause);
+    throw new ApiError(0, "Sunucuya ulaşılamıyor — backend çalışıyor mu?");
+  }
+
+  if (response.status === 401 && token) {
+    clearToken();
+    window.location.assign("/login");
+    throw new ApiError(401, "Oturum süresi doldu");
+  }
+
+  if (!response.ok) {
+    const data: unknown = await response.json().catch(() => null);
+    throw new ApiError(
+      response.status,
+      normalizeDetail(data) ?? `Beklenmeyen hata (HTTP ${response.status})`,
+      data
+    );
+  }
+
+  const blob = await response.blob();
+  const disp = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^"]+)"?/.exec(disp);
+  const filename = match ? match[1] : "indirilen-dosya";
+
+  // Blob'u geçici bir <a download> ile tarayıcıya indirtir, sonra temizler.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   delete: (path: string) => request<void>("DELETE", path),
+  download: (path: string) => download(path),
 };

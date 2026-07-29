@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Button, Group, Loader, Menu, Modal, MultiSelect,
+  ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
   NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft,
-  IconChevronRight, IconClock, IconDotsVertical, IconMapPin, IconPencil, IconPlus,
-  IconTrash, IconUser,
+  IconChevronRight, IconMapPin, IconPlus, IconTrash, IconUser,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
+import {
+  ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
+  EXAM_HOUR_H, HEAD_H, HEADER_BG, LINE, MIN_DAY_W, MIN_LANE_W, SHADOW, SHADOW_HOVER,
+  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR,
+} from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
   Lecturer, SemesterType,
@@ -23,34 +27,14 @@ import type {
 /* Haftalık programdan TEMEL FARK: burada slot yok, gerçek takvim var.
    Sınav herhangi bir saatte olabilir (K-06: 17:30 sonrası serbest), süresi
    dakikadır. Bu yüzden dikey eksen slot değil DAKİKA ölçeğinde. */
+/* Görsel belirteçler iki takvim ekranı için ORTAK — utils/scheduleTheme.ts.
+   Burada yalnız bu ekrana özel olan dakika ölçeği tanımlanır. */
 const DAY_START = 8 * 60;        // 08:00
 const DAY_END = 21 * 60;         // 21:00 — akşam sınavları da sığsın
-const HOUR_H = 56;               // bir saatin piksel yüksekliği
+const HOUR_H = EXAM_HOUR_H;      // bir saatin piksel yüksekliği
 const PX = HOUR_H / 60;          // dakika başına piksel
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 },
   (_, i) => DAY_START + i * 60);
-const HEAD_H = 48;
-
-/* --- Tasarım belirteçleri ------------------------------------------------
-   Tek yerde durur ki sayfa boyunca aynı gri/çizgi/gölge kullanılsın; dağınık
-   hex değerleri "benzer ama aynı değil" tonlar üretip arayüzü kirletiyordu. */
-const LINE = "#F1F5F9";          // ızgara çizgileri — çok açık
-const BORDER = "#E2E8F0";        // kart/panel kenarı
-const BORDER_HOVER = "#CBD5E1";  // hover'da bir tık koyulaşır
-const HEADER_BG = "#F8FAFC";     // gün başlığı zemini
-const TIME_COLOR = "#94A3B8";    // saat cetveli — susturulmuş
-const TEXT_MUTED = "#64748B";    // ikincil metin (derslik, hoca)
-const TEXT_BODY = "#334155";     // saat satırı: ikincilden bir ton koyu
-const SHADOW = "0 1px 2px rgba(15, 23, 42, 0.06)";
-const SHADOW_HOVER = "0 4px 12px rgba(15, 23, 42, 0.10)";
-const SHADOW_SELECTED = "0 6px 16px rgba(37, 99, 235, 0.16)";
-const CONTROL_H = 34;            // araç çubuğundaki her kontrol aynı yükseklik
-
-/** Durum vurgu renkleri — yalnız ince sol çizgide ve küçük ikonda kullanılır. */
-const ACCENT = { normal: "#2563EB", warn: "#F59E0B", hard: "#EF4444", draft: "#94A3B8" };
-
-const MIN_DAY_W = 172;
-const MIN_LANE_W = 176;
 
 const toMin = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -167,6 +151,10 @@ export default function ExamsPage() {
   const setWeek = (d: Date) => setWeekIso(iso(mondayOf(d)));
 
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "gun-dakika"
+  // Sol listede bir dersin üstüne gelince, o dersin takvimdeki sınavları
+  // vurgulanır — dersin haftaya NEREYE düştüğü listeden ayrılmadan görülür
+  // (haftalık programdaki desenin aynısı).
+  const [hoverCourse, setHoverCourse] = useState<number | null>(null);
   // Sürüklenen: paletten YENİ sınav mı, var olanın TAŞINMASI mı
   const [drag, setDrag] = useState<ExamDrag | null>(null);
   const [over, setOver] = useState<string | null>(null);             // "gun|dakika"
@@ -455,13 +443,16 @@ export default function ExamsPage() {
 
       <Group align="flex-start" gap="lg" wrap="nowrap">
         {/* Sol panel: bu türde sınavı olmayan dersler — "yapılacaklar" listesi */}
-        <Paper p="sm" radius="md" w={214}
+        {/* Sol panel zemini hafif gri: takvim beyaz, panel de beyaz olunca ikisi
+            tek bir yüzeye yapışıyor ve gözün dinlendiği bir sınır kalmıyordu. */}
+        <Paper p="sm" radius="md" w={SIDE_W}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
                    height: HEAD_H + HOUR_H * (HOURS.length - 1) + 32,
-                   background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+                   background: SIDEBAR_BG, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
           <TextInput size="xs" mb={10} radius="md" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
-            styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H, borderColor: BORDER } }}
+            styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
+                               borderColor: BORDER, background: "#FFFFFF" } }}
             placeholder="Ders ara" />
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
             <Stack gap={2}>
@@ -471,6 +462,7 @@ export default function ExamsPage() {
               {paletDersler.map(({ course: c, done }) => (
                 <PaletteItem key={c.id} course={c} done={done}
                   draggable={canWriteCourse(c.id)}
+                  onHover={setHoverCourse}
                   onDragStart={() => setDrag({ kind: "new", courseId: c.id, label: c.code })}
                   onDragEnd={() => setDrag(null)}
                   // Sürüklemek istemeyen için tıklama da çalışsın: haftanın ilk
@@ -491,7 +483,7 @@ export default function ExamsPage() {
           ) : (
             <div style={{ display: "flex", minWidth: 560 }}>
               {/* saat cetveli */}
-              <div style={{ width: 52, flexShrink: 0, position: "relative",
+              <div style={{ width: TIME_COL_W, flexShrink: 0, position: "relative",
                             height: HEAD_H + HOUR_H * (HOURS.length - 1) }}>
                 {HOURS.map((h, i) => (
                   <div key={h} style={{
@@ -511,8 +503,11 @@ export default function ExamsPage() {
                   <div key={gun} style={{
                     // Minimum kart genişliği korunur, artan alan günlere eşit dağılır.
                     flex: `1 0 ${minDayWidth}px`, minWidth: minDayWidth,
-                    borderLeft: `1px solid ${LINE}`,
-                    borderRight: gi === gunler.length - 1 ? `1px solid ${LINE}` : undefined,
+                    // Gün ayracı yatay saat çizgilerinden KOYU: sütun sınırı
+                    // takvimin en temel okuma sınırı, aynı tonda olunca günler
+                    // birbirine akıyordu.
+                    borderLeft: `1px solid ${DAY_LINE}`,
+                    borderRight: gi === gunler.length - 1 ? `1px solid ${DAY_LINE}` : undefined,
                   }}>
                     {/* Gün başlığı iki satır: üstte gün adı (susturulmuş, seyrek
                         harf aralığı), altta tarih. Tek satırda birleşince
@@ -602,6 +597,7 @@ export default function ExamsPage() {
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                           highlight={e.id === highlightId}
+                          listHover={hoverCourse === e.course.id}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
@@ -778,8 +774,9 @@ function Legend({ label, color }: { label: string; color: string }) {
  *  Hover durumu bileşen içinde tutulur: listedeki her satır kendi durumunu
  *  bilir, üst bileşenin "hangi satırın üstündeyim" diye state taşımasına
  *  gerek kalmaz (liste uzadıkça o yaklaşım gereksiz render üretirdi). */
-function PaletteItem({ course: c, done, draggable, onDragStart, onDragEnd, onPick }: {
+function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragEnd, onPick }: {
   course: Course; done: boolean; draggable: boolean;
+  onHover: (courseId: number | null) => void;
   onDragStart: () => void; onDragEnd: () => void; onPick: () => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -793,8 +790,8 @@ function PaletteItem({ course: c, done, draggable, onDragStart, onDragEnd, onPic
       }}
       onDragEnd={onDragEnd}
       onClick={() => draggable && onPick()}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => { setHover(true); onHover(c.id); }}
+      onMouseLeave={() => { setHover(false); onHover(null); }}
       style={{
         padding: "7px 8px", borderRadius: 8,
         // Satır kenarlığı YOK: 20 dersin her birine çerçeve çizmek paneli
@@ -826,8 +823,9 @@ function PaletteItem({ course: c, done, draggable, onDragStart, onDragEnd, onPic
   );
 }
 
-function ExamCard({ e, hard, warn, highlight, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
-  e: Placed; hard: boolean; warn: boolean; highlight?: boolean; editable: boolean; revertable: boolean;
+function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+  e: Placed; hard: boolean; warn: boolean; highlight?: boolean; listHover?: boolean;
+  editable: boolean; revertable: boolean;
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
@@ -839,7 +837,6 @@ function ExamCard({ e, hard, warn, highlight, editable, revertable, onDragStart,
   }, [highlight]);
 
   const [hover, setHover] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const draft = e.status === "DRAFT";
   // Durum rengi YALNIZ ince sol çizgide ve küçük durum ikonunda yaşar.
@@ -856,25 +853,56 @@ function ExamCard({ e, hard, warn, highlight, editable, revertable, onDragStart,
      sığmaz. Bilgi hiyerarşisi bu yüzden kademeli: kod ve saat her zaman görünür,
      ad/derslik/hoca yer buldukça eklenir. Sığmayanı kırpmak yerine hiç
      çizmemek, yarım kalmış metin şeritlerinden daha okunaklı. */
+  /* Saat aralığı kartta YAZILMAZ: kartın dikey konumu ve yüksekliği zaten
+     saati birebir gösteriyor (cetvel solda duruyor). Metni tekrarlamak dar
+     kartlarda ders adını veya dersliği dışarı itiyordu. Tam aralık tooltip'te. */
   const h = e.duration_minutes * PX;
-  const showName = h >= 78;
-  const showRoom = h >= 104;
-  const showLecturer = h >= 128;
-  const showDraftBadge = draft && h >= 152;
+  const showName = h >= 62;
+  const showRoom = h >= 88;
+  const showLecturer = h >= 116;
+  const showDraftBadge = draft && h >= 144;
 
-  const actionsVisible = (editable || revertable) && (hover || menuOpen);
+  const actionsVisible = (editable || revertable) && hover;
 
   return (
     <div
       ref={cardRef}
-      draggable={editable}
-      onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; onDragStart(); }}
+      draggable={editable || revertable}
+      onDragStart={(ev) => {
+        // Yayınlanmış sınav taşınamaz. Sürüklemeyi sessizce yutmak yerine
+        // sebebini söylüyoruz — haftalık programdaki davranışın aynısı.
+        if (!editable) {
+          ev.preventDefault();
+          if (revertable) {
+            notifications.show({
+              color: "orange",
+              title: "Kilitli Sınav",
+              message: "Yayınlanmış sınavlar taşınamaz. Önce taslağa çevirin.",
+            });
+          }
+          return;
+        }
+        ev.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
       onDragEnd={onDragEnd}
-      onClick={(ev) => { ev.stopPropagation(); if (editable) onEdit(); }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        if (editable) onEdit();
+        else if (revertable) {
+          notifications.show({
+            color: "orange",
+            title: "Kilitli Sınav",
+            message: "Yayınlanmış sınavlar kilitlidir. Düzenlemek için önce taslağa çevirin.",
+          });
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       title={editable
         ? `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · düzenlemek için tıkla, taşımak için sürükle`
+        : revertable
+        ? `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · Yayınlanmış (kilitli) — düzenlemek için önce taslağa çevirin`
         : `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · ${e.total_expected_students} öğrenci`}
       style={{
         position: "absolute",
@@ -897,77 +925,59 @@ function ExamCard({ e, hard, warn, highlight, editable, revertable, onDragStart,
         borderRightColor: hover ? BORDER_HOVER : BORDER,
         borderBottomColor: hover ? BORDER_HOVER : BORDER,
         borderLeftColor: accent,
-        borderRadius: 10, padding: "8px 9px", lineHeight: 1.25,
-        overflow: "hidden", cursor: editable ? "pointer" : "default",
+        borderRadius: CARD_RADIUS, padding: CARD_PADDING, lineHeight: 1.25,
+        overflow: "hidden",
+        cursor: editable ? "pointer" : revertable ? "not-allowed" : "default",
         transition: "box-shadow 130ms ease, border-color 130ms ease",
         // Çakışmada çok hafif kırmızı hâle — dolgu değil, yalnız derinlik.
-        boxShadow: highlight ? SHADOW_SELECTED
+        boxShadow: highlight || listHover ? SHADOW_SELECTED
           : hover ? SHADOW_HOVER
           : hard ? `${SHADOW}, 0 0 0 1px rgba(239, 68, 68, 0.10)`
           : SHADOW,
-        ...(highlight ? { outline: `2px solid ${ACCENT.normal}`, outlineOffset: -1, zIndex: 5 } : null),
+        ...(highlight || listHover
+          ? { outline: `2px solid ${ACCENT.normal}`, outlineOffset: -1, zIndex: 5 }
+          : null),
       }}>
       {/* Üst satır: ders kodu · tür rozeti · (hover'da) işlem menüsü */}
       <Group gap={4} justify="space-between" wrap="nowrap" align="flex-start">
         <Text fz={15} fw={700} truncate style={{ letterSpacing: "-0.01em", minWidth: 0 }}>
           {e.course.code}
         </Text>
+        {/* Menü yerine DOĞRUDAN eylem: karttaki tek anlamlı işlem duruma göre
+            zaten tek — taslakta sil, yayınlanmışta taslağa çevir. Üç nokta,
+            tek maddelik bir menüyü açmak için fazladan bir tıklamaydı.
+            Düzenleme kartın kendisine tıklayarak yapılır. */}
         <Group gap={2} wrap="nowrap" style={{ flexShrink: 0 }}>
           {!actionsVisible && (
             <Badge size="xs" variant="default" radius="sm"
               style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
-                       color: TEXT_MUTED, borderColor: BORDER, background: "#F8FAFC" }}>
+                       color: TEXT_MUTED, borderColor: BORDER, background: HEADER_BG }}>
               {EXAM_TYPE_LABELS[e.exam_type]}
             </Badge>
           )}
-          {actionsVisible && (
-            <Menu shadow="md" width={158} position="bottom-end" opened={menuOpen}
-              onChange={setMenuOpen}>
-              <Menu.Target>
-                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Sınav işlemleri"
-                  onClick={(ev) => ev.stopPropagation()}>
-                  <IconDotsVertical size={15} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                {editable && (
-                  <Menu.Item leftSection={<IconPencil size={14} />}
-                    onClick={(ev) => { ev.stopPropagation(); onEdit(); }}>
-                    Düzenle
-                  </Menu.Item>
-                )}
-                {revertable && (
-                  <Menu.Item leftSection={<IconArrowBackUp size={14} />}
-                    onClick={(ev) => { ev.stopPropagation(); onRevert(); }}>
-                    Taslağa çevir
-                  </Menu.Item>
-                )}
-                {editable && (
-                  <Menu.Item color="red" leftSection={<IconTrash size={14} />}
-                    onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
-                    Sil
-                  </Menu.Item>
-                )}
-              </Menu.Dropdown>
-            </Menu>
+          {actionsVisible && editable && (
+            <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sınavı sil"
+              title="Sil"
+              onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
+              <IconTrash size={15} />
+            </ActionIcon>
+          )}
+          {actionsVisible && revertable && (
+            <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
+              title="Taslağa çevir"
+              onClick={(ev) => { ev.stopPropagation(); onRevert(); }}>
+              <IconArrowBackUp size={15} />
+            </ActionIcon>
           )}
         </Group>
       </Group>
 
       {showName && (
-        <Text fz={13} fw={500} truncate mt={2}>{e.course.name}</Text>
+        <Text fz={13} fw={500} truncate mt={3}>{e.course.name}</Text>
       )}
 
-      {/* Saat: kartın en çok aranan bilgisi — ikincil metinden bir ton koyu. */}
-      <Group gap={4} wrap="nowrap" mt={showName ? 6 : 4} style={{ minWidth: 0 }}>
-        <IconClock size={13} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
-        <Text fz={13} fw={500} style={{ color: TEXT_BODY, fontVariantNumeric: "tabular-nums" }}>
-          {fmt(bas)} – {fmt(bit)}
-        </Text>
-      </Group>
-
       {showRoom && (
-        <Group gap={4} wrap="nowrap" mt={4} style={{ minWidth: 0 }}>
+        <Group gap={4} wrap="nowrap" mt={5} style={{ minWidth: 0 }}>
           <IconMapPin size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
           <Text fz={12} truncate style={{ color: TEXT_MUTED }}>
             {odalar || "Derslik atanmadı"}

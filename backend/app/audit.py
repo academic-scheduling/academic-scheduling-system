@@ -141,6 +141,8 @@ def build_change_summary(nesne, data: dict) -> str | None:
     return ozet if len(ozet) <= 300 else ozet[:299] + "…"
 
 
+_audit_id_counter = 0
+
 def log_action(
     db: Session,
     user: User,
@@ -150,24 +152,18 @@ def log_action(
     entity=None,
     change_summary: str | None = None,
 ) -> None:
-    """action: CREATE / UPDATE / DELETE / SUBMIT.
+    """action: CREATE / UPDATE / DELETE / SUBMIT."""
+    global _audit_id_counter
+    kw = {
+        "user_id": user.id,
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_label": build_label(entity) if entity is not None else None,
+        "change_summary": change_summary,
+    }
+    if db.bind and db.bind.dialect.name == "sqlite":
+        _audit_id_counter += 1
+        kw["id"] = _audit_id_counter
 
-    `entity`: islemin uygulandigi ORM nesnesi. Adi buradan uretilir ve
-    satira YAZILIR (K-36) — okuma aninda tabloya bakilmaz, cunku o tablo
-    o kaydi kaybetmis olabilir.
-
-    Varsayilani None: veren bir cagri yeri unutulursa iz yine yazilir,
-    yalnizca adsiz kalir. Iz kaybetmektense adsiz iz iyidir.
-
-    `change_summary`: yalniz UPDATE'te anlamli — NEYIN degistigini soyler
-    (K-38). entity_label "hangi kayit", bu alan "ne degisti" sorusunu
-    cevaplar; ikisi ayri sutunda durur ki tek metne sikistirilmasin.
-    """
-    db.add(AuditLog(
-        user_id=user.id,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        entity_label=build_label(entity) if entity is not None else None,
-        change_summary=change_summary,
-    ))
+    db.add(AuditLog(**kw))

@@ -144,7 +144,12 @@ def guvenlik_kapisi(onay_atla: bool) -> None:
 
 def reset():
     with engine.begin() as conn:
-        conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
+        if engine.dialect.name == "sqlite":
+            table_list = [t.strip() for t in TABLES.split(",")]
+            for table in reversed(table_list):
+                conn.execute(text(f"DELETE FROM {table}"))
+        else:
+            conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
     print("• Veritabani sifirlandi.")
 
 
@@ -155,18 +160,23 @@ def reset():
 def seed():
     db = SessionLocal()
 
+    _counters = {}
+    def next_id(cls):
+        _counters[cls] = _counters.get(cls, 0) + 1
+        return _counters[cls]
+
     for no, bas, bit in SLOT_TIMES:
         db.add(Slot(slot_no=no, start_time=bas, end_time=bit))
 
     # --- fakülte + admin ---
     # check_exam_vs_course=True: X kurallarının birinci kapısı (K-06).
-    wg = Workgroup(name="Mühendislik Fakültesi",
+    wg = Workgroup(id=next_id(Workgroup), name="Mühendislik Fakültesi",
                    allowed_email_domain="muh.example.edu.tr",
                    check_exam_vs_course=True)
     db.add(wg)
     db.flush()
 
-    admin = User(workgroup_id=wg.id, name="Fakülte Yöneticisi",
+    admin = User(id=next_id(User), workgroup_id=wg.id, name="Fakülte Yöneticisi",
                  email="admin@muh.example.edu.tr",
                  password_hash=hash_password("admin1234"),
                  role=UserRole.ADMIN, status=UserStatus.ACTIVE)
@@ -178,8 +188,8 @@ def seed():
         log_action(db, admin, action, tip, nesne.id, nesne)
 
     # --- bölümler ---
-    ceng = Department(workgroup_id=wg.id, name="Bilgisayar Mühendisliği", code="CENG")
-    eee = Department(workgroup_id=wg.id, name="Elektrik-Elektronik Mühendisliği", code="EEE")
+    ceng = Department(id=next_id(Department), workgroup_id=wg.id, name="Bilgisayar Mühendisliği", code="CENG")
+    eee = Department(id=next_id(Department), workgroup_id=wg.id, name="Elektrik-Elektronik Mühendisliği", code="EEE")
     db.add_all([ceng, eee])
     db.flush()
     log("CREATE", "department", ceng)
@@ -187,7 +197,7 @@ def seed():
 
     # --- hocalar ---
     def hoca(ad, *, harici=False, kaynak="IMPORT"):
-        lec = Lecturer(workgroup_id=wg.id, full_name=ad,
+        lec = Lecturer(id=next_id(Lecturer), workgroup_id=wg.id, full_name=ad,
                        normalized_name=normalize_lecturer_name(ad),
                        source=kaynak, is_external=harici)
         db.add(lec)
@@ -204,15 +214,15 @@ def seed():
     # --- bina + derslikler ---
     # Kapasiteler bilinçli: LAB-1 tek "küçük" oda, W7 yalnız orada tetiklensin.
     # exam_capacity ayrı bir eksen (K-17): E5/E7 bunu okur, W7 capacity'yi.
-    a_blok = Building(workgroup_id=wg.id, name="A Blok")
-    b_blok = Building(workgroup_id=wg.id, name="B Blok")
+    a_blok = Building(id=next_id(Building), workgroup_id=wg.id, name="A Blok")
+    b_blok = Building(id=next_id(Building), workgroup_id=wg.id, name="B Blok")
     db.add_all([a_blok, b_blok])
     db.flush()
     log("CREATE", "building", a_blok)
     log("CREATE", "building", b_blok)
 
     def derslik(bina, kod, kap, sinav_kap):
-        c = Classroom(workgroup_id=wg.id, building_id=bina.id, room_code=kod,
+        c = Classroom(id=next_id(Classroom), workgroup_id=wg.id, building_id=bina.id, room_code=kod,
                       capacity=kap, exam_capacity=sinav_kap)
         db.add(c)
         db.flush()
@@ -229,7 +239,7 @@ def seed():
     # hours değerleri yerleşen slot sayısıyla BİLİNÇLİ olarak eşitlendi; tek
     # istisna CENG2052 (3 saat gerekli, 2 slot yerleşmiş) → W8 oradan çıkar.
     def ders(bolum, kod, ad, *, secmeli=False, t=2, u=0, l=0):
-        c = Course(department_id=bolum.id, year=2, semester=SemesterType.SPRING,
+        c = Course(id=next_id(Course), department_id=bolum.id, year=2, semester=SemesterType.SPRING,
                    code=kod, name=ad, is_elective=secmeli,
                    hours_theory=t, hours_practice=u, hours_lab=l)
         db.add(c)
@@ -238,7 +248,7 @@ def seed():
         return c
 
     def sube(dersi, no, hoca_, ogrenci):
-        s = CourseSection(course_id=dersi.id, section_no=no,
+        s = CourseSection(id=next_id(CourseSection), course_id=dersi.id, section_no=no,
                           lecturer_id=hoca_.id, expected_students=ogrenci)
         db.add(s)
         db.flush()
@@ -268,7 +278,7 @@ def seed():
 
     # --- kullanıcılar ---
     def alt_hesap(ad, eposta, bolumler, **yetkiler):
-        u = User(workgroup_id=wg.id, name=ad, email=eposta,
+        u = User(id=next_id(User), workgroup_id=wg.id, name=ad, email=eposta,
                  password_hash=hash_password("althesap123"),
                  role=UserRole.SUB_ACCOUNT, status=UserStatus.ACTIVE, **yetkiler)
         db.add(u)
@@ -290,7 +300,7 @@ def seed():
               can_manage_exams=True, can_manage_classrooms=False)
 
     # Davet akışı demosu: aktifleşmemiş kullanıcı. Şifresi yok, giremez.
-    bekleyen = User(workgroup_id=wg.id, name="Yeni Öğretim Üyesi",
+    bekleyen = User(id=next_id(User), workgroup_id=wg.id, name="Yeni Öğretim Üyesi",
                     email="pending@muh.example.edu.tr",
                     password_hash="", role=UserRole.SUB_ACCOUNT,
                     status=UserStatus.PENDING, can_manage_weekly=True)
@@ -303,6 +313,7 @@ def seed():
               tur=SessionType.THEORY, mod=DeliveryMode.FACE_TO_FACE,
               durum=EntryStatus.DRAFT):
         e = WeeklyScheduleEntry(
+            id=next_id(WeeklyScheduleEntry),
             section_id=subesi.id, classroom_id=derslik_.id if derslik_ else None,
             day_of_week=gun, start_slot=baslangic, slot_count=adet,
             session_type=tur, delivery_mode=mod, status=durum,
@@ -345,7 +356,7 @@ def seed():
 
     # --- sınavlar (hepsi MIDTERM — K-41) ---
     def sinav(dersi, hoca_, tarih, saat, sure, derslikler, *, durum=EntryStatus.DRAFT):
-        x = Exam(course_id=dersi.id, exam_type=ExamType.MIDTERM,
+        x = Exam(id=next_id(Exam), course_id=dersi.id, exam_type=ExamType.MIDTERM,
                  exam_date=tarih, start_time=saat, duration_minutes=sure,
                  lecturer_id=hoca_.id, status=durum,
                  submitted_at=SIMDI if durum is EntryStatus.SUBMITTED else None,

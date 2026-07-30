@@ -309,7 +309,7 @@ export default function ClassroomsPage() {
 
       <Group mb="md">
         <TextInput
-          placeholder="Derslik ara"
+          placeholder="Ara"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           w={240}

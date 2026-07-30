@@ -260,7 +260,7 @@ export default function LecturersPage() {
 
       <Group mb="md" align="flex-end">
         <TextInput
-          placeholder="Ad soyad ara"
+          placeholder="Ara"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           w={280}

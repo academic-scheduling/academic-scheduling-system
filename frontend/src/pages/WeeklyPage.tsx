@@ -948,10 +948,15 @@ export default function WeeklyPage() {
       <Paper ref={conflictsRef} p="md" radius="md"
         style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <style>{`
-          @keyframes blinkPulse {
+          @keyframes blinkPulseRed {
             0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
             50% { background-color: rgba(239, 68, 68, 0.05); box-shadow: none; }
             100% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+          }
+          @keyframes blinkPulseYellow {
+            0% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
+            50% { background-color: rgba(245, 158, 11, 0.05); box-shadow: none; }
+            100% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
           }
         `}</style>
         <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
@@ -971,15 +976,22 @@ export default function WeeklyPage() {
           <Stack gap={8}>
             {weeklyConflicts.map((c, i) => {
               const isBlinking = blinkingRuleId === c.rule_id;
+              const isHard = c.severity === "HARD";
               return (
                 <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start"
                   p={6}
                   style={{
                     borderRadius: 6,
                     transition: "all 300ms ease",
-                    animation: isBlinking ? "blinkPulse 0.8s ease-in-out infinite" : undefined,
-                    border: isBlinking ? "2px solid #EF4444" : "1px solid transparent",
-                    background: isBlinking ? "#FEF2F2" : undefined,
+                    animation: isBlinking
+                      ? isHard ? "blinkPulseRed 0.8s ease-in-out infinite" : "blinkPulseYellow 0.8s ease-in-out infinite"
+                      : undefined,
+                    border: isBlinking
+                      ? isHard ? "2px solid #EF4444" : "2px solid #F59E0B"
+                      : "1px solid transparent",
+                    background: isBlinking
+                      ? isHard ? "#FEF2F2" : "#FFFBEB"
+                      : undefined,
                   }}>
                   <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
                     color={c.severity === "HARD" ? "red" : "orange"}>

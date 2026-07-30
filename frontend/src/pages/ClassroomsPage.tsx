@@ -279,7 +279,10 @@ export default function ClassroomsPage() {
       <Group justify="space-between" mb="md">
         <Title order={3}>Derslikler</Title>
         <Group gap="xs">
-          <ExportMenu buildPath={exportPath} label="Derslik Programı" />
+          <ExportMenu label="Derslik Programı" items={[
+            { label: "Excel (.xlsx)", path: exportPath("xlsx") },
+            { label: "CSV (.csv)", path: exportPath("csv") },
+          ]} />
           {canWrite && (
             <>
               <Button
@@ -306,7 +309,7 @@ export default function ClassroomsPage() {
 
       <Group mb="md">
         <TextInput
-          placeholder="Derslik ara"
+          placeholder="Ara"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
           w={240}
@@ -438,7 +441,9 @@ export default function ClassroomsPage() {
           <Stack>
             <Select
               label="Bina"
-              placeholder="Seçin"
+              placeholder="Ara veya seç"
+              searchable
+              nothingFoundMessage="Bina bulunamadı"
               data={buildings.map((b) => ({
                 value: String(b.id),
                 label: b.is_external ? `${b.name} (fakülte dışı)` : b.name,

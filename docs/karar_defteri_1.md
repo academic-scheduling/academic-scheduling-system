@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 29 Temmuz 2026 (K-44: şifre sıfırlamaya CAPTCHA + hız sınırı)
+**Son güncelleme:** 30 Temmuz 2026 (K-45: bileşen bazında online ders bayrağı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -898,3 +898,35 @@ yokken atlama, anahtar varken zorunluluk, geçerli token'ın geçmesi, CAPTCHA
 hatasının sızdırmaması, ağ hatasında kapalı kapı, sınırın maili kesmesi,
 sınırın cevabı DEĞİŞTİRMEMESİ, sınırın hesap başına olması, eski taleplerin
 pencereden düşmesi. Tam paket **360 yeşil**.
+
+## K-45 · Online'lık ders bileşeninin özelliğidir: T/U/L bazında bayrak [E] — K-19/K-20 genişletmesi
+`courses.theory_online / practice_online / lab_online` (migration `c7e9a02b4d31`).
+
+**Sorun:** Online'lık yalnızca haftalık GİRİŞTE (`delivery_mode`) seçilebiliyordu
+(K-19). Kullanıcı dersi/şubeyi oluştururken "bu dersin teorisi online" diyemiyordu;
+her yerleştirmede tek tek işaretlemek gerekiyordu ve bu dersin sabit bir özelliğini
+(online mı) girişin geçici bir alanı gibi gösteriyordu.
+
+**Karar:** "Online mı" artık **ders düzeyinde, bileşen (T/U/L) bazında** sabittir.
+SENKRON/ASENKRON ayrımı ise K-19'daki gibi **haftalık girişte** kalır.
+- Ders formunda T/U/L saatlerinin altında, **yalnız saati >0 olan bileşen** için
+  "online mı" onay kutusu. Hiç saat yoksa blok görünmez; saati 0 olan bileşenin
+  bayrağı router'da **zorla false** (anlamsız veri tutulmaz — K-25/K-34 deseni).
+- Haftalık ekleme/düzenleme modalında oturum türü (T/U/L) seçilince: o bileşen
+  online ise giriş online olur ve **yalnız senkron/asenkron** sorulur, derslik
+  sorulmaz; değilse yüz yüze sabittir ve derslik sorulur.
+
+**K-19 KORUNUR, ezilmez:** `weekly_schedule_entries.delivery_mode` hâlâ giriş
+düzeyinde ve üç değerli (FACE_TO_FACE / ONLINE_SYNC / ONLINE_ASYNC). Motor (K-19
+asenkron ön-elemesi) hiç değişmedi — bu bayraklar yalnızca UI'da delivery_mode'un
+NASIL seçildiğini yönlendirir. "Aynı dersin teorisi online, lab'ı yüz yüze"
+senaryosu bileşen bazında bayrakla artık ders düzeyinde ifade edilebiliyor
+(K-19'un giriş düzeyi gerekçesiyle tutarlı: bileşenler ayrı).
+
+**Kapsam dışı [bilinçli]:** Backend haftalık API'si delivery_mode'u hâlâ serbest
+kabul eder (K-23 kısıtı dışında); ders bayrağıyla girişin delivery_mode'unun
+TUTARLILIĞINI zorlamaz. UI bunu sürüyor; katı sunucu doğrulaması istenirse ayrı
+iş. Sınav tarafı etkilenmez (sınavda online kavramı yok).
+
+**Kontrat:** §6 CourseCreate/Update/Out'a üç boolean eklendi (üç stajyerin haberi
+var). **Test:** wp2_courses 17 yeşil.

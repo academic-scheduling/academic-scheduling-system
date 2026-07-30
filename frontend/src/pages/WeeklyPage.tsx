@@ -6,14 +6,24 @@ import {
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconArrowBackUp, IconCheck, IconPlus, IconTrash } from "@tabler/icons-react";
+import {
+  IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck,
+  IconMapPin, IconPlus, IconTrash, IconWorld,
+} from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
+import {
+  ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  SHADOW, SHADOW_HOVER,
+  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR, WEEKLY_ROW_H,
+  paletteItemStyle,
+} from "../utils/scheduleTheme";
 import type {
-  Classroom, ConflictResult, ConflictScan, Course, DeliveryMode, Department,
+  Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
   Lecturer, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 
@@ -21,9 +31,9 @@ const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
 const YEARS = ["1", "2", "3", "4"];
-const ROW_H = 54;          // ferah satır: 46'da kartlar sıkışık duruyordu
-const HEAD_H = 32;         // gün başlığı bandı
-const LINE = "var(--mantine-color-gray-2)";   // yumuşak ızgara çizgisi
+/* Görsel belirteçler Sınav Takvimi ile ORTAK — utils/scheduleTheme.ts.
+   İki ekranın ızgara yüksekliği de orada eşitlenir (9 × 91 = 13 × 63). */
+const ROW_H = WEEKLY_ROW_H;   // tek slot: kod, ders adı ve konum rahatça okunur
 
 const SESSION_LABELS: Record<SessionType, string> = { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" };
 const DELIVERY_LABELS: Record<DeliveryMode, string> = {
@@ -101,7 +111,19 @@ function layoutDay(entries: WeeklyEntry[]): Cluster[] {
     batchEnd = Math.max(batchEnd, end(c));
   }
   flush();
-  return out;
+  // Gün bir kez şeritlere bölündüğünde bölünme günün sonuna kadar korunur.
+  // Böylece 09:30'daki tek ders, 08:30'daki iki paralel dersin ardından tüm
+  // sütunu kaplamaz; boş şeritler de takvimin yapısal grid'i olarak görünür.
+  const dayLanes = Math.max(1, ...out.map((c) => c.lanes));
+  return out.map((c) => ({ ...c, lanes: dayLanes }));
+}
+
+/** Kesişen kartlar asla okunamayacak kadar daralmamalı.
+ *
+ * Takvim yatay kaydırmayı zaten destekliyor; bu yüzden iki etkinliği 80px'lik
+ * kartlara sıkıştırmak yerine ilgili gün sütununu genişletiyoruz. */
+function dayWidth(clusters: Cluster[]): number {
+  return Math.max(MIN_DAY_W, ...clusters.map((c) => c.lanes * MIN_LANE_W));
 }
 
 export default function WeeklyPage() {
@@ -227,6 +249,20 @@ export default function WeeklyPage() {
     return () => clearTimeout(timer);
   }, [deepHighlightId]);
 
+  // Bölümler genel-bakışından ?department_id= ile gelindiğinde cohort görünümüne
+  // geç ve o bölümü seç; parametreyi bir kez tüketip URL'den temizle (yenilemede
+  // kullanıcının o an seçtiği bölümü ezmesin). Yıl/dönem kullanıcıya bırakılır.
+  useEffect(() => {
+    const depParam = searchParams.get("department_id");
+    if (!depParam) return;
+    setDep(depParam);
+    setView("cohort");
+    const next = new URLSearchParams(searchParams);
+    next.delete("department_id");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Highlight yönlendirmesi geldiğinde hedef kaydın cohort filtrelerini otomatik ayarla
   useEffect(() => {
     if (!highlightId || !allCourses.length) return;
@@ -306,6 +342,28 @@ export default function WeeklyPage() {
     const m = new Map<number, boolean>();
     for (const c of allCourses) m.set(c.id, c.is_elective);
     return m;
+  }, [allCourses]);
+
+  /** K-45: şube id → o dersin bileşen bazında online'lığı. EntryModal, seçilen
+   *  oturum türü (T/U/L) online ise yalnız SENKRON/ASENKRON sordurur, değilse
+   *  yüz yüze sabitler. */
+  const onlineBySection = useMemo(() => {
+    const m = new Map<number, Record<SessionType, boolean>>();
+    for (const c of allCourses) {
+      for (const s of c.sections) {
+        m.set(s.id, { THEORY: c.theory_online, PRACTICE: c.practice_online, LAB: c.lab_online });
+      }
+    }
+    return m;
+  }, [allCourses]);
+
+
+  const lecturerBySection = useMemo(() => {
+    const names = new Map<number, string>();
+    for (const course of allCourses) {
+      for (const section of course.sections) names.set(section.id, section.lecturer.full_name);
+    }
+    return names;
   }, [allCourses]);
 
   const { hardIds, warnIds } = useMemo(() => {
@@ -437,7 +495,10 @@ export default function WeeklyPage() {
    *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart.
    *  Sıralama: önce yerleşimi EKSİK olanlar (yapılacak iş), sonra tamamlananlar;
    *  her grup kendi içinde ders koduna, aynı derste şube numarasına göre. */
-  const paletteItems = useMemo(() => {
+  type PaletteRow =
+    | { kind: "section"; course: Course; section: CourseSection; done: boolean }
+    | { kind: "empty"; course: Course };
+  const paletteItems = useMemo<PaletteRow[]>(() => {
     const q = paletteSearch.trim().toLocaleLowerCase("tr");
     const tamam = (c: Course, sid: number) => {
       const p = placedBySection.get(sid) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
@@ -445,64 +506,107 @@ export default function WeeklyPage() {
         && p.PRACTICE >= c.hours_practice
         && p.LAB >= c.hours_lab;
     };
-    return courses
-      .flatMap((c) => c.sections.map((s) => ({
-        course: c, section: s, done: tamam(c, s.id),
-      })))
-      .filter(({ course: c, section: s }) => {
+    // #4: Şubesi olmayan ders de listede görünür (şube satırı yerine tek bir
+    // "şube yok" satırı). Sürüklenemez — yerleştirilecek şube yok; tıklanınca
+    // "önce şube ekleyin" uyarısı verilir.
+    const rows: PaletteRow[] = [];
+    for (const c of courses) {
+      if (c.sections.length === 0) {
+        rows.push({ kind: "empty", course: c });
+      } else {
+        for (const s of c.sections) rows.push({ kind: "section", course: c, section: s, done: tamam(c, s.id) });
+      }
+    }
+    return rows
+      .filter((r) => {
         if (!q) return true;
-        const hay = `${c.code}-${s.section_no} ${c.name}`.toLocaleLowerCase("tr");
-        return hay.includes(q);
+        const hay = r.kind === "section"
+          ? `${r.course.code}-${r.section.section_no} ${r.course.name}`
+          : `${r.course.code} ${r.course.name}`;
+        return hay.toLocaleLowerCase("tr").includes(q);
       })
-      .sort((a, b) =>
-        Number(a.done) - Number(b.done)
-        || a.course.code.localeCompare(b.course.code, "tr")
-        || a.section.section_no - b.section.section_no);
+      .sort((a, b) => {
+        // Şubesiz ders "yapılacak iş"tir → tamamlanmamışlarla birlikte üstte.
+        const aDone = a.kind === "section" ? Number(a.done) : 0;
+        const bDone = b.kind === "section" ? Number(b.done) : 0;
+        const aNo = a.kind === "section" ? a.section.section_no : 0;
+        const bNo = b.kind === "section" ? b.section.section_no : 0;
+        return aDone - bDone || a.course.code.localeCompare(b.course.code, "tr") || aNo - bNo;
+      });
   }, [courses, paletteSearch, placedBySection]);
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-        <Group gap="sm" align="center">
-          <Title order={2} fw={500}>Haftalık Program</Title>
-          <SegmentedControl size="xs" radius="md" value={view}
-            onChange={(v) => setView(v as ViewMode)}
-            data={(Object.keys(VIEW_LABELS) as ViewMode[]).map((k) => ({
-              value: k, label: VIEW_LABELS[k] }))} />
-        </Group>
+      {/* Tek yatay araç çubuğu — Sınav Takvimi ile aynı düzen: solda başlık,
+          ortada mercek + süzgeçler, sağda yayınlama. Tüm kontroller aynı
+          yükseklikte (CONTROL_H). */}
+      <Paper radius="md" px="md" py={10}
+        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        <Group justify="space-between" align="center" wrap="wrap" gap="md">
+          {/* Mercek seçici BAŞLIKLA BİRLİKTE solda sabitlenir. Ortadaki
+              süzgeç grubunda dururken, mercek değişince süzgeçlerin toplam
+              genişliği de değiştiği için (3 kutu ↔ 1 kutu) grup yeniden
+              ortalanıyor ve sekmeler yana kayıyordu — kullanıcı tam da
+              tıkladığı düğmenin yer değiştirdiğini görüyordu. */}
+          <Group gap="md" align="center" wrap="nowrap">
+            <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
+              Haftalık Program
+            </Title>
+            <SegmentedControl size="xs" radius="md" value={view}
+              onChange={(v) => setView(v as ViewMode)}
+              styles={{ root: { height: CONTROL_H }, label: { paddingBlock: 4 } }}
+              data={(Object.keys(VIEW_LABELS) as ViewMode[]).map((k) => ({
+                value: k, label: VIEW_LABELS[k] }))} />
+          </Group>
 
-        <Group gap="xs" align="center">
-          {view === "cohort" && (
-            <>
-              <Select size="xs" w={190} radius="md" value={dep} onChange={setDep}
-                data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-              <Select size="xs" w={95} radius="md" value={year} onChange={(v) => v && setYear(v)}
-                data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
-              <Select size="xs" w={100} radius="md" value={sem}
-                onChange={(v) => v && setSem(v as SemesterType)}
-                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
-            </>
-          )}
-          {view === "classroom" && (
-            <Select size="xs" w={280} radius="md" searchable clearable
-              placeholder="Derslik seç" value={roomFilter} onChange={setRoomFilter}
-              data={classrooms.map((c) => ({
-                value: String(c.id), label: `${c.building.name} · ${c.room_code}` }))} />
-          )}
-          {view === "lecturer" && (
-            <Select size="xs" w={280} radius="md" searchable clearable
-              placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
-              data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
-          )}
-          <ExportMenu buildPath={exportPath} disabled={!activeQuery()} />
-          {canWrite && (
-            <Button size="xs" radius="md" disabled={drafts.length === 0}
-              onClick={() => setSubmitOpen(true)}>
-              Yayınla{drafts.length ? ` (${drafts.length})` : ""}
-            </Button>
-          )}
+          {/* Sabit genişlik: mercek değişince süzgeç sayısı değişiyor, alan
+              sabit kalmazsa çubuğun tamamı her geçişte yeniden diziliyor. */}
+          <Group gap={8} align="center" wrap="wrap" justify="center"
+            style={{ minWidth: 424 }}>
+            {view === "cohort" && (
+              <>
+                <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
+                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                  data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+                <Select size="xs" w={104} radius="md" value={year} onChange={(v) => v && setYear(v)}
+                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                  data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
+                <Select size="xs" w={104} radius="md" value={sem}
+                  onChange={(v) => v && setSem(v as SemesterType)}
+                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                  data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
+              </>
+            )}
+            {view === "classroom" && (
+              <Select size="xs" w={280} radius="md" searchable clearable
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                placeholder="Derslik seç" value={roomFilter} onChange={setRoomFilter}
+                data={classrooms.map((c) => ({
+                  value: String(c.id), label: `${c.building.name} · ${c.room_code}` }))} />
+            )}
+            {view === "lecturer" && (
+              <Select size="xs" w={280} radius="md" searchable clearable
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
+                data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
+            )}
+          </Group>
+
+          <Group gap={6} align="center" wrap="nowrap">
+            <ExportMenu disabled={!activeQuery()} items={[
+              { label: "Excel (.xlsx)", path: exportPath("xlsx") },
+              { label: "CSV (.csv)", path: exportPath("csv") },
+            ]} />
+            {canWrite && (
+              <Button size="xs" radius="md" disabled={drafts.length === 0}
+                style={{ height: CONTROL_H }}
+                onClick={() => setSubmitOpen(true)}>
+                Yayınla{drafts.length ? ` (${drafts.length})` : ""}
+              </Button>
+            )}
+          </Group>
         </Group>
-      </Group>
+      </Paper>
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
       {view !== "cohort" && !activeQuery() && (
@@ -513,14 +617,21 @@ export default function WeeklyPage() {
       )}
 
       <Group align="flex-start" gap="lg" wrap="nowrap">
-        {/* Palet yalnız cohort bakışında: diğer mercekler salt-okunur. */}
+        {/* Palet yalnız cohort bakışında: diğer mercekler salt-okunur.
+            Panel zemini hafif gri: takvim beyaz, panel de beyaz olunca ikisi
+            tek bir yüzeye yapışıyor ve gözün dinlendiği bir sınır kalmıyordu. */}
         {view === "cohort" && (
-        <Paper p="md" radius="lg" w={200}
+        <Paper p="sm" radius="md" w={SIDE_W}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-                   height: gridH, background: "var(--mantine-color-gray-0)" }}>
-          <TextInput size="xs" mb={10} radius="md" variant="filled" value={paletteSearch}
+                   height: gridH, background: SIDEBAR_BG,
+                   border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+          {/* variant="unstyled" kutuyu zeminle aynı renge çeviriyordu: tıklanabilir
+              bir alan olduğu hiç belli olmuyordu. Artık beyaz zemin + kenarlık. */}
+          <TextInput size="xs" mb={10} radius="md" value={paletteSearch}
             onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
-            placeholder="Ders kodu veya adı ara" />
+            styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
+                               borderColor: BORDER, background: "#FFFFFF" } }}
+            placeholder="Ders ara" />
           {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
@@ -529,33 +640,57 @@ export default function WeeklyPage() {
             {courses.length > 0 && paletteItems.length === 0 && (
               <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
             )}
-            {paletteItems.map(({ course: c, section: s, done }) => (
-              <Paper key={s.id} p={8} radius="md"
+            {paletteItems.map((r) => r.kind === "empty" ? (
+              // Şubesiz ders: sürüklenemez, tıklanınca "şube ekleyin" uyarısı.
+              <Paper key={`empty-${r.course.id}`} p="xs" radius="sm"
+                onClick={() => notifications.show({
+                  color: "yellow", title: `${r.course.code} — şube yok`,
+                  message: "Programa eklemek için önce Dersler sekmesinden bu derse şube ekleyin.",
+                })}
+                style={{ ...paletteItemStyle(false), cursor: "pointer", flexShrink: 0, opacity: 0.7 }}>
+                <Group gap={6} wrap="nowrap" align="center">
+                  <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{r.course.code}</Text>
+                  <Badge size="xs" variant="light" color="yellow" radius="sm"
+                    style={{ textTransform: "none", paddingInline: 5, marginLeft: "auto" }}>
+                    şube yok
+                  </Badge>
+                </Group>
+                <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
+              </Paper>
+            ) : (
+              <Paper key={r.section.id} p="xs" radius="sm"
                 draggable={canWrite}
                 onDragStart={(ev) => {
                   ev.dataTransfer.effectAllowed = "copy";
-                  ev.dataTransfer.setData("text/plain", String(s.id));
-                  setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
+                  ev.dataTransfer.setData("text/plain", String(r.section.id));
+                  setDrag({ kind: "new", sectionId: r.section.id, label: `${r.course.code}-${r.section.section_no}` });
                 }}
                 onDragEnd={() => setDrag(null)}
                 // Üzerine gelince gridde bu şubenin kartları vurgulanır: dersin
                 // haftada NEREYE düştüğü listeden ayrılmadan görülür.
-                onMouseEnter={() => setHoverSection(s.id)}
+                onMouseEnter={() => setHoverSection(r.section.id)}
                 onMouseLeave={() => setHoverSection(null)}
-                style={{ cursor: canWrite ? "grab" : "default", fontSize: 12, flexShrink: 0,
-                         background: "var(--mantine-color-body)",
-                         border: "1px solid var(--mantine-color-gray-2)",
-                         // Yerleşimi tamamlanmış ders soluk: listenin altında ve
-                         // "bunu yaptım" bilgisini renk tonuyla veriyor.
-                         opacity: done ? 0.45 : 1 }}>
-                <Group gap={4} justify="space-between" wrap="nowrap">
-                  <Text size="xs" fw={500}>{c.code}-{s.section_no}</Text>
-                  <Group gap={4} wrap="nowrap">
-                    {c.is_elective && <Badge size="xs" variant="light" color="grape">seçmeli</Badge>}
-                    {done && <IconCheck size={13} color="var(--mantine-color-teal-6)" />}
-                  </Group>
+                style={{ ...paletteItemStyle(hoverSection === r.section.id),
+                         cursor: canWrite ? "grab" : "default", flexShrink: 0 }}>
+                <Group gap={6} wrap="nowrap" align="center">
+                  <Text fz={12} fw={600}
+                    style={{ color: r.done ? TEXT_MUTED : "#0F172A" }}>
+                    {r.course.code}-{r.section.section_no}
+                  </Text>
+                  {r.course.is_elective && (
+                    <Badge size="xs" variant="default" radius="sm"
+                      style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
+                               color: TEXT_MUTED, borderColor: BORDER }}>
+                      Seçmeli
+                    </Badge>
+                  )}
+                  {/* T+U+L yerleşimi tamamlanmış şube yeşil onayla işaretlenir. */}
+                  {r.done && (
+                    <IconCheck size={13} stroke={2.4} color="#16A34A"
+                      style={{ marginLeft: "auto", flexShrink: 0 }} />
+                  )}
                 </Group>
-                <Text size="10px" c="dimmed" truncate mt={2}>{c.name}</Text>
+                <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
               </Paper>
             ))}
           </Stack>
@@ -570,9 +705,10 @@ export default function WeeklyPage() {
             entries={entries} courses={allCourses} departments={departments} />
         )}
 
-        <Paper ref={gridRef} p="md" radius="lg"
+        <Paper ref={gridRef} p="md" radius="md"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
-                   border: "1px solid var(--mantine-color-gray-2)" }}>
+                   background: "#FFFFFF", border: "1px solid #E2E8F0",
+                   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)" }}>
           {loading ? (
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (
@@ -584,22 +720,34 @@ export default function WeeklyPage() {
                 {SLOTS.map((s) => (
                   <div key={s} style={{
                     position: "absolute", top: HEAD_H + (s - 1) * ROW_H - 6, right: 10,
-                    fontSize: 11, color: "var(--mantine-color-gray-5)", fontVariantNumeric: "tabular-nums",
+                    fontSize: 10, color: TIME_COLOR, fontVariantNumeric: "tabular-nums",
                   }}>{SLOT_START[s]}</div>
                 ))}
                 <div style={{
                   position: "absolute", top: HEAD_H + ROW_H * 9 - 6, right: 10,
-                  fontSize: 11, color: "var(--mantine-color-gray-5)", fontVariantNumeric: "tabular-nums",
+                  fontSize: 10, color: TIME_COLOR, fontVariantNumeric: "tabular-nums",
                 }}>17:30</div>
               </div>
-              {DAYS.map((d) => (
+              {DAYS.map((d, dayIndex) => {
+                const dayClusters = byDay.get(d)!;
+                const minDayWidth = dayWidth(dayClusters);
+                return (
                 // Günler dikey çizgiyle ayrılır; sonuncuya sağ çizgi de eklenir
                 // ki tablo kapansın.
-                <div key={d} style={{ flex: 1, minWidth: 104, borderLeft: `1px solid ${LINE}` }}>
+                <div key={d} style={{
+                  // Şeritler okunabilir minimum genişliği korur; geniş ekranda
+                  // ise günler eşit büyüyerek takvimin tüm alanı doldurur.
+                  flex: `1 0 ${minDayWidth}px`, minWidth: minDayWidth,
+                  // Gün ayracı yatay slot çizgilerinden KOYU: sütun sınırı
+                  // takvimin en temel okuma sınırı.
+                  borderLeft: `1px solid ${DAY_LINE}`,
+                  borderRight: dayIndex === DAYS.length - 1 ? `1px solid ${DAY_LINE}` : undefined,
+                }}>
                   <div style={{
                     height: HEAD_H, display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 11, fontWeight: 500, letterSpacing: "0.06em",
-                    textTransform: "uppercase", color: "var(--mantine-color-gray-6)",
+                    textTransform: "uppercase", color: TEXT_MUTED,
+                    background: HEADER_BG, borderTop: `1px solid ${LINE}`,
                   }}>{DAY_SHORT[d]}</div>
                   {/* Gün sütununun TAMAMI tek bırakma katmanı: slot imleç konumundan
                       hesaplanır. Böylece kartlar tıklanabilir/sürüklenebilir kalır
@@ -630,12 +778,18 @@ export default function WeeklyPage() {
                     }}
                     onMouseMove={(ev) => {
                       if (!canWrite || drag) return;
+                      /* İmleç bir KARTIN üzerindeyse işaret gösterme (orada
+                         tıklamak düzenlemeyi açar). Slot aralığına bakmak
+                         YETMEZ: yan yana şeritlerde bir kart sütunun yalnız
+                         bir bölümünü kaplar, kalan boşluğa paralel şube
+                         eklenebilir. Aralığa bakan eski kontrol o boşlukları
+                         "dolu" sayıp artıyı hiç göstermiyordu.
+                         Arka plan hücreleri pointer-events:none olduğu için
+                         hedef ya kartın kendisidir ya da bu kapsayıcı. */
+                      if (ev.target !== ev.currentTarget) { setHoverCell(null); return; }
                       const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                       const slot = Math.min(9, Math.max(1, Math.floor(y / ROW_H) + 1));
-                      // Dolu slotta işaret gösterme: orada tıklamak düzenlemeyi açar.
-                      const dolu = byDay.get(d)!.some(
-                        (c) => slot >= c.start_slot && slot < c.start_slot + c.slot_count);
-                      setHoverCell(dolu ? null : `${d}-${slot}`);
+                      setHoverCell(`${d}-${slot}`);
                     }}
                     onMouseLeave={() => setHoverCell(null)}
                     style={{
@@ -649,24 +803,25 @@ export default function WeeklyPage() {
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)"
-                          // Boş slot işareti: hafif kararma + ortada artı.
-                          : hoverCell === `${d}-${s}` ? "var(--mantine-color-gray-1)" : undefined,
+                          // İmleç boş slottayken bir tık daha koyu + ortada artı.
+                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : GRID_CELL_BG,
                         pointerEvents: "none",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "background 120ms ease",
                       }}>
                         {hoverCell === `${d}-${s}` && over == null && (
-                          <IconPlus size={18} color="var(--mantine-color-gray-5)" />
+                          <IconPlus size={18} color={TIME_COLOR} />
                         )}
                       </div>
                     ))}
-                    {byDay.get(d)!.map((c) => (
+                    {dayClusters.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
                         highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
                         deepHighlight={deepHighlightId != null && c.entries.some((x) => x.id === deepHighlightId)}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
+                        lecturerName={lecturerBySection.get(c.entries[0].section.id)}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
                         onEdit={setEditing}
@@ -676,28 +831,23 @@ export default function WeeklyPage() {
                     ))}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Paper>
       </Group>
 
-      <Group gap="lg" style={{ fontSize: 11, color: "var(--mantine-color-dimmed)" }}>
-        <Legend label="Yayınlanmış" swatch={{
-          background: "var(--mantine-color-blue-2)", borderColor: "var(--mantine-color-blue-7)" }} />
-        <Legend label="Taslak (çapraz tarama)" swatch={{
-          background: "var(--mantine-color-blue-2)", borderColor: "var(--mantine-color-blue-7)",
-          borderStyle: "dashed",
-          backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.5) 0 4px, transparent 4px 10px)" }} />
-        <Legend label="Çakışma (engel)" swatch={{
-          background: "var(--mantine-color-red-2)", borderColor: "var(--mantine-color-red-7)" }} />
-        <Legend label="Uyarı" swatch={{
-          background: "var(--mantine-color-orange-2)", borderColor: "var(--mantine-color-orange-7)" }} />
-        <Legend label="Online (dersliksiz)" swatch={{
-          background: "var(--mantine-color-cyan-2)", borderColor: "var(--mantine-color-cyan-7)" }} />
+      <Group gap="md" style={{ fontSize: 11, color: "#64748B" }}>
+        <Legend label="Yayınlanmış" color="#2563EB" />
+        <Legend label="Taslak" color="#94A3B8" />
+        <Legend label="Uyarı" color="#F59E0B" />
+        <Legend label="Çakışma" color="#EF4444" />
+        <Legend label="Online" color="#64748B" />
       </Group>
 
-      <Paper p="md" radius="lg" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+      <Paper p="md" radius="md"
+        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
           <Text fw={500} size="sm">Çakışmalar</Text>
           <Group gap={6}>
@@ -734,10 +884,14 @@ export default function WeeklyPage() {
             ? `${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
             : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
-          // Sürükleyerek gelindiyse ders bellidir; boş slota tıklanarak
-          // gelindiyse modal dersi de sorar.
-          sections={placing.drag?.kind === "new" ? undefined : paletteItems.map(({ course: c, section: s }) => ({
-            value: String(s.id), label: `${c.code}-${s.section_no} — ${c.name}` }))}
+          onlineBySection={onlineBySection}
+          // Sürükleyerek gelindiyse ders bellidir (id modala verilir ki online
+          // bileşenini bilsin); boş slota tıklanarak gelindiyse modal dersi sorar.
+          fixedSectionId={placing.drag?.kind === "new" ? placing.drag.sectionId : undefined}
+          sections={placing.drag?.kind === "new" ? undefined
+            : paletteItems.flatMap((r) => r.kind === "section"
+              ? [{ value: String(r.section.id), label: `${r.course.code}-${r.section.section_no} — ${r.course.name}` }]
+              : [])}
           onClose={() => setPlacing(null)}
           onSubmit={(body) => api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
             section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
@@ -771,6 +925,8 @@ export default function WeeklyPage() {
         <EntryModal
           title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
+          onlineBySection={onlineBySection}
+          fixedSectionId={editing.section.id}
           initial={{
             classroomId: editing.classroom ? String(editing.classroom.id) : null,
             sessionType: editing.session_type,
@@ -832,9 +988,14 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
   const secili = view === "classroom" ? room : lecturer;
 
   return (
-    <Paper p="md" radius="lg" w={200}
+    // Cohort görünümündeki ders paneliyle BİREBİR aynı kabuk: aynı genişlik
+    // (SIDE_W), aynı köşe (md), aynı gri zemin, aynı çerçeve + gölge. Önceden
+    // farklıydı (w=200, radius lg, gray-0, çerçevesiz) ve mercek değişince sol
+    // sütun görünüş değiştiriyordu.
+    <Paper p="sm" radius="md" w={SIDE_W}
       style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-               height, background: "var(--mantine-color-gray-0)" }}>
+               height, background: SIDEBAR_BG,
+               border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
       {!secili ? (
         <Text size="xs" c="dimmed">
           {view === "classroom" ? "Bir derslik seçin." : "Bir öğretim üyesi seçin."}
@@ -878,11 +1039,13 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
                 {hocaOzet.dersler.length > 0 && (
                   <div>
                     <Text size="xs" c="dimmed" mb={6}>Verdiği dersler</Text>
-                    <Stack gap={4}>
+                    <Stack gap={6}>
+                      {/* Paletteki ders satırıyla aynı çerçeveli kart standardı
+                          (paletteItemStyle) — tıklanamaz olduğu için hover yok. */}
                       {hocaOzet.dersler.map((c) => (
-                        <div key={c.id}>
-                          <Text size="xs" fw={500}>{c.code}</Text>
-                          <Text size="10px" c="dimmed" truncate>{c.name}</Text>
+                        <div key={c.id} style={paletteItemStyle(false)}>
+                          <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{c.code}</Text>
+                          <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
                         </div>
                       ))}
                     </Stack>
@@ -907,23 +1070,25 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
   );
 }
 
-function Legend({ swatch, label }: { swatch: React.CSSProperties; label: string }) {
+function Legend({ color, label }: { color: string; label: string }) {
   return (
-    <Group gap={4}>
-      <span style={{ display: "inline-block", width: 20, height: 11, borderRadius: 3, border: "1px solid var(--mantine-color-default-border)", ...swatch }} />
+    <Group gap={5} wrap="nowrap">
+      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: color }} />
       <span>{label}</span>
     </Group>
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
+  lecturerName?: string;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
   useEffect(() => {
     if (deepHighlight && cardRef.current) {
       cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -933,34 +1098,32 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepH
   const many = c.entries.length > 1;
   const e = c.entries[0];
   const online = e.delivery_mode !== "FACE_TO_FACE";
-  // Kümede karışık durum olabilir; taslak DESENİ en az bir taslak varsa çizilir.
+  // Kümede karışık durum olabilir; taslak durumu en az bir taslak varsa görünür.
   const draft = c.entries.some((x) => x.status === "DRAFT");
   const editable = canWrite && !many && e.status === "DRAFT";
   const revertable = canWrite && !many && e.status === "SUBMITTED";
 
-  // İki BAĞIMSIZ görsel boyut:
-  //  1) RENK  = durum (çakışma > online > normal) — dolgun tonlar, soluk değil
-  //  2) DESEN = yaşam döngüsü (taslak → çapraz tarama, yayınlanmış → düz)
-  // Eskiden taslak "beyaz zemin"di; beyaz hem sayfa arkaplanıyla karışıyordu
-  // hem de çakışma rengini yutuyordu. Artık ikisi üst üste okunabiliyor.
-  const palette = hard
-    ? { bg: "var(--mantine-color-red-2)", bd: "var(--mantine-color-red-7)", fg: "var(--mantine-color-red-9)" }
-    : warn
-    ? { bg: "var(--mantine-color-orange-2)", bd: "var(--mantine-color-orange-7)", fg: "var(--mantine-color-orange-9)" }
-    : online
-    ? { bg: "var(--mantine-color-cyan-2)", bd: "var(--mantine-color-cyan-7)", fg: "var(--mantine-color-cyan-9)" }
-    : { bg: "var(--mantine-color-blue-2)", bd: "var(--mantine-color-blue-7)", fg: "var(--mantine-color-blue-9)" };
+  // Renk yalnızca sol vurgu çizgisinde kullanılır. Böylece yoğun bir takvimde
+  // metin hiyerarşisi, durum renginden önce gelir.
+  const accent = hard ? ACCENT.hard : warn ? ACCENT.warn : draft ? ACCENT.draft : ACCENT.normal;
 
+  /* DİKKAT — `border` kısayolu ile `borderLeft` uzun formu aynı stil nesnesinde
+     BİRLİKTE KULLANILAMAZ. React yeniden render'da yalnız değeri değişen
+     özelliği yazar; hover'da `border` güncellenince dört kenar birden sıfırlanır
+     ama `borderLeft` (değeri aynı kaldığı için) tekrar uygulanmaz ve durum
+     vurgusu sessizce kaybolur. Bu yüzden dört kenar da uzun formda. */
   const style: React.CSSProperties = {
-    background: palette.bg,
-    color: palette.fg,
-    border: `1px ${draft ? "dashed" : "solid"} ${palette.bd}`,
-    // Saydam çapraz tarama: rengin ÜSTÜNE biner, rengi değiştirmez.
-    // Bant kalın ve seyrek (10px bant / 26px periyot): ince-sık desen küçük
-    // kartlarda titreşim yapıp gözü yoruyordu.
-    backgroundImage: draft
-      ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.5) 0 10px, transparent 10px 26px)"
-      : undefined,
+    background: "#FFFFFF",
+    color: "#0F172A",
+    borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
+    borderTopStyle: draft ? "dashed" : "solid",
+    borderRightStyle: draft ? "dashed" : "solid",
+    borderBottomStyle: draft ? "dashed" : "solid",
+    borderLeftStyle: "solid",
+    borderTopColor: hover ? BORDER_HOVER : BORDER,
+    borderRightColor: hover ? BORDER_HOVER : BORDER,
+    borderBottomColor: hover ? BORDER_HOVER : BORDER,
+    borderLeftColor: accent,
   };
 
   const widthPct = 100 / c.lanes;
@@ -975,6 +1138,7 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepH
     : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
 
   const canDrag = canWrite && !many;
+  const showLecturer = !many && c.slot_count > 1 && lecturerName;
 
   return (
     <div
@@ -1022,19 +1186,24 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepH
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
-        borderRadius: 6, padding: "2px 4px", fontSize: 11, lineHeight: 1.2, overflow: "hidden",
+        borderRadius: CARD_RADIUS, padding: CARD_PADDING, lineHeight: 1.25, overflow: "hidden",
         cursor: many ? "pointer" : editable ? "grab" : revertable ? "not-allowed" : "default", ...style,
-        // Paletten gezinme vurgusu: hafif büyüme + halka. transition sayesinde
-        // ani sıçrama değil, yumuşak sinyal.
-        transition: "transform 120ms ease, box-shadow 120ms ease",
-        ...(highlight || deepHighlight ? {
-          transform: "scale(1.04)",
-          boxShadow: "0 0 0 2px var(--mantine-color-blue-5)",
-          zIndex: 5,
-        } : null),
-      }}>
-      <Group gap={2} justify="space-between" wrap="nowrap" align="flex-start">
-        <div style={{ fontWeight: 500 }}>
+        transition: "box-shadow 130ms ease, border-color 130ms ease",
+        /* Paletten gezinme vurgusu artık BÜYÜTMEYLE değil, mavi kontur +
+           yükseltilmiş gölgeyle veriliyor: scale(1.04) kartı ızgara hizasından
+           kaydırıyor ve komşu kartların üstüne taşırıyordu. */
+        boxShadow: highlight || deepHighlight ? SHADOW_SELECTED
+          : hover ? SHADOW_HOVER
+          : hard ? `${SHADOW}, 0 0 0 1px rgba(239, 68, 68, 0.10)`
+          : SHADOW,
+        ...(highlight || deepHighlight
+          ? { outline: `2px solid ${ACCENT.normal}`, outlineOffset: -1, zIndex: 5 }
+          : null),
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}>
+      <Group gap={4} justify="space-between" wrap="nowrap" align="flex-start">
+        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em", minWidth: 0 }}>
           {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
         </div>
         {many && (
@@ -1042,23 +1211,45 @@ function ClusterCard({ c, elective, hard, warn, canWrite, view, highlight, deepH
             {c.entries.length}
           </Badge>
         )}
-        {editable && (
-          <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Sil"
+        {/* Menü yerine DOĞRUDAN eylem: karttaki tek anlamlı işlem duruma göre
+            zaten tek — taslakta sil, yayınlanmışta taslağa çevir. Yalnız
+            üzerine gelince görünür; düzenleme karta tıklayarak yapılır. */}
+        {hover && editable && (
+          <ActionIcon size="sm" variant="subtle" color="red" aria-label="Girişi sil"
+            title="Sil" style={{ flexShrink: 0 }}
             onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}>
-            <IconTrash size={12} />
+            <IconTrash size={15} />
           </ActionIcon>
         )}
-        {revertable && (
-          <ActionIcon size="xs" variant="subtle" color="gray" aria-label="Taslağa çevir"
-            title="Taslağa çevir (düzenlemek için)"
+        {hover && revertable && (
+          <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
+            title="Taslağa çevir" style={{ flexShrink: 0 }}
             onClick={(ev) => { ev.stopPropagation(); onRevert(e); }}>
-            <IconArrowBackUp size={12} />
+            <IconArrowBackUp size={15} />
           </ActionIcon>
         )}
       </Group>
-      <div style={{ fontSize: 10, opacity: 0.85 }}>
-        {altSatir}{elective ? " · seçmeli" : ""}
+      <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
+        {e.section.course.name}
       </div>
+      <Group gap={4} wrap="nowrap" mt={5} style={{ color: "#64748B", minWidth: 0 }}>
+        {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
+        <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
+      </Group>
+      {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
+      {(elective || draft) && c.slot_count > 1 && (
+        <Group gap={4} mt={5}>
+          {elective && <Badge size="xs" variant="light" color="gray">SEÇMELİ</Badge>}
+          {draft && <Badge size="xs" variant="outline" color="gray">TASLAK</Badge>}
+        </Group>
+      )}
+      {(hard || warn) && (
+        <span title={hard ? "Engelleyici çakışma" : "Uyarı"}
+          style={{ position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0 }}>
+          {hard ? <IconAlertCircle size={15} /> : <IconAlertTriangle size={15} />}
+        </span>
+      )}
+      {many && <Text size="xs" c="dimmed" mt={3}>{c.entries.length} paralel şube</Text>}
     </div>
   );
 }
@@ -1204,13 +1395,17 @@ type EntryBody = {
 };
 
 /** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
-function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
   /** Verilirse modal önce DERSİ sorar (boş slota tıklayarak ekleme). */
   sections?: { value: string; label: string }[];
+  /** Ders zaten belliyse (sürükleme/düzenleme) online bileşenini bilmek için. */
+  fixedSectionId?: number;
+  /** K-45: şube id → bileşen bazında online'lık. */
+  onlineBySection: Map<number, Record<SessionType, boolean>>;
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
@@ -1222,15 +1417,31 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, 
   const [slotCount, setSlotCount] = useState<number>(initial?.slotCount ?? 2);
   const [busy, setBusy] = useState(false);
 
-  const online = delivery !== "FACE_TO_FACE";   // K-23: online girişte derslik olamaz
   const maxSlots = 9 - startSlot + 1;
   const dersEksik = sections != null && !sectionId;
+
+  // K-45: online'lık ders bileşeninin özelliğidir, serbest seçim DEĞİL. Seçili
+  // şube + oturum türüne bakılır; bileşen online ise giriş online olur ve yalnız
+  // senkron/asenkron seçilir, değilse yüz yüze sabittir.
+  const effSection = fixedSectionId ?? (sectionId ? Number(sectionId) : null);
+  const componentOnline = effSection != null
+    ? (onlineBySection.get(effSection)?.[sessionType] ?? false)
+    : false;
+
+  // delivery'yi componentOnline ile tutarlı tut: online değilken yüz yüze;
+  // online olup delivery hâlâ yüz yüzeyse senkron'a çek (asenkronsa koru).
+  useEffect(() => {
+    setDelivery((d) =>
+      componentOnline
+        ? (d === "FACE_TO_FACE" ? "ONLINE_SYNC" : d)
+        : "FACE_TO_FACE");
+  }, [componentOnline]);
 
   const submit = async () => {
     setBusy(true);
     try {
       const res = await onSubmit({
-        classroom_id: online ? null : classroomId ? Number(classroomId) : null,
+        classroom_id: componentOnline ? null : classroomId ? Number(classroomId) : null,
         session_type: sessionType, delivery_mode: delivery, slot_count: slotCount,
         ...(sectionId ? { section_id: Number(sectionId) } : null),
       });
@@ -1249,13 +1460,22 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, 
           <Select label="Ders / şube" value={sectionId} onChange={setSectionId}
             data={sections} searchable placeholder="Ders seç" nothingFoundMessage="Ders yok" />
         )}
-        <Select label="Yapılış şekli" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
-          data={(Object.keys(DELIVERY_LABELS) as DeliveryMode[]).map((k) => ({ value: k, label: DELIVERY_LABELS[k] }))} />
-        <Select label="Derslik" value={online ? null : classroomId} onChange={setClassroomId}
-          disabled={online} placeholder={online ? "Online — derslik yok" : "Derslik seç"} clearable
-          data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
+        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
         <Select label="Oturum türü (T/U/L)" value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
           data={(Object.keys(SESSION_LABELS) as SessionType[]).map((k) => ({ value: k, label: SESSION_LABELS[k] }))} />
+        {componentOnline ? (
+          // Bileşen online: yalnız senkron/asenkron. "Online mı" ders düzeyinde
+          // sabit olduğu için burada seçtirilmez.
+          <Select label="Çevrimiçi türü" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
+            data={[
+              { value: "ONLINE_SYNC", label: DELIVERY_LABELS.ONLINE_SYNC },
+              { value: "ONLINE_ASYNC", label: DELIVERY_LABELS.ONLINE_ASYNC },
+            ]} />
+        ) : (
+          <Select label="Derslik" value={classroomId} onChange={setClassroomId}
+            placeholder="Derslik seç" clearable searchable nothingFoundMessage="Derslik yok"
+            data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
+        )}
         <NumberInput label="Slot sayısı" value={slotCount} onChange={(v) => setSlotCount(Number(v) || 1)}
           min={1} max={maxSlots} />
         <Group justify="flex-end" gap="xs" mt="xs">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Button, Divider, Group, Loader, Modal,
+  ActionIcon, Alert, Badge, Button, Checkbox, Divider, Group, Loader, Modal,
   NumberInput, Paper, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
@@ -37,13 +38,15 @@ type CourseFormValues = {
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
+  theory_online: boolean;       // K-45: bileşen online mı
+  practice_online: boolean;
+  lab_online: boolean;
 };
 
 type SectionFormValues = {
   section_no: number;
   lecturer_id: string;
   expected_students: number;
-  default_classroom_id: string;
 };
 
 export default function CoursesPage() {
@@ -58,7 +61,13 @@ export default function CoursesPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Bölüm/yıl/dönem/arama SUNUCU tarafında (kontrat §6 bu dördünü sunuyor).
-  const [depFilter, setDepFilter] = useState<string | null>(null);
+  // Bölüm süzgeci, Bölümler genel-bakış ekranından ?department_id= ile önceden
+  // seçili gelebilir; parametreyi bir kez okuyup URL'den temizliyoruz (yenilemede
+  // yapışıp kalmasın, kullanıcının sonraki seçimini ezmesin).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [depFilter, setDepFilter] = useState<string | null>(
+    searchParams.get("department_id"),
+  );
   const [importOpen, setImportOpen] = useState(false);
   const [yearFilter, setYearFilter] = useState<string | null>(null);
   const [semFilter, setSemFilter] = useState<string | null>(null);
@@ -85,6 +94,7 @@ export default function CoursesPage() {
     initialValues: {
       department_id: "", year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      theory_online: false, practice_online: false, lab_online: false,
     },
     validate: {
       department_id: (v) => (v ? null : "Bölüm seçin"),
@@ -127,6 +137,15 @@ export default function CoursesPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depFilter, yearFilter, semFilter, search]);
+
+  // Deep-link parametresini bir kez tüket: state'e alındı, artık URL'de durmasın.
+  useEffect(() => {
+    if (!searchParams.has("department_id")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("department_id");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const depById = useMemo(() => {
     const m: Record<number, Department> = {};
@@ -181,6 +200,7 @@ export default function CoursesPage() {
       department_id: writableDepartments.length === 1 ? String(writableDepartments[0].id) : "",
       year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      theory_online: false, practice_online: false, lab_online: false,
     });
     setCourseModal(true);
   }
@@ -192,6 +212,7 @@ export default function CoursesPage() {
       year: c.year, semester: c.semester, code: c.code, name: c.name,
       is_elective: String(c.is_elective),
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
+      theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
     });
     setCourseModal(true);
   }
@@ -202,6 +223,11 @@ export default function CoursesPage() {
     const ortak = {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
       hours_theory: v.hours_theory, hours_practice: v.hours_practice, hours_lab: v.hours_lab,
+      // K-45: saati 0 olan bileşenin online bayrağı gönderilmez (backend zaten
+      // zorla false yapar; burada da tutarlı kalsın).
+      theory_online: v.hours_theory > 0 && v.theory_online,
+      practice_online: v.hours_practice > 0 && v.practice_online,
+      lab_online: v.hours_lab > 0 && v.lab_online,
     };
     try {
       if (editingCourse) {
@@ -280,7 +306,7 @@ export default function CoursesPage() {
 
       <Group mb="md">
         <TextInput
-          placeholder="Ders kodu veya ismi ara"
+          placeholder="Ara"
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
           w={230}
@@ -426,6 +452,30 @@ export default function CoursesPage() {
               <NumberInput label="Uygulama (U)" min={0} {...courseForm.getInputProps("hours_practice")} />
               <NumberInput label="Lab (L)" min={0} {...courseForm.getInputProps("hours_lab")} />
             </Group>
+            {/* K-45: yalnız SAATİ GİRİLMİŞ bileşen için "online mı" sorulur.
+                Senkron/asenkron burada değil, haftalık girişte seçilir. Hiçbir
+                bileşenin saati yoksa blok hiç görünmez. */}
+            {(courseForm.values.hours_theory > 0
+              || courseForm.values.hours_practice > 0
+              || courseForm.values.hours_lab > 0) && (
+              <Stack gap={6}>
+                <Text size="xs" c="dimmed">Online bileşenler</Text>
+                <Group gap="lg">
+                  {courseForm.values.hours_theory > 0 && (
+                    <Checkbox size="xs" label="Teori online"
+                      {...courseForm.getInputProps("theory_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_practice > 0 && (
+                    <Checkbox size="xs" label="Uygulama online"
+                      {...courseForm.getInputProps("practice_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_lab > 0 && (
+                    <Checkbox size="xs" label="Lab online"
+                      {...courseForm.getInputProps("lab_online", { type: "checkbox" })} />
+                  )}
+                </Group>
+              </Stack>
+            )}
             <Button type="submit" loading={busy} mt="sm">
               {editingCourse ? "Kaydet" : "Ekle"}
             </Button>
@@ -490,7 +540,7 @@ function SectionsModal({
 
   const form = useForm<SectionFormValues>({
     initialValues: {
-      section_no: 1, lecturer_id: "", expected_students: 30, default_classroom_id: "",
+      section_no: 1, lecturer_id: "", expected_students: 30,
     },
     validate: {
       lecturer_id: (v) => (v ? null : "Öğretim üyesi seçin"),
@@ -499,17 +549,11 @@ function SectionsModal({
     },
   });
 
-  const roomById = useMemo(() => {
-    const m: Record<number, Classroom> = {};
-    for (const c of classrooms) m[c.id] = c;
-    return m;
-  }, [classrooms]);
-
   function resetForm() {
     setEditing(null);
     const nextNo = course ? Math.max(0, ...course.sections.map((s) => s.section_no)) + 1 : 1;
     form.setValues({
-      section_no: nextNo, lecturer_id: "", expected_students: 30, default_classroom_id: "",
+      section_no: nextNo, lecturer_id: "", expected_students: 30,
     });
   }
 
@@ -525,18 +569,18 @@ function SectionsModal({
       section_no: s.section_no,
       lecturer_id: String(s.lecturer.id),
       expected_students: s.expected_students,
-      default_classroom_id: s.default_classroom_id ? String(s.default_classroom_id) : "",
     });
   }
 
   async function submit(v: SectionFormValues) {
     if (!course) return;
     setBusy(true);
+    // Derslik artık şubede DEĞİL, haftalık programda belirlenir (kullanıcı
+    // isteği). default_classroom_id gönderilmez; şema opsiyonel, null kalır.
     const payload = {
       section_no: v.section_no,
       lecturer_id: Number(v.lecturer_id),
       expected_students: v.expected_students,
-      default_classroom_id: v.default_classroom_id ? Number(v.default_classroom_id) : null,
     };
     try {
       if (editing) {
@@ -626,16 +670,23 @@ function SectionsModal({
               </Table.Thead>
               <Table.Tbody>
                 {sections.map((s) => {
-                  const room = s.default_classroom_id ? roomById[s.default_classroom_id] : null;
                   const entries = entriesBySection[s.id] ?? [];
+                  // Derslik artık ŞUBEDE değil, haftalık YERLEŞİMDE belli: girişin
+                  // dersliğinden (online ise "Online") türetilir. Kullanıcı isteği:
+                  // "haftalık programda belirlendikten sonra şubenin yanında derslik
+                  // diye belirtilsin."
+                  const rooms = [...new Set(entries.map((e) =>
+                    e.delivery_mode !== "FACE_TO_FACE" ? "Online"
+                      : e.classroom ? `${e.classroom.building.name} ${e.classroom.room_code}` : null,
+                  ).filter((x): x is string => x != null))];
                   return (
                     <Table.Tr key={s.id}>
                       <Table.Td>{s.section_no}</Table.Td>
                       <Table.Td>{s.lecturer.full_name}</Table.Td>
                       <Table.Td>{s.expected_students}</Table.Td>
                       <Table.Td>
-                        <Text size="sm" c={room ? undefined : "dimmed"}>
-                          {room ? `${room.building.name} ${room.room_code}` : "—"}
+                        <Text size="sm" c={rooms.length ? undefined : "dimmed"}>
+                          {rooms.length ? rooms.join(", ") : "haftalık programda belirlenir"}
                         </Text>
                       </Table.Td>
                       <Table.Td>
@@ -700,17 +751,8 @@ function SectionsModal({
                   data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))}
                   {...form.getInputProps("lecturer_id")}
                 />
-                <Select
-                  label="Derslik"
-                  placeholder="Yok"
-                  clearable
-                  searchable
-                  data={classrooms.map((c) => ({
-                    value: String(c.id),
-                    label: `${c.building.name} ${c.room_code} (${c.capacity})`,
-                  }))}
-                  {...form.getInputProps("default_classroom_id")}
-                />
+                {/* Derslik BURADA sorulmaz — haftalık programda yerleştirilirken
+                    belirlenir ve şubenin yanında oradan gösterilir. */}
                 <Group>
                   <Button type="submit" size="xs" loading={busy}>
                     {editing ? "Kaydet" : "Ekle"}

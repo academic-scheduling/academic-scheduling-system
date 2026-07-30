@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Alert, Badge, Button, Card, Group, Loader, Paper, Stack, Tabs, Text, Title,
 } from "@mantine/core";
-import { IconAlertTriangle, IconArrowRight, IconShieldX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowRight, IconExternalLink, IconShieldX } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { ConflictResult, ConflictScan } from "../api/types";
 
@@ -119,20 +119,15 @@ function ConflictList({
   }
 
   return (
-    <Stack gap="sm">
+    <Stack gap="md">
       {conflicts.map((c, i) => {
         const isExam = c.affected.some((a) => a.type === "exam");
-        const basePath = isExam ? "/exams" : "/weekly";
-        const targetAffectedList = isExam
-          ? c.affected.filter((a) => a.type === "exam")
-          : c.affected.filter((a) => a.type === "weekly_entry");
-        const highlightIdsStr = targetAffectedList.map((a) => a.id).join(",");
-        const highlightParam = highlightIdsStr ? `?highlight=${highlightIdsStr}&rule=${c.rule_id}` : "";
-        const targetPath = `${basePath}${highlightParam}`;
+        const allTargetIds = c.affected.map((a) => a.id).join(",");
+        const allTargetPath = `${isExam ? "/exams" : "/weekly"}?highlight=${allTargetIds}&rule=${c.rule_id}`;
 
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
-            <Stack gap="xs">
+            <Stack gap="sm">
               <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
@@ -142,35 +137,80 @@ function ConflictList({
                     Kural {c.rule_id}
                   </Badge>
                   <Badge variant="dot" color={isExam ? "violet" : "blue"} size="sm">
-                    {isExam ? "Sınav Çakışması" : "Ders Programı Çakışması"}
+                    {isExam ? "Sınav Çakışması" : "Haftalık Ders Çakışması"}
                   </Badge>
                 </Group>
 
-                {targetAffectedList.length > 0 && (
+                {c.affected.length > 0 && (
                   <Button
                     component={Link}
-                    to={targetPath}
+                    to={allTargetPath}
                     size="xs"
                     variant="light"
                     color="blue"
-                    rightSection={<IconArrowRight size={14} />}
+                    rightSection={<IconExternalLink size={14} />}
                   >
-                    Çakışmaya Git
+                    Tümünü Takvimde Göster ({c.affected.length} Kayıt)
                   </Button>
                 )}
               </Group>
 
-              <Text size="sm" fw={500}>{c.message}</Text>
+              <Text size="sm" fw={500}>
+                {c.message}
+              </Text>
 
               {c.affected.length > 0 && (
-                <Group gap={6} align="center" wrap="wrap">
-                  <Text size="xs" c="dimmed" fw={500}>Etkilenen Kayıtlar:</Text>
-                  {c.affected.map((a, idx) => (
-                    <Badge key={idx} variant="light" color={a.type === "exam" ? "violet" : "blue"} size="xs">
-                      {a.type === "exam" ? "Sınav" : "Haftalık Ders"}: {a.course_code ?? `#${a.id}`}
-                    </Badge>
-                  ))}
-                </Group>
+                <Paper withBorder p="xs" radius="sm" style={{ background: "var(--mantine-color-gray-0)" }}>
+                  <Text size="xs" c="dimmed" fw={600} mb={6}>
+                    ÇAKIŞAN DERSLER & KAYITLAR:
+                  </Text>
+
+                  <Stack gap={6}>
+                    {c.affected.map((item, idx) => {
+                      const itemIsExam = item.type === "exam";
+                      const itemPath = `${itemIsExam ? "/exams" : "/weekly"}?highlight=${item.id}&rule=${c.rule_id}`;
+                      const label = item.course_code
+                        ? `${item.course_code} — ${itemIsExam ? "Sınav Girişi" : "Haftalık Ders Girişi"}`
+                        : `${itemIsExam ? "Sınav" : "Haftalık Giriş"} #${item.id}`;
+
+                      return (
+                        <Paper
+                          key={idx}
+                          withBorder
+                          p="xs"
+                          radius="xs"
+                          style={{ background: "#FFFFFF" }}
+                        >
+                          <Group justify="space-between" align="center" wrap="nowrap">
+                            <Group gap="xs">
+                              <Badge
+                                size="xs"
+                                color={itemIsExam ? "violet" : "blue"}
+                                variant="light"
+                              >
+                                {itemIsExam ? "SINAV" : "DERS"}
+                              </Badge>
+                              <Text size="xs" fw={600}>
+                                {label}
+                              </Text>
+                            </Group>
+
+                            <Button
+                              component={Link}
+                              to={itemPath}
+                              size="compact-xs"
+                              variant="subtle"
+                              color="blue"
+                              rightSection={<IconArrowRight size={12} />}
+                            >
+                              Takvimde Göster
+                            </Button>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                </Paper>
               )}
             </Stack>
           </Card>

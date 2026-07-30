@@ -46,7 +46,6 @@ type SectionFormValues = {
   section_no: number;
   lecturer_id: string;
   expected_students: number;
-  default_classroom_id: string;
 };
 
 export default function CoursesPage() {
@@ -291,7 +290,7 @@ export default function CoursesPage() {
 
       <Group mb="md">
         <TextInput
-          placeholder="Ders kodu veya ismi ara"
+          placeholder="Ara"
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
           w={230}
@@ -525,7 +524,7 @@ function SectionsModal({
 
   const form = useForm<SectionFormValues>({
     initialValues: {
-      section_no: 1, lecturer_id: "", expected_students: 30, default_classroom_id: "",
+      section_no: 1, lecturer_id: "", expected_students: 30,
     },
     validate: {
       lecturer_id: (v) => (v ? null : "Öğretim üyesi seçin"),
@@ -534,17 +533,11 @@ function SectionsModal({
     },
   });
 
-  const roomById = useMemo(() => {
-    const m: Record<number, Classroom> = {};
-    for (const c of classrooms) m[c.id] = c;
-    return m;
-  }, [classrooms]);
-
   function resetForm() {
     setEditing(null);
     const nextNo = course ? Math.max(0, ...course.sections.map((s) => s.section_no)) + 1 : 1;
     form.setValues({
-      section_no: nextNo, lecturer_id: "", expected_students: 30, default_classroom_id: "",
+      section_no: nextNo, lecturer_id: "", expected_students: 30,
     });
   }
 
@@ -560,18 +553,18 @@ function SectionsModal({
       section_no: s.section_no,
       lecturer_id: String(s.lecturer.id),
       expected_students: s.expected_students,
-      default_classroom_id: s.default_classroom_id ? String(s.default_classroom_id) : "",
     });
   }
 
   async function submit(v: SectionFormValues) {
     if (!course) return;
     setBusy(true);
+    // Derslik artık şubede DEĞİL, haftalık programda belirlenir (kullanıcı
+    // isteği). default_classroom_id gönderilmez; şema opsiyonel, null kalır.
     const payload = {
       section_no: v.section_no,
       lecturer_id: Number(v.lecturer_id),
       expected_students: v.expected_students,
-      default_classroom_id: v.default_classroom_id ? Number(v.default_classroom_id) : null,
     };
     try {
       if (editing) {
@@ -661,16 +654,23 @@ function SectionsModal({
               </Table.Thead>
               <Table.Tbody>
                 {sections.map((s) => {
-                  const room = s.default_classroom_id ? roomById[s.default_classroom_id] : null;
                   const entries = entriesBySection[s.id] ?? [];
+                  // Derslik artık ŞUBEDE değil, haftalık YERLEŞİMDE belli: girişin
+                  // dersliğinden (online ise "Online") türetilir. Kullanıcı isteği:
+                  // "haftalık programda belirlendikten sonra şubenin yanında derslik
+                  // diye belirtilsin."
+                  const rooms = [...new Set(entries.map((e) =>
+                    e.delivery_mode !== "FACE_TO_FACE" ? "Online"
+                      : e.classroom ? `${e.classroom.building.name} ${e.classroom.room_code}` : null,
+                  ).filter((x): x is string => x != null))];
                   return (
                     <Table.Tr key={s.id}>
                       <Table.Td>{s.section_no}</Table.Td>
                       <Table.Td>{s.lecturer.full_name}</Table.Td>
                       <Table.Td>{s.expected_students}</Table.Td>
                       <Table.Td>
-                        <Text size="sm" c={room ? undefined : "dimmed"}>
-                          {room ? `${room.building.name} ${room.room_code}` : "—"}
+                        <Text size="sm" c={rooms.length ? undefined : "dimmed"}>
+                          {rooms.length ? rooms.join(", ") : "haftalık programda belirlenir"}
                         </Text>
                       </Table.Td>
                       <Table.Td>
@@ -735,17 +735,8 @@ function SectionsModal({
                   data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))}
                   {...form.getInputProps("lecturer_id")}
                 />
-                <Select
-                  label="Derslik"
-                  placeholder="Yok"
-                  clearable
-                  searchable
-                  data={classrooms.map((c) => ({
-                    value: String(c.id),
-                    label: `${c.building.name} ${c.room_code} (${c.capacity})`,
-                  }))}
-                  {...form.getInputProps("default_classroom_id")}
-                />
+                {/* Derslik BURADA sorulmaz — haftalık programda yerleştirilirken
+                    belirlenir ve şubenin yanında oradan gösterilir. */}
                 <Group>
                   <Button type="submit" size="xs" loading={busy}>
                     {editing ? "Kaydet" : "Ekle"}

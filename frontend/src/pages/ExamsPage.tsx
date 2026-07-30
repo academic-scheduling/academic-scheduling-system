@@ -272,16 +272,28 @@ export default function ExamsPage() {
   const cohortCourseIds = useMemo(
     () => new Set(cohortCourses.map((c) => c.id)), [cohortCourses]);
 
-  /** Bu haftanın sınavları — TÜM türler bir arada, cohort'a göre süzülmüş. */
+  const displayExams = useMemo(() => {
+    if (!highlightInfo?.exams.length) return exams;
+    const existingIds = new Set(exams.map((e) => e.id));
+    const extra = highlightInfo.exams.filter((e) => !existingIds.has(e.id));
+    return [...exams, ...extra];
+  }, [exams, highlightInfo]);
+
+  const highlightExamIds = useMemo(
+    () => new Set(highlightInfo?.exams.map((e) => e.id) ?? []),
+    [highlightInfo]
+  );
+
+  /** Bu haftanın sınavları — TÜM türler bir arada, cohort'a ve vurgulanan sınavlara göre süzülmüş. */
   const byDay = useMemo(() => {
     const m = new Map<string, Placed[]>();
     for (const g of gunler) {
       const gun = iso(g);
-      m.set(gun, layoutDay(exams.filter(
-        (e) => e.exam_date === gun && cohortCourseIds.has(e.course.id))));
+      m.set(gun, layoutDay(displayExams.filter(
+        (e) => e.exam_date === gun && (cohortCourseIds.has(e.course.id) || highlightExamIds.has(e.id)))));
     }
     return m;
-  }, [exams, gunler, cohortCourseIds]);
+  }, [displayExams, gunler, cohortCourseIds, highlightExamIds]);
 
   const { hardIds, warnIds } = useMemo(() => {
     const h = new Set<number>(), w = new Set<number>();

@@ -1,4 +1,7 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode,
+} from "react";
+import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { api, getToken, setToken, clearToken } from "../api/client";
 import type { LoginResponse, User } from "../api/types";
 
@@ -13,9 +16,25 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+// --- Oturum yönetimi (K-47) ---
+// Karar: MUTLAK 60 dk yerine BOŞTA-KALMA modeli. Aktif çalışırken token sessizce
+// tazelenir (kesinti yok); yalnız 15 dk hareketsizlikte "uzat/çık" sorulur.
+const IDLE_LIMIT_MS = 15 * 60 * 1000;    // 15 dk hareketsizlik → uzatmayı sor
+const GRACE_SEC = 60;                     // modal açıldıktan sonra otomatik çıkışa kalan saniye
+const KEEPALIVE_MS = 10 * 60 * 1000;      // aktifken token'ı bu aralıkla sessizce tazele
+const TICK_MS = 30 * 1000;                // boşta/keepalive denetim sıklığı
+// Yalnız ref güncelleyen ucuz olaylar (render tetiklemez).
+const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"] as const;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Oturum durumu: son etkinlik/tazeleme anları ref'te (render tetiklemesin).
+  const lastActivity = useRef(Date.now());
+  const lastRefresh = useRef(Date.now());
+  const [promptOpen, setPromptOpen] = useState(false);   // boşta uyarı modalı açık mı
+  const [grace, setGrace] = useState(GRACE_SEC);          // modaldaki geri sayım
 
   // Açılış kontrolü: localStorage'da token varsa hâlâ geçerli mi, kimin?
   // Cevabı yalnız backend bilir (60 dk dolmuş olabilir, hesap pasife alınmış olabilir).
@@ -41,16 +60,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.post<LoginResponse>("/auth/login", { email, password });
     setToken(res.access_token);
     setUser(res.user);
+    lastActivity.current = Date.now();
+    lastRefresh.current = Date.now();
   }
 
-  function logout() {
+  const logout = useCallback(() => {
     clearToken();
     setUser(null);
-  }
+    setPromptOpen(false);
+  }, []);
+
+  // Token'ı ileri taşı (yeni 60 dk). get_current_user ACTIVE arar; kapatılmış
+  // hesap burada 401/403 alır → yenilenemez.
+  const refresh = useCallback(async () => {
+    const res = await api.post<LoginResponse>("/auth/refresh");
+    setToken(res.access_token);
+    setUser(res.user);
+    lastRefresh.current = Date.now();
+  }, []);
+
+  // "Oturumu uzat": tazele, sayacı sıfırla, modalı kapat. Tazelenemezse çık.
+  const extend = useCallback(async () => {
+    try {
+      await refresh();
+      lastActivity.current = Date.now();
+      setPromptOpen(false);
+    } catch {
+      logout();
+    }
+  }, [refresh, logout]);
+
+  // Etkinlik izleme + boşta/keepalive denetimi — yalnız girişliyken.
+  useEffect(() => {
+    if (!user) return;
+    const onActivity = () => {
+      // Modal açıkken sıradan hareket oturumu uzatmaz; kullanıcı bilerek seçmeli.
+      if (!promptOpen) lastActivity.current = Date.now();
+    };
+    ACTIVITY_EVENTS.forEach((e) =>
+      window.addEventListener(e, onActivity, { passive: true }));
+
+    const tick = setInterval(() => {
+      if (promptOpen) return;
+      const now = Date.now();
+      const idle = now - lastActivity.current;
+      if (idle >= IDLE_LIMIT_MS) {
+        setGrace(GRACE_SEC);
+        setPromptOpen(true);                      // 15 dk boşta → uzatmayı sor
+      } else if (idle < KEEPALIVE_MS && now - lastRefresh.current >= KEEPALIVE_MS) {
+        refresh().catch(() => { /* 401 → client.ts login'e atar */ });
+      }
+    }, TICK_MS);
+
+    return () => {
+      ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
+      clearInterval(tick);
+    };
+  }, [user, promptOpen, refresh]);
+
+  // Modal geri sayımı: her saniye azalır, 0'da otomatik çıkış.
+  useEffect(() => {
+    if (!promptOpen) return;
+    if (grace <= 0) { logout(); return; }
+    const t = setTimeout(() => setGrace((g) => g - 1), 1000);
+    return () => clearTimeout(t);
+  }, [promptOpen, grace, logout]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
+      <Modal
+        opened={promptOpen}
+        onClose={() => { /* dışarı tık/ESC ile kapanmaz — bilinçli seçim şart */ }}
+        withCloseButton={false}
+        closeOnClickOutside={false}
+        closeOnEscape={false}
+        centered
+        title="Oturumunuz sürüyor mu?"
+      >
+        <Stack>
+          <Text size="sm">
+            15 dakikadır işlem yapılmadı. Güvenlik için oturumunuz{" "}
+            <b>{grace} saniye</b> içinde kapatılacak. Devam etmek istiyor musunuz?
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={logout}>Çıkış yap</Button>
+            <Button onClick={extend}>Oturumu uzat</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </AuthContext.Provider>
   );
 }

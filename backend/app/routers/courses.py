@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseSection, Department, DepartmentMembership,
-    Exam, Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
+    Exam, ExamType, Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
 )
 from app.schemas import (
     CourseCreate, CourseUpdate, CourseOut,
@@ -169,6 +169,22 @@ def update_course(
         eff_hours = data.get(f"hours_{comp}", getattr(course, f"hours_{comp}"))
         if eff_hours == 0:
             data[f"{comp}_online"] = False
+
+    # K-46: vize sayısı, halihazırda kayıtlı vizelerin altına çekilemez —
+    # yoksa yüksek sıralı vize "kapsam dışı" kalır (aynı deseni K-27/K-32'de
+    # olduğu gibi engelliyoruz). Önce ilgili vizeler silinsin.
+    if "midterm_count" in data and data["midterm_count"] < course.midterm_count:
+        over = db.query(Exam).filter(
+            Exam.course_id == course.id,
+            Exam.exam_type == ExamType.MIDTERM,
+            Exam.exam_index > data["midterm_count"],
+        ).count()
+        if over:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{data['midterm_count']}'in üstünde sıralı {over} vize kayıtlı — "
+                       f"önce onları silin",
+            )
 
     ozet = build_change_summary(course, data)
     for field, value in data.items():

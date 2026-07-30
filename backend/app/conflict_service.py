@@ -85,6 +85,7 @@ def _exam_to_dict(x: Exam) -> dict:
         "type": "exam",
         "course_id": x.course_id,
         "exam_type": x.exam_type.value,
+        "exam_index": x.exam_index,           # K-46: kaçıncı vize (E2 buna bakar)
         "exam_date": x.exam_date,
         "start_time": x.start_time,
         "duration_minutes": x.duration_minutes,

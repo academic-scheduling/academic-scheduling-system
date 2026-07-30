@@ -111,8 +111,57 @@ def test_duplicate_exam_type():
     h = admin_headers()
     course = make_course_with_sections(h)
     assert make_exam(h, course).status_code == 201
-    assert make_exam(h, course).status_code == 409          # E2: aynı tip ikinci kez
+    assert make_exam(h, course).status_code == 409          # E2: aynı SIRA ikinci kez
     assert make_exam(h, course, exam_type="FINAL").status_code == 201
+
+
+# --- K-46: çoklu vize ---
+
+def test_multiple_midterms_up_to_count():
+    """midterm_count=3 iken 1./2./3. vize ayrı kayıt; aynı sıra tekrar → E2."""
+    h = admin_headers()
+    course = make_course_with_sections(h)
+    r = client.patch(f"/courses/{course['id']}", json={"midterm_count": 3}, headers=h)
+    assert r.status_code == 200 and r.json()["midterm_count"] == 3
+    for idx in (1, 2, 3):
+        r = make_exam(h, course, exam_index=idx)
+        assert r.status_code == 201, r.text
+        assert r.json()["exam"]["exam_index"] == idx
+    assert make_exam(h, course, exam_index=2).status_code == 409     # aynı sıra → E2
+    assert make_exam(h, course, exam_index=4).status_code == 422     # mutlak üst sınır (şema le=3)
+
+
+def test_midterm_index_beyond_count_rejected():
+    """Varsayılan midterm_count=1 iken 2. vize denemesi sınır dışı → 400."""
+    h = admin_headers()
+    course = make_course_with_sections(h)
+    assert make_exam(h, course, exam_index=1).status_code == 201
+    assert make_exam(h, course, exam_index=2).status_code == 400
+
+
+def test_non_midterm_index_forced_to_one():
+    """Final'e sıra gönderilse bile 1'e sabitlenir; tür başına tek kalır."""
+    h = admin_headers()
+    course = make_course_with_sections(h)
+    r = make_exam(h, course, exam_type="FINAL", exam_index=2)
+    assert r.status_code == 201, r.text
+    assert r.json()["exam"]["exam_index"] == 1
+    assert make_exam(h, course, exam_type="FINAL").status_code == 409
+
+
+def test_reduce_midterm_count_blocked_when_in_use():
+    """Kayıtlı 3. vize varken sayıyı 2'ye düşürmek engellenir; silinince serbest."""
+    h = admin_headers()
+    course = make_course_with_sections(h)
+    client.patch(f"/courses/{course['id']}", json={"midterm_count": 3}, headers=h)
+    assert make_exam(h, course, exam_index=3).status_code == 201
+    assert client.patch(f"/courses/{course['id']}",
+                        json={"midterm_count": 2}, headers=h).status_code == 409
+    exams = client.get(f"/exams?department_id={course['department_id']}", headers=h).json()
+    third = [e for e in exams if e["exam_index"] == 3][0]
+    assert client.delete(f"/exams/{third['id']}", headers=h).status_code == 204
+    assert client.patch(f"/courses/{course['id']}",
+                        json={"midterm_count": 2}, headers=h).status_code == 200
 
 
 def test_exam_with_classrooms():

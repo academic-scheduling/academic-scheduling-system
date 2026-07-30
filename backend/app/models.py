@@ -471,6 +471,8 @@ class Course(Base):
         CheckConstraint("hours_theory >= 0", name="ck_courses_hours_theory"),
         CheckConstraint("hours_practice >= 0", name="ck_courses_hours_practice"),
         CheckConstraint("hours_lab >= 0", name="ck_courses_hours_lab"),
+        # K-46: bir dersin 1-3 vizesi olabilir (final/büt tektir).
+        CheckConstraint("midterm_count BETWEEN 1 AND 3", name="ck_courses_midterm_count"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -499,6 +501,9 @@ class Course(Base):
     theory_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     practice_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     lab_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    # K-46: dersin vize sayisi (1-3). Sinav eklerken "kacinci vize" bu sinira
+    # kadar sorulur; final/but bu alandan bagimsiz, ders basina tektir.
+    midterm_count: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     department: Mapped["Department"] = relationship(back_populates="courses")
@@ -663,7 +668,14 @@ class Exam(Base):
 
     __tablename__ = "exams"
     __table_args__ = (
-        UniqueConstraint("course_id", "exam_type", name="uq_exams_course_type"),
+        # K-46: ayni ders ayni tipte birden cok sinav TASIYABILIR, ama her
+        # (ders, tip, sira) tektir — ayni numarali vize iki kez girilemez.
+        # Final/but'te exam_index hep 1 oldugundan bu kisit onlar icin "tek kayit"
+        # anlamini korur (eski uq_exams_course_type ile ayni etki).
+        UniqueConstraint(
+            "course_id", "exam_type", "exam_index", name="uq_exams_course_type_index"
+        ),
+        CheckConstraint("exam_index BETWEEN 1 AND 3", name="ck_exams_exam_index"),
         CheckConstraint(
             "EXTRACT(ISODOW FROM exam_date) BETWEEN 1 AND 5",
             name="ck_exams_weekday_only",
@@ -681,6 +693,8 @@ class Exam(Base):
         BigInteger, ForeignKey("courses.id", ondelete="CASCADE")
     )
     exam_type: Mapped[ExamType] = mapped_column(Enum(ExamType, name="exam_type"))
+    # K-46: "kacinci vize" (1-3). MIDTERM disi turlerde her zaman 1 (router zorlar).
+    exam_index: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     exam_date: Mapped[date] = mapped_column(Date)
     start_time: Mapped[time] = mapped_column(Time)
     duration_minutes: Mapped[int] = mapped_column(

@@ -48,6 +48,24 @@ def test_me_with_token():
     assert response.status_code == 200
     assert response.json()["role"] == "ADMIN"
 
+def test_refresh_requires_token():
+    # K-47: token'sız uzatma yok
+    assert client.post("/auth/refresh").status_code == 401
+
+def test_refresh_returns_new_token_and_user():
+    # K-47: geçerli token → yeni token + aynı user şekli
+    login = client.post("/auth/login", json={
+        "email": "admin@muh.example.edu.tr", "password": "admin1234"})
+    token = login.json()["access_token"]
+    r = client.post("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "access_token" in body and body["user"]["role"] == "ADMIN"
+    # Yeni token da çalışır
+    assert client.get("/auth/me",
+                      headers={"Authorization": f"Bearer {body['access_token']}"}
+                      ).status_code == 200
+
 def test_require_admin_rejects_subaccount():
     u= User(role=UserRole.SUB_ACCOUNT)
     with pytest.raises(HTTPException) as exc:

@@ -151,8 +151,12 @@ def e1_exam_classroom_conflict(a, b):
 
 
 def e2_duplicate_exam(a, b):
-    # 1) Aynı ders mi? 
-    if a["course_id"] == b["course_id"] and a["exam_type"] == b["exam_type"]:
+    # 1) Aynı ders + aynı tip + aynı SIRA mı? (K-46)
+    # Farklı numaralı vizeler (1./2./3.) mükerrer DEĞİLDİR — çoklu vize buna
+    # dayanır. exam_index yoksa 1 varsayılır (eski dict'lerle uyumlu).
+    if (a["course_id"] == b["course_id"]
+            and a["exam_type"] == b["exam_type"]
+            and a.get("exam_index", 1) == b.get("exam_index", 1)):
         return {"rule_id": "E2", "severity": "HARD"}
     return None
 

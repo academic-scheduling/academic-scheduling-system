@@ -282,6 +282,7 @@ class CourseCreate(BaseModel):
     theory_online: bool = False
     practice_online: bool = False
     lab_online: bool = False
+    midterm_count: int = Field(1, ge=1, le=3)   # K-46: 1-3 vize (final/büt tek)
 
 class CourseUpdate(BaseModel):
     # Kimlik alanları (department/year/semester) PATCH'le DEĞİŞMEZ —
@@ -295,6 +296,7 @@ class CourseUpdate(BaseModel):
     theory_online: bool | None = None
     practice_online: bool | None = None
     lab_online: bool | None = None
+    midterm_count: int | None = Field(None, ge=1, le=3)   # K-46
     active: bool | None = None
 
 class CourseOut(BaseModel):
@@ -311,6 +313,7 @@ class CourseOut(BaseModel):
     theory_online: bool
     practice_online: bool
     lab_online: bool
+    midterm_count: int                        # K-46
     active: bool
     sections: list[SectionOut]                # ders + şubeleri iç içe — kontrat şekli
     model_config = ConfigDict(from_attributes=True)
@@ -339,6 +342,9 @@ class ConflictResultOut(BaseModel):
 class ExamCreate(BaseModel):
     course_id: int                            # DERS id'si — şube değil (K-16)
     exam_type: ExamType
+    # K-46: kaçıncı vize (1-3). Yalnız MIDTERM'de anlamlı; final/büt'te router
+    # zorla 1 yapar. Üst sınır course.midterm_count'a karşı router'da denetlenir.
+    exam_index: int = Field(1, ge=1, le=3)
     exam_date: date
     start_time: time                          # saat kısıtı yok, 18:00 geçerli (K-06)
     duration_minutes: int = Field(ge=10, le=480)
@@ -349,6 +355,7 @@ class ExamCreate(BaseModel):
 class ExamUpdate(BaseModel):
     # course_id PATCH'le DEĞİŞMEZ (sınavın kimliği) — yanlışsa DRAFT silinip yeniden açılır.
     exam_type: ExamType | None = None
+    exam_index: int | None = Field(None, ge=1, le=3)   # K-46
     exam_date: date | None = None
     start_time: time | None = None
     duration_minutes: int | None = Field(None, ge=10, le=480)
@@ -375,6 +382,7 @@ class ExamOut(BaseModel):
     id: int
     course: CourseRef
     exam_type: ExamType
+    exam_index: int                           # K-46: kaçıncı vize (final/büt'te 1)
     exam_date: date
     start_time: time
     duration_minutes: int

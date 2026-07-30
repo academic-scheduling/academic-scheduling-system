@@ -155,6 +155,8 @@ export type Exam = {
   id: number;
   course: CourseRef;
   exam_type: ExamType;
+  /** K-46: kaçıncı vize (1-3). Final/büt'te her zaman 1. */
+  exam_index: number;
   /** YYYY-MM-DD — haftalık programdan farkı: gerçek takvim tarihi */
   exam_date: string;
   /** HH:MM — slot yok, saat kısıtı yok (K-06: 17:30 sonrası serbest) */
@@ -200,6 +202,8 @@ export type Course = {
   theory_online: boolean;
   practice_online: boolean;
   lab_online: boolean;
+  /** K-46: dersin vize sayısı (1-3). Final/büt bundan bağımsız, tektir. */
+  midterm_count: number;
   active: boolean;
   sections: CourseSection[];
 };

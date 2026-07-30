@@ -91,6 +91,31 @@ def _ensure_weekday(exam_date: date) -> None:
                             detail="Sınav tarihi hafta içi olmalı (K-06: hafta sonu sınav yok)")
 
 
+def _normalize_exam_index(exam_type: ExamType, exam_index: int, course: Course) -> int:
+    """K-46: sınavın 'kaçıncı vize' değerini kurallara göre sabitle/doğrula.
+
+    - MIDTERM dışı (final/büt) ders başına tektir → sıra HER ZAMAN 1 (istemci
+      farklı gönderse bile sessizce 1'e çekilir).
+    - MIDTERM'de sıra 1..course.midterm_count aralığında olmalı; dışındaysa 400.
+    """
+    if exam_type != ExamType.MIDTERM:
+        return 1
+    if not (1 <= exam_index <= course.midterm_count):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu ders için en fazla {course.midterm_count} vize tanımlı "
+                   f"(geçersiz sıra: {exam_index})",
+        )
+    return exam_index
+
+
+def _e2_message(exam_type: ExamType, exam_index: int) -> str:
+    """E2 (mükerrer sınav) ön-kontrol mesajı — vizede kaçıncısı olduğunu söyler."""
+    if exam_type == ExamType.MIDTERM:
+        return f"Bu dersin {exam_index}. vizesi zaten tanımlı (E2)"
+    return "Bu dersin bu tipte sınavı zaten var (E2)"
+
+
 def _ensure_draft(exam: Exam) -> None:
     if exam.status != EntryStatus.DRAFT:
         raise HTTPException(status_code=409,
@@ -176,14 +201,19 @@ def create_exam(
     _validate_exam_refs(db, user, data)
     _ensure_weekday(payload.exam_date)
 
-    # E2 ön-kontrolü: aynı ders + aynı tip ikinci sınav (DB UNIQUE yedekte)
+    # K-46: sırayı kurallara göre sabitle (final/büt→1, vize 1..midterm_count).
+    data["exam_index"] = _normalize_exam_index(payload.exam_type, payload.exam_index, course)
+
+    # E2 ön-kontrolü: aynı (ders, tip, SIRA) ikinci sınav (DB UNIQUE yedekte).
+    # Farklı numaralı vizeler (1./2./3.) çakışmaz — çoklu vize bu sayede olur.
     clash = db.query(Exam).filter(
         Exam.course_id == course.id,
         Exam.exam_type == payload.exam_type,
+        Exam.exam_index == data["exam_index"],
     ).first()
     if clash:
         raise HTTPException(status_code=409,
-                            detail="Bu dersin bu tipte sınavı zaten var (E2)")
+                            detail=_e2_message(payload.exam_type, data["exam_index"]))
 
     classroom_ids = data.pop("classroom_ids")
     exam = Exam(created_by=user.id, **data)
@@ -215,15 +245,21 @@ def update_exam(
         _ensure_weekday(data["exam_date"])
 
     new_type = data.get("exam_type", exam.exam_type)
-    if new_type != exam.exam_type:
+    new_index = _normalize_exam_index(
+        new_type, data.get("exam_index", exam.exam_index), exam.course)
+    # Sıra değiştiyse (ör. final'e çevrilince 1'e sabitlendi) data'ya yaz ki
+    # aşağıdaki setattr döngüsü kalıcı kılsın.
+    if new_index != exam.exam_index:
+        data["exam_index"] = new_index
+    if (new_type, new_index) != (exam.exam_type, exam.exam_index):
         clash = db.query(Exam).filter(
             Exam.course_id == exam.course_id,
             Exam.exam_type == new_type,
+            Exam.exam_index == new_index,
             Exam.id != exam.id,
         ).first()
         if clash:
-            raise HTTPException(status_code=409,
-                                detail="Bu dersin bu tipte sınavı zaten var (E2)")
+            raise HTTPException(status_code=409, detail=_e2_message(new_type, new_index))
 
     classroom_ids = data.pop("classroom_ids", None)
     if classroom_ids is not None:  # verilirse liste TAM değişir (K-22)

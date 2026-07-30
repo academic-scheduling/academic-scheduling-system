@@ -94,6 +94,13 @@ sahibinin kim olduğunu söyler. Cevap 200: login cevabındaki `user` nesnesinin
 **aynısı** (yetenek bayrakları + `department_ids` dahil — tek şekil, tek tip).
 Hata 401: token geçersiz/süresi dolmuş → istemci oturumu düşürür.
 
+### POST /auth/refresh   ← K-47
+Oturum uzatma: geçerli token'ı olan AKTİF kullanıcıya **yeni 60 dk'lık token**
+verir. Cevap 200: login ile **aynı şekil** `{ "access_token", "user": {...} }`.
+Hata 401/403: token geçersiz/süresi dolmuş veya hesap DISABLED → uzatılamaz.
+İstemci bunu iki yerde çağırır: (a) aktif kullanıcıda ~10 dk'da bir sessiz
+tazeleme (60 dk hiç dolmasın), (b) 15 dk boşta uyarısında "Oturumu uzat".
+
 **Davet linkinin adresi:** `backend/app/mailer.py` maili
 `{FRONTEND_BASE_URL}/activate?token=<ham token>` olarak kurar. Frontend'in
 `/activate` route'u token'ı **query string'den** okur; değişirse mailer da değişir.
@@ -289,6 +296,7 @@ Cevap (ders + şubeleri iç içe):
     "department_id": 1, "is_elective": false,
     "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
     "theory_online": false, "practice_online": false, "lab_online": false,
+    "midterm_count": 1,
     "active": true,
     "sections": [
       { "id": 7, "section_no": 1, "lecturer": { "id": 3, "full_name": "..." },
@@ -300,9 +308,12 @@ Cevap (ders + şubeleri iç içe):
 İstek: `{ "department_id": 1, "year": 2, "semester": "SPRING", "code": "CENG2001",
   "name": "...", "is_elective": false,
   "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
-  "theory_online": false, "practice_online": false, "lab_online": false }`
+  "theory_online": false, "practice_online": false, "lab_online": false,
+  "midterm_count": 1 }`
   ← T+U+L (K-20) · bileşen online bayrakları (K-45): saati 0 olan bileşenin
   bayrağı sunucuda zorla false. PATCH aynı alanları kabul eder.
+  ← midterm_count (K-46): dersin vize sayısı (1-3, varsayılan 1); final/büt tektir.
+  PATCH ile kayıtlı vizelerin altına çekilemez (409).
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
@@ -371,16 +382,21 @@ Yazma: `can_manage_exams` + sınavın dersinin bölümüne üyelik (K-25).
 `GET /exams` workgroup'un tüm bölümlerini döner (K-26).
 
 ### GET /exams?department_id=&exam_type=&date_from=&date_to=&classroom_id=&year=&semester=&lecturer_id=
-Cevap girişleri: `{ "id", "course": { "id", "code", "name" }, "exam_type", "exam_date",
-  "start_time", "duration_minutes", "classrooms": [ { "id", "building", "room_code", "exam_capacity" } ],
+Cevap girişleri: `{ "id", "course": { "id", "code", "name" }, "exam_type", "exam_index",
+  "exam_date", "start_time", "duration_minutes",
+  "classrooms": [ { "id", "building", "room_code", "exam_capacity" } ],
   "lecturer": {...}, "total_expected_students": 100, "status" }`
   ← total_expected_students = dersin tüm aktif şubelerinin toplamı (K-16)
+  ← exam_index (K-46): kaçıncı vize (1-3); final/büt'te her zaman 1
 
 ### POST /exams
-İstek: `{ "course_id": 4, "exam_type": "MIDTERM", "exam_date": "2026-11-12",
+İstek: `{ "course_id": 4, "exam_type": "MIDTERM", "exam_index": 1, "exam_date": "2026-11-12",
   "start_time": "18:00", "duration_minutes": 90, "classroom_ids": [2, 5],
   "lecturer_id": 3, "notes": null }`      ← 18:00 GEÇERLİ (K-06: saat kısıtı yok)
   ← course_id artık DERS id'sidir (şube değil); tüm şubeler aynı sınava girer (K-16)
+  ← exam_index (K-46): MIDTERM'de 1..course.midterm_count; MIDTERM dışında sunucu
+    zorla 1 yapar. Aralık dışı sıra → 400. E2 artık (ders, tip, SIRA) üçlüsüne bakar:
+    farklı numaralı vizeler (1./2./3.) çakışmaz.
   ← classroom_ids: çoklu derslik (K-17); boş liste = derslik henüz atanmadı
 Cevap 201: `{ "exam": {...}, "conflicts": [...] }` · Hata 400: hafta sonu tarihi.
   → conflicts, kontenjan uyarılarını da içerir: toplam exam_capacity yetersiz (E5)

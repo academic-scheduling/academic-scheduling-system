@@ -930,3 +930,55 @@ iş. Sınav tarafı etkilenmez (sınavda online kavramı yok).
 
 **Kontrat:** §6 CourseCreate/Update/Out'a üç boolean eklendi (üç stajyerin haberi
 var). **Test:** wp2_courses 17 yeşil.
+
+## K-46 · Çoklu vize: ders başına 1-3 vize [E]
+Bugüne dek sistem ders başına tür başına TEK sınav varsayıyordu (`exams`
+UNIQUE(course_id, exam_type), motor E2). Gerçekte bazı derslerin 3'e kadar vizesi
+olabiliyor. Karar: derse `courses.midterm_count` (1-3, varsayılan 1) eklenir;
+sınava `exams.exam_index` ("kaçıncı vize") eklenir; UNIQUE
+(course_id, exam_type) → (course_id, exam_type, exam_index) olur.
+
+**Kapsam yalnız VİZE:** final ve bütünleme ders başına tektir. MIDTERM dışı
+türlerde `exam_index` sunucuda zorla 1 yapılır, dolayısıyla UNIQUE onlar için
+eski "tek kayıt" davranışını aynen korur. `midterm_count` yalnız vizeyi ilgilendirir.
+
+**E2 yeniden tanımı:** mükerrer sınav artık aynı **(ders, tip, SIRA)** üçlüsüdür.
+Farklı numaralı vizeler (1./2./3.) çakışma üretmez — çoklu vize bunun üstüne kurulur.
+Aynı numaralı ikinci vize → E2 HARD (DB UNIQUE yedekte).
+
+**Sıra doğrulama sunucuda:** MIDTERM'de `exam_index ∈ 1..course.midterm_count`;
+dışındaysa 400. Şema ayrıca mutlak üst sınırı korur (`exam_index BETWEEN 1 AND 3`).
+
+**Vize sayısı düşürme kilidi:** `midterm_count`, halihazırda kayıtlı vizelerin
+altına PATCH'le çekilemez (K-27/K-32 deseni: kullanımdaki kayıt sessizce
+kapsam dışı kalmasın) → 409, önce ilgili vize silinsin.
+
+**UI:** Ders formunda "Vize sayısı" (1-3). Sınav modalında ders birden çok vize
+taşıyorsa "Kaçıncı vize" seçimi çıkar; dolu sıralar devre dışı, ilk boş sıra
+otomatik seçilir. Takvim kartı/başlık birden çok vizede sırayı gösterir ("2. Vize").
+
+**Kontrat:** §6 courses'a `midterm_count`, §8 exams'a `exam_index` eklendi;
+E2 semantiği güncellendi (üç stajyerin haberi var). **Migration:** a3c9e1f5b7d2.
+**Test:** wp4_exams'a 4 senaryo (çoklu vize, sınır dışı, non-midterm→1, düşürme
+kilidi) + overlap'a farklı-sıra E2 testi.
+
+## K-47 · Oturum: boşta-kalma modeli (mutlak 60 dk atma yerine) [E]
+Eski davranış: JWT 60 dk, dolunca istemci token'ı silip login'e atıyordu —
+kullanıcı iş ortasında habersiz düşüyordu. Karar: **boşta-kalma (idle) modeli.**
+- **Aktifken hiç kesinti yok:** istemci ~10 dk'da bir `POST /auth/refresh` ile
+  token'ı sessizce ileri taşır; çalışan kullanıcı asla atılmaz.
+- **15 dk hareketsizlikte** "Oturumu uzat / Çıkış" modalı çıkar; içinde 60 sn
+  geri sayım. "Uzat" → tazele; "Çıkış" veya sayaç biterse → oturum kapanır.
+- Modal açıkken sıradan fare/klavye hareketi oturumu uzatmaz — kullanıcı bilerek
+  seçmeli (yanlışlıkla dokunuşla dirilmesin).
+
+**Reddedilen alternatif:** mutlak 60 dk + dolunca 30 sn sayaç. Aktif kullanıcıyı
+saat başı bölerdi; boşta-kalma modeli hem daha az kesinti hem güvenlik açısından
+yeterli (gerçek risk terk edilmiş açık oturumdur, çalışan oturum değil).
+
+**Güvenlik:** `POST /auth/refresh`, `get_current_user`e dayanır — her istekte
+`status == ACTIVE` arandığından (deps.py, K-34) kapatılmış hesabın elindeki token
+uzatılamaz. Token süresi (60 dk) ve tazeleme aralığı env'den ayarlanabilir kalır.
+
+**Kontrat:** §1'e `POST /auth/refresh` eklendi (login ile aynı cevap şekli).
+**UI:** AuthContext idle izleme + geri sayımlı modal (MantineProvider içinde).

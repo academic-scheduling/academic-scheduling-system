@@ -41,6 +41,7 @@ type CourseFormValues = {
   theory_online: boolean;       // K-45: bileşen online mı
   practice_online: boolean;
   lab_online: boolean;
+  midterm_count: number;        // K-46: vize sayısı (1-3)
 };
 
 type SectionFormValues = {
@@ -95,6 +96,7 @@ export default function CoursesPage() {
       department_id: "", year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
       theory_online: false, practice_online: false, lab_online: false,
+      midterm_count: 1,
     },
     validate: {
       department_id: (v) => (v ? null : "Bölüm seçin"),
@@ -210,6 +212,7 @@ export default function CoursesPage() {
       year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
       theory_online: false, practice_online: false, lab_online: false,
+      midterm_count: 1,
     });
     setCourseModal(true);
   }
@@ -222,6 +225,7 @@ export default function CoursesPage() {
       is_elective: String(c.is_elective),
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
       theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
+      midterm_count: c.midterm_count,
     });
     setCourseModal(true);
   }
@@ -232,6 +236,8 @@ export default function CoursesPage() {
     const ortak = {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
       hours_theory: v.hours_theory, hours_practice: v.hours_practice, hours_lab: v.hours_lab,
+      midterm_count: v.midterm_count,   // K-46
+
       // K-45: saati 0 olan bileşenin online bayrağı gönderilmez (backend zaten
       // zorla false yapar; burada da tutarlı kalsın).
       theory_online: v.hours_theory > 0 && v.theory_online,
@@ -461,6 +467,14 @@ export default function CoursesPage() {
               <NumberInput label="Uygulama (U)" min={0} {...courseForm.getInputProps("hours_practice")} />
               <NumberInput label="Lab (L)" min={0} {...courseForm.getInputProps("hours_lab")} />
             </Group>
+            {/* K-46: dersin vize sayısı. Birden fazlaysa sınav eklerken
+                "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
+            <NumberInput
+              label="Vize sayısı"
+              description="Bir dersin 1-3 vizesi olabilir. Final ve bütünleme her zaman tektir."
+              min={1} max={3} clampBehavior="strict"
+              {...courseForm.getInputProps("midterm_count")}
+            />
             {/* K-45: yalnız SAATİ GİRİLMİŞ bileşen için "online mı" sorulur.
                 Senkron/asenkron burada değil, haftalık girişte seçilir. Hiçbir
                 bileşenin saati yoksa blok hiç görünmez. */}

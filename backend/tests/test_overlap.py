@@ -447,6 +447,16 @@ def test_e2_different_exam_type_no_conflict():
     assert e2_duplicate_exam(a, b) is None
 
 
+def test_e2_different_midterm_index_no_conflict():
+    # K-46: aynı ders + aynı tip ama FARKLI sıra (1. vs 2. vize) → mükerrer değil
+    a = base_exam(); a["exam_type"] = "MIDTERM"; a["exam_index"] = 1
+    b = base_exam(); b["exam_type"] = "MIDTERM"; b["exam_index"] = 2
+    assert e2_duplicate_exam(a, b) is None
+    # aynı sıra → yine E2
+    b["exam_index"] = 1
+    assert e2_duplicate_exam(a, b)["rule_id"] == "E2"
+
+
 def test_e2_different_course_no_conflict():
     # farklı ders → çakışma yok
     a = base_exam()

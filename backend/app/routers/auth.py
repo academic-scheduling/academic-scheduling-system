@@ -42,6 +42,19 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     return UserPublic.model_validate(current_user)
 
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(current_user: User = Depends(get_current_user)):
+    """Oturum uzatma (K-47): geçerli token'ı olan AKTİF kullanıcıya yeni bir
+    60 dk'lık token verir.
+
+    get_current_user zaten her istekte `status == ACTIVE` arar (deps.py) — bu
+    yüzden DISABLED edilmiş hesabın elindeki geçerli token burada da 403 alır,
+    yani 'uzat' düğmesi kapatılmış bir hesabı diriltemez. Şifre değişimi vb.
+    yeni bir claim gerektirmez; sub aynı kalır, yalnız exp ileri taşınır.
+    """
+    access_token = create_access_token({"sub": str(current_user.id)})
+    return TokenResponse(access_token=access_token, user=UserPublic.model_validate(current_user))
+
 def _resolve_invitation(db: Session, raw_token: str) -> InvitationToken:
     """Ham token'ı çözer; geçersiz/kullanılmış/süresi dolmuş ise 400 fırlatır.
 

@@ -360,7 +360,7 @@ export default function ExamsPage() {
   };
 
   const sil = async (e: Exam) => {
-    if (!window.confirm(`${e.course.code} ${EXAM_TYPE_LABELS[e.exam_type]} sınavı silinsin mi?`)) return;
+    if (!window.confirm(`${e.course.code} ${examTypeLabel(e)} sınavı silinsin mi?`)) return;
     try {
       await api.delete(`/exams/${e.id}`);
       notifications.show({ message: "Sınav silindi", color: "gray" });
@@ -796,6 +796,7 @@ export default function ExamsPage() {
           courses={secilebilirDersler}
           classrooms={classrooms}
           lecturers={lecturers}
+          exams={exams}
           onClose={() => { setPlacing(null); setEditing(null); }}
           onDone={(conflicts, baslik) => {
             setPlacing(null); setEditing(null); load(); showConflicts(conflicts, baslik);
@@ -1079,7 +1080,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
             <Badge size="xs" variant="default" radius="sm"
               style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
                        color: TEXT_MUTED, borderColor: BORDER, background: HEADER_BG }}>
-              {EXAM_TYPE_LABELS[e.exam_type]}
+              {examTypeLabel(e)}
             </Badge>
           )}
           {actionsVisible && editable && (
@@ -1148,7 +1149,14 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
   );
 }
 
-function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, onClose, onDone }: {
+// K-46: kart/başlık etiketi. Birden çok vizeli derste sırayı gösterir
+// ("2. Vize"); tek vize / final / büt için sade tür adı ("Vize", "Final").
+function examTypeLabel(e: { exam_type: ExamType; exam_index: number }): string {
+  if (e.exam_type === "MIDTERM" && e.exam_index > 1) return `${e.exam_index}. Vize`;
+  return EXAM_TYPE_LABELS[e.exam_type];
+}
+
+function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone }: {
   exam: Exam | null;
   initialDate?: string;
   initialMin?: number;
@@ -1157,6 +1165,9 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   courses: Course[];
   classrooms: Classroom[];
   lecturers: Lecturer[];
+  /** K-46: aynı dersin kayıtlı vizelerinin sırasını görüp doldurulmuş olanları
+   *  devre dışı bırakmak için mevcut sınav listesi. */
+  exams: Exam[];
   onClose: () => void;
   onDone: (conflicts: ConflictResult[], baslik: string) => void;
 }) {
@@ -1164,6 +1175,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [courseId, setCourseId] = useState<string | null>(
     exam ? String(exam.course.id) : initialCourseId != null ? String(initialCourseId) : null);
   const [tip, setTip] = useState<ExamType>(exam?.exam_type ?? "FINAL");
+  const [vizeNo, setVizeNo] = useState<number>(exam?.exam_index ?? 1);   // K-46: kaçıncı vize
   const [tarih, setTarih] = useState(exam?.exam_date ?? initialDate ?? "");
   const [saat, setSaat] = useState(exam?.start_time?.slice(0, 5) ?? fmt(initialMin ?? 9 * 60));
   const [sure, setSure] = useState(exam?.duration_minutes ?? 90);
@@ -1172,6 +1184,22 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [not, setNot] = useState(exam?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
+  // K-46: seçili dersin vize sayısı; birden fazlaysa "kaçıncı vize" sorulur.
+  const selectedCourse = courses.find((c) => String(c.id) === courseId) ?? null;
+  const midtermCount = selectedCourse?.midterm_count ?? 1;
+  const showVizeNo = tip === "MIDTERM" && midtermCount > 1;
+  // Bu dersin kayıtlı vize sıraları (düzenlenen sınav hariç) — dolular seçilemez.
+  const usedVizeNo = useMemo(() => new Set(
+    exams.filter((e) => String(e.course.id) === courseId
+      && e.exam_type === "MIDTERM" && e.id !== exam?.id).map((e) => e.exam_index),
+  ), [exams, courseId, exam]);
+  // Yeni vize eklerken ilk boş sırayı otomatik seç (düzenlemede seçime dokunma).
+  useEffect(() => {
+    if (duzenle || tip !== "MIDTERM") return;
+    setVizeNo([1, 2, 3].find((i) => i <= midtermCount && !usedVizeNo.has(i)) ?? 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, tip, midtermCount]);
+
   const haftaSonu = isWeekend(tarih);
   const eksik = !courseId || !tarih || !saat || !hoca || haftaSonu;
 
@@ -1179,7 +1207,8 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
     setBusy(true);
     try {
       const govde = {
-        exam_type: tip, exam_date: tarih, start_time: saat,
+        exam_type: tip, exam_index: tip === "MIDTERM" ? vizeNo : 1,   // K-46
+        exam_date: tarih, start_time: saat,
         duration_minutes: sure, classroom_ids: odalar.map(Number),
         lecturer_id: Number(hoca), notes: not || null,
       };
@@ -1197,7 +1226,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
 
   return (
     <Modal opened onClose={onClose} size="sm"
-      title={duzenle ? `${exam!.course.code} · ${EXAM_TYPE_LABELS[exam!.exam_type]}` : "Sınav ekle"}>
+      title={duzenle ? `${exam!.course.code} · ${examTypeLabel(exam!)}` : "Sınav ekle"}>
       <Stack gap="sm">
         {!duzenle && (
           <Select label="Ders" value={courseId} onChange={setCourseId} searchable
@@ -1207,6 +1236,17 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         <Select label="Sınav türü" value={tip} onChange={(v) => v && setTip(v as ExamType)}
           data={(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((k) => ({
             value: k, label: EXAM_TYPE_LABELS[k] }))} />
+        {/* K-46: ders birden fazla vize taşıyorsa hangisi olduğunu sor. Dolu
+            sıralar devre dışı; ilk boş sıra otomatik seçilir. */}
+        {showVizeNo && (
+          <Select label="Kaçıncı vize" value={String(vizeNo)}
+            onChange={(v) => v && setVizeNo(Number(v))}
+            data={Array.from({ length: midtermCount }, (_, i) => i + 1).map((i) => ({
+              value: String(i),
+              label: `${i}. vize${usedVizeNo.has(i) ? " · kayıtlı" : ""}`,
+              disabled: usedVizeNo.has(i),
+            }))} />
+        )}
         <TextInput label="Tarih" type="date" value={tarih}
           error={haftaSonu ? "Hafta sonu (Cumartesi/Pazar) sınav günü olarak seçilemez (K-06)" : undefined}
           onChange={(ev) => setTarih(ev.currentTarget.value)} />

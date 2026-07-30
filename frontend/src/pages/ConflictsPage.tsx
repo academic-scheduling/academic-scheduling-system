@@ -119,16 +119,23 @@ function ConflictList({
   }
 
   return (
-    <Stack gap="md">
+    <Stack gap="sm">
       {conflicts.map((c, i) => {
         const isExam = c.affected.some((a) => a.type === "exam");
-        const allTargetIds = c.affected.map((a) => a.id).join(",");
-        const allTargetPath = `${isExam ? "/exams" : "/weekly"}?highlight=${allTargetIds}&rule=${c.rule_id}`;
+        const targetAffectedList = isExam
+          ? c.affected.filter((a) => a.type === "exam")
+          : c.affected.filter((a) => a.type === "weekly_entry");
+        const highlightIdsStr = targetAffectedList.map((a) => a.id).join(",");
+        const highlightParam = highlightIdsStr ? `?highlight=${highlightIdsStr}&rule=${c.rule_id}` : "";
+        const targetPath = `${isExam ? "/exams" : "/weekly"}${highlightParam}`;
+        const conflictingCourseCodes = Array.from(
+          new Set(c.affected.map((a) => a.course_code).filter(Boolean))
+        ).join(", ");
 
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
-            <Stack gap="sm">
-              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+            <Group justify="space-between" align="center" wrap="wrap" gap="md">
+              <Stack gap="xs" style={{ flex: 1, minWidth: 280 }}>
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
                     {severity === "HARD" ? "ENGEL" : "UYARI"}
@@ -137,82 +144,36 @@ function ConflictList({
                     Kural {c.rule_id}
                   </Badge>
                   <Badge variant="dot" color={isExam ? "violet" : "blue"} size="sm">
-                    {isExam ? "Sınav Çakışması" : "Haftalık Ders Çakışması"}
+                    {isExam ? "Sınav Çakışması" : "Ders Programı Çakışması"}
                   </Badge>
                 </Group>
+                <Text size="sm" fw={500}>{c.message}</Text>
+              </Stack>
 
-                {c.affected.length > 0 && (
+              <Group gap="md" align="center">
+                {conflictingCourseCodes && (
+                  <Stack gap={2} align="flex-end">
+                    <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
+                    <Badge color="blue" variant="light" size="sm">
+                      {conflictingCourseCodes}
+                    </Badge>
+                  </Stack>
+                )}
+
+                {targetAffectedList.length > 0 && (
                   <Button
                     component={Link}
-                    to={allTargetPath}
+                    to={targetPath}
                     size="xs"
                     variant="light"
                     color="blue"
-                    rightSection={<IconExternalLink size={14} />}
+                    rightSection={<IconArrowRight size={14} />}
                   >
-                    Tümünü Takvimde Göster ({c.affected.length} Kayıt)
+                    Çakışmaya Git
                   </Button>
                 )}
               </Group>
-
-              <Text size="sm" fw={500}>
-                {c.message}
-              </Text>
-
-              {c.affected.length > 0 && (
-                <Paper withBorder p="xs" radius="sm" style={{ background: "var(--mantine-color-gray-0)" }}>
-                  <Text size="xs" c="dimmed" fw={600} mb={6}>
-                    ÇAKIŞAN DERSLER & KAYITLAR:
-                  </Text>
-
-                  <Stack gap={6}>
-                    {c.affected.map((item, idx) => {
-                      const itemIsExam = item.type === "exam";
-                      const itemPath = `${itemIsExam ? "/exams" : "/weekly"}?highlight=${item.id}&rule=${c.rule_id}`;
-                      const label = item.course_code
-                        ? `${item.course_code} — ${itemIsExam ? "Sınav Girişi" : "Haftalık Ders Girişi"}`
-                        : `${itemIsExam ? "Sınav" : "Haftalık Giriş"} #${item.id}`;
-
-                      return (
-                        <Paper
-                          key={idx}
-                          withBorder
-                          p="xs"
-                          radius="xs"
-                          style={{ background: "#FFFFFF" }}
-                        >
-                          <Group justify="space-between" align="center" wrap="nowrap">
-                            <Group gap="xs">
-                              <Badge
-                                size="xs"
-                                color={itemIsExam ? "violet" : "blue"}
-                                variant="light"
-                              >
-                                {itemIsExam ? "SINAV" : "DERS"}
-                              </Badge>
-                              <Text size="xs" fw={600}>
-                                {label}
-                              </Text>
-                            </Group>
-
-                            <Button
-                              component={Link}
-                              to={itemPath}
-                              size="compact-xs"
-                              variant="subtle"
-                              color="blue"
-                              rightSection={<IconArrowRight size={12} />}
-                            >
-                              Takvimde Göster
-                            </Button>
-                          </Group>
-                        </Paper>
-                      );
-                    })}
-                  </Stack>
-                </Paper>
-              )}
-            </Stack>
+            </Group>
           </Card>
         );
       })}

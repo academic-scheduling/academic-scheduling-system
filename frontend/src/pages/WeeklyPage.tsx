@@ -8,7 +8,7 @@ import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck,
-  IconMapPin, IconPlus, IconTrash, IconWorld,
+  IconMapPin, IconPlus, IconTrash, IconWorld, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
@@ -195,6 +195,11 @@ export default function WeeklyPage() {
   const [hoverSection, setHoverSection] = useState<number | null>(null);
   // Çakışma Raporu'ndan gelen derin bağlantı vurgusu ID'leri (hedef bulunduğunda başlar, 3.5s kalır)
   const [deepHighlightIds, setDeepHighlightIds] = useState<number[]>([]);
+  // Çakışma Raporu'ndan gelindiğinde üstte gösterilecek çakışan dersler bilgi kutusu
+  const [highlightInfo, setHighlightInfo] = useState<{
+    rule: string;
+    entries: WeeklyEntry[];
+  } | null>(null);
   // Boş slot üzerinde gezinme: "buraya tıklayıp ekleyebilirsin" işareti.
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "day-slot"
   // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
@@ -295,6 +300,10 @@ export default function WeeklyPage() {
             });
           }
           setDeepHighlightIds(targets.map((t) => t.id));
+          setHighlightInfo({
+            rule: ruleParam ?? "Çakışma",
+            entries: targets,
+          });
           setSearchParams({}, { replace: true });
         } else {
           notifications.show({ color: "yellow", message: "Vurgulanacak kayıt bulunamadı." });
@@ -540,8 +549,76 @@ export default function WeeklyPage() {
       });
   }, [courses, paletteSearch, placedBySection]);
 
+  const DAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
+
   return (
     <Stack gap="lg">
+      {highlightInfo && (
+        <Paper
+          p="sm"
+          radius="md"
+          withBorder
+          style={{
+            background: "var(--mantine-color-blue-0)",
+            borderColor: "var(--mantine-color-blue-4)",
+          }}
+        >
+          <Group justify="space-between" align="center" mb="xs">
+            <Group gap="xs">
+              <IconAlertCircle color="var(--mantine-color-blue-7)" size={20} />
+              <Text fw={600} size="sm" c="blue.9">
+                Çakışan Dersler (Kural {highlightInfo.rule})
+              </Text>
+              <Badge color="blue" size="xs">
+                {highlightInfo.entries.length} Ders Girişi
+              </Badge>
+            </Group>
+
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              color="gray"
+              leftSection={<IconX size={14} />}
+              onClick={() => setHighlightInfo(null)}
+            >
+              Kapat
+            </Button>
+          </Group>
+
+          <Text size="xs" c="dimmed" mb={8}>
+            Çakışmaya dahil olan tüm haftalık ders kayıtları aşağıda alt alta listelenmiştir ve takvim üzerinde vurgulanmıştır:
+          </Text>
+
+          <Stack gap={6}>
+            {highlightInfo.entries.map((entry, idx) => (
+              <Paper key={idx} withBorder p="xs" radius="xs" style={{ background: "#FFFFFF" }}>
+                <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                  <Group gap="xs">
+                    <Badge color="blue" size="sm" variant="filled">
+                      {entry.section.course.code}-{entry.section.section_no}
+                    </Badge>
+                    <Text size="xs" fw={600}>
+                      {entry.section.course.name}
+                    </Text>
+                  </Group>
+
+                  <Group gap="md">
+                    <Text size="xs" c="dimmed">
+                      📅 {DAY_NAMES[entry.day_of_week - 1]}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      ⏰ Slot {entry.start_slot}-{entry.start_slot + entry.slot_count - 1}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      🏫 {entry.classroom ? entry.classroom.room_code : "Derslik Atanmadı"}
+                    </Text>
+                  </Group>
+                </Group>
+              </Paper>
+            ))}
+          </Stack>
+        </Paper>
+      )}
       {/* Tek yatay araç çubuğu — Sınav Takvimi ile aynı düzen: solda başlık,
           ortada mercek + süzgeçler, sağda yayınlama. Tüm kontroller aynı
           yükseklikte (CONTROL_H). */}

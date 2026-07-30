@@ -196,6 +196,18 @@ export default function ExamsPage() {
   };
   useEffect(load, []);
 
+  // Bölümler genel-bakışından ?department_id= ile gelindiğinde o bölümü seç;
+  // parametreyi bir kez tüketip URL'den temizle. Yıl/dönem kullanıcıya bırakılır.
+  useEffect(() => {
+    const depParam = searchParams.get("department_id");
+    if (!depParam) return;
+    setDep(depParam);
+    const next = new URLSearchParams(searchParams);
+    next.delete("department_id");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Highlight yönlendirmesi geldiğinde hedef sınavın tarih ve cohort filtrelerini otomatik ayarla
   useEffect(() => {
     if (!highlightId) return;

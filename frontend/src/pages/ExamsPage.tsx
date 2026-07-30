@@ -135,6 +135,15 @@ export default function ExamsPage() {
     exams: Exam[];
   } | null>(null);
 
+  const conflictsRef = useRef<HTMLDivElement>(null);
+  const [blinkingRuleId, setBlinkingRuleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!blinkingRuleId) return;
+    const timer = setTimeout(() => setBlinkingRuleId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [blinkingRuleId]);
+
   useEffect(() => {
     if (!deepHighlightIds.length) return;
     const timer = setTimeout(() => setDeepHighlightIds([]), 3500);
@@ -724,6 +733,14 @@ export default function ExamsPage() {
                           listHover={hoverCourse === e.course.id}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
+                          onWarningClick={() => {
+                            const allConfs = [...scan.hard, ...scan.warnings];
+                            const matched = allConfs.find((conf) =>
+                              conf.affected.some((a) => a.type === "exam" && a.id === e.id)
+                            );
+                            if (matched) setBlinkingRuleId(matched.rule_id);
+                            conflictsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
                           onDragEnd={() => setDrag(null)}
                           onEdit={() => setEditing(e)}
@@ -746,8 +763,15 @@ export default function ExamsPage() {
         <Legend label="Çakışma" color={ACCENT.hard} />
       </Group>
 
-      <Paper p="md" radius="md"
+      <Paper ref={conflictsRef} p="md" radius="md"
         style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        <style>{`
+          @keyframes blinkPulse {
+            0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+            50% { background-color: rgba(239, 68, 68, 0.05); box-shadow: none; }
+            100% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+          }
+        `}</style>
         <Group justify="space-between" mb={examConflicts.length ? "sm" : 0}>
           <Text fw={500} size="sm">Sınav çakışmaları</Text>
           <Group gap={6}>
@@ -766,16 +790,27 @@ export default function ExamsPage() {
              Kapalı bir slider içinde çakışmaların birikmesi, kaçının görünür
              olduğunu belirsizleştiriyordu. */
           <Stack gap={8}>
-            {examConflicts.map((c, i) => (
-              <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start">
-                <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                  color={c.severity === "HARD" ? "red" : "orange"}>
-                  {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                </Badge>
-                <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
-                <Text size="sm">{c.message}</Text>
-              </Group>
-            ))}
+            {examConflicts.map((c, i) => {
+              const isBlinking = blinkingRuleId === c.rule_id;
+              return (
+                <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start"
+                  p={6}
+                  style={{
+                    borderRadius: 6,
+                    transition: "all 300ms ease",
+                    animation: isBlinking ? "blinkPulse 0.8s ease-in-out infinite" : undefined,
+                    border: isBlinking ? "2px solid #EF4444" : "1px solid transparent",
+                    background: isBlinking ? "#FEF2F2" : undefined,
+                  }}>
+                  <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                    color={c.severity === "HARD" ? "red" : "orange"}>
+                    {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                  </Badge>
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
+                  <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                </Group>
+              );
+            })}
           </Stack>
         )}
       </Paper>
@@ -943,9 +978,9 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
   );
 }
 
-function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
   e: Placed; hard: boolean; warn: boolean; highlight?: boolean; listHover?: boolean;
-  editable: boolean; revertable: boolean;
+  editable: boolean; revertable: boolean; onWarningClick?: () => void;
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
@@ -1121,8 +1156,19 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
       )}
 
       {(hard || warn) && (
-        <span title={hard ? "Engelleyici çakışma" : "Uyarı"}
-          style={{ position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0 }}>
+        <span title={hard ? "Engelleyici çakışma — Çakışmalar bölümüne gitmek için tıklayın" : "Uyarı — Çakışmalar bölümüne gitmek için tıklayın"}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            onWarningClick?.();
+          }}
+          style={{
+            position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0,
+            cursor: "pointer", padding: 2, borderRadius: 4, background: "rgba(255, 255, 255, 0.8)",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "transform 150ms ease",
+            zIndex: 10,
+          }}
+          onMouseEnter={(ev) => (ev.currentTarget.style.transform = "scale(1.25)")}
+          onMouseLeave={(ev) => (ev.currentTarget.style.transform = "scale(1)")}>
           {hard ? <IconAlertCircle size={15} /> : <IconAlertTriangle size={15} />}
         </span>
       )}

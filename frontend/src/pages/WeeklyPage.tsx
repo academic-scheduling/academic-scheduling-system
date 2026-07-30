@@ -213,6 +213,14 @@ export default function WeeklyPage() {
   // uzamasın, kaydırsın. Ölçüyoruz çünkü sabit sayı yazmak grid'in iç yapısı
   // (başlık yüksekliği, satır sayısı, Paper dolgusu) değişince sessizce bozulur.
   const gridRef = useRef<HTMLDivElement>(null);
+  const conflictsRef = useRef<HTMLDivElement>(null);
+  const [blinkingRuleId, setBlinkingRuleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!blinkingRuleId) return;
+    const timer = setTimeout(() => setBlinkingRuleId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [blinkingRuleId]);
   const [gridH, setGridH] = useState<number | undefined>();
   useLayoutEffect(() => {
     const el = gridRef.current;
@@ -904,6 +912,15 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
+                        onWarningClick={() => {
+                          const clusterEntryIds = new Set(c.entries.map((e) => e.id));
+                          const allConfs = [...scan.hard, ...scan.warnings];
+                          const matched = allConfs.find((conf) =>
+                            conf.affected.some((a) => a.type === "weekly_entry" && clusterEntryIds.has(a.id))
+                          );
+                          if (matched) setBlinkingRuleId(matched.rule_id);
+                          conflictsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
                         onEdit={setEditing}
@@ -928,8 +945,15 @@ export default function WeeklyPage() {
         <Legend label="Online" color="#64748B" />
       </Group>
 
-      <Paper p="md" radius="md"
+      <Paper ref={conflictsRef} p="md" radius="md"
         style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        <style>{`
+          @keyframes blinkPulse {
+            0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+            50% { background-color: rgba(239, 68, 68, 0.05); box-shadow: none; }
+            100% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+          }
+        `}</style>
         <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
           <Text fw={500} size="sm">Çakışmalar</Text>
           <Group gap={6}>
@@ -945,17 +969,28 @@ export default function WeeklyPage() {
           <Text size="sm" c="dimmed">Haftalık programda çakışma yok.</Text>
         ) : (
           <Stack gap={8}>
-            {weeklyConflicts.map((c, i) => (
-              <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start">
-                <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                  color={c.severity === "HARD" ? "red" : "orange"}>
-                  {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                </Badge>
-                <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
-                {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
-                <Text size="sm">{c.message}</Text>
-              </Group>
-            ))}
+            {weeklyConflicts.map((c, i) => {
+              const isBlinking = blinkingRuleId === c.rule_id;
+              return (
+                <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start"
+                  p={6}
+                  style={{
+                    borderRadius: 6,
+                    transition: "all 300ms ease",
+                    animation: isBlinking ? "blinkPulse 0.8s ease-in-out infinite" : undefined,
+                    border: isBlinking ? "2px solid #EF4444" : "1px solid transparent",
+                    background: isBlinking ? "#FEF2F2" : undefined,
+                  }}>
+                  <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                    color={c.severity === "HARD" ? "red" : "orange"}>
+                    {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                  </Badge>
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
+                  {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
+                  <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                </Group>
+              );
+            })}
           </Stack>
         )}
       </Paper>
@@ -1161,9 +1196,9 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
-  lecturerName?: string;
+  lecturerName?: string; onWarningClick?: () => void;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
@@ -1326,8 +1361,19 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         </Group>
       )}
       {(hard || warn) && (
-        <span title={hard ? "Engelleyici çakışma" : "Uyarı"}
-          style={{ position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0 }}>
+        <span title={hard ? "Engelleyici çakışma — Çakışmalar bölümüne gitmek için tıklayın" : "Uyarı — Çakışmalar bölümüne gitmek için tıklayın"}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            onWarningClick?.();
+          }}
+          style={{
+            position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0,
+            cursor: "pointer", padding: 2, borderRadius: 4, background: "rgba(255, 255, 255, 0.8)",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "transform 150ms ease",
+            zIndex: 10,
+          }}
+          onMouseEnter={(ev) => (ev.currentTarget.style.transform = "scale(1.25)")}
+          onMouseLeave={(ev) => (ev.currentTarget.style.transform = "scale(1)")}>
           {hard ? <IconAlertCircle size={15} /> : <IconAlertTriangle size={15} />}
         </span>
       )}

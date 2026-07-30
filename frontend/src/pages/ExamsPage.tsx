@@ -283,27 +283,11 @@ export default function ExamsPage() {
     return m;
   }, [exams, gunler, cohortCourseIds]);
 
-  const { hardIds, warnIds, conflictNoticeMap } = useMemo(() => {
+  const { hardIds, warnIds } = useMemo(() => {
     const h = new Set<number>(), w = new Set<number>();
-    const noticeMap = new Map<number, string>();
-    const allConflicts = [...(scan.hard ?? []), ...(scan.warnings ?? [])];
-
     for (const c of scan.hard) for (const a of c.affected) if (a.type === "exam") h.add(a.id);
     for (const c of scan.warnings) for (const a of c.affected) if (a.type === "exam") w.add(a.id);
-
-    for (const c of allConflicts) {
-      const examEntries = c.affected.filter((a) => a.type === "exam");
-      const allCodes = Array.from(new Set(c.affected.map((a) => a.course_code).filter(Boolean)));
-      for (const entry of examEntries) {
-        const otherCodes = allCodes.filter((code) => code !== entry.course_code);
-        const notice = otherCodes.length > 0
-          ? `${otherCodes.join(", ")} sınavı ile çakışıyor`
-          : "Çakışan sınav var";
-        noticeMap.set(entry.id, notice);
-      }
-    }
-
-    return { hardIds: h, warnIds: w, conflictNoticeMap: noticeMap };
+    return { hardIds: h, warnIds: w };
   }, [scan]);
 
   /** Sol panel: cohort'un dersleri + her birinde HANGİ sınav türü tanımlı.
@@ -737,7 +721,6 @@ export default function ExamsPage() {
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                           highlight={deepHighlightIds.includes(e.id)}
-                          conflictNotice={conflictNoticeMap.get(e.id)}
                           listHover={hoverCourse === e.course.id}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
@@ -960,9 +943,9 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
   );
 }
 
-function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, conflictNotice, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
   e: Placed; hard: boolean; warn: boolean; highlight?: boolean; listHover?: boolean;
-  editable: boolean; revertable: boolean; conflictNotice?: string;
+  editable: boolean; revertable: boolean;
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
@@ -1127,14 +1110,6 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, c
           <IconUser size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
           <Text fz={12} truncate style={{ color: TEXT_MUTED }}>{e.lecturer.full_name}</Text>
         </Group>
-      )}
-
-      {conflictNotice && (
-        <Paper mt={4} px={6} py={2} radius="xs" style={{ background: hard ? "var(--mantine-color-red-0)" : "var(--mantine-color-orange-0)", border: `1px solid ${hard ? "var(--mantine-color-red-3)" : "var(--mantine-color-orange-3)"}` }}>
-          <Text size="10px" fw={600} c={hard ? "red.8" : "orange.8"} style={{ lineHeight: 1.25 }}>
-            ⚠️ Çakışma Var ({conflictNotice})
-          </Text>
-        </Paper>
       )}
 
       {showDraftBadge && (

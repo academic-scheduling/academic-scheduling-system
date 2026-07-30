@@ -380,27 +380,11 @@ export default function WeeklyPage() {
     return names;
   }, [allCourses]);
 
-  const { hardIds, warnIds, conflictNoticeMap } = useMemo(() => {
+  const { hardIds, warnIds } = useMemo(() => {
     const h = new Set<number>(), w = new Set<number>();
-    const noticeMap = new Map<number, string>();
-    const allConflicts = [...(scan.hard ?? []), ...(scan.warnings ?? [])];
-
     for (const c of scan.hard) for (const a of c.affected) if (a.type === "weekly_entry") h.add(a.id);
     for (const c of scan.warnings) for (const a of c.affected) if (a.type === "weekly_entry") w.add(a.id);
-
-    for (const c of allConflicts) {
-      const weeklyEntries = c.affected.filter((a) => a.type === "weekly_entry");
-      const allCodes = Array.from(new Set(c.affected.map((a) => a.course_code).filter(Boolean)));
-      for (const entry of weeklyEntries) {
-        const otherCodes = allCodes.filter((code) => code !== entry.course_code);
-        const notice = otherCodes.length > 0
-          ? `${otherCodes.join(", ")} dersi ile çakışıyor`
-          : "Çakışan ders var";
-        noticeMap.set(entry.id, notice);
-      }
-    }
-
-    return { hardIds: h, warnIds: w, conflictNoticeMap: noticeMap };
+    return { hardIds: h, warnIds: w };
   }, [scan]);
 
   const byDay = useMemo(() => {
@@ -920,7 +904,6 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
-                        conflictNotice={c.entries.map((e) => conflictNoticeMap.get(e.id)).filter(Boolean)[0]}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
                         onEdit={setEditing}
@@ -1178,9 +1161,9 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, conflictNotice, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
-  lecturerName?: string; conflictNotice?: string;
+  lecturerName?: string;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
@@ -1336,13 +1319,6 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
       </Group>
       {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
-      {conflictNotice && (
-        <Paper mt={4} px={6} py={2} radius="xs" style={{ background: hard ? "var(--mantine-color-red-0)" : "var(--mantine-color-orange-0)", border: `1px solid ${hard ? "var(--mantine-color-red-3)" : "var(--mantine-color-orange-3)"}` }}>
-          <Text size="10px" fw={600} c={hard ? "red.8" : "orange.8"} style={{ lineHeight: 1.25 }}>
-            ⚠️ Çakışma Var ({conflictNotice})
-          </Text>
-        </Paper>
-      )}
       {(elective || draft) && c.slot_count > 1 && (
         <Group gap={4} mt={5}>
           {elective && <Badge size="xs" variant="light" color="gray">SEÇMELİ</Badge>}

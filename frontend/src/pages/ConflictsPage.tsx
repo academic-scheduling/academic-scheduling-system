@@ -122,20 +122,11 @@ function ConflictList({
     <Stack gap="sm">
       {conflicts.map((c, i) => {
         const isExam = c.affected.some((a) => a.type === "exam");
-        const targetAffectedList = isExam
-          ? c.affected.filter((a) => a.type === "exam")
-          : c.affected.filter((a) => a.type === "weekly_entry");
-        const highlightIdsStr = targetAffectedList.map((a) => a.id).join(",");
-        const highlightParam = highlightIdsStr ? `?highlight=${highlightIdsStr}&rule=${c.rule_id}` : "";
-        const targetPath = `${isExam ? "/exams" : "/weekly"}${highlightParam}`;
-        const conflictingCourseCodes = Array.from(
-          new Set(c.affected.map((a) => a.course_code).filter(Boolean))
-        ).join(", ");
 
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
-            <Group justify="space-between" align="center" wrap="wrap" gap="md">
-              <Stack gap="xs" style={{ flex: 1, minWidth: 280 }}>
+            <Stack gap="xs">
+              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
                     {severity === "HARD" ? "ENGEL" : "UYARI"}
@@ -147,33 +138,35 @@ function ConflictList({
                     {isExam ? "Sınav Çakışması" : "Ders Programı Çakışması"}
                   </Badge>
                 </Group>
-                <Text size="sm" fw={500}>{c.message}</Text>
-              </Stack>
-
-              <Group gap="md" align="center">
-                {conflictingCourseCodes && (
-                  <Stack gap={2} align="flex-end">
-                    <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
-                    <Badge color="blue" variant="light" size="sm">
-                      {conflictingCourseCodes}
-                    </Badge>
-                  </Stack>
-                )}
-
-                {targetAffectedList.length > 0 && (
-                  <Button
-                    component={Link}
-                    to={targetPath}
-                    size="xs"
-                    variant="light"
-                    color="blue"
-                    rightSection={<IconArrowRight size={14} />}
-                  >
-                    Çakışmaya Git
-                  </Button>
-                )}
               </Group>
-            </Group>
+
+              <Text size="sm" fw={500}>{c.message}</Text>
+
+              {c.affected.length > 0 && (
+                <Group gap="xs" align="center" wrap="wrap" mt={4}>
+                  <Text size="xs" c="dimmed" fw={600}>Çakışan Dersler (Programa Git):</Text>
+                  {c.affected.map((item, idx) => {
+                    const itemIsExam = item.type === "exam";
+                    const itemPath = `${itemIsExam ? "/exams" : "/weekly"}?highlight=${item.id}&rule=${c.rule_id}`;
+                    const label = item.course_code ?? `${itemIsExam ? "Sınav" : "Ders"} #${item.id}`;
+
+                    return (
+                      <Button
+                        key={idx}
+                        component={Link}
+                        to={itemPath}
+                        size="xs"
+                        variant="light"
+                        color={itemIsExam ? "violet" : "blue"}
+                        rightSection={<IconArrowRight size={12} />}
+                      >
+                        {label}
+                      </Button>
+                    );
+                  })}
+                </Group>
+              )}
+            </Stack>
           </Card>
         );
       })}

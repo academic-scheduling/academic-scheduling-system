@@ -249,6 +249,20 @@ export default function WeeklyPage() {
     return () => clearTimeout(timer);
   }, [deepHighlightId]);
 
+  // Bölümler genel-bakışından ?department_id= ile gelindiğinde cohort görünümüne
+  // geç ve o bölümü seç; parametreyi bir kez tüketip URL'den temizle (yenilemede
+  // kullanıcının o an seçtiği bölümü ezmesin). Yıl/dönem kullanıcıya bırakılır.
+  useEffect(() => {
+    const depParam = searchParams.get("department_id");
+    if (!depParam) return;
+    setDep(depParam);
+    setView("cohort");
+    const next = new URLSearchParams(searchParams);
+    next.delete("department_id");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Highlight yönlendirmesi geldiğinde hedef kaydın cohort filtrelerini otomatik ayarla
   useEffect(() => {
     if (!highlightId || !allCourses.length) return;

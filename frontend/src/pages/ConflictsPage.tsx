@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Alert, Badge, Card, Group, Loader, Paper, Stack, Tabs, Text, Title,
+  Alert, Badge, Button, Card, Group, Loader, Paper, Stack, Tabs, Text, Title,
 } from "@mantine/core";
+import { IconArrowRight } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { ConflictResult, ConflictScan } from "../api/types";
 
@@ -114,10 +116,18 @@ function ConflictList({
           new Set(c.affected.map((a) => a.course_code).filter(Boolean))
         );
 
+        const isExam = c.affected.some((a) => a.type === "exam");
+        const basePath = isExam ? "/exams" : "/weekly";
+        const targetAffected = isExam
+          ? c.affected.find((a) => a.type === "exam")
+          : c.affected.find((a) => a.type === "weekly_entry");
+        const highlightParam = targetAffected ? `?highlight=${targetAffected.id}&rule=${c.rule_id}` : "";
+        const targetPath = `${basePath}${highlightParam}`;
+
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
-            <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <Stack gap="xs" style={{ flex: 1 }}>
+            <Group justify="space-between" align="center" wrap="wrap" gap="md">
+              <Stack gap="xs" style={{ flex: 1, minWidth: 280 }}>
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
                     {severity === "HARD" ? "ENGEL" : "UYARI"}
@@ -129,18 +139,33 @@ function ConflictList({
                 <Text size="sm" fw={500}>{c.message}</Text>
               </Stack>
 
-              {conflictingCourses.length > 0 && (
-                <Stack gap={4} align="flex-end" style={{ flexShrink: 0 }}>
-                  <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
-                  <Group gap={4} wrap="wrap" justify="flex-end">
-                    {conflictingCourses.map((code, idx) => (
-                      <Badge key={idx} variant="light" color="blue" size="sm">
-                        {code}
-                      </Badge>
-                    ))}
-                  </Group>
-                </Stack>
-              )}
+              <Group gap="md" align="center">
+                {conflictingCourses.length > 0 && (
+                  <Stack gap={4} align="flex-end">
+                    <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
+                    <Group gap={4} wrap="wrap" justify="flex-end">
+                      {conflictingCourses.map((code, idx) => (
+                        <Badge key={idx} variant="light" color="blue" size="sm">
+                          {code}
+                        </Badge>
+                      ))}
+                    </Group>
+                  </Stack>
+                )}
+
+                {targetAffected && (
+                  <Button
+                    component={Link}
+                    to={targetPath}
+                    size="xs"
+                    variant="light"
+                    color="blue"
+                    rightSection={<IconArrowRight size={14} />}
+                  >
+                    Çakışmaya Git
+                  </Button>
+                )}
+              </Group>
             </Group>
           </Card>
         );

@@ -192,6 +192,11 @@ export type Course = {
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
+  /** K-45: bileşen bazında online mı. Saati 0 olan bileşende her zaman false.
+   *  Senkron/asenkron ayrımı haftalık girişte (delivery_mode) seçilir. */
+  theory_online: boolean;
+  practice_online: boolean;
+  lab_online: boolean;
   active: boolean;
   sections: CourseSection[];
 };

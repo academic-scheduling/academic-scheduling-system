@@ -67,6 +67,9 @@ FIELD_LABELS: dict[str, str] = {
     "hours_theory": "Teori saati",
     "hours_practice": "Uygulama saati",
     "hours_lab": "Lab saati",
+    "theory_online": "Teori online",       # K-45
+    "practice_online": "Uygulama online",
+    "lab_online": "Lab online",
     "day_of_week": "Gün",
     "start_slot": "Başlangıç slotu",
     "slot_count": "Slot sayısı",

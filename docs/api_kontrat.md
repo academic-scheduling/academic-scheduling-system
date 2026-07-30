@@ -282,6 +282,7 @@ Cevap (ders + şubeleri iç içe):
 [ { "id": 4, "code": "CENG2001", "name": "...", "year": 2, "semester": "SPRING",
     "department_id": 1, "is_elective": false,
     "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
+    "theory_online": false, "practice_online": false, "lab_online": false,
     "active": true,
     "sections": [
       { "id": 7, "section_no": 1, "lecturer": { "id": 3, "full_name": "..." },
@@ -292,7 +293,10 @@ Cevap (ders + şubeleri iç içe):
 ### POST /courses   (ders — kod düzeyi)
 İstek: `{ "department_id": 1, "year": 2, "semester": "SPRING", "code": "CENG2001",
   "name": "...", "is_elective": false,
-  "hours_theory": 3, "hours_practice": 2, "hours_lab": 0 }`   ← T+U+L (K-20)
+  "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
+  "theory_online": false, "practice_online": false, "lab_online": false }`
+  ← T+U+L (K-20) · bileşen online bayrakları (K-45): saati 0 olan bileşenin
+  bayrağı sunucuda zorla false. PATCH aynı alanları kabul eder.
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`

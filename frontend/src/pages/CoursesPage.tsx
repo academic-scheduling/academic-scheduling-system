@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActionIcon, Alert, Badge, Button, Divider, Group, Loader, Modal,
+  ActionIcon, Alert, Badge, Button, Checkbox, Divider, Group, Loader, Modal,
   NumberInput, Paper, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
@@ -37,6 +37,9 @@ type CourseFormValues = {
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
+  theory_online: boolean;       // K-45: bileşen online mı
+  practice_online: boolean;
+  lab_online: boolean;
 };
 
 type SectionFormValues = {
@@ -85,6 +88,7 @@ export default function CoursesPage() {
     initialValues: {
       department_id: "", year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      theory_online: false, practice_online: false, lab_online: false,
     },
     validate: {
       department_id: (v) => (v ? null : "Bölüm seçin"),
@@ -181,6 +185,7 @@ export default function CoursesPage() {
       department_id: writableDepartments.length === 1 ? String(writableDepartments[0].id) : "",
       year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      theory_online: false, practice_online: false, lab_online: false,
     });
     setCourseModal(true);
   }
@@ -192,6 +197,7 @@ export default function CoursesPage() {
       year: c.year, semester: c.semester, code: c.code, name: c.name,
       is_elective: String(c.is_elective),
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
+      theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
     });
     setCourseModal(true);
   }
@@ -202,6 +208,11 @@ export default function CoursesPage() {
     const ortak = {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
       hours_theory: v.hours_theory, hours_practice: v.hours_practice, hours_lab: v.hours_lab,
+      // K-45: saati 0 olan bileşenin online bayrağı gönderilmez (backend zaten
+      // zorla false yapar; burada da tutarlı kalsın).
+      theory_online: v.hours_theory > 0 && v.theory_online,
+      practice_online: v.hours_practice > 0 && v.practice_online,
+      lab_online: v.hours_lab > 0 && v.lab_online,
     };
     try {
       if (editingCourse) {
@@ -426,6 +437,30 @@ export default function CoursesPage() {
               <NumberInput label="Uygulama (U)" min={0} {...courseForm.getInputProps("hours_practice")} />
               <NumberInput label="Lab (L)" min={0} {...courseForm.getInputProps("hours_lab")} />
             </Group>
+            {/* K-45: yalnız SAATİ GİRİLMİŞ bileşen için "online mı" sorulur.
+                Senkron/asenkron burada değil, haftalık girişte seçilir. Hiçbir
+                bileşenin saati yoksa blok hiç görünmez. */}
+            {(courseForm.values.hours_theory > 0
+              || courseForm.values.hours_practice > 0
+              || courseForm.values.hours_lab > 0) && (
+              <Stack gap={6}>
+                <Text size="xs" c="dimmed">Online bileşenler</Text>
+                <Group gap="lg">
+                  {courseForm.values.hours_theory > 0 && (
+                    <Checkbox size="xs" label="Teori online"
+                      {...courseForm.getInputProps("theory_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_practice > 0 && (
+                    <Checkbox size="xs" label="Uygulama online"
+                      {...courseForm.getInputProps("practice_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_lab > 0 && (
+                    <Checkbox size="xs" label="Lab online"
+                      {...courseForm.getInputProps("lab_online", { type: "checkbox" })} />
+                  )}
+                </Group>
+              </Stack>
+            )}
             <Button type="submit" loading={busy} mt="sm">
               {editingCourse ? "Kaydet" : "Ekle"}
             </Button>

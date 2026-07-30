@@ -272,6 +272,11 @@ class CourseCreate(BaseModel):
     hours_theory: int = Field(0, ge=0)        # K-20: T+U+L, varsayılan 0
     hours_practice: int = Field(0, ge=0)
     hours_lab: int = Field(0, ge=0)
+    # K-45: bileşen online mı. Saati 0 olan bileşenin bayrağı router'da
+    # zorla false'a çekilir (anlamsız veri tutulmaz).
+    theory_online: bool = False
+    practice_online: bool = False
+    lab_online: bool = False
 
 class CourseUpdate(BaseModel):
     # Kimlik alanları (department/year/semester) PATCH'le DEĞİŞMEZ —
@@ -282,6 +287,9 @@ class CourseUpdate(BaseModel):
     hours_theory: int | None = Field(None, ge=0)
     hours_practice: int | None = Field(None, ge=0)
     hours_lab: int | None = Field(None, ge=0)
+    theory_online: bool | None = None
+    practice_online: bool | None = None
+    lab_online: bool | None = None
     active: bool | None = None
 
 class CourseOut(BaseModel):
@@ -295,6 +303,9 @@ class CourseOut(BaseModel):
     hours_theory: int
     hours_practice: int
     hours_lab: int
+    theory_online: bool
+    practice_online: bool
+    lab_online: bool
     active: bool
     sections: list[SectionOut]                # ders + şubeleri iç içe — kontrat şekli
     model_config = ConfigDict(from_attributes=True)

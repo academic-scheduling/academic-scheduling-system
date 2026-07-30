@@ -484,6 +484,13 @@ class Course(Base):
         SmallInteger, server_default=text("0")
     )
     hours_lab: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    # K-45: bileşen bazında online mı. Yalnız saati>0 olan bileşen için anlamlı;
+    # saat 0 ise ilgili bayrak zorla false (router). "Online mı" ders düzeyinde
+    # sabittir; SENKRON/ASENKRON ayrımı haftalık girişte seçilir (K-19 giriş
+    # düzeyi delivery_mode korunur — bu bayraklar yalnız o seçimi yönlendirir).
+    theory_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    practice_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    lab_online: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     department: Mapped["Department"] = relationship(back_populates="courses")

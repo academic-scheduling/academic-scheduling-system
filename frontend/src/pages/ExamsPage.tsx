@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
   NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
@@ -122,6 +122,7 @@ function dayWidth(exams: Placed[]): number {
 export default function ExamsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const highlightParam = searchParams.get("highlight");
   const highlightIds = useMemo(() => {
     if (!highlightParam) return [];
@@ -136,13 +137,15 @@ export default function ExamsPage() {
   } | null>(null);
 
   const conflictsRef = useRef<HTMLDivElement>(null);
-  const [blinkingRuleId, setBlinkingRuleId] = useState<string | null>(null);
+  // Yakılacak satırlar KURALA göre değil, TIKLANAN sınava göre seçilir: aynı
+  // kuralın başka sınavlara ait satırları yanmasın, yalnız o sınavınki yansın.
+  const [blinkingExamId, setBlinkingExamId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!blinkingRuleId) return;
-    const timer = setTimeout(() => setBlinkingRuleId(null), 4000);
+    if (blinkingExamId == null) return;
+    const timer = setTimeout(() => setBlinkingExamId(null), 4000);
     return () => clearTimeout(timer);
-  }, [blinkingRuleId]);
+  }, [blinkingExamId]);
 
   useEffect(() => {
     if (!deepHighlightIds.length) return;
@@ -668,11 +671,9 @@ export default function ExamsPage() {
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
                           onWarningClick={() => {
-                            const allConfs = [...scan.hard, ...scan.warnings];
-                            const matched = allConfs.find((conf) =>
-                              conf.affected.some((a) => a.type === "exam" && a.id === e.id)
-                            );
-                            if (matched) setBlinkingRuleId(matched.rule_id);
+                            // Bu sınavı işaretle; aşağıda yalnız bu sınavı
+                            // etkileyen çakışma satırları yanacak.
+                            setBlinkingExamId(e.id);
                             conflictsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                           }}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
@@ -730,10 +731,11 @@ export default function ExamsPage() {
              olduğunu belirsizleştiriyordu. */
           <Stack gap={8}>
             {examConflicts.map((c, i) => {
-              const isBlinking = blinkingRuleId === c.rule_id;
+              const isBlinking = blinkingExamId != null
+                && c.affected.some((a) => a.type === "exam" && a.id === blinkingExamId);
               const isHard = c.severity === "HARD";
               return (
-                <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start"
+                <Group key={`${c.rule_id}-${i}`} justify="space-between" gap="sm" wrap="nowrap" align="flex-start"
                   p={6}
                   style={{
                     borderRadius: 6,
@@ -748,12 +750,36 @@ export default function ExamsPage() {
                       ? isHard ? "#FEF2F2" : "#FFFBEB"
                       : undefined,
                   }}>
-                  <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                    color={c.severity === "HARD" ? "red" : "orange"}>
-                    {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                  </Badge>
-                  <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
-                  <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                  <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
+                    <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                      color={c.severity === "HARD" ? "red" : "orange"}>
+                      {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                    </Badge>
+                    <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
+                    <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                  </Group>
+                  {/* Etkilenen tarafların HEPSİ düğme olur. Sınav öğesi bu
+                      sayfada highlight'lanır; X kuralında karşı taraf HAFTALIK
+                      DERS olduğundan o düğme haftalık programa yönlendirir
+                      (o kayıt bu sayfada yok). Renk nereye gittiğini belli eder:
+                      mor = sınav (burada), mavi = haftalık ders (haftalık sayfa). */}
+                  {c.affected.length > 0 && (
+                    <Group gap={6} wrap="wrap" justify="flex-end" style={{ flexShrink: 0, maxWidth: "38%" }}>
+                      {c.affected.map((a, idx) => (
+                        <Button key={idx} size="compact-xs" variant="light"
+                          color={a.type === "exam" ? "violet" : "blue"}
+                          onClick={() => {
+                            if (a.type === "exam") {
+                              setSearchParams({ highlight: String(a.id), rule: c.rule_id });
+                            } else {
+                              navigate(`/weekly?highlight=${a.id}&rule=${c.rule_id}`);
+                            }
+                          }}>
+                          {a.course_code ?? `#${a.id}`}
+                        </Button>
+                      ))}
+                    </Group>
+                  )}
                 </Group>
               );
             })}

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
   Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
@@ -129,6 +129,7 @@ function dayWidth(clusters: Cluster[]): number {
 export default function WeeklyPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const highlightParam = searchParams.get("highlight");
   const highlightIds = useMemo(() => {
     if (!highlightParam) return [];
@@ -214,13 +215,16 @@ export default function WeeklyPage() {
   // (başlık yüksekliği, satır sayısı, Paper dolgusu) değişince sessizce bozulur.
   const gridRef = useRef<HTMLDivElement>(null);
   const conflictsRef = useRef<HTMLDivElement>(null);
-  const [blinkingRuleId, setBlinkingRuleId] = useState<string | null>(null);
+  // Yakılacak satırlar KURALA göre değil, TIKLANAN kartın girişlerine göre
+  // seçilir: aynı kuralın (ör. W2) başka derslere ait satırları yanmasın,
+  // yalnız o kartın çakışmaları yansın.
+  const [blinkingEntryIds, setBlinkingEntryIds] = useState<number[] | null>(null);
 
   useEffect(() => {
-    if (!blinkingRuleId) return;
-    const timer = setTimeout(() => setBlinkingRuleId(null), 4000);
+    if (!blinkingEntryIds) return;
+    const timer = setTimeout(() => setBlinkingEntryIds(null), 4000);
     return () => clearTimeout(timer);
-  }, [blinkingRuleId]);
+  }, [blinkingEntryIds]);
   const [gridH, setGridH] = useState<number | undefined>();
   useLayoutEffect(() => {
     const el = gridRef.current;
@@ -847,12 +851,9 @@ export default function WeeklyPage() {
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
                         onWarningClick={() => {
-                          const clusterEntryIds = new Set(c.entries.map((e) => e.id));
-                          const allConfs = [...scan.hard, ...scan.warnings];
-                          const matched = allConfs.find((conf) =>
-                            conf.affected.some((a) => a.type === "weekly_entry" && clusterEntryIds.has(a.id))
-                          );
-                          if (matched) setBlinkingRuleId(matched.rule_id);
+                          // Bu kartın girişlerini işaretle; aşağıda yalnız bu
+                          // girişleri etkileyen çakışma satırları yanacak.
+                          setBlinkingEntryIds(c.entries.map((e) => e.id));
                           conflictsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
                         }}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
@@ -909,10 +910,11 @@ export default function WeeklyPage() {
         ) : (
           <Stack gap={8}>
             {weeklyConflicts.map((c, i) => {
-              const isBlinking = blinkingRuleId === c.rule_id;
+              const isBlinking = blinkingEntryIds != null
+                && c.affected.some((a) => a.type === "weekly_entry" && blinkingEntryIds.includes(a.id));
               const isHard = c.severity === "HARD";
               return (
-                <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start"
+                <Group key={`${c.rule_id}-${i}`} justify="space-between" gap="sm" wrap="nowrap" align="flex-start"
                   p={6}
                   style={{
                     borderRadius: 6,
@@ -927,13 +929,37 @@ export default function WeeklyPage() {
                       ? isHard ? "#FEF2F2" : "#FFFBEB"
                       : undefined,
                   }}>
-                  <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                    color={c.severity === "HARD" ? "red" : "orange"}>
-                    {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                  </Badge>
-                  <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
-                  {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
-                  <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                  <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
+                    <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                      color={c.severity === "HARD" ? "red" : "orange"}>
+                      {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                    </Badge>
+                    <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
+                    {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
+                    <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
+                  </Group>
+                  {/* Etkilenen tarafların HEPSİ düğme olur. Haftalık ders bu
+                      sayfada highlight'lanır; X kuralında karşı taraf SINAV
+                      olduğundan o düğme sınav takvimine yönlendirir (o kayıt bu
+                      sayfada yok). Renk nereye gittiğini belli eder: mavi =
+                      haftalık ders (burada), mor = sınav (sınavlar sayfası). */}
+                  {c.affected.length > 0 && (
+                    <Group gap={6} wrap="wrap" justify="flex-end" style={{ flexShrink: 0, maxWidth: "38%" }}>
+                      {c.affected.map((a, idx) => (
+                        <Button key={idx} size="compact-xs" variant="light"
+                          color={a.type === "weekly_entry" ? "blue" : "violet"}
+                          onClick={() => {
+                            if (a.type === "weekly_entry") {
+                              setSearchParams({ highlight: String(a.id), rule: c.rule_id });
+                            } else {
+                              navigate(`/exams?highlight=${a.id}&rule=${c.rule_id}`);
+                            }
+                          }}>
+                          {a.course_code ?? `#${a.id}`}
+                        </Button>
+                      ))}
+                    </Group>
+                  )}
                 </Group>
               );
             })}

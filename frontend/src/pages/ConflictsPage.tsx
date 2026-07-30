@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Alert, Badge, Button, Card, Group, Loader, Paper, Stack, Tabs, Text, Title,
 } from "@mantine/core";
-import { IconArrowRight } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowRight, IconShieldX } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { ConflictResult, ConflictScan } from "../api/types";
 
@@ -43,9 +43,18 @@ export default function ConflictsPage() {
         <div>
           <Title order={2} fw={500}>Çakışma Raporu</Title>
           <Text size="sm" c="dimmed" mt={2}>
-            Sistemdeki çözülmemiş hard (engelleyici) ve warning (uyarı) çakışmaları.
+            Sistemdeki çözülmemiş tüm hard (engelleyici) ve warning (uyarı) çakışmaları.
           </Text>
         </div>
+
+        <Group gap="xs">
+          <Badge size="lg" color="red" variant="light" leftSection={<IconShieldX size={14} />}>
+            {hardConflicts.length} HARD Engel
+          </Badge>
+          <Badge size="lg" color="orange" variant="light" leftSection={<IconAlertTriangle size={14} />}>
+            {warningConflicts.length} WARNING Uyarı
+          </Badge>
+        </Group>
       </Group>
 
       <Tabs value={activeTab} onChange={setActiveTab} radius="md">
@@ -58,7 +67,7 @@ export default function ConflictsPage() {
               </Badge>
             }
           >
-            HARD Engeller
+            HARD Engeller (Yayınlamayı Engeller)
           </Tabs.Tab>
           <Tabs.Tab
             value="warnings"
@@ -68,7 +77,7 @@ export default function ConflictsPage() {
               </Badge>
             }
           >
-            WARNING Uyarılar
+            WARNING Uyarılar (Bilgilendirme)
           </Tabs.Tab>
         </Tabs.List>
 
@@ -76,7 +85,7 @@ export default function ConflictsPage() {
           <ConflictList
             conflicts={hardConflicts}
             severity="HARD"
-            emptyMessage="Çözülmemiş engelleyici (HARD) çakışma bulunamadı."
+            emptyMessage="Çözülmemiş engelleyici (HARD) çakışma bulunamadı. Program yayınlanmaya hazır!"
           />
         </Tabs.Panel>
 
@@ -112,10 +121,6 @@ function ConflictList({
   return (
     <Stack gap="sm">
       {conflicts.map((c, i) => {
-        const conflictingCourses = Array.from(
-          new Set(c.affected.map((a) => a.course_code).filter(Boolean))
-        );
-
         const isExam = c.affected.some((a) => a.type === "exam");
         const basePath = isExam ? "/exams" : "/weekly";
         const targetAffected = isExam
@@ -126,32 +131,19 @@ function ConflictList({
 
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
-            <Group justify="space-between" align="center" wrap="wrap" gap="md">
-              <Stack gap="xs" style={{ flex: 1, minWidth: 280 }}>
+            <Stack gap="xs">
+              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
                     {severity === "HARD" ? "ENGEL" : "UYARI"}
                   </Badge>
                   <Badge variant="outline" color="gray" size="sm">
-                    {c.rule_id}
+                    Kural {c.rule_id}
+                  </Badge>
+                  <Badge variant="dot" color={isExam ? "violet" : "blue"} size="sm">
+                    {isExam ? "Sınav Çakışması" : "Ders Programı Çakışması"}
                   </Badge>
                 </Group>
-                <Text size="sm" fw={500}>{c.message}</Text>
-              </Stack>
-
-              <Group gap="md" align="center">
-                {conflictingCourses.length > 0 && (
-                  <Stack gap={4} align="flex-end">
-                    <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
-                    <Group gap={4} wrap="wrap" justify="flex-end">
-                      {conflictingCourses.map((code, idx) => (
-                        <Badge key={idx} variant="light" color="blue" size="sm">
-                          {code}
-                        </Badge>
-                      ))}
-                    </Group>
-                  </Stack>
-                )}
 
                 {targetAffected && (
                   <Button
@@ -166,7 +158,20 @@ function ConflictList({
                   </Button>
                 )}
               </Group>
-            </Group>
+
+              <Text size="sm" fw={500}>{c.message}</Text>
+
+              {c.affected.length > 0 && (
+                <Group gap={6} align="center" wrap="wrap">
+                  <Text size="xs" c="dimmed" fw={500}>Etkilenen Kayıtlar:</Text>
+                  {c.affected.map((a, idx) => (
+                    <Badge key={idx} variant="light" color={a.type === "exam" ? "violet" : "blue"} size="xs">
+                      {a.type === "exam" ? "Sınav" : "Haftalık Ders"}: {a.course_code ?? `#${a.id}`}
+                    </Badge>
+                  ))}
+                </Group>
+              )}
+            </Stack>
           </Card>
         );
       })}

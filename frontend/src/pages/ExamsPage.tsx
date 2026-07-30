@@ -122,8 +122,20 @@ function dayWidth(exams: Placed[]): number {
 export default function ExamsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
+  const highlightParam = searchParams.get("highlight");
+  const highlightIds = useMemo(() => {
+    if (!highlightParam) return [];
+    return highlightParam.split(",").map(Number).filter((n) => !isNaN(n) && n > 0);
+  }, [highlightParam]);
   const ruleParam = searchParams.get("rule");
+
+  const [deepHighlightIds, setDeepHighlightIds] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!deepHighlightIds.length) return;
+    const timer = setTimeout(() => setDeepHighlightIds([]), 3500);
+    return () => clearTimeout(timer);
+  }, [deepHighlightIds]);
 
   const [exams, setExams] = useState<Exam[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -208,35 +220,38 @@ export default function ExamsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Highlight yönlendirmesi geldiğinde hedef sınavın tarih ve cohort filtrelerini otomatik ayarla
+  // Highlight yönlendirmesi geldiğinde hedef sınavların tarih ve cohort filtrelerini otomatik ayarla
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightIds.length) return;
     api.get<Exam[]>("/exams")
       .then((allExams) => {
-        const target = allExams.find((x) => x.id === highlightId);
-        if (target) {
-          const fullCourse = courses.find((c) => c.id === target.course.id);
+        const targets = allExams.filter((x) => highlightIds.includes(x.id));
+        if (targets.length > 0) {
+          const firstTarget = targets[0];
+          const fullCourse = courses.find((c) => c.id === firstTarget.course.id);
           if (fullCourse) {
             setDep(String(fullCourse.department_id));
             setYear(String(fullCourse.year));
             setSem(fullCourse.semester);
           }
-          setWeek(new Date(`${target.exam_date}T00:00:00`));
+          setWeek(new Date(`${firstTarget.exam_date}T00:00:00`));
           if (ruleParam) {
+            const courseCodes = Array.from(new Set(targets.map((t) => t.course.code))).join(" ↔ ");
             notifications.show({
-              id: `exam-highlight-${highlightId}`,
+              id: `exam-highlight-${highlightIds.join("-")}`,
               color: "blue",
-              title: `Çakışma Vurgulandı (${ruleParam})`,
-              message: `${target.course.code} ${EXAM_TYPE_LABELS[target.exam_type]} sınavı takvim üzerinde gösteriliyor.`,
+              title: `Çakışan Sınavlar Vurgulandı (${ruleParam})`,
+              message: `${courseCodes} sınavları takvim üzerinde gösteriliyor.`,
             });
           }
+          setDeepHighlightIds(targets.map((t) => t.id));
         } else {
           notifications.show({ color: "yellow", message: "Vurgulanacak sınav bulunamadı." });
         }
         setSearchParams({}, { replace: true });
       })
       .catch(() => {});
-  }, [highlightId, ruleParam, courses, setSearchParams]);
+  }, [highlightIds, ruleParam, courses, setSearchParams]);
 
   const gunler = useMemo(
     () => [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i)), [weekStart]);
@@ -631,7 +646,7 @@ export default function ExamsPage() {
                       {dayExams.map((e) => (
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
-                          highlight={e.id === highlightId}
+                          highlight={deepHighlightIds.includes(e.id)}
                           listHover={hoverCourse === e.course.id}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}

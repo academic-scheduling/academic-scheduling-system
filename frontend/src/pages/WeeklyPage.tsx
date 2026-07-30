@@ -129,7 +129,11 @@ function dayWidth(clusters: Cluster[]): number {
 export default function WeeklyPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const highlightId = searchParams.get("highlight") ? Number(searchParams.get("highlight")) : null;
+  const highlightParam = searchParams.get("highlight");
+  const highlightIds = useMemo(() => {
+    if (!highlightParam) return [];
+    return highlightParam.split(",").map(Number).filter((n) => !isNaN(n) && n > 0);
+  }, [highlightParam]);
   const ruleParam = searchParams.get("rule");
   const classroomParam = searchParams.get("classroom_id");
   const lecturerParam = searchParams.get("lecturer_id");
@@ -189,8 +193,8 @@ export default function WeeklyPage() {
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
   // Palette üzerinde gezinilen şube: gridde o şubenin kartları vurgulanır.
   const [hoverSection, setHoverSection] = useState<number | null>(null);
-  // Çakışma Raporu'ndan gelen derin bağlantı vurgusu ID'si (hedef bulunduğunda başlar, 3.5s kalır)
-  const [deepHighlightId, setDeepHighlightId] = useState<number | null>(null);
+  // Çakışma Raporu'ndan gelen derin bağlantı vurgusu ID'leri (hedef bulunduğunda başlar, 3.5s kalır)
+  const [deepHighlightIds, setDeepHighlightIds] = useState<number[]>([]);
   // Boş slot üzerinde gezinme: "buraya tıklayıp ekleyebilirsin" işareti.
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "day-slot"
   // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
@@ -242,12 +246,12 @@ export default function WeeklyPage() {
       .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
   }, []);
 
-  // deepHighlightId hedefe ulaştığında ve kart çizildiğinde 3.5 saniyelik halka zamanlayıcısını başlatır
+  // deepHighlightIds hedefe ulaştığında ve kart çizildiğinde 3.5 saniyelik halka zamanlayıcısını başlatır
   useEffect(() => {
-    if (deepHighlightId == null) return;
-    const timer = setTimeout(() => setDeepHighlightId(null), 3500);
+    if (!deepHighlightIds.length) return;
+    const timer = setTimeout(() => setDeepHighlightIds([]), 3500);
     return () => clearTimeout(timer);
-  }, [deepHighlightId]);
+  }, [deepHighlightIds]);
 
   // Bölümler genel-bakışından ?department_id= ile gelindiğinde cohort görünümüne
   // geç ve o bölümü seç; parametreyi bir kez tüketip URL'den temizle (yenilemede
@@ -263,17 +267,18 @@ export default function WeeklyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Highlight yönlendirmesi geldiğinde hedef kaydın cohort filtrelerini otomatik ayarla
+  // Highlight yönlendirmesi geldiğinde hedef kayıtların cohort filtrelerini otomatik ayarla
   useEffect(() => {
-    if (!highlightId || !allCourses.length) return;
+    if (!highlightIds.length || !allCourses.length) return;
     let cancelled = false;
 
     api.get<WeeklyEntry[]>("/weekly-entries")
       .then((allEntries) => {
         if (cancelled) return;
-        const target = allEntries.find((x) => x.id === highlightId);
-        if (target) {
-          const fullCourse = allCourses.find((c) => c.id === target.section.course.id);
+        const targets = allEntries.filter((x) => highlightIds.includes(x.id));
+        if (targets.length > 0) {
+          const firstTarget = targets[0];
+          const fullCourse = allCourses.find((c) => c.id === firstTarget.section.course.id);
           if (fullCourse) {
             setView("cohort");
             setDep(String(fullCourse.department_id));
@@ -281,15 +286,15 @@ export default function WeeklyPage() {
             setSem(fullCourse.semester);
           }
           if (ruleParam) {
+            const courseCodes = Array.from(new Set(targets.map((t) => t.section.course.code))).join(" ↔ ");
             notifications.show({
-              id: `highlight-${highlightId}`,
+              id: `highlight-${highlightIds.join("-")}`,
               color: "blue",
-              title: `Çakışma Vurgulandı (${ruleParam})`,
-              message: `${target.section.course.code}-${target.section.section_no} girişi takvim üzerinde gösteriliyor.`,
+              title: `Çakışan Dersler Vurgulandı (${ruleParam})`,
+              message: `${courseCodes} derslerinin kayıtları takvim üzerinde gösteriliyor.`,
             });
           }
-          // ✅ Geri sayım KART RENDER VE FİLTRE HİZALANMASI GERÇEKLEŞTİKTEN SONRA BURADA BAŞLAR!
-          setDeepHighlightId(highlightId);
+          setDeepHighlightIds(targets.map((t) => t.id));
           setSearchParams({}, { replace: true });
         } else {
           notifications.show({ color: "yellow", message: "Vurgulanacak kayıt bulunamadı." });
@@ -301,7 +306,7 @@ export default function WeeklyPage() {
     return () => {
       cancelled = true;
     };
-  }, [highlightId, ruleParam, allCourses, setSearchParams]);
+  }, [highlightIds, ruleParam, allCourses, setSearchParams]);
 
   /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
   const activeQuery = (): string | null => {
@@ -818,7 +823,7 @@ export default function WeeklyPage() {
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
                         highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
-                        deepHighlight={deepHighlightId != null && c.entries.some((x) => x.id === deepHighlightId)}
+                        deepHighlight={deepHighlightIds.some((id) => c.entries.some((x) => x.id === id))}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}

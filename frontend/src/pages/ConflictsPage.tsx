@@ -123,10 +123,11 @@ function ConflictList({
       {conflicts.map((c, i) => {
         const isExam = c.affected.some((a) => a.type === "exam");
         const basePath = isExam ? "/exams" : "/weekly";
-        const targetAffected = isExam
-          ? c.affected.find((a) => a.type === "exam")
-          : c.affected.find((a) => a.type === "weekly_entry");
-        const highlightParam = targetAffected ? `?highlight=${targetAffected.id}&rule=${c.rule_id}` : "";
+        const targetAffectedList = isExam
+          ? c.affected.filter((a) => a.type === "exam")
+          : c.affected.filter((a) => a.type === "weekly_entry");
+        const highlightIdsStr = targetAffectedList.map((a) => a.id).join(",");
+        const highlightParam = highlightIdsStr ? `?highlight=${highlightIdsStr}&rule=${c.rule_id}` : "";
         const targetPath = `${basePath}${highlightParam}`;
 
         return (
@@ -145,7 +146,7 @@ function ConflictList({
                   </Badge>
                 </Group>
 
-                {targetAffected && (
+                {targetAffectedList.length > 0 && (
                   <Button
                     component={Link}
                     to={targetPath}

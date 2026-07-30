@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Checkbox, Group, Loader, Modal, Paper,
   Select, Stack, Table, Text, TextInput, Title, Tooltip, UnstyledButton,
@@ -76,7 +76,12 @@ export default function LecturersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [deptFilter, setDeptFilter] = useState<string | null>(null);
+  // Bölüm süzgeci Bölümler genel-bakışından ?department_id= ile önceden gelebilir;
+  // parametreyi bir kez okuyup URL'den temizliyoruz (yenilemede yapışmasın).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [deptFilter, setDeptFilter] = useState<string | null>(
+    searchParams.get("department_id"),
+  );
 
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -113,6 +118,15 @@ export default function LecturersPage() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  // Deep-link parametresini bir kez tüket (state'e alındı).
+  useEffect(() => {
+    if (!searchParams.has("department_id")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("department_id");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const deptCodeById = useMemo(() => {

@@ -200,7 +200,6 @@ export default function WeeklyPage() {
     rule: string;
     entries: WeeklyEntry[];
   } | null>(null);
-  const [conflictPartnerMap, setConflictPartnerMap] = useState<Map<number, string>>(new Map());
   // Boş slot üzerinde gezinme: "buraya tıklayıp ekleyebilirsin" işareti.
   const [hoverCell, setHoverCell] = useState<string | null>(null);   // "day-slot"
   // drag yoksa BOŞ SLOTA TIKLAMA ile açılmıştır → modal dersi de sorar.
@@ -300,16 +299,6 @@ export default function WeeklyPage() {
               message: `${courseCodes} derslerinin kayıtları takvim üzerinde gösteriliyor.`,
             });
           }
-          const pMap = new Map<number, string>();
-          for (const t of targets) {
-            const others = targets.filter((o) => o.id !== t.id);
-            const otherCodes = Array.from(new Set(others.map((o) => o.section.course.code))).join(", ");
-            if (otherCodes) {
-              pMap.set(t.id, otherCodes);
-            }
-          }
-          setConflictPartnerMap(pMap);
-
           setDeepHighlightIds(targets.map((t) => t.id));
           setHighlightInfo({
             rule: ruleParam ?? "Çakışma",
@@ -915,7 +904,6 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
-                        conflictNote={c.entries.map((e) => conflictPartnerMap.get(e.id)).filter(Boolean)[0]}
                         onDragStart={(e) => setDrag({ kind: "move", entry: e })}
                         onDragEnd={() => setDrag(null)}
                         onEdit={setEditing}
@@ -1173,9 +1161,9 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, conflictNote, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
-  lecturerName?: string; conflictNote?: string;
+  lecturerName?: string;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
@@ -1331,13 +1319,6 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
       </Group>
       {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
-      {conflictNote && (
-        <Paper mt={4} px={4} py={2} radius="xs" style={{ background: "var(--mantine-color-red-0)", border: "1px solid var(--mantine-color-red-3)" }}>
-          <Text size="10px" fw={600} c="red.8" truncate>
-            ⚠️ Bu ders {conflictNote} ile çakışıyor
-          </Text>
-        </Paper>
-      )}
       {(elective || draft) && c.slot_count > 1 && (
         <Group gap={4} mt={5}>
           {elective && <Badge size="xs" variant="light" color="gray">SEÇMELİ</Badge>}

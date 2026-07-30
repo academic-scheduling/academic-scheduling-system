@@ -134,7 +134,6 @@ export default function ExamsPage() {
     rule: string;
     exams: Exam[];
   } | null>(null);
-  const [conflictPartnerMap, setConflictPartnerMap] = useState<Map<number, string>>(new Map());
 
   useEffect(() => {
     if (!deepHighlightIds.length) return;
@@ -249,16 +248,6 @@ export default function ExamsPage() {
               message: `${courseCodes} sınavları takvim üzerinde gösteriliyor.`,
             });
           }
-          const pMap = new Map<number, string>();
-          for (const t of targets) {
-            const others = targets.filter((o) => o.id !== t.id);
-            const otherCodes = Array.from(new Set(others.map((o) => o.course.code))).join(", ");
-            if (otherCodes) {
-              pMap.set(t.id, otherCodes);
-            }
-          }
-          setConflictPartnerMap(pMap);
-
           setDeepHighlightIds(targets.map((t) => t.id));
           setHighlightInfo({
             rule: ruleParam ?? "Çakışma",
@@ -732,7 +721,6 @@ export default function ExamsPage() {
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                           highlight={deepHighlightIds.includes(e.id)}
-                          conflictNote={conflictPartnerMap.get(e.id)}
                           listHover={hoverCourse === e.course.id}
                           editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
                           revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
@@ -955,9 +943,9 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
   );
 }
 
-function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, conflictNote, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
   e: Placed; hard: boolean; warn: boolean; highlight?: boolean; listHover?: boolean;
-  editable: boolean; revertable: boolean; conflictNote?: string;
+  editable: boolean; revertable: boolean;
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void; onRevert: () => void;
 }) {
@@ -1116,19 +1104,12 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, c
           </Text>
         </Group>
       )}
+
       {showLecturer && (
         <Group gap={4} wrap="nowrap" mt={3} style={{ minWidth: 0 }}>
           <IconUser size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
           <Text fz={12} truncate style={{ color: TEXT_MUTED }}>{e.lecturer.full_name}</Text>
         </Group>
-      )}
-
-      {conflictNote && (
-        <Paper mt={4} px={4} py={2} radius="xs" style={{ background: "var(--mantine-color-red-0)", border: "1px solid var(--mantine-color-red-3)" }}>
-          <Text size="10px" fw={600} c="red.8" truncate>
-            ⚠️ Bu sınav {conflictNote} ile çakışıyor
-          </Text>
-        </Paper>
       )}
 
       {showDraftBadge && (

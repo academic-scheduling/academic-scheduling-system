@@ -239,6 +239,26 @@ def seed():
     b203 = derslik(b_blok, "B-203", 60, 40)
     lab1 = derslik(b_blok, "LAB-1", 30, None)   # exam_capacity NULL → E5a
 
+    # Mühendislik Fakültesi gerçek derslik listesi (kaynak: fakülte derslik
+    # durumu taraması, sıra 2-18). Kod'un ilk harfi bloğu verir (C/F).
+    # Sınav kontenjanı belgede yok → kural gereği normal kapasitenin yarısı
+    # (K-17 boşluklu oturma). 80→40, 50→25.
+    c_blok = Building(id=next_id(Building), workgroup_id=wg.id, name="C Blok")
+    f_blok = Building(id=next_id(Building), workgroup_id=wg.id, name="F Blok")
+    db.add_all([c_blok, f_blok])
+    db.flush()
+    log("CREATE", "building", c_blok)
+    log("CREATE", "building", f_blok)
+
+    for kod, kap in [("C-B-07", 80), ("C-B-08", 80), ("C-B-09", 80),
+                     ("C-Z-04", 50), ("C-Z-05", 50), ("C-Z-06", 50), ("C-Z-07", 50),
+                     ("C-1-03", 50), ("C-1-04", 50), ("C-1-05", 80)]:
+        derslik(c_blok, kod, kap, kap // 2)
+    for kod, kap in [("F-1-03", 50), ("F-1-04", 50),
+                     ("F-Z-04", 50), ("F-Z-05", 50), ("F-Z-06", 50),
+                     ("F-B-07", 80), ("F-B-08", 80)]:
+        derslik(f_blok, kod, kap, kap // 2)
+
     # --- dersler + şubeler ---
     # hours değerleri yerleşen slot sayısıyla BİLİNÇLİ olarak eşitlendi; tek
     # istisna CENG2052 (3 saat gerekli, 2 slot yerleşmiş) → W8 oradan çıkar.

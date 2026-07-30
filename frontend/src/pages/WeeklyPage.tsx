@@ -387,18 +387,11 @@ export default function WeeklyPage() {
     return { hardIds: h, warnIds: w };
   }, [scan]);
 
-  const displayEntries = useMemo(() => {
-    if (!highlightInfo?.entries.length) return entries;
-    const existingIds = new Set(entries.map((e) => e.id));
-    const extra = highlightInfo.entries.filter((e) => !existingIds.has(e.id));
-    return [...entries, ...extra];
-  }, [entries, highlightInfo]);
-
   const byDay = useMemo(() => {
     const m = new Map<number, Cluster[]>();
-    for (const d of DAYS) m.set(d, layoutDay(displayEntries.filter((e) => e.day_of_week === d)));
+    for (const d of DAYS) m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d)));
     return m;
-  }, [displayEntries]);
+  }, [entries]);
 
   const showConflicts = (conflicts: ConflictResult[], baslik: string) => {
     if (!conflicts.length) {
@@ -504,13 +497,13 @@ export default function WeeklyPage() {
   /** Şube başına yerleşen slot toplamı (T/U/L ayrı ayrı). */
   const placedBySection = useMemo(() => {
     const m = new Map<number, Record<SessionType, number>>();
-    for (const e of displayEntries) {
+    for (const e of entries) {
       const cur = m.get(e.section.id) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
       cur[e.session_type] += e.slot_count;
       m.set(e.section.id, cur);
     }
     return m;
-  }, [displayEntries]);
+  }, [entries]);
 
   /** Palet öğeleri: ders × şube, koda VEYA ada göre süzülür.
    *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart.

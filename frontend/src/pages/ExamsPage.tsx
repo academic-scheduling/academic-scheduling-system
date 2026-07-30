@@ -661,20 +661,21 @@ export default function ExamsPage() {
         {examConflicts.length === 0 ? (
           <Text size="sm" c="dimmed">Sınav takviminde çakışma yok.</Text>
         ) : (
-          <ScrollArea.Autosize mah={260}>
-            <Stack gap={8}>
-              {examConflicts.map((c, i) => (
-                <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start">
-                  <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                    color={c.severity === "HARD" ? "red" : "orange"}>
-                    {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                  </Badge>
-                  <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
-                  <Text size="sm">{c.message}</Text>
-                </Group>
-              ))}
-            </Stack>
-          </ScrollArea.Autosize>
+          /* Haftalık programla aynı: liste alt alta uzar (kaydırma kutusu yok).
+             Kapalı bir slider içinde çakışmaların birikmesi, kaçının görünür
+             olduğunu belirsizleştiriyordu. */
+          <Stack gap={8}>
+            {examConflicts.map((c, i) => (
+              <Group key={`${c.rule_id}-${i}`} gap="sm" wrap="nowrap" align="flex-start">
+                <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
+                  color={c.severity === "HARD" ? "red" : "orange"}>
+                  {c.severity === "HARD" ? "ENGEL" : "UYARI"}
+                </Badge>
+                <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
+                <Text size="sm">{c.message}</Text>
+              </Group>
+            ))}
+          </Stack>
         )}
       </Paper>
 

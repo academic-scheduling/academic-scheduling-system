@@ -2,34 +2,29 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Grid, Group, Loader, Modal, Paper,
-  ScrollArea, Stack, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton,
+  ScrollArea, Stack, Table, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
-  IconActivity, IconArrowRight, IconBook2, IconBuilding, IconCalendarEvent,
-  IconCalendarWeek, IconDoor, IconPencil, IconPlus, IconSchool, IconSearch,
-  IconTrash, IconUsers, type IconProps,
+  IconAlertTriangle, IconBook2, IconBuilding, IconCalendarEvent,
+  IconCalendarWeek, IconPencil, IconPlus, IconSchool, IconSearch,
+  IconShieldCheck, IconTrash, IconUsers, type IconProps,
 } from "@tabler/icons-react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_LABELS } from "../api/types";
-import type {
-  AuditEntityType, AuditLog, AuditLogPage, Course, Department, Exam, Lecturer,
-  ManagedUser, WeeklyEntry,
-} from "../api/types";
+import { CAPABILITIES } from "../api/types";
+import type { ConflictScan, Course, Department, ManagedUser } from "../api/types";
 
 // Bu ekran bir YÖNETİM ekranı değil, bir GENEL BAKIŞ/gezinme merkezidir: her
 // varlığın kendi sayfası var (Dersler, Öğretim Üyeleri, Derslikler, Haftalık,
-// Sınavlar). Buradaki KPI'lar ve kısa listeler yalnızca özet gösterir ve
-// ilgili sayfaya SEÇİLİ BÖLÜM önceden süzülmüş biçimde götürür. Böylece CRUD
-// mantığı tek bir yerde kalır, burada kopyalanmaz.
+// Sınavlar). Buradaki KPI'lar özet gösterir ve ilgili sayfaya SEÇİLİ BÖLÜM
+// önceden süzülmüş biçimde götürür. Böylece CRUD mantığı tek yerde kalır.
 
 // Kartların :hover ve seçili durumunu inline style ile veremeyiz (pseudo-class
-// gerekli); bu yüzden küçük bir stil bloğu enjekte ediyoruz. Tema değişkenleri
-// (mantine-color-*) sayesinde açık/koyu temada da doğru renk gelir.
+// gerekli); bu yüzden küçük bir stil bloğu enjekte ediyoruz.
 const CARD_STYLES = `
 .dept-card {
   border: 1px solid var(--mantine-color-gray-3);
@@ -62,28 +57,23 @@ const CARD_STYLES = `
 }
 `;
 
-type DeptForm = { name: string; code: string; name_en: string; faculty_en: string };
+type DeptForm = { name: string; code: string };
 
 export default function DepartmentsPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";       // Bölüm yazma + üye/işlem verisi ADMIN'e özel (kontrat §2-§3)
+  const isAdmin = user?.role === "ADMIN";       // Bölüm yazma + üye verisi ADMIN'e özel (kontrat §2-§3)
   const navigate = useNavigate();
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
-  const [weekly, setWeekly] = useState<WeeklyEntry[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [classroomCount, setClassroomCount] = useState(0);
+  const [scan, setScan] = useState<ConflictScan | null>(null);
   const [members, setMembers] = useState<ManagedUser[]>([]);   // yalnız ADMIN doldurur
-  const [activity, setActivity] = useState<AuditLog[]>([]);    // yalnız ADMIN doldurur
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   // Seçim kalıcı: sekmeden dönünce kullanıcı kaldığı bölümde devam etsin.
-  // İlk ziyarette null → boş durum (spec'in istediği "bir bölüm seçin" ekranı).
   const [selectedId, setSelectedId] = useLocalStorage<number | null>({
     key: "dept-overview-selected", defaultValue: null, getInitialValueInEffect: false,
   });
@@ -95,7 +85,7 @@ export default function DepartmentsPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const form = useForm<DeptForm>({
-    initialValues: { name: "", code: "", name_en: "", faculty_en: "" },
+    initialValues: { name: "", code: "" },
     validate: {
       name: (v) => (v.trim() ? null : "Bölüm adı boş olamaz"),
       code: (v) => (v.trim() ? null : "Bölüm kodu boş olamaz"),
@@ -106,36 +96,23 @@ export default function DepartmentsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      // Herkesin okuyabildiği veriler (K-26): bölüm/ders/hoca/haftalık/sınav/derslik.
-      const [deps, crs, lecs, wk, ex, rooms] = await Promise.all([
+      // Herkesin okuyabildiği veriler (K-26): bölüm/ders/çakışma taraması.
+      const [deps, crs, cf] = await Promise.all([
         api.get<Department[]>("/departments"),
         api.get<Course[]>("/courses"),
-        api.get<Lecturer[]>("/lecturers"),
-        api.get<WeeklyEntry[]>("/weekly-entries"),
-        api.get<Exam[]>("/exams"),
-        api.get<{ id: number; active: boolean }[]>("/classrooms"),
+        api.get<ConflictScan>("/conflicts"),
       ]);
       setDepartments(deps);
       setCourses(crs);
-      setLecturers(lecs);
-      setWeekly(wk);
-      setExams(ex);
-      setClassroomCount(rooms.filter((r) => r.active).length);
+      setScan(cf);
 
-      // Üye sayısı ve son işlemler yalnız ADMIN'e açık uçlardan gelir; alt hesap
-      // için bu bölümler gizlenir. Ayrı bir istek, ana veriyi bloklamasın diye
-      // hata durumunda sessizce boş bırakılır.
+      // Yetkili hesaplar yalnız ADMIN'e açık /users'tan gelir; alt hesap için
+      // gizlenir. Ayrı istek, ana veriyi bloklamasın diye hata durumunda sessiz.
       if (isAdmin) {
         try {
-          const [us, al] = await Promise.all([
-            api.get<ManagedUser[]>("/users"),
-            api.get<AuditLogPage>("/audit-logs?limit=8"),
-          ]);
-          setMembers(us);
-          setActivity(al.items);
+          setMembers(await api.get<ManagedUser[]>("/users"));
         } catch {
           setMembers([]);
-          setActivity([]);
         }
       }
     } catch (e) {
@@ -147,43 +124,41 @@ export default function DepartmentsPage() {
 
   useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // section.course.id → department_id eşlemesi: haftalık giriş ve sınav
-  // doğrudan bölüm taşımaz, ders üzerinden bağlanır.
-  const courseDeptById = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const c of courses) m.set(c.id, c.department_id);
-    return m;
-  }, [courses]);
-
-  // Bölüm başına sayaçlar. Pasif ders/şube sayıma girmez (K-33 deseni).
+  // Bölüm başına ders + öğretim üyesi sayısı. Pasif ders/şube sayıma girmez (K-33).
+  // Öğretim üyesi = o bölümde DERS VEREN farklı hocalar (şube üzerinden türetilir;
+  // hocanın asli bölümünden bağımsız — farklı bölümde ders verebilir).
   const statsByDept = useMemo(() => {
-    const acc: Record<number, {
-      courses: number; lecturers: Set<number>; weekly: number; exams: number; members: number;
-    }> = {};
-    const ensure = (id: number) =>
-      (acc[id] ??= { courses: 0, lecturers: new Set(), weekly: 0, exams: 0, members: 0 });
-
+    const acc: Record<number, { courses: number; lecturers: Set<number> }> = {};
+    const ensure = (id: number) => (acc[id] ??= { courses: 0, lecturers: new Set() });
     for (const c of courses) {
       if (!c.active) continue;
       const e = ensure(c.department_id);
       e.courses += 1;
       for (const s of c.sections) if (s.active) e.lecturers.add(s.lecturer.id);
     }
-    for (const w of weekly) {
-      const depId = courseDeptById.get(w.section.course.id);
-      if (depId != null) ensure(depId).weekly += 1;
-    }
-    for (const ex of exams) {
-      const depId = courseDeptById.get(ex.course.id);
-      if (depId != null) ensure(depId).exams += 1;
-    }
-    for (const u of members) {
-      for (const depId of u.department_ids) ensure(depId).members += 1;
+    return acc;
+  }, [courses]);
+
+  // Bölüm başına çakışma: bir çakışma, etkilediği HER bölüme bir kez sayılır
+  // (affected içinde aynı bölüm iki kez geçse de). Bölümler-arası bir çakışma
+  // iki bölümün de sayacına düşer — ikisini de ilgilendirir (K-26).
+  const conflictsByDept = useMemo(() => {
+    const acc: Record<number, { hard: number; warn: number }> = {};
+    const ensure = (id: number) => (acc[id] ??= { hard: 0, warn: 0 });
+    const tally = (list: ConflictScan["hard"], key: "hard" | "warn") => {
+      for (const c of list) {
+        const deps = new Set<number>();
+        for (const a of c.affected) if (a.department_id != null) deps.add(a.department_id);
+        for (const id of deps) ensure(id)[key] += 1;
+      }
+    };
+    if (scan) {
+      tally(scan.hard, "hard");
+      tally(scan.warnings, "warn");
     }
     return acc;
-  }, [courses, weekly, exams, members, courseDeptById]);
+  }, [scan]);
 
-  // Arama + kod'a göre alfabetik sıralama.
   const visible = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("tr");
     return departments
@@ -199,57 +174,38 @@ export default function DepartmentsPage() {
     [departments, selectedId],
   );
 
-  // Son dersler: seçili bölümün aktif dersleri, en yeni (id büyük) önce.
-  const recentCourses = useMemo(() => {
+  // Seçili bölümde yetkisi olan hesaplar: bu bölüme atanmış alt hesaplar +
+  // TÜM adminler (admin her bölümde yetkilidir). Adminler listenin başında.
+  const deptMembers = useMemo(() => {
     if (!selected) return [];
-    return courses
-      .filter((c) => c.active && c.department_id === selected.id)
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 3);
-  }, [courses, selected]);
-
-  // Son öğretim üyeleri: seçili bölümün aktif derslerinde şubesi olan hocalar
-  // (hoca doğrudan bölüme bağlı değil, ders/şube üzerinden bağlanır).
-  const recentLecturers = useMemo(() => {
-    if (!selected) return [];
-    const ids = new Set<number>();
-    for (const c of courses) {
-      if (!c.active || c.department_id !== selected.id) continue;
-      for (const s of c.sections) if (s.active) ids.add(s.lecturer.id);
-    }
-    return lecturers
-      .filter((l) => ids.has(l.id))
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 4);
-  }, [courses, lecturers, selected]);
+    return members
+      .filter((m) => m.role === "ADMIN" || m.department_ids.includes(selected.id))
+      .sort((a, b) => {
+        const aa = a.role === "ADMIN", bb = b.role === "ADMIN";
+        if (aa !== bb) return aa ? -1 : 1;         // adminler önce
+        return a.name.localeCompare(b.name, "tr");
+      });
+  }, [members, selected]);
 
   function openAdd() {
     setEditing(null);
-    form.setValues({ name: "", code: "", name_en: "", faculty_en: "" });
+    form.setValues({ name: "", code: "" });
     setModalOpen(true);
   }
   function openEdit(dep: Department) {
     setEditing(dep);
-    form.setValues({
-      name: dep.name, code: dep.code,
-      name_en: dep.name_en ?? "", faculty_en: dep.faculty_en ?? "",
-    });
+    form.setValues({ name: dep.name, code: dep.code });
     setModalOpen(true);
   }
 
   async function handleSubmit(values: DeptForm) {
     setSubmitting(true);
-    const payload = {
-      ...values,
-      name_en: values.name_en.trim() || null,
-      faculty_en: values.faculty_en.trim() || null,
-    };
     try {
       if (editing) {
-        await api.patch<Department>(`/departments/${editing.id}`, payload);
+        await api.patch<Department>(`/departments/${editing.id}`, values);
         notifications.show({ color: "green", message: "Bölüm güncellendi" });
       } else {
-        const created = await api.post<Department>("/departments", payload);
+        const created = await api.post<Department>("/departments", values);
         notifications.show({ color: "green", message: "Bölüm eklendi" });
         setSelectedId(created.id);   // yeni bölüm hemen sağ panelde açılsın
       }
@@ -293,14 +249,18 @@ export default function DepartmentsPage() {
   if (loadError) return <Alert color="red" mt="md">{loadError}</Alert>;
 
   const st = selected ? statsByDept[selected.id] : undefined;
+  const cf = selected ? conflictsByDept[selected.id] : undefined;
+  const cfTotal = (cf?.hard ?? 0) + (cf?.warn ?? 0);
+  const cfColor = (cf?.hard ?? 0) > 0 ? "red" : (cf?.warn ?? 0) > 0 ? "orange" : "green";
 
   return (
     <>
       <style>{CARD_STYLES}</style>
 
-      <Grid gutter="lg" align="stretch">
+      {/* columns={100}: sol panel 25%→21% (~%15 daha dar), sağ panel genişler */}
+      <Grid gutter="lg" align="stretch" columns={100}>
         {/* ================= SOL PANEL ================= */}
-        <Grid.Col span={{ base: 12, md: 4, lg: 3 }}>
+        <Grid.Col span={{ base: 100, md: 30, lg: 21 }}>
           <Stack gap="sm">
             <Group justify="space-between" align="center">
               <Title order={4}>Bölümler</Title>
@@ -344,7 +304,7 @@ export default function DepartmentsPage() {
         </Grid.Col>
 
         {/* ================= SAĞ PANEL ================= */}
-        <Grid.Col span={{ base: 12, md: 8, lg: 9 }}>
+        <Grid.Col span={{ base: 100, md: 70, lg: 79 }}>
           {!selected ? (
             <Paper withBorder radius="md" p="xl" style={{ minHeight: 360 }}>
               <Stack align="center" justify="center" gap="sm" h={320} c="dimmed">
@@ -356,7 +316,7 @@ export default function DepartmentsPage() {
             </Paper>
           ) : (
             // key={selected.id} → bölüm değişince içerik yeniden monte olur ve
-            // fade animasyonu tetiklenir (spec: "overview değişince fade").
+            // fade animasyonu tetiklenir.
             <div key={selected.id} style={{ animation: "depOverviewFade 200ms ease" }}>
               <Stack gap="lg">
                 {/* --- Başlık --- */}
@@ -386,7 +346,7 @@ export default function DepartmentsPage() {
                   )}
                 </Group>
 
-                {/* --- KPI kartları --- */}
+                {/* --- KPI kartları: Dersler, Öğretim Üyeleri, Çakışmalar --- */}
                 <div>
                   <Text fw={600} mb="sm">Genel Bakış</Text>
                   <Grid gutter="md">
@@ -394,89 +354,88 @@ export default function DepartmentsPage() {
                       onClick={() => navigate(`/courses?department_id=${selected.id}`)} />
                     <KpiCard icon={IconSchool} label="Öğretim Üyeleri" value={st?.lecturers.size ?? 0}
                       onClick={() => navigate(`/lecturers?department_id=${selected.id}`)} />
-                    {isAdmin && (
-                      <KpiCard icon={IconUsers} label="Bölüm Üyeleri" value={st?.members ?? 0}
-                        onClick={() => navigate("/dashboard")} />
-                    )}
-                    <KpiCard icon={IconCalendarWeek} label="Haftalık Program" value={st?.weekly ?? 0}
-                      onClick={() => navigate(`/weekly?department_id=${selected.id}`)} />
-                    <KpiCard icon={IconCalendarEvent} label="Sınavlar" value={st?.exams ?? 0}
-                      onClick={() => navigate(`/exams?department_id=${selected.id}`)} />
-                    {/* Derslikler bölüme değil workgroup'a aittir; sayaç paylaşımlı
-                        toplamı gösterir ve filtresiz /classrooms'a götürür. */}
-                    <KpiCard icon={IconDoor} label="Aktif Derslikler" value={classroomCount}
-                      onClick={() => navigate("/classrooms")} />
+                    {/* Çakışma sayacı: bu bölümü etkileyen hard+warning. Tıklayınca
+                        rapor bu bölüme süzülü açılır. */}
+                    <KpiCard
+                      icon={cfTotal > 0 ? IconAlertTriangle : IconShieldCheck}
+                      label="Çakışmalar"
+                      color={cfColor}
+                      // Dashboard gibi ayrık: engel (kırmızı) / uyarı (turuncu).
+                      valueContent={cfTotal > 0 ? (
+                        <Group gap={6} align="baseline" wrap="nowrap">
+                          <Text span fw={700} fz={28} lh={1} c="red">{cf?.hard ?? 0}</Text>
+                          <Text span fw={700} fz={20} lh={1} c="dimmed">/</Text>
+                          <Text span fw={700} fz={28} lh={1} c="orange">{cf?.warn ?? 0}</Text>
+                        </Group>
+                      ) : (
+                        <Text span fw={700} fz={28} lh={1} c="green">0</Text>
+                      )}
+                      hint={cfTotal > 0 ? "engel / uyarı" : "temiz"}
+                      hintColor={cfTotal > 0 ? "dimmed" : "green"}
+                      onClick={() => navigate(`/conflicts?department_id=${selected.id}`)}
+                    />
                   </Grid>
                 </div>
 
-                <Grid gutter="lg">
-                  {/* --- Son Dersler --- */}
-                  <Grid.Col span={{ base: 12, lg: 6 }}>
-                    <Paper withBorder radius="md" p="md" h="100%">
-                      <Group justify="space-between" mb="sm">
-                        <Text fw={600}>Son Dersler</Text>
-                        <Button variant="subtle" size="compact-sm" rightSection={<IconArrowRight size={14} />}
-                          onClick={() => navigate(`/courses?department_id=${selected.id}`)}>
-                          Tüm Dersler
-                        </Button>
-                      </Group>
-                      {recentCourses.length === 0 ? (
-                        <Text c="dimmed" size="sm">Bu bölümde ders yok.</Text>
-                      ) : (
-                        <Stack gap="xs">
-                          {recentCourses.map((c) => (
-                            <Group key={c.id} justify="space-between" wrap="nowrap">
-                              <div style={{ minWidth: 0 }}>
-                                <Text size="sm" fw={600}>{c.code}</Text>
-                                <Text size="sm" c="dimmed" lineClamp={1}>{c.name}</Text>
-                              </div>
-                              <Badge variant="light" color="gray">{c.year}. Sınıf</Badge>
-                            </Group>
-                          ))}
-                        </Stack>
-                      )}
-                    </Paper>
-                  </Grid.Col>
-
-                  {/* --- Son Öğretim Üyeleri --- */}
-                  <Grid.Col span={{ base: 12, lg: 6 }}>
-                    <Paper withBorder radius="md" p="md" h="100%">
-                      <Group justify="space-between" mb="sm">
-                        <Text fw={600}>Son Öğretim Üyeleri</Text>
-                        <Button variant="subtle" size="compact-sm" rightSection={<IconArrowRight size={14} />}
-                          onClick={() => navigate(`/lecturers?department_id=${selected.id}`)}>
-                          Tüm Öğretim Üyeleri
-                        </Button>
-                      </Group>
-                      {recentLecturers.length === 0 ? (
-                        <Text c="dimmed" size="sm">Bu bölümde öğretim üyesi yok.</Text>
-                      ) : (
-                        <Stack gap="xs">
-                          {recentLecturers.map((l) => (
-                            <Group key={l.id} justify="space-between" wrap="nowrap">
-                              <Text size="sm" fw={500} lineClamp={1}>{l.full_name}</Text>
-                              {l.is_external && <Badge variant="light" color="orange" size="sm">Dış görevli</Badge>}
-                            </Group>
-                          ))}
-                        </Stack>
-                      )}
-                    </Paper>
-                  </Grid.Col>
-                </Grid>
-
-                {/* --- Son İşlemler (yalnız ADMIN; audit-logs workgroup geneli) --- */}
+                {/* --- Bölüm Yetkilileri (yalnız ADMIN) --- */}
                 {isAdmin && (
                   <Paper withBorder radius="md" p="md">
                     <Group gap="xs" mb="sm">
-                      <IconActivity size={18} />
-                      <Text fw={600}>Son İşlemler</Text>
+                      <IconUsers size={18} />
+                      <Text fw={600}>Bölüm Yetkilileri</Text>
                     </Group>
-                    {activity.length === 0 ? (
-                      <Text c="dimmed" size="sm">Kayıtlı işlem yok.</Text>
+                    {deptMembers.length === 0 ? (
+                      <Text c="dimmed" size="sm">
+                        Bu bölüme atanmış yetkili hesap yok.
+                      </Text>
                     ) : (
-                      <Stack gap="sm">
-                        {activity.map((a) => <ActivityRow key={a.id} log={a} />)}
-                      </Stack>
+                      <Table verticalSpacing="xs" horizontalSpacing="md">
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th>İsim</Table.Th>
+                            <Table.Th>Rol</Table.Th>
+                            <Table.Th>Yetkiler</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {deptMembers.map((m) => {
+                            const isAdm = m.role === "ADMIN";
+                            const caps = CAPABILITIES.filter((c) => m[c.key]);
+                            return (
+                              <Table.Tr key={m.id}>
+                                <Table.Td>
+                                  <Group gap={6} wrap="nowrap">
+                                    <Text size="sm" fw={500} lineClamp={1}>{m.name}</Text>
+                                    {m.status !== "ACTIVE" && (
+                                      <Badge size="xs" variant="light" color="gray">Pasif</Badge>
+                                    )}
+                                  </Group>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Badge size="sm" variant="light" color={isAdm ? "grape" : "blue"}>
+                                    {isAdm ? "Yönetici" : "Alt Hesap"}
+                                  </Badge>
+                                </Table.Td>
+                                <Table.Td>
+                                  {isAdm ? (
+                                    <Text size="xs" c="dimmed">Tüm yetkiler</Text>
+                                  ) : caps.length === 0 ? (
+                                    <Text size="xs" c="dimmed">Yalnız görüntüleme</Text>
+                                  ) : (
+                                    <Group gap={4}>
+                                      {caps.map((c) => (
+                                        <Badge key={c.key} size="xs" variant="outline" color="gray">
+                                          {c.label}
+                                        </Badge>
+                                      ))}
+                                    </Group>
+                                  )}
+                                </Table.Td>
+                              </Table.Tr>
+                            );
+                          })}
+                        </Table.Tbody>
+                      </Table>
                     )}
                   </Paper>
                 )}
@@ -485,12 +444,14 @@ export default function DepartmentsPage() {
                 <Paper withBorder radius="md" p="md">
                   <Text fw={600} mb="sm">Hızlı İşlemler</Text>
                   <Group gap="sm">
+                    {/* add=1: hedef sayfa ekleme formunu açık getirir; department_id
+                        de önceden seçili gelir (ders formu bölüm alanı taşır). */}
                     <Button variant="light" leftSection={<IconBook2 size={16} />}
-                      onClick={() => navigate(`/courses?department_id=${selected.id}`)}>
+                      onClick={() => navigate(`/courses?add=1&department_id=${selected.id}`)}>
                       Ders Ekle
                     </Button>
                     <Button variant="light" leftSection={<IconSchool size={16} />}
-                      onClick={() => navigate("/lecturers")}>
+                      onClick={() => navigate(`/lecturers?add=1&department_id=${selected.id}`)}>
                       Öğretim Üyesi Ekle
                     </Button>
                     <Button variant="light" leftSection={<IconCalendarWeek size={16} />}
@@ -501,18 +462,6 @@ export default function DepartmentsPage() {
                       onClick={() => navigate(`/exams?department_id=${selected.id}`)}>
                       Sınav Takvimini Aç
                     </Button>
-                    {isAdmin && (
-                      <Button variant="light" leftSection={<IconUsers size={16} />}
-                        onClick={() => navigate("/dashboard")}>
-                        Üye Davet Et
-                      </Button>
-                    )}
-                    {isAdmin && (
-                      <Button variant="light" color="gray" leftSection={<IconPencil size={16} />}
-                        onClick={() => openEdit(selected)}>
-                        Bölümü Düzenle
-                      </Button>
-                    )}
                   </Group>
                 </Paper>
               </Stack>
@@ -531,17 +480,6 @@ export default function DepartmentsPage() {
           <Stack>
             <TextInput label="Bölüm Adı" placeholder="Bilgisayar Mühendisliği" {...form.getInputProps("name")} />
             <TextInput label="Bölüm Kodu" placeholder="CENG" {...form.getInputProps("code")} />
-            <TextInput
-              label="İngilizce Ad (opsiyonel)"
-              description="Resmi sınav programı başlığında kullanılır: DEPARTMENT OF …"
-              placeholder="Computer Engineering"
-              {...form.getInputProps("name_en")}
-            />
-            <TextInput
-              label="Fakülte (İngilizce, opsiyonel)"
-              placeholder="Faculty of Engineering"
-              {...form.getInputProps("faculty_en")}
-            />
             <Button type="submit" loading={submitting} mt="sm">
               {editing ? "Kaydet" : "Ekle"}
             </Button>
@@ -564,9 +502,11 @@ export default function DepartmentsPage() {
 }
 
 // KPI kartı: büyük sayı + küçük başlık + minimal ikon; tıklanınca ilgili
-// yönetim sayfasına (bölüm süzgeci uygulanmış) götürür.
-function KpiCard({ icon: Icon, label, value, onClick }: {
-  icon: ComponentType<IconProps>; label: string; value: number; onClick: () => void;
+// sayfaya (bölüm süzgeci uygulanmış) götürür. `valueContent` verilirse sayı
+// yerine o çizilir (çakışma kartında "engel / uyarı" ayrık gösterimi için).
+function KpiCard({ icon: Icon, label, value, valueContent, onClick, color, hint, hintColor }: {
+  icon: ComponentType<IconProps>; label: string; value?: number; valueContent?: ReactNode;
+  onClick: () => void; color?: string; hint?: string; hintColor?: string;
 }) {
   return (
     <Grid.Col span={{ base: 6, sm: 4 }}>
@@ -577,10 +517,11 @@ function KpiCard({ icon: Icon, label, value, onClick }: {
       >
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <div>
-            <Text fw={700} fz={28} lh={1}>{value}</Text>
+            {valueContent ?? <Text fw={700} fz={28} lh={1} c={color}>{value}</Text>}
             <Text size="sm" c="dimmed" mt={6}>{label}</Text>
+            {hint && <Text size="xs" c={hintColor ?? color ?? "dimmed"} mt={2}>{hint}</Text>}
           </div>
-          <ThemeIcon variant="light" color="gray" size="lg" radius="md">
+          <ThemeIcon variant="light" color={color ?? "gray"} size="lg" radius="md">
             <Icon size={20} />
           </ThemeIcon>
         </Group>
@@ -589,36 +530,3 @@ function KpiCard({ icon: Icon, label, value, onClick }: {
   );
 }
 
-// Tek işlem satırı: kim · ne yaptı · hangi kayıt · ne zaman.
-function ActivityRow({ log }: { log: AuditLog }) {
-  const action = AUDIT_ACTION_LABELS[log.action];
-  const entity = AUDIT_ENTITY_LABELS[log.entity_type as AuditEntityType] ?? log.entity_type;
-  return (
-    <Group gap="sm" wrap="nowrap" align="flex-start">
-      <Badge variant="light" color={action?.color ?? "gray"} size="sm" style={{ flexShrink: 0 }}>
-        {action?.label ?? log.action}
-      </Badge>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <Text size="sm" lineClamp={1}>
-          <b>{log.user?.name ?? "—"}</b>{" · "}{entity}
-          {log.entity_label ? ` · ${log.entity_label}` : ""}
-        </Text>
-      </div>
-      <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>{formatTime(log.created_at)}</Text>
-    </Group>
-  );
-}
-
-// Kısa göreli zaman: "az önce" / "3 sa önce" / tarih. Audit satırı için yeterli.
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const diffMs = Date.now() - d.getTime();
-  const min = Math.floor(diffMs / 60000);
-  if (min < 1) return "az önce";
-  if (min < 60) return `${min} dk önce`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} sa önce`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} gün önce`;
-  return d.toLocaleDateString("tr");
-}

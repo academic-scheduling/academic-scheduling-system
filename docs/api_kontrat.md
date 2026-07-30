@@ -28,7 +28,8 @@
              | "E6" | "E7" | "X1" | "X2" | "X3",
   "message": "Derslik çakışması: CENG2001-1 ve MATH1001-2 ...",
   "affected": [
-    { "type": "weekly_entry" | "exam", "id": 42, "course_code": "CENG2001-1" }
+    { "type": "weekly_entry" | "exam", "id": 42, "course_code": "CENG2001-1",
+      "department_id": 3, "year": 2 }
   ]
 }
 ```
@@ -44,6 +45,11 @@ WARNING). Haftalık tarafta bu ayrım ayrı ID'lerle zaten vardı (W3/W4).
 tekil kurallar (W6/W7/W8/E5/E5a/E6/E7) tek öğe. Sınav referanslarında
 `course_code` şube numarası TAŞIMAZ (K-16: sınav ders düzeyindedir);
 haftalık referanslarda `"KOD-şube"` biçimindedir.
+
+**`department_id` + `year`:** Her öğe hangi bölüme/sınıfa ait olduğunu taşır.
+Çakışma raporu bölüm/sınıf süzmesini ve Bölümler sayacını bunun üzerinden
+kurar — ders koduna göre eşleştirme kırılgandır (kod bölümler arası tekrar
+edebilir). Motorun eski girişlerde üretmediği durumda `null` olabilir.
 
 ---
 

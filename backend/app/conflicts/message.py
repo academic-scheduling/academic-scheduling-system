@@ -184,12 +184,25 @@ def build_message(rule_id, a, b=None):
     return builder(a, b)
 
 def _affected_ref(obj):
-    """ConflictResult.affected içindeki tek öğe (kontrat §0)."""
+    """ConflictResult.affected içindeki tek öğe (kontrat §0).
+
+    department_id + year taşınır: çakışma raporu ve Bölümler sayacı "bu çakışma
+    hangi bölümü/sınıfı etkiliyor" diye süzebilsin. Motor dict'i (hem haftalık
+    hem sınav) bu iki alanı zaten üretiyor; burada dışarı veriliyor. Ders koduna
+    göre eşleştirme kırılgandır (kod bölümler arası tekrar edebilir) — bu yüzden
+    id taşınıyor.
+    """
     if obj.get("type") == "exam":
         code = obj["course_code"]      # sınav ders düzeyinde (K-16) — şube yok
     else:
         code = course_label(obj)       # "CENG2001-1" (kod + şube_no)
-    return {"type": obj["type"], "id": obj["id"], "course_code": code}
+    return {
+        "type": obj["type"],
+        "id": obj["id"],
+        "course_code": code,
+        "department_id": obj.get("department_id"),
+        "year": obj.get("year"),
+    }
 
 
 def build_result(rule_id, severity, a, b=None):

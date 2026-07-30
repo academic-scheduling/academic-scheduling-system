@@ -52,9 +52,12 @@ def test_build_result_shape():
     assert result["severity"] == "HARD"
     assert result["rule_id"] == "W1"
     assert "Derslik çakışması" in result["message"]
+    # affected artık bölüm/sınıf da taşır (rapor + Bölümler sayacı süzmesi için).
     assert result["affected"] == [
-        {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1"},
-        {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1"},
+        {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1",
+         "department_id": 2, "year": 2},
+        {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1",
+         "department_id": 2, "year": 2},
     ]
   
 

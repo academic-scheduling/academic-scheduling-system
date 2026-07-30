@@ -157,3 +157,49 @@ def test_delete_isolation_and_permission():
     assert client.delete(f"/lecturers/{lec['id']}", headers=foreign_admin_headers()).status_code == 404
     # yetenek bayrağı kapalı alt hesap
     assert client.delete(f"/lecturers/{lec['id']}", headers=sub_headers()).status_code == 403
+
+
+# --- asli bölüm (department_id) ---
+
+def _dep(h, prefix="AB"):
+    code = f"{prefix}{uuid.uuid4().hex[:6].upper()}"
+    return client.post("/departments", json={"name": f"Bölüm {code}", "code": code}, headers=h).json()
+
+
+def test_create_lecturer_with_department():
+    """Asli bölüm ile hoca eklenir ve cevapta döner."""
+    h = admin_headers()
+    dep = _dep(h)
+    r = client.post("/lecturers",
+                    json={"full_name": _uname("Dr. Bolumlu Hoca"), "department_id": dep["id"]},
+                    headers=h)
+    assert r.status_code == 201, r.text
+    assert r.json()["department_id"] == dep["id"]
+
+
+def test_create_lecturer_without_department_allowed():
+    """API bölümsüz kayda izin verir (dış görevli/import); form ayrı zorunlu tutar."""
+    h = admin_headers()
+    r = client.post("/lecturers", json={"full_name": _uname("Dr. Bolumsuz")}, headers=h)
+    assert r.status_code == 201, r.text
+    assert r.json()["department_id"] is None
+
+
+def test_lecturer_rejects_foreign_department():
+    """Başka workgroup'un bölümü asli bölüm olarak seçilemez → 400 (izolasyon)."""
+    yabanci_dep = _dep(foreign_admin_headers())
+    r = client.post("/lecturers",
+                    json={"full_name": _uname("Dr. Sizinti"), "department_id": yabanci_dep["id"]},
+                    headers=admin_headers())
+    assert r.status_code == 400
+
+
+def test_update_lecturer_department():
+    """Var olan hocanın asli bölümü değiştirilebilir."""
+    h = admin_headers()
+    dep = _dep(h)
+    lec = client.post("/lecturers", json={"full_name": _uname("Dr. Tasinan")}, headers=h).json()
+    assert lec["department_id"] is None
+    r = client.patch(f"/lecturers/{lec['id']}", json={"department_id": dep["id"]}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["department_id"] == dep["id"]

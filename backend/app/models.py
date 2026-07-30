@@ -373,8 +373,16 @@ class Lecturer(Base):
     is_external: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     source: Mapped[str] = mapped_column(String(20), server_default=text("'IMPORT'"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Asli (kendi) bolum. Hoca karari: her hoca bir bolume aittir ama baska
+    # bolumlerde de ders verebilir; "ders verdigi bolumler" sube->ders uzerinden
+    # AYRICA turetilir. NULL = eski/import kayit (asli bolum henuz atanmadi).
+    # SET NULL: bolum silinirse hoca kalir, aidiyeti bosalir.
+    department_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("departments.id", ondelete="SET NULL")
+    )
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="lecturers")
+    department: Mapped["Department | None"] = relationship()
     sections: Mapped[list["CourseSection"]] = relationship(
         back_populates="lecturer"
     )

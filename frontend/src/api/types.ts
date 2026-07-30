@@ -65,6 +65,9 @@ export type Lecturer = {
   normalized_name: string;
   is_external: boolean;
   active: boolean;
+  /** Asli (kendi) bölüm. Hoca başka bölümlerde de ders verebilir; bu aidiyettir.
+   *  null = eski/import kayıt, henüz atanmadı. */
+  department_id: number | null;
 };
 
 /** Kontrat §5 · GET /buildings elemanı (K-18, K-30) */
@@ -226,6 +229,10 @@ export type ConflictAffectedRef = {
   type: "weekly_entry" | "exam";
   id: number;
   course_code: string | null;
+  /** Bu öğenin bölümü/sınıfı — rapor ve Bölümler sayacı süzmeyi bununla yapar.
+   *  Motor eski girişlerde üretmezse null. */
+  department_id: number | null;
+  year: number | null;
 };
 
 export type ConflictResult = {

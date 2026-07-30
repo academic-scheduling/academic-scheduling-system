@@ -169,12 +169,16 @@ class LecturerCreate(BaseModel):
     full_name: str
     email: str | None = None
     is_external: bool = False
+    # Asli bölüm. API'de opsiyonel (import ve eski akışlar bölümsüz kayıt
+    # üretebilir); ekleme formu zorunlu tutar.
+    department_id: int | None = None
 
 class LecturerUpdate(BaseModel):
     full_name: str | None = None
     email: str | None = None
     is_external: bool | None = None
     active: bool | None = None
+    department_id: int | None = None
 
 class LecturerOut(BaseModel):
     id: int
@@ -182,6 +186,7 @@ class LecturerOut(BaseModel):
     normalized_name: str                      # K-28: unvansız ad — istemci sıralaması bunu kullanır
     is_external: bool
     active: bool                              # K-28: yönetim ekranı pasifi ayırt eder
+    department_id: int | None = None          # asli bölüm (frontend ad'a kendi eşler)
     model_config = ConfigDict(from_attributes=True)
 
 # --- Binalar (WP2, K-18) ---
@@ -317,6 +322,10 @@ class ConflictAffectedRef(BaseModel):
     type: Literal["weekly_entry", "exam"]
     id: int
     course_code: str | None = None
+    # Çakışma raporu + Bölümler sayacı bölüm/sınıf süzmesi için (kırılgan kod
+    # eşleştirmesi yerine id). Motor eski girişlerde üretmezse None kalır.
+    department_id: int | None = None
+    year: int | None = None
 
 class ConflictResultOut(BaseModel):
     severity: Literal["HARD", "WARNING"]

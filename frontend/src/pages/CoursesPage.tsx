@@ -138,11 +138,17 @@ export default function CoursesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depFilter, yearFilter, semFilter, search]);
 
-  // Deep-link parametresini bir kez tüket: state'e alındı, artık URL'de durmasın.
+  // Deep-link parametrelerini bir kez tüket: state'e alındı, artık URL'de durmasın.
+  // ?add=1 → ekleme formunu açık getir (bölüm önceden seçili). Bölüm süzgeci
+  // depFilter olarak zaten okundu (state init'te).
   useEffect(() => {
-    if (!searchParams.has("department_id")) return;
+    if (!searchParams.has("department_id") && !searchParams.has("add")) return;
+    if (searchParams.get("add") === "1") {
+      openAddCourse(searchParams.get("department_id") ?? undefined);
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
+    next.delete("add");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,10 +200,13 @@ export default function CoursesPage() {
     [departments, user],
   );
 
-  function openAddCourse() {
+  // departmentId verilirse (Bölümler → "Ders Ekle" derin bağlantısı) o bölüm
+  // önceden seçili gelir; yoksa tek yazılabilir bölüm varsa o seçilir.
+  function openAddCourse(departmentId?: string) {
     setEditingCourse(null);
     courseForm.setValues({
-      department_id: writableDepartments.length === 1 ? String(writableDepartments[0].id) : "",
+      department_id: departmentId
+        ?? (writableDepartments.length === 1 ? String(writableDepartments[0].id) : ""),
       year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
       theory_online: false, practice_online: false, lab_online: false,
@@ -291,7 +300,7 @@ export default function CoursesPage() {
             >
               İçe Aktar
             </Button>
-            <Button onClick={openAddCourse}>+ Ders Ekle</Button>
+            <Button onClick={() => openAddCourse()}>+ Ders Ekle</Button>
           </Group>
         )}
       </Group>

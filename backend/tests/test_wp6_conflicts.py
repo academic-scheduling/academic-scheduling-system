@@ -59,10 +59,13 @@ def test_affected_refs_survive_the_contract(monkeypatch):
             "hard": [{
                 "severity": "HARD", "rule_id": "E1",
                 "message": "Sınav derslik çakışması",
-                "affected": [{"type": "exam", "id": 42, "course_code": "CENG2001"}],
+                # department_id + year: rapor/sayaç bölüm süzmesi bunları okur.
+                "affected": [{"type": "exam", "id": 42, "course_code": "CENG2001",
+                              "department_id": 3, "year": 2}],
             }],
             "warnings": [],
         },
     )
     ref = client.get("/conflicts", headers=admin_headers()).json()["hard"][0]["affected"][0]
-    assert ref == {"type": "exam", "id": 42, "course_code": "CENG2001"}
+    assert ref == {"type": "exam", "id": 42, "course_code": "CENG2001",
+                   "department_id": 3, "year": 2}

@@ -23,6 +23,20 @@ type SortKey = "name" | "departments" | "courses";
 const ALL_DEPARTMENTS = "__all__";
 type LecturerStats = { courseIds: Set<number>; deptIds: Set<number> };
 
+// Seçilebilir akademik unvanlar. full_name unvan+ad birleşiminden oluşur;
+// backend normalize'i karşılaştırma için unvanı zaten söküyor (K-08).
+// "Dr. Öğr. Üyesi" listede "Dr."den ÖNCE olmalı ki ayrıştırmada gölgede kalmasın.
+const TITLES = ["Prof. Dr.", "Doç. Dr.", "Dr. Öğr. Üyesi", "Arş. Gör.", "Öğr. Gör.", "Dr."];
+
+/** "Doç. Dr. Ayşe Kaya" → { title: "Doç. Dr.", name: "Ayşe Kaya" }.
+ *  Bilinen bir unvanla başlamıyorsa unvan boş, ad tümü. */
+function splitTitle(fullName: string): { title: string; name: string } {
+  for (const t of TITLES) {
+    if (fullName.startsWith(t + " ")) return { title: t, name: fullName.slice(t.length + 1) };
+  }
+  return { title: "", name: fullName };
+}
+
 /** Durum göstergesi + eylem butonu birleşik.
  *
  *  Boştayken kaydın DURUMUNU gösterir (aktif/pasif); üzerine gelince
@@ -92,9 +106,14 @@ export default function LecturersPage() {
   const [deleting, setDeleting] = useState<Lecturer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  // title: unvan (Select). full_name: yalnız ad-soyad; submit'te birleştirilir.
+  // department_id: bölüm. Dış görevli (40/a) HARİÇ zorunlu.
   const form = useForm({
-    initialValues: { full_name: "", is_external: false },
-    validate: { full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz") },
+    initialValues: { title: "", full_name: "", is_external: false, department_id: "" as string },
+    validate: {
+      full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz"),
+      department_id: (v, values) => (values.is_external || v ? null : "Bölüm seçin"),
+    },
   });
 
   async function load() {
@@ -120,11 +139,16 @@ export default function LecturersPage() {
     load();
   }, []);
 
-  // Deep-link parametresini bir kez tüket (state'e alındı).
+  // Deep-link parametrelerini bir kez tüket. ?add=1 → ekleme formunu açık getir
+  // (asli bölüm önceden seçili gelir).
   useEffect(() => {
-    if (!searchParams.has("department_id")) return;
+    if (!searchParams.has("department_id") && !searchParams.has("add")) return;
+    if (searchParams.get("add") === "1") {
+      openAdd(searchParams.get("department_id") ?? undefined);
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
+    next.delete("add");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -155,8 +179,8 @@ export default function LecturersPage() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(key);
-      // Sayısal sütunlarda ilk tık ÇOKTAN AZA; isimde alfabetik.
-      setSortDir(key === "name" ? "asc" : "desc");
+      // Sayısal sütun (ders) ilk tık ÇOKTAN AZA; metin sütunları alfabetik.
+      setSortDir(key === "courses" ? "desc" : "asc");
     }
   }
 
@@ -166,45 +190,68 @@ export default function LecturersPage() {
     const dir = sortDir === "asc" ? 1 : -1;
     return lecturers
       .filter((l) => !q || l.full_name.toLocaleLowerCase("tr").includes(q))
-      // Bölüm filtresi: hocanın bölümü TÜRETİLMİŞ bilgidir (şube -> ders -> bölüm).
-      // Dolayısıyla "o bölümde en az bir dersi olanlar" demek; hiç dersi olmayan
-      // hoca bir bölüm seçiliyken listede çıkmaz.
-      .filter((l) => depId === null || (statsByLecturer[l.id]?.deptIds.has(depId) ?? false))
+      // Bölüm filtresi: hocanın ASLİ bölümü VEYA ders verdiği (türetilmiş) bölüm
+      // eşleşsin. Böylece o bölümün kadrolu hocası, henüz dersi olmasa da görünür.
+      .filter((l) => depId === null
+        || l.department_id === depId
+        || (statsByLecturer[l.id]?.deptIds.has(depId) ?? false))
       .sort((a, b) => {
         // Unvansız ada göre: full_name'e göre sıralamak "Doç. < Öğr. < Prof."
         // üretirdi — kişi adı değil unvan sıralanırdı (K-28).
         if (sortBy === "name") {
           return dir * a.normalized_name.localeCompare(b.normalized_name, "tr");
         }
-        const sa = statsByLecturer[a.id];
-        const sb = statsByLecturer[b.id];
-        const va = sortBy === "courses" ? (sa?.courseIds.size ?? 0) : (sa?.deptIds.size ?? 0);
-        const vb = sortBy === "courses" ? (sb?.courseIds.size ?? 0) : (sb?.deptIds.size ?? 0);
+        // Bölüm sütunu artık ana bölüm koduna göre; bölümsüz kayıt en sona.
+        if (sortBy === "departments") {
+          const ca = a.department_id != null ? (deptCodeById[a.department_id] ?? "") : "";
+          const cb = b.department_id != null ? (deptCodeById[b.department_id] ?? "") : "";
+          if (!ca !== !cb) return !ca ? 1 : -1;
+          if (ca !== cb) return dir * ca.localeCompare(cb, "tr");
+          return a.normalized_name.localeCompare(b.normalized_name, "tr");
+        }
+        const va = statsByLecturer[a.id]?.courseIds.size ?? 0;
+        const vb = statsByLecturer[b.id]?.courseIds.size ?? 0;
         if (va !== vb) return dir * (va - vb);
         return a.normalized_name.localeCompare(b.normalized_name, "tr");   // eşitlikte ada göre
       });
-  }, [lecturers, query, deptFilter, sortBy, sortDir, statsByLecturer]);
+  }, [lecturers, query, deptFilter, sortBy, sortDir, statsByLecturer, deptCodeById]);
 
-  function openAdd() {
+  // departmentId verilirse (Bölümler → "Öğretim Üyesi Ekle") asli bölüm önceden
+  // seçili gelir.
+  function openAdd(departmentId?: string) {
     setEditing(null);
-    form.setValues({ full_name: "", is_external: false });
+    form.setValues({ title: "", full_name: "", is_external: false, department_id: departmentId ?? "" });
     setModalOpen(true);
   }
 
   function openEdit(lec: Lecturer) {
     setEditing(lec);
-    form.setValues({ full_name: lec.full_name, is_external: lec.is_external });
+    const { title, name } = splitTitle(lec.full_name);
+    form.setValues({
+      title,
+      full_name: name,
+      is_external: lec.is_external,
+      department_id: lec.department_id != null ? String(lec.department_id) : "",
+    });
     setModalOpen(true);
   }
 
   async function handleSubmit(values: typeof form.values) {
     setSubmitting(true);
+    // Unvan + ad birleştirilir; backend normalize'i unvanı zaten söker (K-08).
+    const name = values.full_name.trim();
+    const payload = {
+      full_name: values.title ? `${values.title} ${name}` : name,
+      is_external: values.is_external,
+      // Select değeri string; API int|null bekler. Boş = bölümsüz (dış görevli).
+      department_id: values.department_id ? Number(values.department_id) : null,
+    };
     try {
       if (editing) {
-        await api.patch<Lecturer>(`/lecturers/${editing.id}`, values);
+        await api.patch<Lecturer>(`/lecturers/${editing.id}`, payload);
         notifications.show({ color: "green", message: "Öğretim üyesi güncellendi" });
       } else {
-        await api.post<Lecturer>("/lecturers", values);
+        await api.post<Lecturer>("/lecturers", payload);
         notifications.show({ color: "green", message: "Öğretim üyesi eklendi" });
       }
       setModalOpen(false);
@@ -269,7 +316,7 @@ export default function LecturersPage() {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Öğretim Üyeleri</Title>
-        {canWrite && <Button onClick={openAdd}>+ Öğretim Üyesi Ekle</Button>}
+        {canWrite && <Button onClick={() => openAdd()}>+ Öğretim Üyesi Ekle</Button>}
       </Group>
 
       <Group mb="md" align="flex-end">
@@ -312,7 +359,7 @@ export default function LecturersPage() {
                   onClick={() => toggleSort("name")}
                 />
                 <SortableTh
-                  label="Bölümler"
+                  label="Bölüm"
                   active={sortBy === "departments"}
                   dir={sortDir}
                   onClick={() => toggleSort("departments")}
@@ -323,39 +370,37 @@ export default function LecturersPage() {
                   dir={sortDir}
                   onClick={() => toggleSort("courses")}
                 />
-                <Table.Th>Durum</Table.Th>
                 <Table.Th w={canWrite ? 170 : 44}>İşlemler</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {visible.map((lec) => {
                 const st = statsByLecturer[lec.id];
-                const deptCodes = st ? [...st.deptIds].map((id) => deptCodeById[id] ?? "?").sort() : [];
+                // Yalnız ana (asli) bölüm gösterilir.
+                const homeCode = lec.department_id != null
+                  ? (deptCodeById[lec.department_id] ?? "?") : null;
                 const courseCount = st?.courseIds.size ?? 0;
                 return (
                   <Table.Tr key={lec.id} opacity={lec.active ? 1 : 0.55}>
-                    <Table.Td>{lec.full_name}</Table.Td>
                     <Table.Td>
-                      {deptCodes.length === 0 ? (
+                      <Group gap={6} wrap="nowrap">
+                        <Text size="sm">{lec.full_name}</Text>
+                        {lec.is_external && (
+                          <Tooltip label="Dış görevli (40/a)">
+                            <Badge variant="light" color="orange" size="xs">40/a</Badge>
+                          </Tooltip>
+                        )}
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      {homeCode === null ? (
                         <Text c="dimmed" size="sm">—</Text>
                       ) : (
-                        <Group gap={4}>
-                          {deptCodes.map((code) => (
-                            <Badge key={code} variant="light" color="blue" size="sm">{code}</Badge>
-                          ))}
-                        </Group>
+                        <Badge variant="light" color="blue" size="sm">{homeCode}</Badge>
                       )}
                     </Table.Td>
                     <Table.Td>
                       <Text c={courseCount ? undefined : "dimmed"}>{courseCount}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={4}>
-                        {!lec.active && <Badge color="gray" size="sm">Pasif</Badge>}
-                        {lec.is_external && (
-                          <Badge variant="light" color="orange" size="sm">Dış görevli</Badge>
-                        )}
-                      </Group>
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="nowrap">
@@ -401,11 +446,25 @@ export default function LecturersPage() {
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
+            <Select
+              label="Ünvan"
+              placeholder="Seçin (opsiyonel)"
+              data={TITLES}
+              clearable
+              {...form.getInputProps("title")}
+            />
             <TextInput
               label="Ad Soyad"
-              placeholder="Doç. Dr. Ayşe Kaya"
-              description="Unvan yazılabilir; sistem karşılaştırma için kendi içinde sadeleştirir."
+              placeholder="Ayşe Kaya"
               {...form.getInputProps("full_name")}
+            />
+            <Select
+              label="Bölüm"
+              placeholder="Bölüm seçin"
+              data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
+              searchable
+              clearable
+              {...form.getInputProps("department_id")}
             />
             <Checkbox
               label="Dış görevli (40/a)"

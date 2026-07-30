@@ -196,20 +196,24 @@ def seed():
     log("CREATE", "department", eee)
 
     # --- hocalar ---
-    def hoca(ad, *, harici=False, kaynak="IMPORT"):
+    # asli_bolum: hocanın kendi bölümü (yeni alan). Dış görevlide None olabilir.
+    def hoca(ad, *, harici=False, kaynak="IMPORT", asli_bolum=None):
         lec = Lecturer(id=next_id(Lecturer), workgroup_id=wg.id, full_name=ad,
                        normalized_name=normalize_lecturer_name(ad),
-                       source=kaynak, is_external=harici)
+                       source=kaynak, is_external=harici,
+                       department_id=asli_bolum.id if asli_bolum else None)
         db.add(lec)
         db.flush()
         log("CREATE", "lecturer", lec)
         return lec
 
-    kaya = hoca("Doç. Dr. Ayşe Kaya")      # iki bölümde ders verir → W2 taşıyıcısı
-    demir = hoca("Prof. Dr. Mehmet Demir")
-    arslan = hoca("Dr. Elif Arslan")        # online ders
-    sahin = hoca("Dr. Can Şahin")
-    yildiz = hoca("Öğr. Gör. Zeynep Yıldız", harici=True, kaynak="MANUAL")  # 40/a
+    # Kaya asli olarak CENG'li ama EEE'de de ders veriyor (W2 taşıyıcısı) — asli
+    # bölüm ile "ders verdiği bölüm" ayrımının canlı örneği.
+    kaya = hoca("Doç. Dr. Ayşe Kaya", asli_bolum=ceng)
+    demir = hoca("Prof. Dr. Mehmet Demir", asli_bolum=eee)   # EEE'li ama CENG'de de ders verir
+    arslan = hoca("Dr. Elif Arslan", asli_bolum=ceng)        # online ders
+    sahin = hoca("Dr. Can Şahin", asli_bolum=ceng)
+    yildiz = hoca("Öğr. Gör. Zeynep Yıldız", harici=True, kaynak="MANUAL")  # 40/a, asli bölümsüz
 
     # --- bina + derslikler ---
     # Kapasiteler bilinçli: LAB-1 tek "küçük" oda, W7 yalnız orada tetiklensin.

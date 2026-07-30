@@ -2,12 +2,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user, require_lecturer_manager
-from app.models import CourseSection, Exam, Lecturer, User
+from app.models import CourseSection, Department, Exam, Lecturer, User
 from app.normalize import normalize_lecturer_name
 from app.schemas import LecturerCreate, LecturerUpdate, LecturerOut
 from app.audit import build_change_summary, log_action
 
 router = APIRouter(prefix="/lecturers", tags=["lecturers"])
+
+
+def _validate_department(db: Session, workgroup_id: int, department_id: int | None) -> None:
+    """Asli bölüm bu workgroup'a ait olmalı; başka fakültenin bölümü seçilemez.
+    None geçerlidir (bölümsüz kayda izin var)."""
+    if department_id is None:
+        return
+    dep = db.get(Department, department_id)
+    if dep is None or dep.workgroup_id != workgroup_id:
+        raise HTTPException(status_code=400, detail="Geçersiz bölüm seçimi")
 
 
 @router.get("", response_model=list[LecturerOut])
@@ -50,12 +60,15 @@ def create_lecturer(
             detail=f"Bu hoca zaten kayıtlı: {clash.full_name}",
         )
 
+    _validate_department(db, manager.workgroup_id, payload.department_id)
+
     lec = Lecturer(
         workgroup_id=manager.workgroup_id,
         full_name=payload.full_name,
         normalized_name=normalized,
         email=payload.email,
         is_external=payload.is_external,
+        department_id=payload.department_id,
         source="MANUAL",          # elle eklenen 40/a; web import'u IMPORT yazar
     )
     db.add(lec)
@@ -78,6 +91,9 @@ def update_lecturer(
         raise HTTPException(status_code=404, detail="Hoca bulunamadı")
 
     data = payload.model_dump(exclude_unset=True)
+
+    if "department_id" in data:
+        _validate_department(db, manager.workgroup_id, data["department_id"])
 
     # full_name degisirse normalized_name yeniden hesaplanir ve cakisma kontrol edilir.
     if "full_name" in data:

@@ -128,6 +128,10 @@ def create_course(
                             detail="Bu bölüm+yıl+dönemde bu ders kodu zaten kayıtlı")
 
     course = Course(**payload.model_dump())
+    # K-45: saati 0 olan bileşenin online bayrağı anlamsız — zorla false.
+    for comp in ("theory", "practice", "lab"):
+        if getattr(course, f"hours_{comp}") == 0:
+            setattr(course, f"{comp}_online", False)
     db.add(course)
     db.flush()
     log_action(db, user, "CREATE", "course", course.id, course)
@@ -158,6 +162,13 @@ def update_course(
         if clash:
             raise HTTPException(status_code=409,
                                 detail="Bu bölüm+yıl+dönemde bu ders kodu zaten kayıtlı")
+
+    # K-45: bir bileşenin saati (bu PATCH sonrası) 0 ise online bayrağı zorla
+    # false. data'ya yazılır ki hem özete hem kayda düzeltilmiş değer girsin.
+    for comp in ("theory", "practice", "lab"):
+        eff_hours = data.get(f"hours_{comp}", getattr(course, f"hours_{comp}"))
+        if eff_hours == 0:
+            data[f"{comp}_online"] = False
 
     ozet = build_change_summary(course, data)
     for field, value in data.items():

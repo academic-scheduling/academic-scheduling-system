@@ -330,6 +330,29 @@ export default function WeeklyPage() {
     return m;
   }, [allCourses]);
 
+  /** K-45: şube id → o dersin bileşen bazında online'lığı. EntryModal, seçilen
+   *  oturum türü (T/U/L) online ise yalnız SENKRON/ASENKRON sordurur, değilse
+   *  yüz yüze sabitler. */
+  const onlineBySection = useMemo(() => {
+    const m = new Map<number, Record<SessionType, boolean>>();
+    for (const c of allCourses) {
+      for (const s of c.sections) {
+        m.set(s.id, { THEORY: c.theory_online, PRACTICE: c.practice_online, LAB: c.lab_online });
+      }
+    }
+    return m;
+  }, [allCourses]);
+
+  /** Şube id → varsayılan/tercih dersliği. Haftalık EKLEMEDE ön-doldurulur
+   *  (kullanıcı ders formunda zaten seçtiyse bir daha sormaya gerek yok; brief
+   *  §3.2'nin "default classroom on the course" ile "actual on entry" ayrımı —
+   *  ön-doldurma sadece kolaylık, giriş kendi dersliğini taşımaya devam eder). */
+  const defaultRoomBySection = useMemo(() => {
+    const m = new Map<number, number | null>();
+    for (const c of allCourses) for (const s of c.sections) m.set(s.id, s.default_classroom_id);
+    return m;
+  }, [allCourses]);
+
   const lecturerBySection = useMemo(() => {
     const names = new Map<number, string>();
     for (const course of allCourses) {
@@ -822,8 +845,11 @@ export default function WeeklyPage() {
             ? `${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
             : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
-          // Sürükleyerek gelindiyse ders bellidir; boş slota tıklanarak
-          // gelindiyse modal dersi de sorar.
+          onlineBySection={onlineBySection}
+          defaultRoomBySection={defaultRoomBySection}
+          // Sürükleyerek gelindiyse ders bellidir (id modala verilir ki online
+          // bileşenini bilsin); boş slota tıklanarak gelindiyse modal dersi sorar.
+          fixedSectionId={placing.drag?.kind === "new" ? placing.drag.sectionId : undefined}
           sections={placing.drag?.kind === "new" ? undefined : paletteItems.map(({ course: c, section: s }) => ({
             value: String(s.id), label: `${c.code}-${s.section_no} — ${c.name}` }))}
           onClose={() => setPlacing(null)}
@@ -859,6 +885,9 @@ export default function WeeklyPage() {
         <EntryModal
           title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
+          onlineBySection={onlineBySection}
+          defaultRoomBySection={defaultRoomBySection}
+          fixedSectionId={editing.section.id}
           initial={{
             classroomId: editing.classroom ? String(editing.classroom.id) : null,
             sessionType: editing.session_type,
@@ -1327,13 +1356,19 @@ type EntryBody = {
 };
 
 /** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
-function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSectionId, onlineBySection, defaultRoomBySection, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
   /** Verilirse modal önce DERSİ sorar (boş slota tıklayarak ekleme). */
   sections?: { value: string; label: string }[];
+  /** Ders zaten belliyse (sürükleme/düzenleme) online bileşenini bilmek için. */
+  fixedSectionId?: number;
+  /** K-45: şube id → bileşen bazında online'lık. */
+  onlineBySection: Map<number, Record<SessionType, boolean>>;
+  /** Şube id → varsayılan derslik (eklemede ön-doldurma). */
+  defaultRoomBySection: Map<number, number | null>;
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
@@ -1345,15 +1380,41 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, 
   const [slotCount, setSlotCount] = useState<number>(initial?.slotCount ?? 2);
   const [busy, setBusy] = useState(false);
 
-  const online = delivery !== "FACE_TO_FACE";   // K-23: online girişte derslik olamaz
   const maxSlots = 9 - startSlot + 1;
   const dersEksik = sections != null && !sectionId;
+
+  // K-45: online'lık ders bileşeninin özelliğidir, serbest seçim DEĞİL. Seçili
+  // şube + oturum türüne bakılır; bileşen online ise giriş online olur ve yalnız
+  // senkron/asenkron seçilir, değilse yüz yüze sabittir.
+  const effSection = fixedSectionId ?? (sectionId ? Number(sectionId) : null);
+  const componentOnline = effSection != null
+    ? (onlineBySection.get(effSection)?.[sessionType] ?? false)
+    : false;
+
+  // delivery'yi componentOnline ile tutarlı tut: online değilken yüz yüze;
+  // online olup delivery hâlâ yüz yüzeyse senkron'a çek (asenkronsa koru).
+  useEffect(() => {
+    setDelivery((d) =>
+      componentOnline
+        ? (d === "FACE_TO_FACE" ? "ONLINE_SYNC" : d)
+        : "FACE_TO_FACE");
+  }, [componentOnline]);
+
+  // #3: EKLEMEDE şubenin varsayılan dersliğini ön-doldur — kullanıcı ders
+  // formunda seçtiğini bir daha seçmesin. Düzenlemede (initial var) girişin
+  // KENDİ dersliği korunur, ezilmez.
+  const isEdit = initial != null;
+  useEffect(() => {
+    if (isEdit || effSection == null) return;
+    const def = defaultRoomBySection.get(effSection);
+    setClassroomId(def != null ? String(def) : null);
+  }, [effSection, isEdit]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
     setBusy(true);
     try {
       const res = await onSubmit({
-        classroom_id: online ? null : classroomId ? Number(classroomId) : null,
+        classroom_id: componentOnline ? null : classroomId ? Number(classroomId) : null,
         session_type: sessionType, delivery_mode: delivery, slot_count: slotCount,
         ...(sectionId ? { section_id: Number(sectionId) } : null),
       });
@@ -1372,13 +1433,22 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, onClose, 
           <Select label="Ders / şube" value={sectionId} onChange={setSectionId}
             data={sections} searchable placeholder="Ders seç" nothingFoundMessage="Ders yok" />
         )}
-        <Select label="Yapılış şekli" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
-          data={(Object.keys(DELIVERY_LABELS) as DeliveryMode[]).map((k) => ({ value: k, label: DELIVERY_LABELS[k] }))} />
-        <Select label="Derslik" value={online ? null : classroomId} onChange={setClassroomId}
-          disabled={online} placeholder={online ? "Online — derslik yok" : "Derslik seç"} clearable
-          data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
+        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
         <Select label="Oturum türü (T/U/L)" value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
           data={(Object.keys(SESSION_LABELS) as SessionType[]).map((k) => ({ value: k, label: SESSION_LABELS[k] }))} />
+        {componentOnline ? (
+          // Bileşen online: yalnız senkron/asenkron. "Online mı" ders düzeyinde
+          // sabit olduğu için burada seçtirilmez.
+          <Select label="Çevrimiçi türü" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
+            data={[
+              { value: "ONLINE_SYNC", label: DELIVERY_LABELS.ONLINE_SYNC },
+              { value: "ONLINE_ASYNC", label: DELIVERY_LABELS.ONLINE_ASYNC },
+            ]} />
+        ) : (
+          <Select label="Derslik" value={classroomId} onChange={setClassroomId}
+            placeholder="Derslik seç" clearable searchable nothingFoundMessage="Derslik yok"
+            data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
+        )}
         <NumberInput label="Slot sayısı" value={slotCount} onChange={(v) => setSlotCount(Number(v) || 1)}
           min={1} max={maxSlots} />
         <Group justify="flex-end" gap="xs" mt="xs">

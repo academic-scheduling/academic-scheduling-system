@@ -1,41 +1,27 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import {
-  Alert, Badge, Button, Card, Group, Loader, Paper, Stack, Tabs, Text, Title, Tooltip,
+  Alert, Badge, Card, Group, Loader, Paper, Stack, Tabs, Text, Title,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
-import { IconArrowRight, IconRefresh } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { ConflictResult, ConflictScan } from "../api/types";
 
 export default function ConflictsPage() {
   const [scan, setScan] = useState<ConflictScan | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string | null>("hard");
 
-  const loadData = async (isManualRefresh = false) => {
-    if (isManualRefresh) setRefreshing(true);
-    else setLoading(true);
+  const loadData = async () => {
+    setLoading(true);
     setError(null);
     try {
-      // Kontrat §9 & K-26: Workgroup'un TÜMÜ taranır ve sonuçlar eksiksiz gösterilir.
-      // Alt hesabın çakışmayı çözebilmesi için karşı tarafı (diğer bölümü) görmesi şarttır.
+      // Kontrat §9 & K-26: Workgroup'un TÜMÜ taranır ve sonuçlar gösterilir.
       const conflictsRes = await api.get<ConflictScan>("/conflicts");
       setScan(conflictsRes);
-      if (isManualRefresh) {
-        notifications.show({
-          color: "green",
-          title: "Tam Tarama Tamamlandı",
-          message: "Çakışma raporu güncellendi.",
-        });
-      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Çakışmalar yüklenemedi");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
@@ -58,14 +44,6 @@ export default function ConflictsPage() {
             Sistemdeki çözülmemiş hard (engelleyici) ve warning (uyarı) çakışmaları.
           </Text>
         </div>
-        <Button
-          leftSection={<IconRefresh size={16} />}
-          loading={refreshing}
-          onClick={() => loadData(true)}
-          variant="light"
-        >
-          Tam Tarama Çalıştır
-        </Button>
       </Group>
 
       <Tabs value={activeTab} onChange={setActiveTab} radius="md">
@@ -132,13 +110,9 @@ function ConflictList({
   return (
     <Stack gap="sm">
       {conflicts.map((c, i) => {
-        const isExam = c.affected.some((a) => a.type === "exam");
-        const basePath = isExam ? "/exams" : "/weekly";
-        const targetAffected = isExam
-          ? c.affected.find((a) => a.type === "exam")
-          : c.affected.find((a) => a.type === "weekly_entry");
-        const highlightParam = targetAffected ? `?highlight=${targetAffected.id}&rule=${c.rule_id}` : "";
-        const targetPath = `${basePath}${highlightParam}`;
+        const conflictingCourses = Array.from(
+          new Set(c.affected.map((a) => a.course_code).filter(Boolean))
+        );
 
         return (
           <Card key={`${c.rule_id}-${i}`} withBorder padding="md" radius="md">
@@ -153,28 +127,20 @@ function ConflictList({
                   </Badge>
                 </Group>
                 <Text size="sm" fw={500}>{c.message}</Text>
-                {c.affected.length > 0 && (
-                  <Group gap={6} wrap="wrap">
-                    {c.affected.map((a, idx) => (
-                      <Badge key={idx} variant="dot" color="blue" size="xs">
-                        {a.course_code ?? `${a.type} #${a.id}`}
+              </Stack>
+
+              {conflictingCourses.length > 0 && (
+                <Stack gap={4} align="flex-end" style={{ flexShrink: 0 }}>
+                  <Text size="xs" c="dimmed" fw={500}>Çakışan Dersler</Text>
+                  <Group gap={4} wrap="wrap" justify="flex-end">
+                    {conflictingCourses.map((code, idx) => (
+                      <Badge key={idx} variant="light" color="blue" size="sm">
+                        {code}
                       </Badge>
                     ))}
                   </Group>
-                )}
-              </Stack>
-
-              <Tooltip label={isExam ? "Sınav Takviminde Göster" : "Haftalık Programda Göster"}>
-                <Button
-                  component={Link}
-                  to={targetPath}
-                  size="xs"
-                  variant="light"
-                  rightSection={<IconArrowRight size={14} />}
-                >
-                  Grid'de Göster
-                </Button>
-              </Tooltip>
+                </Stack>
+              )}
             </Group>
           </Card>
         );

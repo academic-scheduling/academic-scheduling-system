@@ -23,7 +23,7 @@ import {
   paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
-  Classroom, ConflictResult, ConflictScan, Course, DeliveryMode, Department,
+  Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
   Lecturer, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 
@@ -343,15 +343,6 @@ export default function WeeklyPage() {
     return m;
   }, [allCourses]);
 
-  /** Şube id → varsayılan/tercih dersliği. Haftalık EKLEMEDE ön-doldurulur
-   *  (kullanıcı ders formunda zaten seçtiyse bir daha sormaya gerek yok; brief
-   *  §3.2'nin "default classroom on the course" ile "actual on entry" ayrımı —
-   *  ön-doldurma sadece kolaylık, giriş kendi dersliğini taşımaya devam eder). */
-  const defaultRoomBySection = useMemo(() => {
-    const m = new Map<number, number | null>();
-    for (const c of allCourses) for (const s of c.sections) m.set(s.id, s.default_classroom_id);
-    return m;
-  }, [allCourses]);
 
   const lecturerBySection = useMemo(() => {
     const names = new Map<number, string>();
@@ -490,7 +481,10 @@ export default function WeeklyPage() {
    *  Türkçe küçültme: "İSTATİSTİK".toLowerCase() yanlış sonuç verir, locale şart.
    *  Sıralama: önce yerleşimi EKSİK olanlar (yapılacak iş), sonra tamamlananlar;
    *  her grup kendi içinde ders koduna, aynı derste şube numarasına göre. */
-  const paletteItems = useMemo(() => {
+  type PaletteRow =
+    | { kind: "section"; course: Course; section: CourseSection; done: boolean }
+    | { kind: "empty"; course: Course };
+  const paletteItems = useMemo<PaletteRow[]>(() => {
     const q = paletteSearch.trim().toLocaleLowerCase("tr");
     const tamam = (c: Course, sid: number) => {
       const p = placedBySection.get(sid) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
@@ -498,19 +492,33 @@ export default function WeeklyPage() {
         && p.PRACTICE >= c.hours_practice
         && p.LAB >= c.hours_lab;
     };
-    return courses
-      .flatMap((c) => c.sections.map((s) => ({
-        course: c, section: s, done: tamam(c, s.id),
-      })))
-      .filter(({ course: c, section: s }) => {
+    // #4: Şubesi olmayan ders de listede görünür (şube satırı yerine tek bir
+    // "şube yok" satırı). Sürüklenemez — yerleştirilecek şube yok; tıklanınca
+    // "önce şube ekleyin" uyarısı verilir.
+    const rows: PaletteRow[] = [];
+    for (const c of courses) {
+      if (c.sections.length === 0) {
+        rows.push({ kind: "empty", course: c });
+      } else {
+        for (const s of c.sections) rows.push({ kind: "section", course: c, section: s, done: tamam(c, s.id) });
+      }
+    }
+    return rows
+      .filter((r) => {
         if (!q) return true;
-        const hay = `${c.code}-${s.section_no} ${c.name}`.toLocaleLowerCase("tr");
-        return hay.includes(q);
+        const hay = r.kind === "section"
+          ? `${r.course.code}-${r.section.section_no} ${r.course.name}`
+          : `${r.course.code} ${r.course.name}`;
+        return hay.toLocaleLowerCase("tr").includes(q);
       })
-      .sort((a, b) =>
-        Number(a.done) - Number(b.done)
-        || a.course.code.localeCompare(b.course.code, "tr")
-        || a.section.section_no - b.section.section_no);
+      .sort((a, b) => {
+        // Şubesiz ders "yapılacak iş"tir → tamamlanmamışlarla birlikte üstte.
+        const aDone = a.kind === "section" ? Number(a.done) : 0;
+        const bDone = b.kind === "section" ? Number(b.done) : 0;
+        const aNo = a.kind === "section" ? a.section.section_no : 0;
+        const bNo = b.kind === "section" ? b.section.section_no : 0;
+        return aDone - bDone || a.course.code.localeCompare(b.course.code, "tr") || aNo - bNo;
+      });
   }, [courses, paletteSearch, placedBySection]);
 
   return (
@@ -618,27 +626,44 @@ export default function WeeklyPage() {
             {courses.length > 0 && paletteItems.length === 0 && (
               <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
             )}
-            {paletteItems.map(({ course: c, section: s, done }) => (
-              <Paper key={s.id} p="xs" radius="sm"
+            {paletteItems.map((r) => r.kind === "empty" ? (
+              // Şubesiz ders: sürüklenemez, tıklanınca "şube ekleyin" uyarısı.
+              <Paper key={`empty-${r.course.id}`} p="xs" radius="sm"
+                onClick={() => notifications.show({
+                  color: "yellow", title: `${r.course.code} — şube yok`,
+                  message: "Programa eklemek için önce Dersler sekmesinden bu derse şube ekleyin.",
+                })}
+                style={{ ...paletteItemStyle(false), cursor: "pointer", flexShrink: 0, opacity: 0.7 }}>
+                <Group gap={6} wrap="nowrap" align="center">
+                  <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{r.course.code}</Text>
+                  <Badge size="xs" variant="light" color="yellow" radius="sm"
+                    style={{ textTransform: "none", paddingInline: 5, marginLeft: "auto" }}>
+                    şube yok
+                  </Badge>
+                </Group>
+                <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
+              </Paper>
+            ) : (
+              <Paper key={r.section.id} p="xs" radius="sm"
                 draggable={canWrite}
                 onDragStart={(ev) => {
                   ev.dataTransfer.effectAllowed = "copy";
-                  ev.dataTransfer.setData("text/plain", String(s.id));
-                  setDrag({ kind: "new", sectionId: s.id, label: `${c.code}-${s.section_no}` });
+                  ev.dataTransfer.setData("text/plain", String(r.section.id));
+                  setDrag({ kind: "new", sectionId: r.section.id, label: `${r.course.code}-${r.section.section_no}` });
                 }}
                 onDragEnd={() => setDrag(null)}
                 // Üzerine gelince gridde bu şubenin kartları vurgulanır: dersin
                 // haftada NEREYE düştüğü listeden ayrılmadan görülür.
-                onMouseEnter={() => setHoverSection(s.id)}
+                onMouseEnter={() => setHoverSection(r.section.id)}
                 onMouseLeave={() => setHoverSection(null)}
-                style={{ ...paletteItemStyle(hoverSection === s.id),
+                style={{ ...paletteItemStyle(hoverSection === r.section.id),
                          cursor: canWrite ? "grab" : "default", flexShrink: 0 }}>
                 <Group gap={6} wrap="nowrap" align="center">
                   <Text fz={12} fw={600}
-                    style={{ color: done ? TEXT_MUTED : "#0F172A" }}>
-                    {c.code}-{s.section_no}
+                    style={{ color: r.done ? TEXT_MUTED : "#0F172A" }}>
+                    {r.course.code}-{r.section.section_no}
                   </Text>
-                  {c.is_elective && (
+                  {r.course.is_elective && (
                     <Badge size="xs" variant="default" radius="sm"
                       style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
                                color: TEXT_MUTED, borderColor: BORDER }}>
@@ -646,12 +671,12 @@ export default function WeeklyPage() {
                     </Badge>
                   )}
                   {/* T+U+L yerleşimi tamamlanmış şube yeşil onayla işaretlenir. */}
-                  {done && (
+                  {r.done && (
                     <IconCheck size={13} stroke={2.4} color="#16A34A"
                       style={{ marginLeft: "auto", flexShrink: 0 }} />
                   )}
                 </Group>
-                <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
+                <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
               </Paper>
             ))}
           </Stack>
@@ -846,12 +871,13 @@ export default function WeeklyPage() {
             : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
-          defaultRoomBySection={defaultRoomBySection}
           // Sürükleyerek gelindiyse ders bellidir (id modala verilir ki online
           // bileşenini bilsin); boş slota tıklanarak gelindiyse modal dersi sorar.
           fixedSectionId={placing.drag?.kind === "new" ? placing.drag.sectionId : undefined}
-          sections={placing.drag?.kind === "new" ? undefined : paletteItems.map(({ course: c, section: s }) => ({
-            value: String(s.id), label: `${c.code}-${s.section_no} — ${c.name}` }))}
+          sections={placing.drag?.kind === "new" ? undefined
+            : paletteItems.flatMap((r) => r.kind === "section"
+              ? [{ value: String(r.section.id), label: `${r.course.code}-${r.section.section_no} — ${r.course.name}` }]
+              : [])}
           onClose={() => setPlacing(null)}
           onSubmit={(body) => api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
             section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
@@ -886,7 +912,6 @@ export default function WeeklyPage() {
           title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
           onlineBySection={onlineBySection}
-          defaultRoomBySection={defaultRoomBySection}
           fixedSectionId={editing.section.id}
           initial={{
             classroomId: editing.classroom ? String(editing.classroom.id) : null,
@@ -1356,7 +1381,7 @@ type EntryBody = {
 };
 
 /** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
-function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSectionId, onlineBySection, defaultRoomBySection, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
@@ -1367,8 +1392,6 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSect
   fixedSectionId?: number;
   /** K-45: şube id → bileşen bazında online'lık. */
   onlineBySection: Map<number, Record<SessionType, boolean>>;
-  /** Şube id → varsayılan derslik (eklemede ön-doldurma). */
-  defaultRoomBySection: Map<number, number | null>;
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
@@ -1399,16 +1422,6 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSect
         ? (d === "FACE_TO_FACE" ? "ONLINE_SYNC" : d)
         : "FACE_TO_FACE");
   }, [componentOnline]);
-
-  // #3: EKLEMEDE şubenin varsayılan dersliğini ön-doldur — kullanıcı ders
-  // formunda seçtiğini bir daha seçmesin. Düzenlemede (initial var) girişin
-  // KENDİ dersliği korunur, ezilmez.
-  const isEdit = initial != null;
-  useEffect(() => {
-    if (isEdit || effSection == null) return;
-    const def = defaultRoomBySection.get(effSection);
-    setClassroomId(def != null ? String(def) : null);
-  }, [effSection, isEdit]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
     setBusy(true);

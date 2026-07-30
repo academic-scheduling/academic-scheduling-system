@@ -162,7 +162,7 @@ export default function DepartmentsPage() {
       </Group>
 
       <TextInput
-        placeholder="Bölüm kodu veya adı ara"
+        placeholder="Ara"
         value={query}
         onChange={(e) => setQuery(e.currentTarget.value)}
         mb="md"

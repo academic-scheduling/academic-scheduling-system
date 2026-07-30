@@ -441,7 +441,9 @@ export default function ClassroomsPage() {
           <Stack>
             <Select
               label="Bina"
-              placeholder="Seçin"
+              placeholder="Ara veya seç"
+              searchable
+              nothingFoundMessage="Bina bulunamadı"
               data={buildings.map((b) => ({
                 value: String(b.id),
                 label: b.is_external ? `${b.name} (fakülte dışı)` : b.name,

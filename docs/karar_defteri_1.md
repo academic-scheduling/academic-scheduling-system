@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 30 Temmuz 2026 (K-45: bileşen bazında online ders bayrağı)
+**Son güncelleme:** 31 Temmuz 2026 (K-48: ortak/servis dersler — çok-cohort'lu)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -100,6 +100,7 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 | Ders saatleri | Yok | T+U+L + session_type + W8 tamlık kuralı (K-20) |
 | Yazma yetkisi | Yalnız derslik izne bağlı (§2.1) | Beş yetenek bayrağı (K-25) |
 | Alt hesap görünürlüğü | Yalnız atanmış bölümler | Workgroup içi tümü salt-okunur (K-26) |
+| Ders–bölüm ilişkisi | Ders tek bölüme ait | Ortak ders çok-cohort'lu (course_cohorts, K-48) |
 
 ## Açık / Ertelenen Konular
 1. ~~Online derslerin derslik ve cohort davranışı (K-10)~~ → K-19 ile kapandı
@@ -982,3 +983,66 @@ uzatılamaz. Token süresi (60 dk) ve tazeleme aralığı env'den ayarlanabilir 
 
 **Kontrat:** §1'e `POST /auth/refresh` eklendi (login ile aynı cevap şekli).
 **UI:** AuthContext idle izleme + geri sayımlı modal (MantineProvider içinde).
+
+## K-48 · Ortak (servis) dersler: ders çok-cohort'lu olabilir [S+E]
+Fizik/Matematik/Türkçe gibi birden çok mühendislik bölümünün birlikte aldığı
+ortak dersler için. Örnek dosyadaki "Common Courses" programı (1.-4. sınıfların
+yanında ayrı bir sayfa) bunun kanıtı.
+
+**Sorun:** Bir ders şimdiye dek tam olarak TEK bölüme aitti (`courses.department_id`
+tekil FK) ve cohort kimliği motorda skaler `(bölüm, yıl, dönem)` üçlüsüydü. Ortak
+bir ders yalnız bir bölüme kayıtlıysa, motor onun DİĞER bölümlerin cohort'larıyla
+çakışmasını hiç görmüyordu (farklı `department_id` → kural sessizce geçiyordu).
+"Her bölüme ayrı Fizik gir" alternatifi de bozuk: aynı fiziksel ders motor için
+alâkasız N ders olur, cohort esnekliği kaybolur.
+
+**Karar:** Bir dersin cohort'u artık tek üçlü değil, bir **KÜME**. Dersin kendi
+`(department_id, year, semester)`'i birincil cohort olarak `courses` satırında
+kalır; ek cohort'lar yeni **`course_cohorts`** tablosunda durur. Efektif cohort =
+birincil ∪ ek. `courses.is_common` bayrağı ayrı "Ortak Dersler" görünümü + import
+işaretidir; çakışma semantiği bayraktan DEĞİL, cohort kümesinden gelir.
+
+- **Motor:** "aynı cohort mu?" testi **eşitlik**ten **küme kesişimi**ne döndü
+  (`engine.shared_cohort`). W3/W4 gruplaması (orchestrator `scan_cohort`) çoklu
+  üyeliğe geçti: bir giriş ait olduğu HER cohort grubuna girer, ortak dersin
+  başka bölümün cohort'uyla çakışması o grupta yakalanır. Aynı çift birden çok
+  paylaşılan cohort'ta üretilirse ders düzeyinde tekilleştirilir. E4a/E4b ve X2
+  aynı kesişim mantığına geçti.
+- **Geriye uyum [kanıtlı]:** Normal dersin `course_cohorts`'ta satırı yoktur →
+  efektif cohort tek elemanlı → kesişim = eski eşitlik. Adaptör `cohorts` listesi
+  vermeyen eski dict'lerde skaler alanlardan tek eleman türetilir. 404 mevcut
+  test dokunulmadan yeşil kaldı; 9 yeni test (8 motor + 1 ORM uçtan-uca).
+- **Mesaj:** Cohort mesajı çakışmanın gerçekleştiği PAYLAŞILAN cohort'un
+  bölüm/yıl/dönemini yazar (ortak dersin birincil cohort'unu değil). `build_result`
+  paylaşılan cohort'u alıp `a`'nın bir kopyasına bindirir — hiçbir mesaj
+  kurucusunun imzası değişmez.
+- **Yetki:** Ortak dersi düzenleme, sahibi bölümün (`courses.department_id`)
+  üyeliğine bağlı kalır; tüketen bölümler yalnız çakışma için cohort sağlar,
+  yazma hakkı vermez. Merkezî bir birim servis dersine sahip olur.
+- **Şema:** migration `c7e2a9f4b6d1` — `courses.is_common` (default false) +
+  `course_cohorts(course_id, department_id, year, semester)`, UNIQUE(dörtlü),
+  CASCADE (ders veya tüketen bölüm silinince tüketim satırı gider).
+- **Tamamlanan fazlar (31 Tem):**
+  - CRUD + kontrat: `POST/PATCH /courses` `is_common` + `PATCH` `cohorts` (tam
+    değiştirme); `CourseOut` `is_common` + `extra_cohorts`. Ek cohort bölümünde
+    üyelik aranmaz, yalnız workgroup izolasyonu. Yabancı/birincil/tekrar cohort → 400.
+  - Frontend: Dersler formunda "ortak ders" switch'i + cohort editörü (bölüm/
+    sınıf/dönem satırları) + listede "Ortak +N" rozeti. Haftalık'ta 4. bakış
+    "Ortak" (salt-okunur, `GET /weekly-entries?is_common=true`).
+  - Export: `/export/weekly?is_common=true` düz liste (ortak dersler programı).
+  - Bologna import: önizleme satırında "Ortak ders" switch'i; commit `is_common`
+    taşır (`CourseFields`). Ek cohort'lar sonradan ders düzenlemeden atanır.
+  - Test: motor 8 + ORM 1 + CRUD 10 + import 1 = 20 yeni; toplam 424 yeşil.
+- **UX rötuşları + birleştirme (31 Tem, kullanıcı geri bildirimi):**
+  - **Ortak ders BİRLEŞTİRME:** `POST /courses is_common:true` ile aynı kodlu ortak
+    ders varsa yeni kayıt açılmaz, gelen cohort mevcut derse eklenir (aynı ders
+    döner). "Aynı ders iki kez" (kullanıcının iki ayrı "aaa" kaydı) böyle önlenir.
+    Ek cohort'lar yalnız DÜZENLE'den yönetilir; ekleme formunda cohort editörü yok.
+  - **`GET /courses?department_id=X`** artık X'i ek cohort olarak alan ortak dersleri
+    de döner (X'in kendi dersi olmasa da) — tüketen bölüm onları görebilsin.
+  - **Dersler UI:** ortak dersler ayrı "Ortak Dersler" kategorisinde AMA cohort'u
+    olan her dönem grubunda da "Ortak ders" etiketiyle görünür; detayda "Aldığı
+    gruplar" tüm cohort'ları listeler.
+  - **Haftalık + Sınav:** "Ortak" ayrı sekme değil, Sınıf seçicisinde "Ortak dersler"
+    değeri → palet + yazılabilir cohort bakışı.
+  - Toplam 429 backend testi yeşil.

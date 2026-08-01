@@ -293,7 +293,7 @@ Bölüme göre daraltmak isteyen istemci `department_id` filtresini kullanır.
 Cevap (ders + şubeleri iç içe):
 ```json
 [ { "id": 4, "code": "CENG2001", "name": "...", "year": 2, "semester": "SPRING",
-    "department_id": 1, "is_elective": false,
+    "department_id": 1, "is_elective": false, "is_common": false,
     "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
     "theory_online": false, "practice_online": false, "lab_online": false,
     "midterm_count": 1,
@@ -301,12 +301,19 @@ Cevap (ders + şubeleri iç içe):
     "sections": [
       { "id": 7, "section_no": 1, "lecturer": { "id": 3, "full_name": "..." },
         "expected_students": 55, "default_classroom_id": null, "active": true }
-    ] } ]
+    ],
+    "extra_cohorts": [] } ]
 ```
+`is_common` + `extra_cohorts` (K-48): ortak (servis) ders — Fizik/Matematik gibi
+birden çok bölümün aldığı ders. `extra_cohorts` dersin EK cohort'ları
+(`{id, department_id, department_name, year, semester}`); efektif cohort =
+birincil (`department_id/year/semester`) ∪ ek. Motorun cohort kuralları
+(W3/W4, E4a/E4b, X2) bu küme üzerinden **kesişim** olarak çalışır. Normal derste
+`is_common:false`, `extra_cohorts:[]`.
 
 ### POST /courses   (ders — kod düzeyi)
 İstek: `{ "department_id": 1, "year": 2, "semester": "SPRING", "code": "CENG2001",
-  "name": "...", "is_elective": false,
+  "name": "...", "is_elective": false, "is_common": false,
   "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
   "theory_online": false, "practice_online": false, "lab_online": false,
   "midterm_count": 1 }`
@@ -314,9 +321,25 @@ Cevap (ders + şubeleri iç içe):
   bayrağı sunucuda zorla false. PATCH aynı alanları kabul eder.
   ← midterm_count (K-46): dersin vize sayısı (1-3, varsayılan 1); final/büt tektir.
   PATCH ile kayıtlı vizelerin altına çekilemez (409).
+  ← is_common (K-48): ortak ders mi (varsayılan false). Ek cohort'lar PATCH ile.
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
+**Ortak ders BİRLEŞTİRME (K-48):** `is_common:true` ile POST edilirken workgroup'ta
+  aynı KODLU bir ortak ders zaten varsa YENİ kayıt açılmaz — gönderilen
+  (bölüm, sınıf, dönem) o dersin ek cohort'u olur ve o ders (200 gövdesiyle aynı
+  `CourseOut`) döner. Aynı cohort ikinci kez → 409. Böylece "aynı ders iki kez"
+  oluşmaz. (`GET /courses?department_id=X`, X'i EK cohort olarak alan ortak
+  dersleri de döndürür — X'in kendi dersi olmasa bile.)
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
+Ortak ders + ek cohort'lar (K-48): `{ "is_common": true, "cohorts":
+  [ { "department_id": 2, "year": 1, "semester": "FALL" }, ... ] }`
+  ← `cohorts` verilirse ek cohort'lar bu listeyle **tam değiştirilir** (boş liste
+  = ek cohort yok). Yalnız `is_common:true` derste anlamlı. `is_common:false`
+  yapılırsa ek cohort'lar temizlenir.
+  Hata 400: ortak olmayan derse ek cohort · ek cohort dersin birincil cohort'uyla
+  aynı · aynı cohort iki kez · yabancı workgroup bölümü (izolasyon).
+  Not: ek cohort bölümünde ÜYELİK aranmaz — tüketen bölüm yalnız çakışma için
+  cohort sağlar, yazma hakkı vermez (sahibi bölümün yetkisi zaten denetlenir).
 ### DELETE /courses/{id}   ← K-32
 Yalnız **hiç şubesi ve hiç sınavı olmayan** ders silinir.
 Cevap 204 · Hata 409: `{ "detail": "Bu ders silinemez: 2 şube ve 1 sınav bağlı. Önce bunları kaldırın." }`
@@ -335,9 +358,11 @@ Cevap 201 · Hata 409: bu derste bu şube no zaten var.
 ## 7. Haftalık Program — save/submit ayrımı (K-03'ün kalbi)
 Yazma: `can_manage_weekly` + girişin dersinin bölümüne üyelik (K-25).
 
-### GET /weekly-entries?department_id=&year=&semester=&classroom_id=&lecturer_id=
+### GET /weekly-entries?department_id=&year=&semester=&classroom_id=&lecturer_id=&is_common=
 Workgroup'un **tüm** bölümlerinin girişleri döner (K-26) — çakışmayı çözebilmek
 için başka bölümün doluluğunu görmek şarttır.
+`is_common=true` (K-48): yalnız ortak (servis) derslerin girişleri — UI'daki
+"Ortak Dersler" bakışı. `/export/weekly` aynı filtreyi taşır.
 Cevap: `[ { "id", "section": { "id", "section_no", "course": {...} },
   "classroom": {...} | null, "day_of_week": 1, "start_slot": 3, "slot_count": 2,
   "session_type": "THEORY" | "PRACTICE" | "LAB",

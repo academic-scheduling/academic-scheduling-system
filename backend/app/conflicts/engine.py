@@ -116,7 +116,41 @@ def courses_conflict(sections_a, sections_b):
 
 def is_async(entry):
     """K-19: ONLINE_ASYNC giris cakisma karsilastirmalarina girmez."""
-    return entry.get("delivery_mode") == "ONLINE_ASYNC"  
+    return entry.get("delivery_mode") == "ONLINE_ASYNC"
+
+
+def effective_cohorts(entry):
+    """Bir girisin efektif cohort KUMESI (K-48).
+
+    Ortak ders birden cok cohort'a ait olabilir; adaptor 'cohorts' listesini
+    (her biri {department_id, department_name, year, semester}) besler. Liste
+    yoksa (normal ders veya eski dict) skaler alanlardan tek elemanli kume
+    turetilir -> bugunku davranis birebir korunur (geriye uyumlu)."""
+    cs = entry.get("cohorts")
+    if cs:
+        return cs
+    return [{
+        "department_id": entry.get("department_id"),
+        "department_name": entry.get("department_name"),
+        "year": entry.get("year"),
+        "semester": entry.get("semester"),
+    }]
+
+
+def _cohort_key(c):
+    return (c["department_id"], c["year"], c["semester"])
+
+
+def shared_cohort(a, b):
+    """a ve b'nin ORTAK cohort'u (varsa ilki), yoksa None. Skaler eslik yerine
+    kume kesisimi: iki dersin cohort kumeleri en az bir (bolum,yil,donem)
+    paylasiyorsa ayni gruptalar. Normal derslerde kume tek elemanli oldugundan
+    kesisim = eski eslik testi."""
+    b_keys = {_cohort_key(c) for c in effective_cohorts(b)}
+    for c in effective_cohorts(a):
+        if _cohort_key(c) in b_keys:
+            return c
+    return None
 #----------------------------------------exam collision tests-------------------------------------------------------------------
 
 def minutes_since_midnight(t):
@@ -171,19 +205,15 @@ def e3_exam_lecturer_conflict(a, b):
 def e4_exam_cohort_conflict(a, b):
     # 1) Aynı öğrenci grubu mu? VE zamanları kesişiyor mu?
     if a["course_id"] == b["course_id"]:
-        return None  
-    
-    same_cohort = (
-       a["department_id"] == b["department_id"]
-       and a["year"] == b["year"]
-       and a["semester"] == b["semester"]
-    )
+        return None
 
-    if same_cohort and exam_sessions_overlap(a, b): 
+    cohort = shared_cohort(a, b)          # K-48: kume kesisimi (ortak ders dahil)
+
+    if cohort and exam_sessions_overlap(a, b):
         if not a["is_elective"] and not b["is_elective"]:
-            return {"rule_id": "E4a", "severity": "HARD"}
+            return {"rule_id": "E4a", "severity": "HARD", "cohort": cohort}
         else:
-            return {"rule_id": "E4b", "severity": "WARNING"}
+            return {"rule_id": "E4b", "severity": "WARNING", "cohort": cohort}
         
 
 def e5_exam_capacity(a):
@@ -272,16 +302,12 @@ def x2_exam_weekly_course_conflict(exam, weekly):
     # midterm , aynı cohortun derslerinden biriyle çakışıyor -> WARNING
     if exam["course_id"] == weekly["course_id"]:
         return None  # aynı dersin sınavı kendi dersiyle çakışıyorsa → X1
-    
-    same_cohort = (
-       exam["department_id"] == weekly["department_id"]
-       and exam["year"] == weekly["year"]
-       and exam["semester"] == weekly["semester"]
-    )  
 
-    if same_cohort and exam_weekly_overlap(exam, weekly):
-        return {"rule_id": "X2", "severity": "WARNING"}
-    
+    cohort = shared_cohort(exam, weekly)   # K-48: kume kesisimi (ortak ders dahil)
+
+    if cohort and exam_weekly_overlap(exam, weekly):
+        return {"rule_id": "X2", "severity": "WARNING", "cohort": cohort}
+
     return None
 
 

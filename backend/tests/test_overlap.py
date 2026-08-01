@@ -28,6 +28,7 @@ from app.conflicts.engine import e7_excess_capacity
 from app.conflicts.orchestrator import scan_completeness
 from app.conflicts.orchestrator import scan_exams
 from app.conflicts.orchestrator import scan_cross
+from app.conflicts.engine import effective_cohorts, shared_cohort
 
 
 
@@ -970,3 +971,97 @@ def test_scan_cross_async_weekly_skipped():
     exam = base_exam(); exam["course_id"] = 1; exam["exam_type"] = "MIDTERM"
     weekly = base_session(); weekly["course_id"] = 2; weekly["delivery_mode"] = "ONLINE_ASYNC"
     assert scan_cross([exam], [weekly], True) == []
+
+
+# ==================================================================
+# K-48: ortak (servis) dersler — çok-cohort'lu çakışma
+# ==================================================================
+
+def _cohort(dep_id, dep_name, year, sem="FALL"):
+    return {"department_id": dep_id, "department_name": dep_name,
+            "year": year, "semester": sem}
+
+
+def test_effective_cohorts_fallback_single():
+    # 'cohorts' anahtarı olmayan (normal) dict -> skaler alanlardan tek eleman.
+    a = base_session()                     # department_id=2, year=2, FALL
+    cs = effective_cohorts(a)
+    assert len(cs) == 1
+    assert (cs[0]["department_id"], cs[0]["year"], cs[0]["semester"]) == (2, 2, "FALL")
+
+
+def test_shared_cohort_intersection():
+    a = base_session(); a["cohorts"] = [_cohort(99, "EEE", 2), _cohort(2, "CENG", 2)]
+    b = base_session(); b["cohorts"] = [_cohort(2, "CENG", 2)]
+    sc = shared_cohort(a, b)
+    assert sc is not None and sc["department_id"] == 2      # ortak: CENG-2
+    # kesişim yoksa None
+    c = base_session(); c["cohorts"] = [_cohort(7, "ME", 3)]
+    assert shared_cohort(a, c) is None
+
+
+def test_scan_cohort_common_course_crosses_into_shared_cohort():
+    # Ortak ders X (birincil EEE-2, EK CENG-2), normal ders Y (CENG-2), aynı
+    # gün/slot. Paylaşılan CENG-2 cohort'unda W3 doğar. Skaler eşitlik olsaydı
+    # (X birincil EEE) çakışma GÖRÜLMEZDİ — K-48'in kanıtı.
+    x = base_session(); x["id"] = 1; x["course_id"] = 10; x["section_id"] = 100
+    x["department_id"] = 99; x["cohorts"] = [_cohort(99, "EEE", 2), _cohort(2, "CENG", 2)]
+    y = base_session(); y["id"] = 2; y["course_id"] = 20; y["section_id"] = 200
+    y["department_id"] = 2; y["cohorts"] = [_cohort(2, "CENG", 2)]
+    results = scan_cohort([x, y])
+    assert len(results) == 1
+    assert results[0]["rule_id"] == "W3" and results[0]["severity"] == "HARD"
+    assert "CENG" in results[0]["message"]                 # paylaşılan cohort adı
+    # affected paylaşılan cohort'un bölümünü taşır (rapor süzmesi için)
+    assert any(ref["department_id"] == 2 for ref in results[0]["affected"])
+
+
+def test_scan_cohort_common_course_unshared_no_conflict():
+    # X ortak (EEE-2 + CENG-2), Y yalnız ME-2 -> ortak cohort yok -> W3 YOK.
+    x = base_session(); x["id"] = 1; x["course_id"] = 10; x["section_id"] = 100
+    x["cohorts"] = [_cohort(99, "EEE", 2), _cohort(2, "CENG", 2)]
+    y = base_session(); y["id"] = 2; y["course_id"] = 20; y["section_id"] = 200
+    y["cohorts"] = [_cohort(7, "ME", 2)]
+    assert scan_cohort([x, y]) == []
+
+
+def test_scan_cohort_common_pair_two_shared_cohorts_dedup():
+    # İki ortak ders iki cohort'u (EEE-2, CENG-2) paylaşıyor, çakışık.
+    # Her grupta üretilir ama ders düzeyinde tek W3 kalmalı (tekilleştirme).
+    x = base_session(); x["id"] = 1; x["course_id"] = 10; x["section_id"] = 100
+    x["cohorts"] = [_cohort(99, "EEE", 2), _cohort(2, "CENG", 2)]
+    y = base_session(); y["id"] = 2; y["course_id"] = 20; y["section_id"] = 200
+    y["cohorts"] = [_cohort(99, "EEE", 2), _cohort(2, "CENG", 2)]
+    results = scan_cohort([x, y])
+    assert len(results) == 1 and results[0]["rule_id"] == "W3"
+
+
+def test_e4_common_exam_shared_cohort_hard():
+    # Ortak dersin sınavı (birincil EEE-1, ek CENG-1) ile normal CENG-1 zorunlu
+    # dersin sınavı aynı anda -> paylaşılan CENG-1'de E4a HARD.
+    a = base_exam(); a["course_id"] = 10; a["year"] = 1; a["department_id"] = 99
+    a["cohorts"] = [_cohort(99, "EEE", 1), _cohort(2, "CENG", 1)]
+    b = base_exam(); b["course_id"] = 20; b["year"] = 1; b["department_id"] = 2
+    b["cohorts"] = [_cohort(2, "CENG", 1)]
+    hit = e4_exam_cohort_conflict(a, b)
+    assert hit is not None and hit["rule_id"] == "E4a" and hit["severity"] == "HARD"
+    assert hit["cohort"]["department_id"] == 2              # paylaşılan CENG-1
+
+
+def test_e4_common_exam_unshared_no_conflict():
+    a = base_exam(); a["course_id"] = 10; a["cohorts"] = [_cohort(99, "EEE", 1)]
+    b = base_exam(); b["course_id"] = 20; b["cohorts"] = [_cohort(2, "CENG", 1)]
+    assert e4_exam_cohort_conflict(a, b) is None
+
+
+def test_x2_common_exam_shared_cohort_warning():
+    # Ortak dersin vizesi (ek EEE-2 cohort'u), EEE-2 haftalık dersiyle çakışıyor.
+    exam = base_exam(); exam["exam_type"] = "MIDTERM"; exam["course_id"] = 10
+    exam["cohorts"] = [_cohort(2, "CENG", 2), _cohort(99, "EEE", 2)]
+    weekly = base_session(); weekly["course_id"] = 20
+    weekly["cohorts"] = [_cohort(99, "EEE", 2)]
+    weekly["day_of_week"] = date(2026, 6, 15).isoweekday()  # sınav tarihinin günü
+    weekly["start_slot"] = 3; weekly["slot_count"] = 2       # 10:30-12:15, sınav 10:00-11:30
+    hit = x2_exam_weekly_course_conflict(exam, weekly)
+    assert hit is not None and hit["rule_id"] == "X2"
+    assert hit["cohort"]["department_id"] == 99             # paylaşılan EEE-2

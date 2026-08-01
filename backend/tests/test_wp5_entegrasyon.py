@@ -12,6 +12,8 @@ cevabında şu rule_id var mı" diye bakılır.
 from tests.helpers import client, admin_headers, foreign_admin_headers, _u
 from tests.test_wp2_courses import make_department, make_lecturer
 from tests.test_wp3_weekly import make_classroom, make_entry, make_section
+from app.db import SessionLocal
+from app.models import CourseCohort, SemesterType
 
 
 # ------------------------------------------------------------------
@@ -377,3 +379,48 @@ def test_w8_completeness_appears_in_full_scan():
     r = client.get("/conflicts", headers=h)
     assert r.status_code == 200, r.text
     assert "W8" in rule_ids(r.json()["warnings"])
+
+
+# ==================================================================
+# K-48: ortak (servis) ders — çok-cohort'lu çakışma (ORM → adaptör → motor)
+# ==================================================================
+
+def _depB_w3(hard, dep_id):
+    """Tam taramadaki HARD sonuçlardan, verilen bölümü etkileyen W3'ler."""
+    return [c for c in hard if c["rule_id"] == "W3"
+            and any(ref.get("department_id") == dep_id for ref in c["affected"])]
+
+
+def test_common_course_extra_cohort_triggers_cross_cohort_w3():
+    """Uçtan uca: ortak dersi EK cohort'a bağlayınca farklı bölümdeki dersle W3
+    doğar; bağlamadan ÖNCE doğmaz (bölümler-arası izolasyon korunur). Adaptörün
+    `cohorts` beslemesini + motorun kesişim mantığını gerçek DB üzerinden kanıtlar."""
+    h = admin_headers()
+    depA = make_department(h)
+    depB = make_department(h)                 # benzersiz -> tam taramada izole
+    slot = {"day_of_week": 3, "start_slot": 4, "slot_count": 2}
+    secA = make_section(h, dep=depA)          # depA-2-FALL
+    secB = make_section(h, dep=depB)          # depB-2-FALL, farklı hoca
+    make_entry(h, secA, **slot)
+    make_entry(h, secB, **slot)               # aynı gün/slot, dersliksiz -> W1/W2 yok
+
+    # ORTAK DEĞİLKEN: farklı cohort -> depB'yi etkileyen W3 yok
+    hard0 = client.get("/conflicts", headers=h).json()["hard"]
+    assert _depB_w3(hard0, depB["id"]) == []
+
+    # A dersini depB-2-FALL cohort'una da bağla (ortak ders yap) — doğrudan DB
+    db = SessionLocal()
+    try:
+        db.add(CourseCohort(course_id=secA["course"]["id"],
+                            department_id=depB["id"], year=2,
+                            semester=SemesterType.FALL))
+        db.commit()
+    finally:
+        db.close()
+
+    # Artık paylaşılan depB-2 cohort'unda A ile B çakışır -> W3 HARD
+    hard1 = client.get("/conflicts", headers=h).json()["hard"]
+    mine = _depB_w3(hard1, depB["id"])
+    assert len(mine) == 1
+    assert mine[0]["severity"] == "HARD"
+    assert len({ref["id"] for ref in mine[0]["affected"]}) == 2   # A ve B girişleri

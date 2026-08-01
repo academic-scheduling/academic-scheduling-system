@@ -25,7 +25,7 @@ from app.conflicts.orchestrator import (
     scan_completeness, scan_cross, scan_exams, scan_weekly,
 )
 from app.models import (
-    Classroom, Course, CourseSection, Department, Exam, Workgroup,
+    Classroom, Course, CourseCohort, CourseSection, Department, Exam, Workgroup,
     WeeklyScheduleEntry,
 )
 
@@ -33,6 +33,26 @@ from app.models import (
 # ==================================================================
 # Adaptorler: ORM nesnesi -> motorun bekledigi duz dict
 # ==================================================================
+
+def _course_cohorts(c: Course) -> list[dict]:
+    """Dersin efektif cohort KUMESI (K-48): birincil (courses satiri) + ek
+    cohort'lar (course_cohorts). Normal derste tek eleman -> eski davranis.
+    Motor 'ayni cohort mu' testini bu kume uzerinden kesisim olarak yapar;
+    department_name mesajda paylasilan cohort'un adini yazabilmek icin tasinir."""
+    cohorts = [{
+        "department_id": c.department_id,
+        "department_name": c.department.name,
+        "year": c.year,
+        "semester": c.semester.value,
+    }]
+    for cc in c.extra_cohorts:
+        cohorts.append({
+            "department_id": cc.department_id,
+            "department_name": cc.department.name,
+            "year": cc.year,
+            "semester": cc.semester.value,
+        })
+    return cohorts
 
 def _weekly_to_dict(e: WeeklyScheduleEntry) -> dict:
     """Haftalik giris -> motor dict'i.
@@ -57,6 +77,7 @@ def _weekly_to_dict(e: WeeklyScheduleEntry) -> dict:
         "department_name": c.department.name,      # mesajlarda ad (id degil)
         "year": c.year,
         "semester": c.semester.value,
+        "cohorts": _course_cohorts(c),             # K-48: efektif cohort kumesi
         "is_elective": c.is_elective,
         "expected_students": s.expected_students,
         # K-23: online giriste derslik yoktur -> kapasite karsilastirmasi da yok
@@ -94,6 +115,7 @@ def _exam_to_dict(x: Exam) -> dict:
         "department_name": c.department.name,
         "year": c.year,
         "semester": c.semester.value,
+        "cohorts": _course_cohorts(c),             # K-48: efektif cohort kumesi
         "is_elective": c.is_elective,
         "expected_students": x.total_expected_students,   # property (K-16)
         "rooms": [
@@ -131,6 +153,11 @@ def _weekly_universe(db: Session, workgroup_id: int) -> list[dict]:
             selectinload(WeeklyScheduleEntry.section)
             .selectinload(CourseSection.course)
             .selectinload(Course.department),
+            # K-48: ortak dersin ek cohort'lari + onlarin bolumu (mesajda ad)
+            selectinload(WeeklyScheduleEntry.section)
+            .selectinload(CourseSection.course)
+            .selectinload(Course.extra_cohorts)
+            .selectinload(CourseCohort.department),
             selectinload(WeeklyScheduleEntry.classroom),
         )
         .all()
@@ -155,6 +182,10 @@ def _exam_universe(db: Session, workgroup_id: int) -> list[dict]:
         .options(
             selectinload(Exam.course).selectinload(Course.department),
             selectinload(Exam.course).selectinload(Course.sections),
+            # K-48: ortak dersin ek cohort'lari + onlarin bolumu (mesajda ad)
+            selectinload(Exam.course)
+            .selectinload(Course.extra_cohorts)
+            .selectinload(CourseCohort.department),
             selectinload(Exam.classrooms),
         )
         .all()

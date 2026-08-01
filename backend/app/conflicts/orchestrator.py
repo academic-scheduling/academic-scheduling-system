@@ -2,7 +2,7 @@ from app.conflicts.engine import (
     w1_classroom_conflict, w2_lecturer_conflict,
     w5_duplicate_session,
     w6_out_of_window, w7_capacity,
-    courses_conflict, first_overlapping_sessions, is_async,
+    courses_conflict, first_overlapping_sessions, is_async, effective_cohorts,
     e1_exam_classroom_conflict, e2_duplicate_exam,
     e3_exam_lecturer_conflict, e4_exam_cohort_conflict,
     e5_exam_capacity, e5a_missing_exam_capacity,
@@ -65,7 +65,8 @@ def scan_exams(exams):
                          e3_exam_lecturer_conflict, e4_exam_cohort_conflict):
                 hit = rule(a, b)
                 if hit:
-                    results.append(build_result(hit["rule_id"], hit["severity"], a, b))
+                    results.append(build_result(
+                        hit["rule_id"], hit["severity"], a, b, hit.get("cohort")))
     return results
 
 
@@ -94,23 +95,28 @@ def scan_cross(exams, weeklies, check_exam_vs_course):
                          x3_exam_weekly_lecturer_conflict):
                 hit = rule(exam, weekly)
                 if hit:
-                    results.append(build_result(hit["rule_id"], hit["severity"], exam, weekly))
-    return results  
+                    results.append(build_result(
+                        hit["rule_id"], hit["severity"], exam, weekly, hit.get("cohort")))
+    return results
 
 
 def scan_cohort(entries):
     results = []
+    seen = set()   # (rule_id, frozenset(giris_id cifti)) — ayni cift birden cok
 
-    # Asama 1: cohort'a gore grupla -> (bolum, yil, donem) -> girisler
-    cohorts = {}
+    # Asama 1: cohort'a gore grupla. K-48: bir giris (ortak ders) BIRDEN COK
+    # cohort'a ait olabilir -> ait oldugu HER cohort grubuna eklenir. Boylece
+    # ortak dersin baska bolumun cohort'uyla cakismasi o grupta yakalanir.
+    cohorts = {}          # key -> girisler
+    cohort_meta = {}      # key -> cohort dict'i (department_name mesaj icin)
     for e in entries:
-        key = (e["department_id"], e["year"], e["semester"])
-        if key not in cohorts:
-            cohorts[key] = []
-        cohorts[key].append(e)
+        for c in effective_cohorts(e):
+            key = (c["department_id"], c["year"], c["semester"])
+            cohorts.setdefault(key, []).append(e)
+            cohort_meta.setdefault(key, c)
 
     # Asama 2 + 3: her cohort'u kendi icinde islet
-    for cohort_entries in cohorts.values():
+    for key, cohort_entries in cohorts.items():
         # ders_id -> {is_elective, rep (temsili giris), sections: {section_id: [oturumlar]}}
         courses = {}
         for e in cohort_entries:
@@ -139,7 +145,14 @@ def scan_cohort(entries):
                     # oturum cifti (kural seti §A notu). Bulunamazsa rep'e duser.
                     witness = first_overlapping_sessions(sections_a, sections_b)
                     obj_a, obj_b = witness if witness else (A["rep"], B["rep"])
-                    results.append(build_result(rule_id, severity, obj_a, obj_b))
+                    # Iki ortak ders birden cok cohort paylasirsa ayni cift her
+                    # grupta uretilir; ders duzeyinde tek uyari yeter -> tekille.
+                    dedup = (rule_id, frozenset((obj_a["id"], obj_b["id"])))
+                    if dedup in seen:
+                        continue
+                    seen.add(dedup)
+                    results.append(build_result(
+                        rule_id, severity, obj_a, obj_b, cohort_meta[key]))
     return results
 
 

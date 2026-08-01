@@ -205,14 +205,28 @@ def _affected_ref(obj):
     }
 
 
-def build_result(rule_id, severity, a, b=None):
-    """Bir kural vuruşunu tam ConflictResult'a çevirir."""
-    affected = [_affected_ref(a)]
+def build_result(rule_id, severity, a, b=None, cohort=None):
+    """Bir kural vuruşunu tam ConflictResult'a çevirir.
+
+    cohort (K-48): cohort kurallarında (W3/W4/E4a/E4b/X2) çakışmanın gerçekleştiği
+    ORTAK cohort. Ortak (servis) derste `a`'nın birincil cohort'u paylaşılan
+    cohort'tan farklı olabilir; mesaj paylaşılan cohort'un bölüm/yıl/dönemini
+    yazmalı. Verildiğinde `a`'nın bir kopyasına bu alanlar bindirilir; hiçbir
+    mesaj kurucusunun imzası değişmez. Normal derste cohort=None -> eski davranış.
+    """
+    a_msg = a
+    if cohort is not None:
+        a_msg = {**a,
+                 "department_id": cohort.get("department_id"),
+                 "department_name": cohort.get("department_name"),
+                 "year": cohort.get("year"),
+                 "semester": cohort.get("semester")}
+    affected = [_affected_ref(a_msg)]
     if b is not None:                  # tekil kurallar (W6/W7/E5/E6...) tek nesne
         affected.append(_affected_ref(b))
     return {
         "severity": severity,
         "rule_id": rule_id,
-        "message": build_message(rule_id, a, b),
+        "message": build_message(rule_id, a_msg, b),
         "affected": affected,
     }

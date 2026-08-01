@@ -504,6 +504,12 @@ class Course(Base):
     # K-46: dersin vize sayisi (1-3). Sinav eklerken "kacinci vize" bu sinira
     # kadar sorulur; final/but bu alandan bagimsiz, ders basina tektir.
     midterm_count: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
+    # K-48: ortak (servis) ders mi — Fizik/Matematik gibi birden cok bolumun aldigi
+    # ders. Cakisma semantigi bu bayraktan DEGIL, cohort kumesinden gelir; bayrak
+    # yalnizca ayri "Ortak Dersler" gorunumu + import isaretidir. Dersin KENDI
+    # (department_id, year, semester) birincil cohort'u kalir; ek cohort'lar
+    # course_cohorts'ta durur ve efektif cohort = birincil ∪ ek.
+    is_common: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
     department: Mapped["Department"] = relationship(back_populates="courses")
@@ -511,6 +517,10 @@ class Course(Base):
         back_populates="course"
     )
     exams: Mapped[list["Exam"]] = relationship(back_populates="course")
+    # Ek cohort'lar (birincil cohort haric). Ders silinince birlikte gider.
+    extra_cohorts: Mapped[list["CourseCohort"]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
 
 
 class CourseSection(Base):
@@ -552,6 +562,51 @@ class CourseSection(Base):
     schedule_entries: Mapped[list["WeeklyScheduleEntry"]] = relationship(
         back_populates="section"
     )
+
+
+class CourseCohort(Base):
+    """course_cohorts — ortak dersin EK cohort'lari (K-48).
+
+    Bir ortak ders (courses.is_common) birden cok (bolum, yil, donem) cohort'una
+    aittir. Dersin KENDI (department_id, year, semester)'i birincil cohort olarak
+    courses satirinda kalir; bu tablo yalnizca EK cohort'lari tutar. Efektif cohort
+    kumesi = birincil ∪ bu satirlar. Motorun cohort kurallari (W3/W4, E4a/E4b, X2)
+    'ayni cohort mu' testini bu kume uzerinden KESISIM olarak yapar.
+
+    Normal (ortak olmayan) dersin bu tabloda hic satiri yoktur -> efektif cohort
+    tek elemanlidir -> bugunku davranis birebir korunur.
+    """
+
+    __tablename__ = "course_cohorts"
+    __table_args__ = (
+        UniqueConstraint(
+            "course_id", "department_id", "year", "semester",
+            name="uq_course_cohorts_identity",
+        ),
+        CheckConstraint("year BETWEEN 1 AND 6", name="ck_course_cohorts_year_range"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    course_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("courses.id", ondelete="CASCADE")
+    )
+    # CASCADE: tuketen bolum silinirse (K-27 geregi zaten bos olmali) tuketim
+    # satiri da gider. Ortak dersin kendisi sahibi bolume bagli kaldigindan silinmez.
+    department_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("departments.id", ondelete="CASCADE")
+    )
+    year: Mapped[int] = mapped_column(SmallInteger)
+    semester: Mapped[SemesterType] = mapped_column(
+        Enum(SemesterType, name="semester_type")
+    )
+
+    course: Mapped["Course"] = relationship(back_populates="extra_cohorts")
+    department: Mapped["Department"] = relationship()
+
+    @property
+    def department_name(self) -> str:
+        """CourseCohortOut için: UI ek cohort'ta id değil bölüm adını gösterir."""
+        return self.department.name
 
 
 class Slot(Base):

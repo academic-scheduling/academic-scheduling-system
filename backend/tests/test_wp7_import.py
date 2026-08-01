@@ -100,74 +100,145 @@ def _make_department(h):
     return r.json()
 
 
-def _import(h, dep_id, url=IMPORT_URL):
-    return client.post("/import/courses", json={"department_id": dep_id, "url": url}, headers=h)
+def _preview(h, dep_id, url=IMPORT_URL):
+    return client.post("/import/courses/preview",
+                       json={"department_id": dep_id, "url": url}, headers=h)
 
 
-def test_import_adds_all_courses(mock_fetch):
+def _commit(h, dep_id, courses):
+    return client.post("/import/courses",
+                       json={"department_id": dep_id, "courses": courses}, headers=h)
+
+
+def _strip_exists(courses):
+    """Onizleme ciktisini commit govdesine cevir (exists alanini at)."""
+    return [{k: v for k, v in c.items() if k != "exists"} for c in courses]
+
+
+# --- Faz 1: onizleme (yazma yok) ---
+
+def test_preview_lists_all_courses_and_writes_nothing(mock_fetch):
     h = admin_headers()
     dep = _make_department(h)
-    r = _import(h, dep["id"])
+    r = _preview(h, dep["id"])
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["total_parsed"] == 71
-    assert body["added_count"] == 71
-    assert body["skipped_count"] == 0
-    # Gercekten kaydedildi mi?
+    courses = r.json()["courses"]
+    assert len(courses) == 71
+    assert all(c["exists"] is False for c in courses)   # bolum bos
+    # Onizleme hicbir sey EKLEMEDI:
     got = client.get(f"/courses?department_id={dep['id']}", headers=h).json()
-    assert len(got) == 71
+    assert got == []
 
 
-def test_reimport_skips_all(mock_fetch):
+def test_preview_marks_existing(mock_fetch):
     h = admin_headers()
     dep = _make_department(h)
-    _import(h, dep["id"])
-    body = _import(h, dep["id"]).json()          # ikinci kez: hepsi zaten var
-    assert body["added_count"] == 0
-    assert body["skipped_count"] == 71
-
-
-def test_import_skips_only_existing(mock_fetch):
-    h = admin_headers()
-    dep = _make_department(h)
-    # CENG 1007'yi elle onceden ekle -> import onu atlar, kalan 70'i ekler.
     client.post("/courses", json={
         "department_id": dep["id"], "year": 1, "semester": "FALL",
         "code": "CENG 1007", "name": "Elle eklenen",
     }, headers=h)
-    body = _import(h, dep["id"]).json()
-    assert body["added_count"] == 70
-    assert body["skipped_count"] == 1
-    assert body["skipped"][0]["code"] == "CENG 1007"
+    courses = _preview(h, dep["id"]).json()["courses"]
+    existing = [c for c in courses if c["exists"]]
+    assert len(existing) == 1 and existing[0]["code"] == "CENG 1007"
 
 
-def test_import_invalid_url(mock_fetch):
+def test_preview_invalid_url(mock_fetch):
     h = admin_headers()
     dep = _make_department(h)
-    r = _import(h, dep["id"], url="https://obs.mu.edu.tr/?lang=tr")   # curSunit yok
+    r = _preview(h, dep["id"], url="https://obs.mu.edu.tr/?lang=tr")  # curSunit yok
     assert r.status_code == 400
 
 
-def test_import_foreign_department(mock_fetch):
+# --- Faz 2: secilenleri ekle ---
+
+def test_commit_adds_selected_only(mock_fetch):
     h = admin_headers()
-    dep = _make_department(h)                     # bizim workgroup'ta
+    dep = _make_department(h)
+    parsed = _preview(h, dep["id"]).json()["courses"]
+    subset = _strip_exists(parsed[:3])              # yalnizca uc dersi sec
+    body = _commit(h, dep["id"], subset).json()
+    assert body["added_count"] == 3
+    assert body["skipped_count"] == 0
+    got = client.get(f"/courses?department_id={dep['id']}", headers=h).json()
+    assert len(got) == 3
+
+
+def test_commit_persists_edited_fields(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    parsed = _preview(h, dep["id"]).json()["courses"]
+    one = _strip_exists(parsed[:1])
+    one[0]["name"] = "Düzenlenmiş Ad"               # kullanici adi degistirdi
+    one[0]["is_elective"] = True
+    _commit(h, dep["id"], one)
+    got = client.get(f"/courses?department_id={dep['id']}", headers=h).json()
+    assert got[0]["name"] == "Düzenlenmiş Ad"
+    assert got[0]["is_elective"] is True
+
+
+def test_commit_persists_is_common(mock_fetch):
+    # K-48: içe aktarırken ortak işaretlenen ders is_common=true olarak kaydedilir.
+    h = admin_headers()
+    dep = _make_department(h)
+    one = _strip_exists(_preview(h, dep["id"]).json()["courses"])[:1]
+    one[0]["is_common"] = True
+    _commit(h, dep["id"], one)
+    got = client.get(f"/courses?department_id={dep['id']}", headers=h).json()
+    assert got[0]["is_common"] is True
+
+
+def test_commit_skips_existing_server_side(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    parsed = _strip_exists(_preview(h, dep["id"]).json()["courses"])
+    _commit(h, dep["id"], parsed)                   # hepsini ekle
+    body = _commit(h, dep["id"], parsed).json()     # ayni kumeyi tekrar gonder
+    assert body["added_count"] == 0
+    assert body["skipped_count"] == 71
+
+
+def test_commit_invalid_semester_rejected(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    bad = [{"code": "X 1", "name": "Kötü", "year": 1, "semester": "AUTUMN"}]
+    r = _commit(h, dep["id"], bad)
+    assert r.status_code == 422
+
+
+def test_preview_foreign_department(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)                        # bizim workgroup'ta
     fh = foreign_admin_headers()
-    r = _import(fh, dep["id"])                    # yabanci admin bizim bolume yazamaz
+    r = _preview(fh, dep["id"])                      # yabanci admin bizim bolume bakamaz
     assert r.status_code == 400
 
 
-def test_import_requires_course_permission(mock_fetch):
+def test_commit_foreign_department(mock_fetch):
     h = admin_headers()
     dep = _make_department(h)
-    sub = sub_headers(department_ids=[dep["id"]])  # can_manage_courses KAPALI (K-25)
-    r = _import(sub, dep["id"])
+    fh = foreign_admin_headers()
+    r = _commit(fh, dep["id"], [{"code": "X 1", "name": "X", "year": 1, "semester": "FALL"}])
+    assert r.status_code == 400
+
+
+def test_preview_requires_course_permission(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    sub = sub_headers(department_ids=[dep["id"]])    # can_manage_courses KAPALI (K-25)
+    assert _preview(sub, dep["id"]).status_code == 403
+
+
+def test_commit_requires_course_permission(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    sub = sub_headers(department_ids=[dep["id"]])
+    r = _commit(sub, dep["id"], [{"code": "X 1", "name": "X", "year": 1, "semester": "FALL"}])
     assert r.status_code == 403
 
 
-def test_import_sub_with_permission_succeeds(mock_fetch):
+def test_sub_with_permission_can_preview_and_commit(mock_fetch):
     h = admin_headers()
     dep = _make_department(h)
     sub = sub_headers(can_manage_courses=True, department_ids=[dep["id"]])
-    r = _import(sub, dep["id"])
-    assert r.status_code == 200, r.text
-    assert r.json()["added_count"] == 71
+    parsed = _strip_exists(_preview(sub, dep["id"]).json()["courses"])
+    assert _commit(sub, dep["id"], parsed).json()["added_count"] == 71

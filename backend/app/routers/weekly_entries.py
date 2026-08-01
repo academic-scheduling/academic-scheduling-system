@@ -132,6 +132,7 @@ def list_weekly_entries(
     semester: SemesterType | None = Query(None),
     classroom_id: int | None = Query(None),
     lecturer_id: int | None = Query(None),
+    is_common: bool | None = Query(None, description="K-48: yalnız ortak dersler"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -148,6 +149,8 @@ def list_weekly_entries(
         q = q.filter(WeeklyScheduleEntry.classroom_id == classroom_id)
     if lecturer_id is not None:
         q = q.filter(CourseSection.lecturer_id == lecturer_id)
+    if is_common is not None:                          # K-48: "Ortak Dersler" görünümü
+        q = q.filter(Course.is_common.is_(is_common))
     return q.order_by(
         WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot
     ).all()

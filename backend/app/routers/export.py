@@ -50,6 +50,7 @@ def export_weekly(
     semester: SemesterType | None = Query(None),
     classroom_id: int | None = Query(None),
     lecturer_id: int | None = Query(None),
+    is_common: bool | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -67,6 +68,8 @@ def export_weekly(
         q = q.filter(WeeklyScheduleEntry.classroom_id == classroom_id)
     if lecturer_id is not None:
         q = q.filter(CourseSection.lecturer_id == lecturer_id)
+    if is_common is not None:                          # K-48: "Ortak Dersler" bakışı
+        q = q.filter(Course.is_common.is_(is_common))
     entries = q.order_by(
         WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot
     ).all()

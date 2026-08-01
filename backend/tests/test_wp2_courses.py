@@ -253,3 +253,228 @@ def test_delete_course_isolation_and_permission():
     course = make_course(h, make_department(h))
     assert client.delete(f"/courses/{course['id']}", headers=foreign_admin_headers()).status_code == 404
     assert client.delete(f"/courses/{course['id']}", headers=sub_headers()).status_code == 403
+
+
+# --- ortak (servis) ders + ek cohort'lar (K-48) ---
+
+def _patch_course(h, course_id, body):
+    return client.patch(f"/courses/{course_id}", json=body, headers=h)
+
+
+def test_course_out_has_common_fields_defaults():
+    h = admin_headers()
+    course = make_course(h, make_department(h))
+    assert course["is_common"] is False
+    assert course["extra_cohorts"] == []
+
+
+def test_create_common_course_flag():
+    h = admin_headers()
+    course = make_course(h, make_department(h), is_common=True)
+    assert course["is_common"] is True
+
+
+def test_add_extra_cohorts_to_common_course():
+    h = admin_headers()
+    depA = make_department(h)
+    depB = make_department(h)
+    course = make_course(h, depA)                      # depA-2-SPRING (birincil)
+    r = _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["is_common"] is True
+    assert len(body["extra_cohorts"]) == 1
+    ec = body["extra_cohorts"][0]
+    assert ec["department_id"] == depB["id"]
+    assert ec["department_name"] == depB["name"]       # id değil ad
+    assert ec["year"] == 2 and ec["semester"] == "SPRING"
+
+
+def test_extra_cohort_replace_is_full():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h); depC = make_department(h)
+    course = make_course(h, depA)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    # ikinci PATCH tam değiştirir: artık yalnız depC kalmalı
+    body = _patch_course(h, course["id"], {
+        "cohorts": [{"department_id": depC["id"], "year": 1, "semester": "FALL"}],
+    }).json()
+    assert len(body["extra_cohorts"]) == 1
+    assert body["extra_cohorts"][0]["department_id"] == depC["id"]
+
+
+def test_extra_cohort_replace_retaining_one_no_500():
+    # Regresyon: iki cohort'tan birini KORUYUP diğerini çıkaran PATCH, korunan
+    # satırı yeniden INSERT etmeye çalışıp UNIQUE ihlali (500) vermemeli.
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h); depC = make_department(h)
+    course = make_course(h, depA)
+    _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+        {"department_id": depC["id"], "year": 1, "semester": "FALL"},
+    ]})
+    # depB korunur, depC çıkar
+    r = _patch_course(h, course["id"], {"cohorts": [
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+    ]})
+    assert r.status_code == 200, r.text
+    ec = r.json()["extra_cohorts"]
+    assert len(ec) == 1 and ec[0]["department_id"] == depB["id"]
+
+
+def test_unmark_common_clears_extra_cohorts():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    body = _patch_course(h, course["id"], {"is_common": False}).json()
+    assert body["is_common"] is False
+    assert body["extra_cohorts"] == []                 # ortak değilse ek cohort tutulmaz
+
+
+def test_extra_cohort_on_non_common_rejected():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)                       # is_common False
+    r = _patch_course(h, course["id"], {
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    assert r.status_code == 400
+
+
+def test_extra_cohort_primary_rejected():
+    h = admin_headers()
+    depA = make_department(h)
+    course = make_course(h, depA)                       # depA-2-SPRING
+    r = _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depA["id"], "year": 2, "semester": "SPRING"}],
+    })
+    assert r.status_code == 400                          # birincil cohort ek olamaz
+
+
+def test_extra_cohort_duplicate_rejected():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)
+    r = _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [
+            {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+            {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+        ],
+    })
+    assert r.status_code == 400
+
+
+def test_extra_cohort_foreign_department_rejected():
+    h = admin_headers()
+    depA = make_department(h)
+    foreign_dep = make_department(foreign_admin_headers())   # başka workgroup
+    course = make_course(h, depA)
+    r = _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": foreign_dep["id"], "year": 2, "semester": "SPRING"}],
+    })
+    assert r.status_code == 400                          # izolasyon: yabancı bölüm
+
+
+def test_extra_cohorts_visible_in_list():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 3, "semester": "FALL"}],
+    })
+    got = client.get(f"/courses?department_id={depA['id']}", headers=h).json()
+    mine = next(c for c in got if c["id"] == course["id"])
+    assert mine["is_common"] is True
+    assert len(mine["extra_cohorts"]) == 1
+
+
+def test_create_common_merges_by_code():
+    # K-48: aynı kodlu ortak ders ikinci kez eklenince YENİ kayıt açılmaz —
+    # gelen cohort mevcut ortak dersin altında toplanır.
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    code = _u("PHYS")
+    c1 = make_course(h, depA, code=code, is_common=True, year=1, semester="FALL")
+    r = client.post("/courses", json={
+        "department_id": depB["id"], "year": 1, "semester": "SPRING",
+        "code": code, "name": "Fizik", "is_common": True, "hours_theory": 3,
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["id"] == c1["id"]                       # aynı ders döndü (birleşti)
+    assert len(body["extra_cohorts"]) == 1
+    assert body["extra_cohorts"][0]["department_id"] == depB["id"]
+    # bu kodda sistemde TEK ortak ders var
+    same = [c for c in client.get(f"/courses?department_id={depB['id']}", headers=h).json()
+            if c["code"] == code]
+    assert len(same) == 1
+
+
+def test_create_common_merges_case_insensitive():
+    # "CENG2001" varken "ceng2001" ortak eklenince BİRLEŞİR (kod harf duyarsız).
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    c1 = make_course(h, depA, code="CENG2001X", is_common=True, year=1, semester="FALL")
+    r = client.post("/courses", json={
+        "department_id": depB["id"], "year": 1, "semester": "SPRING",
+        "code": "ceng2001x", "name": "istatistik", "is_common": True,
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    assert r.json()["id"] == c1["id"]                   # farklı harf, aynı ders
+    assert len(r.json()["extra_cohorts"]) == 1
+
+
+def test_create_common_merge_rejects_duplicate_cohort():
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    code = _u("MATH")
+    make_course(h, depA, code=code, is_common=True, year=1, semester="FALL")
+    body = {"department_id": depB["id"], "year": 1, "semester": "SPRING",
+            "code": code, "name": "M", "is_common": True}
+    assert client.post("/courses", json=body, headers=h).status_code == 201   # ilk merge
+    assert client.post("/courses", json=body, headers=h).status_code == 409   # aynı cohort
+
+
+def test_create_common_no_existing_creates_new():
+    # İlk ortak ders: ortası yok → normal yeni kayıt (is_common true).
+    h = admin_headers()
+    dep = make_department(h)
+    c = make_course(h, dep, code=_u("CHEM"), is_common=True)
+    assert c["is_common"] is True and c["extra_cohorts"] == []
+
+
+def test_non_common_same_code_not_merged():
+    # Ortak DEĞİLSE birleştirme yok: farklı bölümde aynı kod ayrı kayıt kalır.
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    code = _u("HIST")
+    a = make_course(h, depA, code=code)                 # ortak değil
+    b = make_course(h, depB, code=code)                 # ortak değil, ayrı kayıt
+    assert a["id"] != b["id"]
+
+
+def test_list_common_via_extra_cohort():
+    # K-48: ortak dersi EK cohort olarak alan bölümün listesinde de görünür.
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA, is_common=True)       # depA primary
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    got = client.get(f"/courses?department_id={depB['id']}", headers=h).json()
+    assert any(c["id"] == course["id"] for c in got)

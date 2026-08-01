@@ -59,6 +59,7 @@ FIELD_LABELS: dict[str, str] = {
     "active": "Aktiflik",
     "is_external": "Fakülte dışı",
     "is_elective": "Seçmeli",
+    "is_common": "Ortak ders",             # K-48
     "capacity": "Kapasite",
     "exam_capacity": "Sınav kapasitesi",
     "expected_students": "Beklenen öğrenci",

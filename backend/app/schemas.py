@@ -267,6 +267,22 @@ class SectionOut(BaseModel):
     active: bool
     model_config = ConfigDict(from_attributes=True)
 
+# --- Ortak (servis) ders cohort'ları (K-48) ---
+
+class CourseCohortIn(BaseModel):
+    """Ortak dersin EK cohort'u: aldığı bir başka (bölüm, yıl, dönem)."""
+    department_id: int
+    year: int = Field(ge=1, le=6)
+    semester: SemesterType
+
+class CourseCohortOut(BaseModel):
+    id: int
+    department_id: int
+    department_name: str                      # UI'da id değil ad gösterir
+    year: int
+    semester: SemesterType
+    model_config = ConfigDict(from_attributes=True)
+
 class CourseCreate(BaseModel):
     department_id: int
     year: int = Field(ge=1, le=6)
@@ -274,6 +290,7 @@ class CourseCreate(BaseModel):
     code: str
     name: str
     is_elective: bool = False
+    is_common: bool = False                   # K-48: ortak (servis) ders mi
     hours_theory: int = Field(0, ge=0)        # K-20: T+U+L, varsayılan 0
     hours_practice: int = Field(0, ge=0)
     hours_lab: int = Field(0, ge=0)
@@ -290,6 +307,10 @@ class CourseUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
     is_elective: bool | None = None
+    is_common: bool | None = None             # K-48
+    # K-48: ek cohort'ların TAM listesi (verilirse mevcut ek cohort'lar bununla
+    # değiştirilir). Yalnız is_common ders için anlamlı; boş liste = ek cohort yok.
+    cohorts: list[CourseCohortIn] | None = None
     hours_theory: int | None = Field(None, ge=0)
     hours_practice: int | None = Field(None, ge=0)
     hours_lab: int | None = Field(None, ge=0)
@@ -307,6 +328,7 @@ class CourseOut(BaseModel):
     code: str
     name: str
     is_elective: bool
+    is_common: bool                           # K-48
     hours_theory: int
     hours_practice: int
     hours_lab: int
@@ -316,6 +338,7 @@ class CourseOut(BaseModel):
     midterm_count: int                        # K-46
     active: bool
     sections: list[SectionOut]                # ders + şubeleri iç içe — kontrat şekli
+    extra_cohorts: list[CourseCohortOut] = [] # K-48: ortak dersin ek cohort'ları
     model_config = ConfigDict(from_attributes=True)
 
 

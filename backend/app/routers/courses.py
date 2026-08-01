@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
-    Classroom, Course, CourseSection, Department, DepartmentMembership,
+    Classroom, Course, CourseCohort, CourseSection, Department, DepartmentMembership,
     Exam, ExamType, Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
 )
 from app.schemas import (
@@ -64,6 +65,38 @@ def _get_owned_section(db: Session, user: User, section_id: int) -> CourseSectio
     return sec
 
 
+def _build_extra_cohorts(
+    db: Session, user: User, course: Course, cohorts_in: list
+) -> list[CourseCohort]:
+    """Ortak dersin EK cohort listesini doğrular ve CourseCohort nesneleri üretir (K-48).
+
+    Doğrulamalar:
+    - Bölüm bizim workgroup'ta mı (izolasyon). Üyelik ARANMAZ: tüketen bölüm
+      yalnız çakışma için cohort sağlar, yazma hakkı vermez — sahibi bölümün
+      yetkisi zaten üstte denetlendi.
+    - Ek cohort, dersin BİRİNCİL cohort'uyla aynı olamaz (zaten kapsanıyor).
+    - Liste içinde tekrar olamaz.
+    """
+    primary = (course.department_id, course.year, course.semester)
+    seen: set[tuple[int, int, SemesterType]] = set()
+    result: list[CourseCohort] = []
+    for c in cohorts_in:
+        dep = db.get(Department, c.department_id)
+        if dep is None or dep.workgroup_id != user.workgroup_id:
+            raise HTTPException(status_code=400, detail="Geçersiz cohort bölümü")
+        key = (c.department_id, c.year, c.semester)
+        if key == primary:
+            raise HTTPException(
+                status_code=400,
+                detail="Dersin kendi cohort'u ek olarak eklenemez (zaten kapsanıyor)")
+        if key in seen:
+            raise HTTPException(status_code=400, detail="Aynı cohort iki kez verildi")
+        seen.add(key)
+        result.append(CourseCohort(
+            department_id=c.department_id, year=c.year, semester=c.semester))
+    return result
+
+
 def _validate_section_refs(db: Session, user: User, data: dict) -> None:
     """Şube gövdesindeki FK'lar bizim workgroup'un mu? (çapraz-FK izolasyonu)"""
     if data.get("lecturer_id") is not None:
@@ -92,13 +125,24 @@ def list_courses(
     q = (
         db.query(Course)
         .join(Department)
-        .options(selectinload(Course.sections).selectinload(CourseSection.lecturer))
+        .options(
+            selectinload(Course.sections).selectinload(CourseSection.lecturer),
+            # K-48: ortak dersin ek cohort'ları + bölüm adı (N+1 önle)
+            selectinload(Course.extra_cohorts).selectinload(CourseCohort.department),
+        )
         .filter(Department.workgroup_id == user.workgroup_id)
     )
     # K-26: workgroup içindeki herkes TÜM bölümleri okur; yazma kısıtı ayrıdır
     # (bayrak + üyelik, yazma uçlarında). Filtrelemek isteyen department_id kullanır.
     if department_id is not None:
-        q = q.filter(Course.department_id == department_id)
+        # K-48: bölümün KENDİ dersleri + o bölümü EK cohort olarak alan ortak
+        # dersler (o dersler başka bölüme ait olsa da bu bölüm onları alıyor).
+        q = q.filter(
+            (Course.department_id == department_id)
+            | Course.id.in_(
+                db.query(CourseCohort.course_id)
+                .filter(CourseCohort.department_id == department_id))
+        )
     if year is not None:
         q = q.filter(Course.year == year)
     if semester is not None:
@@ -116,6 +160,39 @@ def create_course(
     user: User = Depends(require_course_manager),
 ):
     _ensure_department_access(db, user, payload.department_id)
+
+    # K-48: ortak ders BİRLEŞTİRME. Aynı workgroup'ta aynı KODLU bir ortak ders
+    # zaten varsa, yeni bir kayıt açmak yerine gönderilen (bölüm, sınıf, dönem)
+    # o dersin EK cohort'u olarak eklenir — böylece "aynı ders iki kez" oluşmaz,
+    # tek ders altında toplanır. Tüketen bölümde üyelik aranmaz (sahibinin değil,
+    # yeni cohort'un bölümüne erişim yukarıda denetlendi; K-48 tüketim prensibi).
+    if payload.is_common:
+        # Kod eşleşmesi büyük/küçük harf DUYARSIZ + kırpılmış: "ceng2001" ile
+        # "CENG2001" aynı ortak ders sayılır (kullanıcı geri bildirimi).
+        existing = (
+            db.query(Course).join(Department)
+            .filter(Department.workgroup_id == user.workgroup_id,
+                    func.lower(func.trim(Course.code)) == payload.code.strip().lower(),
+                    Course.is_common.is_(True))
+            .first()
+        )
+        if existing:
+            new_key = (payload.department_id, payload.year, payload.semester)
+            covered = {(existing.department_id, existing.year, existing.semester)}
+            covered |= {(cc.department_id, cc.year, cc.semester) for cc in existing.extra_cohorts}
+            if new_key in covered:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{existing.code}' ortak dersi zaten bu bölüm/sınıf/dönemde kayıtlı")
+            existing.extra_cohorts.append(CourseCohort(
+                department_id=payload.department_id, year=payload.year,
+                semester=payload.semester))
+            db.flush()
+            log_action(db, user, "UPDATE", "course", existing.id, existing,
+                       "Ortak ders: yeni cohort eklendi")
+            db.commit()
+            db.refresh(existing)
+            return existing
 
     clash = db.query(Course).filter(
         Course.department_id == payload.department_id,
@@ -151,6 +228,24 @@ def update_course(
     _ensure_department_access(db, user, course.department_id)
 
     data = payload.model_dump(exclude_unset=True)
+    # K-48: ek cohort listesi generic setattr döngüsüne GİRMEZ (ilişki alanı);
+    # ayrıca ele alınır. model_dump dict'e düzleştirdiği için orijinal pydantic
+    # nesnelerini (payload.cohorts) kullanırız. Önce doğrula ki kısmi mutasyon olmasın.
+    cohorts_set = "cohorts" in data
+    data.pop("cohorts", None)
+    cohorts_in = payload.cohorts if cohorts_set else None
+    eff_is_common = data.get("is_common", course.is_common)
+    new_cohorts: list[CourseCohort] | None = None
+    if cohorts_in is not None:
+        if not eff_is_common:
+            if cohorts_in:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Ortak olmayan derse ek cohort eklenemez — önce dersi ortak işaretleyin")
+            new_cohorts = []
+        else:
+            new_cohorts = _build_extra_cohorts(db, user, course, cohorts_in)
+
     if "code" in data and data["code"] != course.code:
         clash = db.query(Course).filter(
             Course.department_id == course.department_id,
@@ -189,6 +284,23 @@ def update_course(
     ozet = build_change_summary(course, data)
     for field, value in data.items():
         setattr(course, field, value)
+    # K-48: is_common uygulandıktan SONRA ek cohort'ları senkronla. Ortak
+    # değilse ek cohort tutulmaz; ortak + yeni liste verildiyse KİMLİĞE GÖRE
+    # uzlaştırılır (koru/çıkar/ekle). Blindly "= new_cohorts" YAPMA: korunan bir
+    # cohort (aynı bölüm+yıl+dönem) silinmeden yeniden eklenirse uq_course_cohorts
+    # UNIQUE ihlali (500) verir — retained satır yeniden INSERT edilmemeli.
+    if not course.is_common:
+        for cc in list(course.extra_cohorts):
+            course.extra_cohorts.remove(cc)
+    elif new_cohorts is not None:
+        wanted = {(c.department_id, c.year, c.semester) for c in new_cohorts}
+        for cc in list(course.extra_cohorts):
+            if (cc.department_id, cc.year, cc.semester) not in wanted:
+                course.extra_cohorts.remove(cc)          # istenmeyen → sil
+        have = {(cc.department_id, cc.year, cc.semester) for cc in course.extra_cohorts}
+        for c in new_cohorts:
+            if (c.department_id, c.year, c.semester) not in have:
+                course.extra_cohorts.append(c)           # yalnız gerçekten yeni olan
     log_action(db, user, "UPDATE", "course", course.id, course, ozet)
     db.commit()
     db.refresh(course)

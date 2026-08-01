@@ -75,6 +75,10 @@ function isWeekend(dateStr: string): boolean {
 
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
+// K-48: sınıf seçicisinde "Ortak dersler" sözde-yıl. Seçilince cohort ortak
+// (is_common) derslere döner (haftalık programdaki desenle aynı).
+const COMMON_YEAR = "common";
+
 /** Sürüklenen şey: paletten yeni sınav mı, var olan sınavın taşınması mı. */
 type ExamDrag =
   | { kind: "new"; courseId: number; label: string }
@@ -276,10 +280,13 @@ export default function ExamsPage() {
   const gunler = useMemo(
     () => [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i)), [weekStart]);
 
-  /** Seçili cohort'un dersleri (bölüm + yıl + dönem). */
+  /** Seçili cohort'un dersleri (bölüm + yıl + dönem). K-48: "Ortak dersler"
+   *  seçiliyse yıl yerine ortak (is_common) derslere göre süzülür — palet,
+   *  ızgara, yayınlama kümesi hepsi buradan türediği için tek nokta yeter. */
   const cohortCourses = useMemo(
     () => courses.filter((c) =>
-      String(c.department_id) === dep && String(c.year) === year && c.semester === sem),
+      String(c.department_id) === dep && c.semester === sem
+      && (year === COMMON_YEAR ? c.is_common : String(c.year) === year)),
     [courses, dep, year, sem]);
   const cohortCourseIds = useMemo(
     () => new Set(cohortCourses.map((c) => c.id)), [cohortCourses]);
@@ -450,9 +457,10 @@ export default function ExamsPage() {
             <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
               styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
               data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-            <Select size="xs" w={104} radius="md" value={year} onChange={(v) => v && setYear(v)}
+            <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
               styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))} />
+              data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
+                ...["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
             <Select size="xs" w={104} radius="md" value={sem}
               onChange={(v) => v && setSem(v as SemesterType)}
               styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}

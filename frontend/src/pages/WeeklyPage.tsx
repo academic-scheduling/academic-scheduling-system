@@ -67,6 +67,11 @@ const VIEW_LABELS: Record<ViewMode, string> = {
   cohort: "Sınıf", classroom: "Derslik", lecturer: "Öğretim üyesi",
 };
 
+// K-48: Sınıf seçicisinde "Ortak dersler" sözde-yıl değeri. Seçilince cohort
+// bakışı ortak (servis) derslere döner — xlsx'teki "Common Courses" sayfasının
+// karşılığı; palet + sürükle-bırak (yazılabilir) aynen çalışır.
+const COMMON_YEAR = "common";
+
 /** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler. */
 function layoutDay(entries: WeeklyEntry[]): Cluster[] {
   // 1) Aynı ders + aynı zaman + aynı oturum türü → tek küme (paralel şubeler)
@@ -331,7 +336,13 @@ export default function WeeklyPage() {
 
   /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
   const activeQuery = (): string | null => {
-    if (view === "cohort") return dep ? `department_id=${dep}&year=${year}&semester=${sem}` : null;
+    if (view === "cohort") {
+      if (!dep) return null;
+      // K-48: "Ortak dersler" seçiliyse yıl yerine is_common ile süz.
+      return year === COMMON_YEAR
+        ? `department_id=${dep}&semester=${sem}&is_common=true`
+        : `department_id=${dep}&year=${year}&semester=${sem}`;
+    }
     if (view === "classroom") return roomFilter ? `classroom_id=${roomFilter}` : null;
     return lecFilter ? `lecturer_id=${lecFilter}` : null;
   };
@@ -358,10 +369,12 @@ export default function WeeklyPage() {
   };
   useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter]);
 
-  /** Paletin dersleri: seçili sınıfın (bölüm+yıl+dönem) dersleri. */
+  /** Paletin dersleri: seçili sınıfın (bölüm+yıl+dönem) dersleri. K-48: "Ortak
+   *  dersler" seçiliyse yıl yerine ortak (is_common) derslere göre süzülür. */
   const courses = useMemo(
     () => allCourses.filter((c) =>
-      String(c.department_id) === dep && String(c.year) === year && c.semester === sem),
+      String(c.department_id) === dep && c.semester === sem
+      && (year === COMMON_YEAR ? c.is_common : String(c.year) === year)),
     [allCourses, dep, year, sem]);
 
   const electiveOf = useMemo(() => {
@@ -596,9 +609,10 @@ export default function WeeklyPage() {
                 <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
                   styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
                   data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-                <Select size="xs" w={104} radius="md" value={year} onChange={(v) => v && setYear(v)}
+                <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
                   styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                  data={YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))} />
+                  data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
+                    ...YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
                 <Select size="xs" w={104} radius="md" value={sem}
                   onChange={(v) => v && setSem(v as SemesterType)}
                   styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
@@ -726,7 +740,7 @@ export default function WeeklyPage() {
         </Paper>
         )}
 
-        {view !== "cohort" && (
+        {(view === "classroom" || view === "lecturer") && (
           <InfoPanel view={view} height={gridH}
             room={classrooms.find((c) => String(c.id) === roomFilter) ?? null}
             lecturer={lecturers.find((l) => String(l.id) === lecFilter) ?? null}

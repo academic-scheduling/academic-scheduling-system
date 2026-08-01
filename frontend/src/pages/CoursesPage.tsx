@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Checkbox, Divider, Group, Loader, Modal,
-  NumberInput, Paper, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip,
+  NumberInput, Paper, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -17,6 +17,7 @@ import type {
 } from "../api/types";
 
 const ALL = "__all__";
+const COMMON = "__common__";      // K-48: sınıf filtresinde "Ortak dersler" değeri
 
 /** Lisans programı 4 yıl. Backend ge=1,le=6 kabul eder — daha uzun programlar
  *  (hazırlık, 5-6 yıllık bölümler) gerekirse tek yerden büyütülür. */
@@ -28,6 +29,9 @@ function donemNo(year: number, semester: SemesterType): number {
   return (year - 1) * 2 + (semester === "FALL" ? 1 : 2);
 }
 
+/** K-48: ortak dersin ek cohort satırı (form içi; department_id string). */
+type CohortRow = { department_id: string; year: number; semester: SemesterType };
+
 type CourseFormValues = {
   department_id: string;
   year: number;
@@ -35,6 +39,8 @@ type CourseFormValues = {
   code: string;
   name: string;
   is_elective: string;          // Select string taşır: "false" | "true"
+  is_common: boolean;           // K-48: ortak (servis) ders mi
+  cohorts: CohortRow[];         // K-48: ek cohort'lar (yalnız is_common'da)
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
@@ -94,7 +100,8 @@ export default function CoursesPage() {
   const courseForm = useForm<CourseFormValues>({
     initialValues: {
       department_id: "", year: 1, semester: "FALL", code: "", name: "",
-      is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      is_elective: "false", is_common: false, cohorts: [],
+      hours_theory: 3, hours_practice: 0, hours_lab: 0,
       theory_online: false, practice_online: false, lab_online: false,
       midterm_count: 1,
     },
@@ -110,7 +117,8 @@ export default function CoursesPage() {
     setLoadError(null);
     const params = new URLSearchParams();
     if (depFilter) params.set("department_id", depFilter);
-    if (yearFilter) params.set("year", yearFilter);
+    // COMMON sözde-yıl: sunucuya "year" gönderilmez; ortak dersler istemcide süzülür.
+    if (yearFilter && yearFilter !== COMMON) params.set("year", yearFilter);
     if (semFilter) params.set("semester", semFilter);
     if (search.trim()) params.set("search", search.trim());
     const qs = params.toString();
@@ -178,20 +186,53 @@ export default function CoursesPage() {
     return courses.filter((c) => c.sections.some((s) => s.lecturer.id === id));
   }, [courses, lecFilter]);
 
-  /** Dersleri döneme göre grupla, dönemleri artan sırala, her grup içinde koda göre. */
+  // K-48: ortak (servis) dersler en ÜSTTE ayrı bir kategoride gösterilir; normal
+  // dönem gruplarına girmezler (kullanıcı isteği — bir ders birden çok cohort'a
+  // ait olduğundan tek bir döneme sığmıyor).
+  const commonList = useMemo(
+    () => visible.filter((c) => c.is_common).sort((a, b) => a.code.localeCompare(b.code, "tr")),
+    [visible]);
+
+  /** Dönem grupları. Normal ders kendi döneminde; ORTAK ders (K-48) ayrı üst
+   *  kategoride durur AMA aynı zamanda cohort'u olan HER dönemde de gösterilir
+   *  (kullanıcı isteği). Bölüm süzgeci varsa yalnız o bölüme ait cohort'ların
+   *  dönemleri sayılır. */
   const grouped = useMemo(() => {
     const m = new Map<number, Course[]>();
-    for (const c of visible) {
-      const k = donemNo(c.year, c.semester);
+    const addTo = (k: number, c: Course) => {
       const list = m.get(k) ?? [];
-      list.push(c);
+      if (!list.includes(c)) list.push(c);       // aynı derse iki kez ekleme
       m.set(k, list);
+    };
+    for (const c of visible) {
+      if (c.is_common) {
+        const cohorts = [
+          { dept: c.department_id, year: c.year, semester: c.semester },
+          ...c.extra_cohorts.map((ec) => ({
+            dept: ec.department_id, year: ec.year, semester: ec.semester })),
+        ];
+        const seen = new Set<number>();
+        for (const co of cohorts) {
+          if (depFilter && String(co.dept) !== depFilter) continue;
+          const k = donemNo(co.year, co.semester);
+          if (seen.has(k)) continue;             // aynı dönemde iki cohort → tek kart
+          seen.add(k);
+          addTo(k, c);
+        }
+      } else {
+        addTo(donemNo(c.year, c.semester), c);
+      }
     }
     for (const list of m.values()) {
       list.sort((a, b) => a.code.localeCompare(b.code, "tr"));
     }
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
-  }, [visible]);
+  }, [visible, depFilter]);
+
+  // K-48: Ortak Dersler kategorisi yıl filtresi yokken veya "Ortak dersler"
+  // seçiliyken; normal dönem grupları "Ortak dersler" seçili değilken görünür.
+  const showCommonGroup = (yearFilter === null || yearFilter === COMMON) && commonList.length > 0;
+  const showNormalGroups = yearFilter !== COMMON && grouped.length > 0;
 
   function canEdit(course: Course) {
     return canWriteIn(user, "can_manage_courses", course.department_id);
@@ -210,7 +251,8 @@ export default function CoursesPage() {
       department_id: departmentId
         ?? (writableDepartments.length === 1 ? String(writableDepartments[0].id) : ""),
       year: 1, semester: "FALL", code: "", name: "",
-      is_elective: "false", hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      is_elective: "false", is_common: false, cohorts: [],
+      hours_theory: 3, hours_practice: 0, hours_lab: 0,
       theory_online: false, practice_online: false, lab_online: false,
       midterm_count: 1,
     });
@@ -223,6 +265,10 @@ export default function CoursesPage() {
       department_id: String(c.department_id),
       year: c.year, semester: c.semester, code: c.code, name: c.name,
       is_elective: String(c.is_elective),
+      is_common: c.is_common,
+      cohorts: c.extra_cohorts.map((ec) => ({
+        department_id: String(ec.department_id), year: ec.year, semester: ec.semester,
+      })),
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
       theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
       midterm_count: c.midterm_count,
@@ -233,8 +279,15 @@ export default function CoursesPage() {
   async function submitCourse(v: CourseFormValues) {
     setBusy(true);
     let yeniDersId: number | null = null;
+    // K-48: ortak dersse ek cohort'lar; değilse boş (backend de temizler).
+    const cohortsPayload = v.is_common
+      ? v.cohorts.map((c) => ({
+          department_id: Number(c.department_id), year: c.year, semester: c.semester,
+        }))
+      : [];
     const ortak = {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
+      is_common: v.is_common,           // K-48
       hours_theory: v.hours_theory, hours_practice: v.hours_practice, hours_lab: v.hours_lab,
       midterm_count: v.midterm_count,   // K-46
 
@@ -247,14 +300,21 @@ export default function CoursesPage() {
     try {
       if (editingCourse) {
         // Kimlik alanları (bölüm/yıl/dönem) gönderilmez — kontrat §6.
-        await api.patch<Course>(`/courses/${editingCourse.id}`, ortak);
+        // cohorts PATCH'te tam listeyle değişir (K-48).
+        await api.patch<Course>(`/courses/${editingCourse.id}`, { ...ortak, cohorts: cohortsPayload });
         notifications.show({ color: "green", message: "Ders güncellendi" });
       } else {
+        // K-48: ortak dersse backend aynı kodlu mevcut ortak derse cohort ekleyip
+        // onu döner (birleştirme); değilse yeni kayıt. Ek cohort'lar DÜZENLE'den
+        // yönetilir — create formunda cohort editörü yok.
         const created = await api.post<Course>("/courses", {
           department_id: Number(v.department_id),
           year: v.year, semester: v.semester, ...ortak,
         });
-        notifications.show({ color: "green", message: "Ders eklendi — şimdi şube ekleyin" });
+        notifications.show({
+          color: "green",
+          message: v.is_common ? "Ortak ders kaydedildi" : "Ders eklendi — şimdi şube ekleyin",
+        });
         yeniDersId = created.id;
       }
       setCourseModal(false);
@@ -345,6 +405,7 @@ export default function CoursesPage() {
         />
         <Select
           data={[{ value: ALL, label: "Tüm sınıflar" },
+            { value: COMMON, label: "Ortak dersler" },     // K-48
             ...YEARS.map((y) => ({ value: String(y), label: `${y}. sınıf` }))]}
           value={yearFilter ?? ALL}
           onChange={(v) => setYearFilter(v === ALL || v === null ? null : v)}
@@ -363,7 +424,7 @@ export default function CoursesPage() {
         />
       </Group>
 
-      {visible.length === 0 ? (
+      {!showCommonGroup && !showNormalGroups ? (
         <Text c="dimmed">
           {search || depFilter || yearFilter || semFilter || lecFilter
             ? "Filtreye uyan ders yok."
@@ -371,7 +432,26 @@ export default function CoursesPage() {
         </Text>
       ) : (
         <Stack gap="lg">
-          {grouped.map(([donem, list]) => (
+          {/* K-48: Ortak Dersler en üstte ayrı kategori. Yalnız yıl filtresi
+              yokken veya "Ortak dersler" seçiliyken görünür; belirli bir sınıf
+              seçilince gizlenir. Kartın sağında "Ortak ders" yazar; tıklayınca
+              detayda tüm cohort'ları gösterilir. */}
+          {showCommonGroup && (
+            <div>
+              <Group gap="xs" mb="xs">
+                <Text fw={700} size="sm">Ortak Dersler</Text>
+                <Text size="xs" c="dimmed">({commonList.length} ders)</Text>
+              </Group>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                {commonList.map((course) => (
+                  <CourseCard key={course.id} course={course} asCommon
+                    onOpen={() => setSectionsCourseId(course.id)} />
+                ))}
+              </SimpleGrid>
+            </div>
+          )}
+
+          {showNormalGroups && grouped.map(([donem, list]) => (
             <div key={donem}>
               <Group gap="xs" mb="xs">
                 <Text fw={700} size="sm">{donem}. Dönem</Text>
@@ -381,30 +461,8 @@ export default function CoursesPage() {
                   karta tıklayınca açılan modalda (SectionsModal). */}
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
                 {list.map((course) => (
-                  <Paper
-                    key={course.id}
-                    withBorder
-                    p="sm"
-                    onClick={() => setSectionsCourseId(course.id)}
-                    style={{ cursor: "pointer" }}
-                    opacity={course.active ? 1 : 0.6}
-                  >
-                    <Group justify="space-between" wrap="nowrap" gap="xs">
-                      <div style={{ minWidth: 0 }}>
-                        <Text fw={700} size="sm">{course.code}</Text>
-                        <Text size="sm" truncate>{course.name}</Text>
-                      </div>
-                      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-                        <Stack gap={3} align="flex-end">
-                          <Badge size="xs" variant="light">{course.year}. sınıf</Badge>
-                          <Badge size="xs" variant="light" color="grape">
-                            {SEMESTER_LABELS[course.semester]}
-                          </Badge>
-                        </Stack>
-                        <IconChevronRight size={16} style={{ opacity: 0.35 }} />
-                      </Group>
-                    </Group>
-                  </Paper>
+                  <CourseCard key={course.id} course={course} asCommon={course.is_common}
+                    onOpen={() => setSectionsCourseId(course.id)} />
                 ))}
               </SimpleGrid>
             </div>
@@ -499,6 +557,88 @@ export default function CoursesPage() {
                 </Group>
               </Stack>
             )}
+            {/* K-48: ortak (servis) ders — Fizik/Matematik gibi birden çok
+                bölümün aldığı ders. Açılınca aldığı diğer cohort'lar (bölüm+
+                sınıf+dönem) girilir; motor çakışmayı bu cohort'lara karşı da bakar. */}
+            <Divider label="Ortak ders" labelPosition="left" mt="xs" />
+            <Switch
+              label="Ortak ders"
+              checked={courseForm.values.is_common}
+              onChange={(e) => courseForm.setFieldValue("is_common", e.currentTarget.checked)}
+            />
+            {/* K-48: ekleme modunda cohort editörü YOK — aynı kodlu ortak ders
+                varsa bu ekleme otomatik onun altında toplanır. Ek cohort'lar
+                kaydettikten sonra Düzenle'den yönetilir. */}
+            {!editingCourse && courseForm.values.is_common && (
+              <Text size="xs" c="dimmed">
+                Aynı kodlu bir ortak ders varsa bu kayıt onun altında toplanır.
+                Aldığı diğer grupları kaydettikten sonra Düzenle'den ekleyebilirsiniz.
+              </Text>
+            )}
+            {editingCourse && courseForm.values.is_common && (
+              <Stack gap="xs">
+                <Text size="xs" c="dimmed">
+                  Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi
+                  bölümünü eklemeye gerek yok — zaten kapsanıyor.
+                </Text>
+                {courseForm.values.cohorts.map((row, i) => (
+                  <Group key={i} gap="xs" wrap="nowrap" align="flex-end">
+                    <Select
+                      label={i === 0 ? "Bölüm" : undefined}
+                      placeholder="Bölüm"
+                      style={{ flex: 1 }}
+                      searchable
+                      // K-48: dersin KENDİ bölümü + zaten ekli bölümler
+                      // seçeneklerde gösterilmez (aynı cohort'u ikinci kez ekleme
+                      // hatasını kullanıcıya yaşatmadan önlemek için).
+                      data={departments
+                        .filter((d) => String(d.id) !== courseForm.values.department_id)
+                        .filter((d) => !courseForm.values.cohorts.some(
+                          (cc, j) => j !== i && cc.department_id === String(d.id)))
+                        .map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
+                      value={row.department_id || null}
+                      onChange={(val) =>
+                        courseForm.setFieldValue(`cohorts.${i}.department_id`, val ?? "")}
+                    />
+                    <Select
+                      label={i === 0 ? "Sınıf" : undefined}
+                      w={90}
+                      data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
+                      value={String(row.year)}
+                      onChange={(val) =>
+                        courseForm.setFieldValue(`cohorts.${i}.year`, Number(val))}
+                      allowDeselect={false}
+                    />
+                    <Select
+                      label={i === 0 ? "Dönem" : undefined}
+                      w={100}
+                      data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
+                        value: s, label: SEMESTER_LABELS[s],
+                      }))}
+                      value={row.semester}
+                      onChange={(val) =>
+                        courseForm.setFieldValue(`cohorts.${i}.semester`, val as SemesterType)}
+                      allowDeselect={false}
+                    />
+                    <ActionIcon
+                      variant="subtle" color="red" mb={4}
+                      onClick={() => courseForm.removeListItem("cohorts", i)}
+                      aria-label="Cohort'u kaldır"
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                ))}
+                <Button
+                  variant="light" size="xs" style={{ alignSelf: "flex-start" }}
+                  onClick={() => courseForm.insertListItem("cohorts", {
+                    department_id: "", year: 1, semester: "FALL" as SemesterType,
+                  })}
+                >
+                  + Cohort ekle
+                </Button>
+              </Stack>
+            )}
             <Button type="submit" loading={busy} mt="sm">
               {editingCourse ? "Kaydet" : "Ekle"}
             </Button>
@@ -542,6 +682,38 @@ export default function CoursesPage() {
  *  varsa ders düzenle/sil. Altında şubeler: ekle/düzenle/sil yine yalnız
  *  yetkiliye açıktır (canEdit). Kart sade kalır, ayrıntı tek yerde toplanır.
  */
+/** Ders listesi kartı. asCommon: ortak ders kategorisinde — sağda sınıf/dönem
+ *  yerine "Ortak ders" yazar (K-48; ders birden çok cohort'a ait olduğundan tek
+ *  sınıf/dönem göstermek yanıltıcı). Detay için tıklanır. */
+function CourseCard({ course, asCommon, onOpen }: {
+  course: Course; asCommon?: boolean; onOpen: () => void;
+}) {
+  return (
+    <Paper withBorder p="sm" onClick={onOpen}
+      style={{ cursor: "pointer" }} opacity={course.active ? 1 : 0.6}>
+      <Group justify="space-between" wrap="nowrap" gap="xs">
+        <div style={{ minWidth: 0 }}>
+          <Text fw={700} size="sm">{course.code}</Text>
+          <Text size="sm" truncate>{course.name}</Text>
+        </div>
+        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+          {asCommon ? (
+            <Badge size="sm" variant="light" color="teal">Ortak ders</Badge>
+          ) : (
+            <Stack gap={3} align="flex-end">
+              <Badge size="xs" variant="light">{course.year}. sınıf</Badge>
+              <Badge size="xs" variant="light" color="grape">
+                {SEMESTER_LABELS[course.semester]}
+              </Badge>
+            </Stack>
+          )}
+          <IconChevronRight size={16} style={{ opacity: 0.35 }} />
+        </Group>
+      </Group>
+    </Paper>
+  );
+}
+
 function SectionsModal({
   course, depName, canEdit, onEditCourse, onDeleteCourse,
   onClose, lecturers, classrooms, entriesBySection, onChanged,
@@ -673,6 +845,23 @@ function SectionsModal({
               </Group>
             )}
           </Group>
+
+          {/* K-48: ortak dersin ait olduğu TÜM cohort'lar (birincil + ek). Kullanıcı
+              "aaa"yı iki ayrı kayıt sanmasın diye tıklayınca burada hepsi görünür. */}
+          {course.is_common && (
+            <Group gap="xs" align="center">
+              <Text size="sm" c="dimmed">Aldığı gruplar:</Text>
+              <Badge size="sm" variant="light" color="teal">
+                {depName ? `${depName} · ` : ""}{course.year}. sınıf ·{" "}
+                {SEMESTER_LABELS[course.semester]}
+              </Badge>
+              {course.extra_cohorts.map((ec) => (
+                <Badge key={ec.id} size="sm" variant="light" color="teal">
+                  {ec.department_name} · {ec.year}. sınıf · {SEMESTER_LABELS[ec.semester]}
+                </Badge>
+              ))}
+            </Group>
+          )}
 
           <Divider />
           <Text fw={600} size="sm">Şubeler</Text>

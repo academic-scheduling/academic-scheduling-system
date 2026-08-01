@@ -185,6 +185,15 @@ export type CourseSection = {
   active: boolean;
 };
 
+/** K-48 · Ortak dersin EK cohort'u (aldığı bir başka bölüm+yıl+dönem). */
+export type CourseCohort = {
+  id: number;
+  department_id: number;
+  department_name: string;
+  year: number;
+  semester: SemesterType;
+};
+
 /** Kontrat §6 · GET /courses elemanı (ders + şubeleri iç içe) */
 export type Course = {
   id: number;
@@ -194,6 +203,8 @@ export type Course = {
   code: string;
   name: string;
   is_elective: boolean;
+  /** K-48: ortak (servis) ders mi — Fizik/Matematik gibi çok bölümün aldığı. */
+  is_common: boolean;
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
@@ -206,6 +217,8 @@ export type Course = {
   midterm_count: number;
   active: boolean;
   sections: CourseSection[];
+  /** K-48: ortak dersin ek cohort'ları (normal derste boş). */
+  extra_cohorts: CourseCohort[];
 };
 /** Kontrat §10 · GET /dashboard/summary (K-33).
  *

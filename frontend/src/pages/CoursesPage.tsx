@@ -234,8 +234,12 @@ export default function CoursesPage() {
   const showCommonGroup = (yearFilter === null || yearFilter === COMMON) && commonList.length > 0;
   const showNormalGroups = yearFilter !== COMMON && grouped.length > 0;
 
+  // K-49: ortak dersi ALAN her bölümün yetkilisi düzenler + şube yönetir + siler
+  // (birincil ∪ ek cohort). Normal derste yalnız birincil → eski davranış.
   function canEdit(course: Course) {
-    return canWriteIn(user, "can_manage_courses", course.department_id);
+    if (canWriteIn(user, "can_manage_courses", course.department_id)) return true;
+    return course.extra_cohorts.some(
+      (ec) => canWriteIn(user, "can_manage_courses", ec.department_id));
   }
 
   const writableDepartments = useMemo(
@@ -277,14 +281,31 @@ export default function CoursesPage() {
   }
 
   async function submitCourse(v: CourseFormValues) {
+    // K-48: ortak dersse yalnız DOLU cohort satırları gider (yarım satır backend'i
+    // "Geçersiz cohort bölümü" 400'üne düşürmesin). Aynı üçlü iki kez ya da
+    // birincil cohort'la aynı verilmişse istek atmadan uyar (backend zaten 400 döner).
+    const cohortRows = v.is_common ? v.cohorts.filter((c) => c.department_id) : [];
+    if (v.is_common && editingCourse) {
+      const seen = new Set([
+        `${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`,
+      ]);
+      for (const c of cohortRows) {
+        const key = `${c.department_id}|${c.year}|${c.semester}`;
+        if (seen.has(key)) {
+          notifications.show({
+            color: "red",
+            message: "Aynı grup (bölüm + sınıf + dönem) birden çok kez eklenmiş — tekrarları kaldırın.",
+          });
+          return;
+        }
+        seen.add(key);
+      }
+    }
     setBusy(true);
     let yeniDersId: number | null = null;
-    // K-48: ortak dersse ek cohort'lar; değilse boş (backend de temizler).
-    const cohortsPayload = v.is_common
-      ? v.cohorts.map((c) => ({
-          department_id: Number(c.department_id), year: c.year, semester: c.semester,
-        }))
-      : [];
+    const cohortsPayload = cohortRows.map((c) => ({
+      department_id: Number(c.department_id), year: c.year, semester: c.semester,
+    }));
     const ortak = {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
       is_common: v.is_common,           // K-48
@@ -581,21 +602,33 @@ export default function CoursesPage() {
                   Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi
                   bölümünü eklemeye gerek yok — zaten kapsanıyor.
                 </Text>
-                {courseForm.values.cohorts.map((row, i) => (
-                  <Group key={i} gap="xs" wrap="nowrap" align="flex-end">
+                {courseForm.values.cohorts.map((row, i) => {
+                  // K-48: benzersizlik (bölüm+yıl+dönem) ÜÇLÜSÜ üzerinde. Tüm
+                  // bölümler listelenir; bir bölümün farklı sınıf/dönemi geçerli
+                  // bir ek cohort'tur. Yalnız aynı üçlü tekrarlanırsa uyarılır
+                  // (birincil cohort ya da daha önceki bir satırla çakışma).
+                  const key = row.department_id
+                    ? `${row.department_id}|${row.year}|${row.semester}` : null;
+                  const primaryKey = editingCourse
+                    ? `${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`
+                    : null;
+                  const dup = key != null && (
+                    key === primaryKey ||
+                    courseForm.values.cohorts.some(
+                      (cc, j) => j < i && cc.department_id &&
+                        `${cc.department_id}|${cc.year}|${cc.semester}` === key)
+                  );
+                  return (
+                  <div key={i}>
+                  <Group gap="xs" wrap="nowrap" align="flex-end">
                     <Select
                       label={i === 0 ? "Bölüm" : undefined}
                       placeholder="Bölüm"
                       style={{ flex: 1 }}
                       searchable
-                      // K-48: dersin KENDİ bölümü + zaten ekli bölümler
-                      // seçeneklerde gösterilmez (aynı cohort'u ikinci kez ekleme
-                      // hatasını kullanıcıya yaşatmadan önlemek için).
-                      data={departments
-                        .filter((d) => String(d.id) !== courseForm.values.department_id)
-                        .filter((d) => !courseForm.values.cohorts.some(
-                          (cc, j) => j !== i && cc.department_id === String(d.id)))
-                        .map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
+                      error={dup}
+                      data={departments.map((d) => ({
+                        value: String(d.id), label: `${d.code} — ${d.name}` }))}
                       value={row.department_id || null}
                       onChange={(val) =>
                         courseForm.setFieldValue(`cohorts.${i}.department_id`, val ?? "")}
@@ -603,6 +636,7 @@ export default function CoursesPage() {
                     <Select
                       label={i === 0 ? "Sınıf" : undefined}
                       w={90}
+                      error={dup}
                       data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
                       value={String(row.year)}
                       onChange={(val) =>
@@ -612,6 +646,7 @@ export default function CoursesPage() {
                     <Select
                       label={i === 0 ? "Dönem" : undefined}
                       w={100}
+                      error={dup}
                       data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
                         value: s, label: SEMESTER_LABELS[s],
                       }))}
@@ -628,7 +663,15 @@ export default function CoursesPage() {
                       <IconTrash size={16} />
                     </ActionIcon>
                   </Group>
-                ))}
+                  {dup && (
+                    <Text size="xs" c="orange" mt={4}>
+                      Bu grup zaten ekli (bölüm + sınıf + dönem). Farklı bir
+                      sınıf/dönem ya da bölüm seçin.
+                    </Text>
+                  )}
+                  </div>
+                  );
+                })}
                 <Button
                   variant="light" size="xs" style={{ alignSelf: "flex-start" }}
                   onClick={() => courseForm.insertListItem("cohorts", {
@@ -732,6 +775,9 @@ function SectionsModal({
   const [editing, setEditing] = useState<CourseSection | null>(null);
   const [deleting, setDeleting] = useState<CourseSection | null>(null);
   const [busy, setBusy] = useState(false);
+  // Şube formu varsayılan KAPALI: detay okumaya gelen kullanıcı boş formla
+  // karşılaşmasın. "+ Yeni şube ekle" butonu ya da bir şubeyi düzenlemek açar.
+  const [formOpen, setFormOpen] = useState(false);
 
   const form = useForm<SectionFormValues>({
     initialValues: {
@@ -752,9 +798,21 @@ function SectionsModal({
     });
   }
 
-  // Modal açıldığında / ders değiştiğinde formu sıfırla
+  // "+ Yeni şube ekle": formu yeni-kayıt modunda aç.
+  function openNew() {
+    resetForm();
+    setFormOpen(true);
+  }
+
+  // "Vazgeç" / başarılı işlem: formu kapat ve alanları sıfırla.
+  function closeForm() {
+    resetForm();
+    setFormOpen(false);
+  }
+
+  // Modal açıldığında / ders değiştiğinde formu sıfırla ve kapat.
   useEffect(() => {
-    if (course) resetForm();
+    if (course) { resetForm(); setFormOpen(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course?.id]);
 
@@ -765,6 +823,7 @@ function SectionsModal({
       lecturer_id: String(s.lecturer.id),
       expected_students: s.expected_students,
     });
+    setFormOpen(true);   // düzenleme aynı formu kullanır — görünür olmalı
   }
 
   async function submit(v: SectionFormValues) {
@@ -785,7 +844,7 @@ function SectionsModal({
         await api.post<CourseSection>(`/courses/${course.id}/sections`, payload);
         notifications.show({ color: "green", message: "Şube eklendi" });
       }
-      resetForm();
+      closeForm();
       await onChanged();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) form.setFieldError("section_no", e.message);
@@ -829,11 +888,19 @@ function SectionsModal({
               <Badge variant="light" color={course.is_elective ? "orange" : "blue"} size="sm">
                 {course.is_elective ? "Seçmeli" : "Zorunlu"}
               </Badge>
+              {/* K-48/K-49: kimlik satırı ortak dersi açıkça belirtir. Ortak derste
+                  tek bölüm/sınıf/dönem GÖSTERİLMEZ — ders bir cohort'a "ait" değil,
+                  hepsini alır; cohort'lar aşağıda "Aldığı gruplar"da eşit listelenir. */}
+              {course.is_common && (
+                <Badge variant="light" color="teal" size="sm">Ortak ders</Badge>
+              )}
               {!course.active && <Badge color="gray" size="sm">Pasif</Badge>}
               <Text size="sm" c="dimmed">
-                {depName ? `${depName} · ` : ""}{course.year}. sınıf ·{" "}
-                {SEMESTER_LABELS[course.semester]} · T{course.hours_theory}+U
-                {course.hours_practice}+L{course.hours_lab}
+                {course.is_common
+                  ? `T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`
+                  : `${depName ? `${depName} · ` : ""}${course.year}. sınıf · `
+                    + `${SEMESTER_LABELS[course.semester]} · `
+                    + `T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`}
               </Text>
             </Group>
             {canEdit && (
@@ -938,7 +1005,16 @@ function SectionsModal({
             </Table>
           )}
 
-          {canEdit && (
+          {canEdit && !formOpen && (
+            <Button
+              variant="light" size="xs" style={{ alignSelf: "flex-start" }}
+              onClick={openNew}
+            >
+              + Yeni şube ekle
+            </Button>
+          )}
+
+          {canEdit && formOpen && (
           <Paper withBorder p="sm">
             <form onSubmit={form.onSubmit(submit)}>
               <Stack gap="xs">
@@ -969,9 +1045,7 @@ function SectionsModal({
                   <Button type="submit" size="xs" loading={busy}>
                     {editing ? "Kaydet" : "Ekle"}
                   </Button>
-                  {editing && (
-                    <Button size="xs" variant="default" onClick={resetForm}>Vazgeç</Button>
-                  )}
+                  <Button size="xs" variant="default" onClick={closeForm}>Vazgeç</Button>
                 </Group>
               </Stack>
             </form>

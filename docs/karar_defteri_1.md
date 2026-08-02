@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 31 Temmuz 2026 (K-48: ortak/servis dersler — çok-cohort'lu)
+**Son güncelleme:** 1 Ağustos 2026 (K-49: ortak ders düzenleme yetkisi paylaşımlı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -1016,9 +1016,10 @@ işaretidir; çakışma semantiği bayraktan DEĞİL, cohort kümesinden gelir.
   bölüm/yıl/dönemini yazar (ortak dersin birincil cohort'unu değil). `build_result`
   paylaşılan cohort'u alıp `a`'nın bir kopyasına bindirir — hiçbir mesaj
   kurucusunun imzası değişmez.
-- **Yetki:** Ortak dersi düzenleme, sahibi bölümün (`courses.department_id`)
+- **Yetki:** ~~Ortak dersi düzenleme, sahibi bölümün (`courses.department_id`)
   üyeliğine bağlı kalır; tüketen bölümler yalnız çakışma için cohort sağlar,
-  yazma hakkı vermez. Merkezî bir birim servis dersine sahip olur.
+  yazma hakkı vermez.~~ → **K-49 ile değişti:** düzenleme + şube yönetimi + silme
+  dersi ALAN tüm bölümlerce paylaşılır (birincil ∪ ek cohort).
 - **Şema:** migration `c7e2a9f4b6d1` — `courses.is_common` (default false) +
   `course_cohorts(course_id, department_id, year, semester)`, UNIQUE(dörtlü),
   CASCADE (ders veya tüketen bölüm silinince tüketim satırı gider).
@@ -1046,3 +1047,41 @@ işaretidir; çakışma semantiği bayraktan DEĞİL, cohort kümesinden gelir.
   - **Haftalık + Sınav:** "Ortak" ayrı sekme değil, Sınıf seçicisinde "Ortak dersler"
     değeri → palet + yazılabilir cohort bakışı.
   - Toplam 429 backend testi yeşil.
+
+## K-49 · Ortak dersin düzenleme yetkisi tüketen bölümlere açıldı [E] — K-48 revizyonu
+K-48 ortak dersi "sahibi bölüm düzenler, tüketen yalnız cohort sağlar" diye
+kurmuştu. Kullanıcı geri bildirimi: servis dersinin bakımı doğası gereği
+paylaşımlı — Fizik'i CENG de EEE de alıyorsa, her ikisinin sorumlusu kendi
+şubesini (kendi hocası, kendi öğrenci sayısı) ekleyip dersi düzenleyebilmeli.
+
+**Karar:** Ortak dersin **düzenlenmesi + şube yönetimi + silinmesi**, dersi ALAN
+**herhangi bir** bölümün (birincil ∪ ek cohort) `can_manage_courses` yetkili
+üyesine açık. "Sahibi tek bölüm" imtiyazı tümden kalktı — servis dersinin
+bakımını (silme dahil) onu alan bölümler eşit paylaşır. Silme zaten yalnız BOŞ
+derste (şube/sınav yok) çalıştığı için (K-32) yıkım sınırlıdır.
+
+> İlk uygulamada silme sahibe özel bırakılmıştı; kullanıcı kararıyla o da
+> paylaşıma açıldı — düzenleme/silme kapsamı ayrışınca "düzenleyebiliyorum ama
+> silemiyorum" tutarsızlığı doğuyordu.
+
+**Uygulama:** Yeni `_ensure_course_access(course)` yardımcısı, birincil-bölüm
+kontrolü yapan `_ensure_department_access`'in yerine **beş uçta** (update_course +
+üç şube ucu + delete_course) geçti. Efektif cohort kümesi ∩ kullanıcının
+üyelikleri boşsa 403. Normal derste küme tek elemanlı → eski davranış birebir
+(regresyon testiyle kilitlendi). ADMIN muaf. İzolasyon (K-04) bozulmaz: küme
+yalnız workgroup içi bölümlerden oluşur. Frontend `canEdit` cohort kümesine
+genişledi (Düzenle + Sil ikisini de kapsar).
+
+**Gösterim (aynı iş):** Ortak dersin detay kimlik satırı artık tek bölüm/sınıf/
+dönem göstermez (tek sahibi yok); "Ortak ders" rozeti + T+U+L taşır, cohort'lar
+"Aldığı gruplar"da eşit listelenir.
+
+**Bilinen keskin kenar [kabul edildi, MVP]:** Bir tüketen bölüm, PATCH cohort
+listesiyle BAŞKA bir tüketenin cohort'unu çıkarabilir (`_build_extra_cohorts`
+üyelik aramaz). Küçük, güvenilen bir fakülte ölçeğinde kabul edildi; gerekirse
+cohort-listesi değişikliğini sahibe kısıtlamak backlog.
+
+- Test: `test_common_course_shared_edit_by_consumer`,
+  `_delete_by_consumer`, `_delete_blocked_for_noncohort`,
+  `_not_editable_by_noncohort_department`,
+  `test_normal_course_edit_still_owner_scoped` (regresyon). Toplam 436 yeşil.

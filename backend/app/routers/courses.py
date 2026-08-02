@@ -38,6 +38,32 @@ def _ensure_department_access(db: Session, user: User, department_id: int) -> De
     return dep
 
 
+def _course_cohort_department_ids(course: Course) -> set[int]:
+    """Dersin efektif cohort kümesindeki TÜM bölümler: birincil + ek (K-48/K-49).
+
+    Normal derste ek cohort olmadığından küme tek elemanlıdır (yalnız birincil).
+    """
+    return {course.department_id} | {cc.department_id for cc in course.extra_cohorts}
+
+
+def _ensure_course_access(db: Session, user: User, course: Course) -> None:
+    """Dersi düzenleme + şube yönetimi yetkisi — ortak derste PAYLAŞIMLI (K-49).
+
+    ADMIN muaf. Alt hesap için: dersi ALAN herhangi bir bölümün (birincil ∪ ek
+    cohort) üyesiyse yeter. Ortak (servis) dersin bakımını onu alan tüm bölümler
+    paylaşır; "sahibi tek bölüm düzenler" kısıtı (eski K-48) kaldırıldı.
+
+    Normal derste efektif küme tek elemanlı olduğundan eski davranış (yalnız
+    birincil bölümün üyeliği) birebir korunur. Bölümler zaten `_get_owned_course`
+    ile workgroup'a bağlı; küme kesişimi yalnız kendi workgroup'undaki üyelikleri
+    değerlendirir (izolasyon K-04 bozulmaz).
+    """
+    if user.role == UserRole.ADMIN:
+        return
+    if not (_course_cohort_department_ids(course) & _member_department_ids(user)):
+        raise HTTPException(status_code=403, detail="Bu derste yetkiniz yok")
+
+
 def _get_owned_course(db: Session, user: User, course_id: int) -> Course:
     """Ders bizim workgroup'ta mı? Değilse/yoksa 404 (varlık sızdırmama)."""
     course = (
@@ -225,7 +251,7 @@ def update_course(
     user: User = Depends(require_course_manager),
 ):
     course = _get_owned_course(db, user, course_id)
-    _ensure_department_access(db, user, course.department_id)
+    _ensure_course_access(db, user, course)   # K-49: dersi alan her bölüm düzenler
 
     data = payload.model_dump(exclude_unset=True)
     # K-48: ek cohort listesi generic setattr döngüsüne GİRMEZ (ilişki alanı);
@@ -320,7 +346,7 @@ def create_section(
     user: User = Depends(require_course_manager),
 ):
     course = _get_owned_course(db, user, course_id)
-    _ensure_department_access(db, user, course.department_id)
+    _ensure_course_access(db, user, course)   # K-49: ortak derste şube yönetimi paylaşımlı
 
     data = payload.model_dump()
     _validate_section_refs(db, user, data)
@@ -349,7 +375,7 @@ def update_section(
     user: User = Depends(require_course_manager),
 ):
     sec = _get_owned_section(db, user, section_id)
-    _ensure_department_access(db, user, sec.course.department_id)
+    _ensure_course_access(db, user, sec.course)   # K-49
 
     data = payload.model_dump(exclude_unset=True)
     _validate_section_refs(db, user, data)
@@ -380,7 +406,7 @@ def delete_section(
     user: User = Depends(require_course_manager),
 ):
     sec = _get_owned_section(db, user, section_id)
-    _ensure_department_access(db, user, sec.course.department_id)
+    _ensure_course_access(db, user, sec.course)   # K-49
 
     has_entries = db.query(WeeklyScheduleEntry).filter(
         WeeklyScheduleEntry.section_id == sec.id
@@ -408,7 +434,9 @@ def delete_course(
     Kullanımdaki ders silinmez, PATCH {active:false} ile pasife alınır.
     """
     course = _get_owned_course(db, user, course_id)
-    _ensure_department_access(db, user, course.department_id)
+    # K-49: dersi ALAN her bölümün yetkilisi silebilir (düzenleme ile aynı kapsam).
+    # Silme zaten yalnız BOŞ derste çalışır (şube/sınav yoksa) — yıkım sınırlı.
+    _ensure_course_access(db, user, course)
 
     section_count = db.query(CourseSection).filter(
         CourseSection.course_id == course.id

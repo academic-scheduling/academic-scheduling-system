@@ -478,3 +478,82 @@ def test_list_common_via_extra_cohort():
     })
     got = client.get(f"/courses?department_id={depB['id']}", headers=h).json()
     assert any(c["id"] == course["id"] for c in got)
+
+
+# --- K-49: ortak dersin düzenleme/şube yetkisi tüketen bölümlere de açık ---
+
+def test_common_course_shared_edit_by_consumer():
+    """K-49: dersi EK cohort olarak alan bölümün yetkilisi de düzenler + şube ekler."""
+    h = admin_headers()
+    depA = make_department(h)      # sahibi (birincil)
+    depB = make_department(h)      # tüketen (ek cohort)
+    lec = make_lecturer(h)
+    course = make_course(h, depA, is_common=True)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+
+    # depB üyesi alt hesap — SAHİBİ DEĞİL
+    h_sub = sub_headers(department_ids=[depB["id"]], can_manage_courses=True)
+
+    # düzenleyebilir
+    r = client.patch(f"/courses/{course['id']}", json={"name": "Ortak Fizik II"}, headers=h_sub)
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "Ortak Fizik II"
+
+    # şube ekleyebilir
+    assert make_section(h_sub, course, lec).status_code == 201
+
+
+def test_common_course_delete_by_consumer():
+    """K-49: SİLME de paylaşımlı — tüketen bölümün yetkilisi boş ortak dersi siler."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA, is_common=True)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+
+    # depB üyesi alt hesap (sahibi değil) boş dersi silebilir
+    h_sub = sub_headers(department_ids=[depB["id"]], can_manage_courses=True)
+    assert client.delete(f"/courses/{course['id']}", headers=h_sub).status_code == 204
+
+
+def test_common_course_delete_blocked_for_noncohort():
+    """K-49: dersi ALMAYAN bölüm silemez (403) — kapsam korunur."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h); depC = make_department(h)
+    course = make_course(h, depA, is_common=True)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    h_sub = sub_headers(department_ids=[depC["id"]], can_manage_courses=True)
+    assert client.delete(f"/courses/{course['id']}", headers=h_sub).status_code == 403
+
+
+def test_common_course_not_editable_by_noncohort_department():
+    """K-49: dersi ALMAYAN bölümün yetkilisi düzenleyemez (403) — kapsam korunur."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h); depC = make_department(h)
+    course = make_course(h, depA, is_common=True)
+    _patch_course(h, course["id"], {
+        "is_common": True,
+        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+    })
+    # depC dersle hiç ilişkili değil
+    h_sub = sub_headers(department_ids=[depC["id"]], can_manage_courses=True)
+    assert client.patch(f"/courses/{course['id']}", json={"name": "x"},
+                        headers=h_sub).status_code == 403
+
+
+def test_normal_course_edit_still_owner_scoped():
+    """K-49 regresyon: ortak OLMAYAN derste kural değişmez — atanmamış bölüm 403."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)                        # is_common False
+    h_sub = sub_headers(department_ids=[depB["id"]], can_manage_courses=True)
+    assert client.patch(f"/courses/{course['id']}", json={"name": "x"},
+                        headers=h_sub).status_code == 403

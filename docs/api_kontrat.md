@@ -287,6 +287,11 @@ Not: Kullanılmış derslik silinmez, `PATCH {active:false}` ile pasife alınır
 
 ## 6. Dersler ve Şubeler (K-14; yazma: `can_manage_courses` + bölüm üyeliği)
 
+> **Ortak derste yazma (K-49):** Ortak (servis) dersin **düzenlenmesi, şube
+> yönetimi ve silinmesi**, dersi ALAN **herhangi bir** bölümün (birincil ∪ ek
+> cohort) yetkili üyesine açıktır — "yalnız sahibi bölüm" kısıtı tümden kalktı.
+> Normal (ortak olmayan) derste kural değişmez: yalnız birincil bölümün üyesi yazar.
+
 ### GET /courses?department_id=&year=&semester=&search=
 Workgroup'un **tüm** bölümlerinin dersleri döner — alt hesap da dahil (K-26).
 Bölüme göre daraltmak isteyen istemci `department_id` filtresini kullanır.
@@ -338,8 +343,9 @@ Ortak ders + ek cohort'lar (K-48): `{ "is_common": true, "cohorts":
   yapılırsa ek cohort'lar temizlenir.
   Hata 400: ortak olmayan derse ek cohort · ek cohort dersin birincil cohort'uyla
   aynı · aynı cohort iki kez · yabancı workgroup bölümü (izolasyon).
-  Not: ek cohort bölümünde ÜYELİK aranmaz — tüketen bölüm yalnız çakışma için
-  cohort sağlar, yazma hakkı vermez (sahibi bölümün yetkisi zaten denetlenir).
+  Not: cohort EKLERKEN o bölümde üyelik aranmaz (yalnız workgroup izolasyonu) —
+  bir bölümü cohort olarak işaretlemek, o bölümde üye olmayı gerektirmez.
+  (K-49: bir kez cohort olan bölümün yetkilisi artık dersi düzenleyebilir; §6 başı.)
 ### DELETE /courses/{id}   ← K-32
 Yalnız **hiç şubesi ve hiç sınavı olmayan** ders silinir.
 Cevap 204 · Hata 409: `{ "detail": "Bu ders silinemez: 2 şube ve 1 sınav bağlı. Önce bunları kaldırın." }`

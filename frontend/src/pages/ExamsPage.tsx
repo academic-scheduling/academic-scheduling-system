@@ -18,8 +18,8 @@ import ExportMenu from "../components/ExportMenu";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   EXAM_HOUR_H, GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
-  SHADOW, SHADOW_HOVER,
-  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR,
+  PAGE_SURFACE, SHADOW, SHADOW_HOVER,
+  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
   paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
@@ -447,7 +447,7 @@ export default function ExamsPage() {
           iki ayrı çerçeve, aralarındaki boşluğu gereksiz bir sınır gibi
           gösteriyordu. */}
       <Paper radius="md" px="md" py={10}
-        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
             Sınav Takvimi
@@ -528,7 +528,7 @@ export default function ExamsPage() {
           <TextInput size="xs" mb={10} radius="md" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
-                               borderColor: BORDER, background: "#FFFFFF" } }}
+                               borderColor: BORDER, background: PAGE_SURFACE } }}
             placeholder="Ders ara" />
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
             <Stack gap={6}>
@@ -552,8 +552,8 @@ export default function ExamsPage() {
         {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen */}
         <Paper p="md" radius="md"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
-                   background: "#FFFFFF", border: "1px solid #E2E8F0",
-                   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)" }}>
+                   background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
+                   boxShadow: SHADOW }}>
           {loading ? (
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (
@@ -653,8 +653,8 @@ export default function ExamsPage() {
                           position: "absolute", left: 2, right: 2,
                           top: (Number(over.split("|")[1]) - DAY_START) * PX,
                           height: 90 * PX, borderRadius: 6,
-                          background: "#EFF6FF",
-                          border: "1px dashed #93C5FD",
+                          background: "light-dark(#EFF6FF, #1E2A3B)",
+                          border: "1px dashed light-dark(#93C5FD, #3B5578)",
                           pointerEvents: "none",
                         }} />
                       )}
@@ -707,7 +707,7 @@ export default function ExamsPage() {
       </Group>
 
       <Paper ref={conflictsRef} p="md" radius="md"
-        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <style>{`
           @keyframes blinkPulseRed {
             0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
@@ -755,7 +755,7 @@ export default function ExamsPage() {
                       ? isHard ? "2px solid #EF4444" : "2px solid #F59E0B"
                       : "1px solid transparent",
                     background: isBlinking
-                      ? isHard ? "#FEF2F2" : "#FFFBEB"
+                      ? isHard ? "light-dark(#FEF2F2, #3A2526)" : "light-dark(#FFFBEB, #3A3320)"
                       : undefined,
                   }}>
                   <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
@@ -882,7 +882,8 @@ function WeekPicker({ weekStart, examDates, onPick }: {
               onClick={() => onPick(pzt)}
               style={{
                 cursor: "pointer", borderRadius: 6, padding: "5px 8px",
-                background: secili ? "var(--mantine-color-blue-1)" : undefined,
+                // blue-light: tema-farkındalıklı seçili tonu (blue-1 sabit açıktı).
+                background: secili ? "var(--mantine-color-blue-light)" : undefined,
               }}>
               <Text size="xs" fw={secili ? 600 : 400}>
                 {pzt.getDate()} {AY[pzt.getMonth()]} – {son.getDate()} {AY[son.getMonth()]}
@@ -938,7 +939,7 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
         cursor: draggable ? "grab" : "default",
       }}>
       <Group gap={6} wrap="nowrap" align="center">
-        <Text fz={12} fw={600} style={{ color: done ? TEXT_MUTED : "#0F172A" }}>
+        <Text fz={12} fw={600} style={{ color: done ? TEXT_MUTED : TEXT_STRONG }}>
           {c.code}
         </Text>
         {c.is_elective && (
@@ -1045,7 +1046,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
         top: (bas - DAY_START) * PX + 1,
         height: h - 2,
         left: `calc(${e.lane * w}% + 2px)`, width: `calc(${w}% - 4px)`,
-        background: "#FFFFFF", color: "#0F172A",
+        background: PAGE_SURFACE, color: TEXT_STRONG,
         /* DİKKAT — `border` kısayolu ile `borderLeft` uzun formu aynı stil
            nesnesinde BİRLİKTE KULLANILAMAZ. React yeniden render'da yalnız
            değeri değişen özelliği yazar; hover'da `border` güncellenince dört
@@ -1131,7 +1132,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
       {showDraftBadge && (
         <Badge size="xs" variant="default" radius="sm" mt={6}
           style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
-                   color: TEXT_MUTED, borderColor: BORDER, background: "#FFFFFF" }}>
+                   color: TEXT_MUTED, borderColor: BORDER, background: PAGE_SURFACE }}>
           Taslak
         </Badge>
       )}
@@ -1144,7 +1145,8 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
           }}
           style={{
             position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0,
-            cursor: "pointer", padding: 2, borderRadius: 4, background: "rgba(255, 255, 255, 0.8)",
+            cursor: "pointer", padding: 2, borderRadius: 4,
+            background: "light-dark(rgba(255,255,255,0.8), rgba(44,46,51,0.85))",
             boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "transform 150ms ease",
             zIndex: 10,
           }}

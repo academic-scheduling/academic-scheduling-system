@@ -9,6 +9,8 @@ import {
   NavLink,
   Text,
   Tooltip,
+  useComputedColorScheme,
+  useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure, useLocalStorage } from "@mantine/hooks";
 import {
@@ -21,7 +23,9 @@ import {
   IconLayoutDashboard,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconMoon,
   IconPencil,
+  IconSun,
   IconUsers,
   type IconProps,
 } from "@tabler/icons-react";
@@ -53,6 +57,9 @@ const COLLAPSED_WIDTH = 72;
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const [opened, { toggle, close }] = useDisclosure();          // mobil çekmece
+  // Tema: "auto"yu gerçek görünen şemaya (light/dark) çözer; düğme onu ters çevirir.
+  const { setColorScheme } = useMantineColorScheme();
+  const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true });
   // Masaüstü ray durumu localStorage'da: sayfa yenilense/gezinilse de korunur.
   const [collapsed, setCollapsed] = useLocalStorage({
     key: "sidebar-collapsed",
@@ -100,6 +107,17 @@ export default function AppLayout() {
             <Text fw={600}>Akademik Program Yönetimi</Text>
           </Group>
           <Group gap="sm">
+            <Tooltip label={scheme === "dark" ? "Aydınlık moda geç" : "Karanlık moda geç"}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
+                aria-label="Temayı değiştir"
+              >
+                {scheme === "dark" ? <IconSun size={20} /> : <IconMoon size={20} />}
+              </ActionIcon>
+            </Tooltip>
             <Text size="sm">{user?.name}</Text>
             <Badge variant="light">{user?.role}</Badge>
             <Button variant="subtle" size="xs" onClick={logout}>

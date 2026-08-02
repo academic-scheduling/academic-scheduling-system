@@ -10,7 +10,9 @@ import App from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <MantineProvider>
+    {/* defaultColorScheme="auto": ilk açılışta işletim sistemini izler; kullanıcı
+        header'daki düğmeyle değiştirince seçim localStorage'da kalıcı olur. */}
+    <MantineProvider defaultColorScheme="auto">
       <Notifications />
       <AuthProvider>
         <BrowserRouter>

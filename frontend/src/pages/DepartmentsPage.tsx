@@ -27,7 +27,7 @@ import type { ConflictScan, Course, Department, ManagedUser } from "../api/types
 // gerekli); bu yüzden küçük bir stil bloğu enjekte ediyoruz.
 const CARD_STYLES = `
 .dept-card {
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-default-border);
   border-left: 3px solid transparent;
   border-radius: var(--mantine-radius-md);
   background: var(--mantine-color-body);
@@ -39,8 +39,11 @@ const CARD_STYLES = `
   transform: translateY(-1px);
 }
 .dept-card[data-selected="true"] {
-  border-left-color: var(--mantine-color-blue-6);
-  background: var(--mantine-color-blue-0);
+  border-left-color: var(--mantine-color-blue-filled);
+  /* blue-light: variant="light"'ın tema-farkındalıklı tonu — aydınlıkta soluk
+     mavi, karanlıkta yarı saydam mavi. blue-0 sabit açık olduğu için dark'ta
+     beyaz ada oluyordu. */
+  background: var(--mantine-color-blue-light);
   box-shadow: 0 6px 20px rgba(0,0,0,0.10);
 }
 .kpi-card {

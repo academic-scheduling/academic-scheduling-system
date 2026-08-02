@@ -11,36 +11,40 @@ import type { CSSProperties } from "react";
 
 /* --- Renkler ------------------------------------------------------------ */
 
-/** Saat/slot satırlarını ayıran yatay çizgi — bilinçli olarak çok açık:
- *  ızgara okunmayı desteklemeli, dikkati kendine çekmemeli. */
-export const LINE = "#F1F5F9";
+/* Karanlık mod: her sabit `light-dark(açık, koyu)` ile iki değerli. Açık
+ * değerler eskisiyle BİREBİR aynı; koyu değerler Mantine dark rampasına (body
+ * #242424, yüzey #2C2E33, kenar #373A40) uyumlu seçildi. Tarayıcı `:root`
+ * üzerindeki `color-scheme`e göre çözer (Mantine set eder). Kademeli katman
+ * mantığı karanlıkta korunur: kart en açık (dolu), boş hücre daha koyu, ızgara
+ * en koyu — yani "dolu/boş" ayrımı aydınlıktakiyle aynı okunur. */
 
-/** Günleri ayıran DİKEY çizgi. Yataydan belirgin biçimde koyu: bir günün
- *  nerede bitip diğerinin nerede başladığı takvimin en temel okuma sınırıdır;
- *  yatay saat çizgileriyle yakın tonda olunca sütunlar birbirine akıyordu. */
-export const DAY_LINE = "#94A3B8";
+/** Saat/slot satırlarını ayıran yatay çizgi — bilinçli olarak çok silik:
+ *  ızgara okunmayı desteklemeli, dikkati kendine çekmemeli. */
+export const LINE = "light-dark(#F1F5F9, #2C2C2C)";
+
+/** Günleri ayıran DİKEY çizgi. Yataydan belirgin biçimde ayrık: bir günün
+ *  nerede bitip diğerinin nerede başladığı takvimin en temel okuma sınırıdır. */
+export const DAY_LINE = "light-dark(#94A3B8, #4A4E57)";
 
 /** İmleç boş bir slotun üzerindeyken o alana düşen vurgu — "buraya
  *  eklenebilir" sinyali. Artı işaretiyle birlikte görünür. */
-export const HOVER_CELL_BG = "#E9EEF5";
+export const HOVER_CELL_BG = "light-dark(#E9EEF5, #31343B)";
 
-export const BORDER = "#E2E8F0";        // kart ve panel kenarı
-export const BORDER_HOVER = "#CBD5E1";  // hover'da bir tık koyulaşır
-export const HEADER_BG = "#EEF2F7";     // gün başlığı bandı — hücrelerden koyu
-export const SIDEBAR_BG = "#F8FAFC";    // sol panel zemini
-export const PAGE_SURFACE = "#FFFFFF";  // kart zemini
+export const BORDER = "light-dark(#E2E8F0, #373A40)";        // kart ve panel kenarı
+export const BORDER_HOVER = "light-dark(#CBD5E1, #4A4E57)";  // hover'da bir tık belirginleşir
+export const HEADER_BG = "light-dark(#EEF2F7, #2A2C31)";     // gün başlığı bandı
+export const SIDEBAR_BG = "light-dark(#F8FAFC, #1E1F23)";    // sol panel zemini
+export const PAGE_SURFACE = "light-dark(#FFFFFF, #2C2E33)";  // kart zemini (en açık katman)
 
-/** BOŞ slotun zemini. Izgara gövdesi hafif gri, kartlar beyaz: böylece kart
- *  "dolu", boşluk "boş" olarak okunur. Her ikisi de beyazken slotun dolu mu
- *  boş mu olduğu ancak kenarlığa bakılarak anlaşılıyordu.
- *  Tonlar bilerek kademeli: başlık (#EEF2F7) > hover (#E9EEF5 koyu vurgu)
- *  ... boş hücre (#F8FAFC) > kart (beyaz). */
-export const GRID_CELL_BG = "#F8FAFC";
+/** BOŞ slotun zemini: ızgara gövdesinden bir ton, karttan iki ton koyu.
+ *  Böylece kart "dolu", boşluk "boş" olarak okunur — aydınlıkta beyaz kart /
+ *  gri hücre, karanlıkta açık yüzey / koyu hücre. */
+export const GRID_CELL_BG = "light-dark(#F8FAFC, #242629)";
 
-export const TIME_COLOR = "#94A3B8";    // saat cetveli — susturulmuş
-export const TEXT_MUTED = "#64748B";    // ikincil metin (derslik, hoca)
-export const TEXT_BODY = "#334155";     // ikincilden bir ton koyu
-export const TEXT_STRONG = "#0F172A";   // ders kodu
+export const TIME_COLOR = "light-dark(#94A3B8, #6E7178)";    // saat cetveli — susturulmuş
+export const TEXT_MUTED = "light-dark(#64748B, #909296)";    // ikincil metin (derslik, hoca)
+export const TEXT_BODY = "light-dark(#334155, #C1C2C5)";     // ikincilden bir ton belirgin
+export const TEXT_STRONG = "light-dark(#0F172A, #E6E8EC)";   // ders kodu
 
 /** Durum vurgusu — YALNIZ ince sol çizgide ve küçük ikonda kullanılır.
  *  Kart zemini her durumda beyaz kalır; renkli dolgu, yan yana duran

@@ -18,9 +18,9 @@ import { DAY_SHORT } from "../utils/slots";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
-  SHADOW, SHADOW_HOVER,
-  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TIME_COL_W, TIME_COLOR, WEEKLY_ROW_H,
-  paletteItemStyle,
+  PAGE_SURFACE, SHADOW, SHADOW_HOVER,
+  SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
+  WEEKLY_ROW_H, paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
@@ -582,7 +582,7 @@ export default function WeeklyPage() {
           ortada mercek + süzgeçler, sağda yayınlama. Tüm kontroller aynı
           yükseklikte (CONTROL_H). */}
       <Paper radius="md" px="md" py={10}
-        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           {/* Mercek seçici BAŞLIKLA BİRLİKTE solda sabitlenir. Ortadaki
               süzgeç grubunda dururken, mercek değişince süzgeçlerin toplam
@@ -672,7 +672,7 @@ export default function WeeklyPage() {
           <TextInput size="xs" mb={10} radius="md" value={paletteSearch}
             onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
-                               borderColor: BORDER, background: "#FFFFFF" } }}
+                               borderColor: BORDER, background: PAGE_SURFACE } }}
             placeholder="Ders ara" />
           {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
@@ -691,7 +691,7 @@ export default function WeeklyPage() {
                 })}
                 style={{ ...paletteItemStyle(false), cursor: "pointer", flexShrink: 0, opacity: 0.7 }}>
                 <Group gap={6} wrap="nowrap" align="center">
-                  <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{r.course.code}</Text>
+                  <Text fz={12} fw={600} style={{ color: TEXT_STRONG }}>{r.course.code}</Text>
                   <Badge size="xs" variant="light" color="yellow" radius="sm"
                     style={{ textTransform: "none", paddingInline: 5, marginLeft: "auto" }}>
                     şube yok
@@ -716,7 +716,7 @@ export default function WeeklyPage() {
                          cursor: canWrite ? "grab" : "default", flexShrink: 0 }}>
                 <Group gap={6} wrap="nowrap" align="center">
                   <Text fz={12} fw={600}
-                    style={{ color: r.done ? TEXT_MUTED : "#0F172A" }}>
+                    style={{ color: r.done ? TEXT_MUTED : TEXT_STRONG }}>
                     {r.course.code}-{r.section.section_no}
                   </Text>
                   {r.course.is_elective && (
@@ -749,8 +749,8 @@ export default function WeeklyPage() {
 
         <Paper ref={gridRef} p="md" radius="md"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
-                   background: "#FFFFFF", border: "1px solid #E2E8F0",
-                   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)" }}>
+                   background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
+                   boxShadow: SHADOW }}>
           {loading ? (
             <Group justify="center" p="xl"><Loader size="sm" /></Group>
           ) : (
@@ -844,7 +844,7 @@ export default function WeeklyPage() {
                       <div key={s} style={{
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
-                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-0)"
+                        background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)"
                           // İmleç boş slottayken bir tık daha koyu + ortada artı.
                           : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : GRID_CELL_BG,
                         pointerEvents: "none",
@@ -886,7 +886,7 @@ export default function WeeklyPage() {
         </Paper>
       </Group>
 
-      <Group gap="md" style={{ fontSize: 11, color: "#64748B" }}>
+      <Group gap="md" style={{ fontSize: 11, color: TEXT_MUTED }}>
         <Legend label="Yayınlanmış" color="#2563EB" />
         <Legend label="Taslak" color="#94A3B8" />
         <Legend label="Uyarı" color="#F59E0B" />
@@ -895,7 +895,7 @@ export default function WeeklyPage() {
       </Group>
 
       <Paper ref={conflictsRef} p="md" radius="md"
-        style={{ background: "#FFFFFF", border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+        style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <style>{`
           @keyframes blinkPulseRed {
             0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
@@ -940,7 +940,7 @@ export default function WeeklyPage() {
                       ? isHard ? "2px solid #EF4444" : "2px solid #F59E0B"
                       : "1px solid transparent",
                     background: isBlinking
-                      ? isHard ? "#FEF2F2" : "#FFFBEB"
+                      ? isHard ? "light-dark(#FEF2F2, #3A2526)" : "light-dark(#FFFBEB, #3A3320)"
                       : undefined,
                   }}>
                   <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
@@ -1147,7 +1147,7 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
                           (paletteItemStyle) — tıklanamaz olduğu için hover yok. */}
                       {hocaOzet.dersler.map((c) => (
                         <div key={c.id} style={paletteItemStyle(false)}>
-                          <Text fz={12} fw={600} style={{ color: "#0F172A" }}>{c.code}</Text>
+                          <Text fz={12} fw={600} style={{ color: TEXT_STRONG }}>{c.code}</Text>
                           <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
                         </div>
                       ))}
@@ -1216,8 +1216,8 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
      ama `borderLeft` (değeri aynı kaldığı için) tekrar uygulanmaz ve durum
      vurgusu sessizce kaybolur. Bu yüzden dört kenar da uzun formda. */
   const style: React.CSSProperties = {
-    background: "#FFFFFF",
-    color: "#0F172A",
+    background: PAGE_SURFACE,
+    color: TEXT_STRONG,
     borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
     borderTopStyle: draft ? "dashed" : "solid",
     borderRightStyle: draft ? "dashed" : "solid",
@@ -1335,7 +1335,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
       <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
         {e.section.course.name}
       </div>
-      <Group gap={4} wrap="nowrap" mt={5} style={{ color: "#64748B", minWidth: 0 }}>
+      <Group gap={4} wrap="nowrap" mt={5} style={{ color: TEXT_MUTED, minWidth: 0 }}>
         {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
         <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
       </Group>
@@ -1354,7 +1354,8 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
           }}
           style={{
             position: "absolute", right: 7, bottom: 6, color: accent, lineHeight: 0,
-            cursor: "pointer", padding: 2, borderRadius: 4, background: "rgba(255, 255, 255, 0.8)",
+            cursor: "pointer", padding: 2, borderRadius: 4,
+            background: "light-dark(rgba(255,255,255,0.8), rgba(44,46,51,0.85))",
             boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "transform 150ms ease",
             zIndex: 10,
           }}

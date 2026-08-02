@@ -1,0 +1,21 @@
+/* Sayfa geçiş animasyonu — Bölümler ekranındaki depOverviewFade'in sistem
+   geneli sürümü. AppLayout, Outlet'i pathname'e göre key'ler; her rota
+   değişiminde içerik hafifçe belirir + bir tık yukarı kayar (200ms).
+   Not: fill-mode yok — animasyon bitince transform "none"a döner, böylece
+   portal'lı modal/tooltip'lerin konumlanmasını etkileyecek kalıcı bir
+   containing-block bırakmaz. */
+@keyframes routeFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.route-fade {
+  animation: routeFade 200ms ease;
+}
+
+/* Hareket hassasiyeti olan kullanıcılar için kapat (erişilebilirlik). */
+@media (prefers-reduced-motion: reduce) {
+  .route-fade {
+    animation: none;
+  }
+}

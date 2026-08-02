@@ -163,7 +163,12 @@ export default function AppLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        {/* key={pathname}: her rota değişiminde içerik yeniden monte olur ve
+            route-fade animasyonu (Bölümler'deki geçişin sistem geneli sürümü)
+            baştan oynar. Aynı yol + farklı query (deep-link) remount etmez. */}
+        <div key={pathname} className="route-fade">
+          <Outlet />
+        </div>
       </AppShell.Main>
     </AppShell>
   );

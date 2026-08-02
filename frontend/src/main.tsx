@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
+import "./index.css";
 import { AuthProvider } from "./auth/AuthContext";
 import App from "./App";
 

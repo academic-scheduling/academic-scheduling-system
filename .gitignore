@@ -234,3 +234,9 @@ dist/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Claude Code araç ayarları (kişisel/yerel — paylaşılmaz)
+.claude/
+
+# Elle alınan reset/yedek dökümleri (repo'ya girmez)
+backend/reset_backup_*.json

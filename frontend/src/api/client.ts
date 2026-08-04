@@ -93,13 +93,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(0, "Sunucuya ulaşılamıyor — backend çalışıyor mu?");
   }
 
-  // 401 + elimizde token VARDI = token reddedildi (60 dk doldu ya da geçersiz).
-  // Oturumu düşür, login'e dön. DİKKAT: token YOKKEN gelen 401 buraya girmez —
-  // o, login denemesinin kendisinin hatasıdır ve formda gösterilmelidir.
-  if (response.status === 401 && token) {
+  // Veri ucundan gelen HER 401 = oturum yok/geçersiz → düşür ve login'e dön.
+  // Token'ın elimizde OLUP olmadığına bakmıyoruz: süresi dolan token bir önceki
+  // istekte temizlenmiş olabilir, ya da paralel isteklerden biri token'sız
+  // çıkmış olabilir; ikisi de "Not authenticated" (401) döner ve kullanıcı
+  // ekranda hata görüp asılı KALMAMALI — dışarı atılmalı.
+  // İSTİSNA: /auth/* uçları (login, şifre sıfırlama, davet) kendi 401'lerini
+  // formda gösterir; onları login'e yönlendirmek sonsuz döngü olurdu.
+  if (response.status === 401 && !path.startsWith("/auth/")) {
     clearToken();
-    window.location.assign("/login");
-    throw new ApiError(401, "Oturum süresi doldu");
+    if (window.location.pathname !== "/login") window.location.assign("/login");
+    throw new ApiError(401, "Oturum süresi doldu — lütfen tekrar giriş yapın");
   }
 
   if (response.status === 204) return undefined as T; // DELETE cevabı: gövdesiz
@@ -134,10 +138,10 @@ async function download(path: string): Promise<void> {
     throw new ApiError(0, "Sunucuya ulaşılamıyor — backend çalışıyor mu?");
   }
 
-  if (response.status === 401 && token) {
+  if (response.status === 401 && !path.startsWith("/auth/")) {
     clearToken();
-    window.location.assign("/login");
-    throw new ApiError(401, "Oturum süresi doldu");
+    if (window.location.pathname !== "/login") window.location.assign("/login");
+    throw new ApiError(401, "Oturum süresi doldu — lütfen tekrar giriş yapın");
   }
 
   if (!response.ok) {

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Button, Checkbox, Divider, Group, Loader, Modal,
-  NumberInput, Paper, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
+  ActionIcon, Alert, Badge, Button, Checkbox, Collapse, Divider, Group, Loader, Modal,
+  NumberInput, Paper, Select, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -10,7 +10,7 @@ import { IconChevronRight, IconDownload, IconPencil, IconTrash } from "@tabler/i
 import { api, ApiError } from "../api/client";
 import ImportCoursesModal from "../components/ImportCoursesModal";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { SEMESTER_LABELS } from "../api/types";
+import { lecturerLabel, SEMESTER_LABELS } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
 import type {
   Classroom, Course, CourseSection, Department, Lecturer, SemesterType, WeeklyEntry,
@@ -44,6 +44,7 @@ type CourseFormValues = {
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
+  ects: number | "";            // K-55: AKTS (opsiyonel; "" = girilmedi)
   theory_online: boolean;       // K-45: bileşen online mı
   practice_online: boolean;
   lab_online: boolean;
@@ -89,19 +90,15 @@ export default function CoursesPage() {
   // Modal dersi ID ile tutar, nesne KOPYASIYLA degil: sube eklenince load()
   // courses listesini tazeler ve modal da taze veriyi gorur. Nesne saklansaydi
   // eklenen sube modalin tablosunda gorunmezdi.
+  // Satır içinde açık (akordeon) dersin id'si — null = hepsi kapalı.
   const [sectionsCourseId, setSectionsCourseId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const sectionsCourse = useMemo(
-    () => courses.find((c) => c.id === sectionsCourseId) ?? null,
-    [courses, sectionsCourseId],
-  );
 
   const courseForm = useForm<CourseFormValues>({
     initialValues: {
       department_id: "", year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", is_common: false, cohorts: [],
-      hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      hours_theory: 3, hours_practice: 0, hours_lab: 0, ects: "",
       theory_online: false, practice_online: false, lab_online: false,
       midterm_count: 1,
     },
@@ -193,46 +190,21 @@ export default function CoursesPage() {
     () => visible.filter((c) => c.is_common).sort((a, b) => a.code.localeCompare(b.code, "tr")),
     [visible]);
 
-  /** Dönem grupları. Normal ders kendi döneminde; ORTAK ders (K-48) ayrı üst
-   *  kategoride durur AMA aynı zamanda cohort'u olan HER dönemde de gösterilir
-   *  (kullanıcı isteği). Bölüm süzgeci varsa yalnız o bölüme ait cohort'ların
-   *  dönemleri sayılır. */
-  const grouped = useMemo(() => {
-    const m = new Map<number, Course[]>();
-    const addTo = (k: number, c: Course) => {
-      const list = m.get(k) ?? [];
-      if (!list.includes(c)) list.push(c);       // aynı derse iki kez ekleme
-      m.set(k, list);
-    };
-    for (const c of visible) {
-      if (c.is_common) {
-        const cohorts = [
-          { dept: c.department_id, year: c.year, semester: c.semester },
-          ...c.extra_cohorts.map((ec) => ({
-            dept: ec.department_id, year: ec.year, semester: ec.semester })),
-        ];
-        const seen = new Set<number>();
-        for (const co of cohorts) {
-          if (depFilter && String(co.dept) !== depFilter) continue;
-          const k = donemNo(co.year, co.semester);
-          if (seen.has(k)) continue;             // aynı dönemde iki cohort → tek kart
-          seen.add(k);
-          addTo(k, c);
-        }
-      } else {
-        addTo(donemNo(c.year, c.semester), c);
-      }
-    }
-    for (const list of m.values()) {
-      list.sort((a, b) => a.code.localeCompare(b.code, "tr"));
-    }
-    return [...m.entries()].sort((a, b) => a[0] - b[0]);
-  }, [visible, depFilter]);
+  /** Normal (ortak olmayan) dersler TEK tabloda — dönem başına ayrı tablo YOK
+   *  (kullanıcı isteği). Dönem sütunu sıralamayı taşır: dönem (donemNo) sonra
+   *  kod. Ortak dersler bu tabloda değil, ayrı "Ortak Dersler" kategorisinde. */
+  const normalList = useMemo(
+    () => visible
+      .filter((c) => !c.is_common)
+      .sort((a, b) =>
+        donemNo(a.year, a.semester) - donemNo(b.year, b.semester)
+        || a.code.localeCompare(b.code, "tr")),
+    [visible]);
 
   // K-48: Ortak Dersler kategorisi yıl filtresi yokken veya "Ortak dersler"
-  // seçiliyken; normal dönem grupları "Ortak dersler" seçili değilken görünür.
+  // seçiliyken; normal ders tablosu "Ortak dersler" seçili değilken görünür.
   const showCommonGroup = (yearFilter === null || yearFilter === COMMON) && commonList.length > 0;
-  const showNormalGroups = yearFilter !== COMMON && grouped.length > 0;
+  const showNormalTable = yearFilter !== COMMON && normalList.length > 0;
 
   // K-49: ortak dersi ALAN her bölümün yetkilisi düzenler + şube yönetir + siler
   // (birincil ∪ ek cohort). Normal derste yalnız birincil → eski davranış.
@@ -256,7 +228,7 @@ export default function CoursesPage() {
         ?? (writableDepartments.length === 1 ? String(writableDepartments[0].id) : ""),
       year: 1, semester: "FALL", code: "", name: "",
       is_elective: "false", is_common: false, cohorts: [],
-      hours_theory: 3, hours_practice: 0, hours_lab: 0,
+      hours_theory: 3, hours_practice: 0, hours_lab: 0, ects: "",
       theory_online: false, practice_online: false, lab_online: false,
       midterm_count: 1,
     });
@@ -274,6 +246,7 @@ export default function CoursesPage() {
         department_id: String(ec.department_id), year: ec.year, semester: ec.semester,
       })),
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
+      ects: c.ects ?? "",
       theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
       midterm_count: c.midterm_count,
     });
@@ -310,6 +283,7 @@ export default function CoursesPage() {
       code: v.code, name: v.name, is_elective: v.is_elective === "true",
       is_common: v.is_common,           // K-48
       hours_theory: v.hours_theory, hours_practice: v.hours_practice, hours_lab: v.hours_lab,
+      ects: v.ects === "" ? null : v.ects,   // K-55: boş bırakıldıysa null gönder
       midterm_count: v.midterm_count,   // K-46
 
       // K-45: saati 0 olan bileşenin online bayrağı gönderilmez (backend zaten
@@ -318,12 +292,22 @@ export default function CoursesPage() {
       practice_online: v.hours_practice > 0 && v.practice_online,
       lab_online: v.hours_lab > 0 && v.lab_online,
     };
+    // Programa etki eden alan (online/saat) değiştiyse backend bu dersin taslak
+    // haftalık+sınav yerleşimlerini sıfırlar; kullanıcıya bunu bildirelim.
+    const schedFields = [
+      "hours_theory", "hours_practice", "hours_lab",
+      "theory_online", "practice_online", "lab_online",
+    ] as const;
+    const scheduleChanged = !!editingCourse
+      && schedFields.some((f) => ortak[f] !== editingCourse[f]);
     try {
       if (editingCourse) {
         // Kimlik alanları (bölüm/yıl/dönem) gönderilmez — kontrat §6.
         // cohorts PATCH'te tam listeyle değişir (K-48).
         await api.patch<Course>(`/courses/${editingCourse.id}`, { ...ortak, cohorts: cohortsPayload });
-        notifications.show({ color: "green", message: "Ders güncellendi" });
+        notifications.show({ color: "green", message: scheduleChanged
+          ? "Ders güncellendi — programa etki eden alan değiştiği için haftalık ve sınav yerleşimleri sıfırlandı. Yeniden yerleştirin."
+          : "Ders güncellendi" });
       } else {
         // K-48: ortak dersse backend aynı kodlu mevcut ortak derse cohort ekleyip
         // onu döner (birleştirme); değilse yeni kayıt. Ek cohort'lar DÜZENLE'den
@@ -344,8 +328,13 @@ export default function CoursesPage() {
       // dersi tekrar aratmak yerine sube ekranini dogrudan aciyoruz.
       if (yeniDersId !== null) setSectionsCourseId(yeniDersId);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) courseForm.setFieldError("code", e.message);
-      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      // 409: ya ders kodu çakışması ya da "yayınlanmış yerleşim var" bloğu — ikisi
+      // de tek satıra sığmayan bir açıklama taşır, bildirim olarak gösterilir.
+      if (e instanceof ApiError && e.status === 409) {
+        notifications.show({ color: "red", message: e.message, autoClose: 8000 });
+      } else {
+        notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      }
     } finally {
       setBusy(false);
     }
@@ -369,6 +358,90 @@ export default function CoursesPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Bir kategorinin derslerini TABLO olarak çizer (kullanıcı isteği: kart değil,
+  // sütunlu tablo — alt alta satırlar, üstte kategori başlığı). allCommon: bu
+  // tablo "Ortak Dersler" kategorisi mi (satırlar sınıf/dönem yerine "—").
+  function renderCourseTable(list: Course[], allCommon: boolean) {
+    return (
+      <Table highlightOnHover verticalSpacing="xs" withTableBorder layout="fixed">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th w={120}>Kod</Table.Th>
+            <Table.Th>Ad</Table.Th>
+            <Table.Th w={70}>AKTS</Table.Th>
+            <Table.Th w={150}>Tür</Table.Th>
+            <Table.Th w={80}>Sınıf</Table.Th>
+            <Table.Th w={90}>Dönem</Table.Th>
+            <Table.Th w={40} />
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {list.map((c) => renderCourseRow(c, allCommon || c.is_common))}
+        </Table.Tbody>
+      </Table>
+    );
+  }
+
+  // Tek ders satırı + tıklanınca AÇILAN detay satırı (colSpan'li, satır içinde
+  // akordeon). asCommon: ortak ders → sınıf/dönem tek değere sığmaz, "—".
+  function renderCourseRow(course: Course, asCommon: boolean) {
+    const open = sectionsCourseId === course.id;
+    return (
+      <Fragment key={course.id}>
+        <Table.Tr
+          style={{ cursor: "pointer", opacity: course.active ? 1 : 0.55 }}
+          onClick={() => setSectionsCourseId(open ? null : course.id)}
+        >
+          <Table.Td><Text fw={600} size="sm">{course.code}</Text></Table.Td>
+          <Table.Td><Text size="sm">{course.name}</Text></Table.Td>
+          <Table.Td>{course.ects ?? "—"}</Table.Td>
+          <Table.Td>
+            <Group gap={4} wrap="nowrap">
+              <Badge size="xs" variant="light" color={course.is_elective ? "orange" : "blue"}>
+                {course.is_elective ? "Seçmeli" : "Zorunlu"}
+              </Badge>
+              {course.is_common && <Badge size="xs" variant="light" color="teal">Ortak</Badge>}
+              {!course.active && <Badge size="xs" color="gray">Pasif</Badge>}
+            </Group>
+          </Table.Td>
+          <Table.Td>{asCommon ? "—" : `${course.year}. sınıf`}</Table.Td>
+          <Table.Td>{asCommon ? "—" : SEMESTER_LABELS[course.semester]}</Table.Td>
+          <Table.Td>
+            <IconChevronRight
+              size={16}
+              style={{
+                opacity: 0.5,
+                transform: open ? "rotate(90deg)" : "none",
+                transition: "transform .15s",
+              }}
+            />
+          </Table.Td>
+        </Table.Tr>
+        {/* Açılan detay satırı — kapalıyken görünmez (kenarlık/padding yok).
+            Panel yalnız AÇIKKEN mount edilir (her ders için useForm mount etmemek). */}
+        <Table.Tr>
+          <Table.Td colSpan={7} p={0} style={{ border: open ? undefined : "none" }}>
+            <Collapse in={open}>
+              {open && (
+                <CourseDetailPanel
+                  course={course}
+                  depName={depById[course.department_id]?.name}
+                  canEdit={canEdit(course)}
+                  onEditCourse={openEditCourse}
+                  onDeleteCourse={setDeletingCourse}
+                  lecturers={lecturers}
+                  classrooms={classrooms}
+                  entriesBySection={entriesBySection}
+                  onChanged={load}
+                />
+              )}
+            </Collapse>
+          </Table.Td>
+        </Table.Tr>
+      </Fragment>
+    );
   }
 
   if (loading && courses.length === 0) return <Loader mt="xl" />;
@@ -417,7 +490,7 @@ export default function CoursesPage() {
         />
         <Select
           data={[{ value: ALL, label: "Tüm öğretim üyeleri" },
-            ...lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))]}
+            ...lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))]}
           value={lecFilter ?? ALL}
           onChange={(v) => setLecFilter(v === ALL || v === null ? null : v)}
           allowDeselect={false}
@@ -445,7 +518,7 @@ export default function CoursesPage() {
         />
       </Group>
 
-      {!showCommonGroup && !showNormalGroups ? (
+      {!showCommonGroup && !showNormalTable ? (
         <Text c="dimmed">
           {search || depFilter || yearFilter || semFilter || lecFilter
             ? "Filtreye uyan ders yok."
@@ -453,9 +526,8 @@ export default function CoursesPage() {
         </Text>
       ) : (
         <Stack gap="lg">
-          {/* K-48: Ortak Dersler en üstte ayrı kategori. Yalnız yıl filtresi
-              yokken veya "Ortak dersler" seçiliyken görünür; belirli bir sınıf
-              seçilince gizlenir. Kartın sağında "Ortak ders" yazar; tıklayınca
+          {/* K-48: Ortak Dersler ayrı kategori. Yalnız yıl filtresi yokken veya
+              "Ortak dersler" seçiliyken görünür. Satırda "Ortak" yazar; tıklayınca
               detayda tüm cohort'ları gösterilir. */}
           {showCommonGroup && (
             <div>
@@ -463,31 +535,21 @@ export default function CoursesPage() {
                 <Text fw={700} size="sm">Ortak Dersler</Text>
                 <Text size="xs" c="dimmed">({commonList.length} ders)</Text>
               </Group>
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                {commonList.map((course) => (
-                  <CourseCard key={course.id} course={course} asCommon
-                    onOpen={() => setSectionsCourseId(course.id)} />
-                ))}
-              </SimpleGrid>
+              {renderCourseTable(commonList, true)}
             </div>
           )}
 
-          {showNormalGroups && grouped.map(([donem, list]) => (
-            <div key={donem}>
+          {/* K-56: dönem başına ayrı tablo YOK (kullanıcı isteği) — tüm bölüm
+              dersleri TEK tabloda, dönem sütunuyla sıralı. */}
+          {showNormalTable && (
+            <div>
               <Group gap="xs" mb="xs">
-                <Text fw={700} size="sm">{donem}. Dönem</Text>
-                <Text size="xs" c="dimmed">({list.length} ders)</Text>
+                <Text fw={700} size="sm">Bölüm Dersleri</Text>
+                <Text size="xs" c="dimmed">({normalList.length} ders)</Text>
               </Group>
-              {/* Kompakt kart: sadece kod, ad, sınıf, dönem. Detay + şubeler
-                  karta tıklayınca açılan modalda (SectionsModal). */}
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                {list.map((course) => (
-                  <CourseCard key={course.id} course={course} asCommon={course.is_common}
-                    onOpen={() => setSectionsCourseId(course.id)} />
-                ))}
-              </SimpleGrid>
+              {renderCourseTable(normalList, false)}
             </div>
-          ))}
+          )}
         </Stack>
       )}
 
@@ -546,6 +608,15 @@ export default function CoursesPage() {
               <NumberInput label="Uygulama (U)" min={0} {...courseForm.getInputProps("hours_practice")} />
               <NumberInput label="Lab (L)" min={0} {...courseForm.getInputProps("hours_lab")} />
             </Group>
+            {/* K-55: AKTS/ECTS kredisi. Opsiyonel — boş bırakılabilir (eski dersler
+                ve elle eklemede zorunlu değil; Bologna import'u doldurur). */}
+            <NumberInput
+              label="AKTS"
+              description="Dersin AKTS/ECTS kredisi (opsiyonel)."
+              min={0}
+              placeholder="—"
+              {...courseForm.getInputProps("ects")}
+            />
             {/* K-46: dersin vize sayısı. Birden fazlaysa sınav eklerken
                 "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
             <NumberInput
@@ -702,71 +773,25 @@ export default function CoursesPage() {
           <Button color="red" loading={busy} onClick={deleteCourse}>Sil</Button>
         </Group>
       </Modal>
-
-      <SectionsModal
-        course={sectionsCourse}
-        depName={sectionsCourse ? depById[sectionsCourse.department_id]?.name : undefined}
-        canEdit={sectionsCourse ? canEdit(sectionsCourse) : false}
-        onEditCourse={(c) => { setSectionsCourseId(null); openEditCourse(c); }}
-        onDeleteCourse={(c) => { setSectionsCourseId(null); setDeletingCourse(c); }}
-        onClose={() => setSectionsCourseId(null)}
-        lecturers={lecturers}
-        classrooms={classrooms}
-        entriesBySection={entriesBySection}
-        onChanged={load}
-      />
     </>
   );
 }
 
-/** Ders detay + şube yönetimi — ders kartına tıklayınca açılır.
+/** Ders detay + şube yönetimi — ders satırına tıklayınca SATIR İÇİNDE açılır.
  *
  *  Üstte dersin detayları (bölüm, sınıf, dönem, T+U+L, tür) ve yazma yetkisi
  *  varsa ders düzenle/sil. Altında şubeler: ekle/düzenle/sil yine yalnız
- *  yetkiliye açıktır (canEdit). Kart sade kalır, ayrıntı tek yerde toplanır.
+ *  yetkiliye açıktır (canEdit). Kullanıcı isteği: modal yerine akordeon panel.
  */
-/** Ders listesi kartı. asCommon: ortak ders kategorisinde — sağda sınıf/dönem
- *  yerine "Ortak ders" yazar (K-48; ders birden çok cohort'a ait olduğundan tek
- *  sınıf/dönem göstermek yanıltıcı). Detay için tıklanır. */
-function CourseCard({ course, asCommon, onOpen }: {
-  course: Course; asCommon?: boolean; onOpen: () => void;
-}) {
-  return (
-    <Paper withBorder p="sm" onClick={onOpen}
-      style={{ cursor: "pointer" }} opacity={course.active ? 1 : 0.6}>
-      <Group justify="space-between" wrap="nowrap" gap="xs">
-        <div style={{ minWidth: 0 }}>
-          <Text fw={700} size="sm">{course.code}</Text>
-          <Text size="sm" truncate>{course.name}</Text>
-        </div>
-        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-          {asCommon ? (
-            <Badge size="sm" variant="light" color="teal">Ortak ders</Badge>
-          ) : (
-            <Stack gap={3} align="flex-end">
-              <Badge size="xs" variant="light">{course.year}. sınıf</Badge>
-              <Badge size="xs" variant="light" color="grape">
-                {SEMESTER_LABELS[course.semester]}
-              </Badge>
-            </Stack>
-          )}
-          <IconChevronRight size={16} style={{ opacity: 0.35 }} />
-        </Group>
-      </Group>
-    </Paper>
-  );
-}
-
-function SectionsModal({
+function CourseDetailPanel({
   course, depName, canEdit, onEditCourse, onDeleteCourse,
-  onClose, lecturers, classrooms, entriesBySection, onChanged,
+  lecturers, classrooms, entriesBySection, onChanged,
 }: {
   course: Course | null;
   depName?: string;
   canEdit: boolean;
   onEditCourse: (c: Course) => void;
   onDeleteCourse: (c: Course) => void;
-  onClose: () => void;
   lecturers: Lecturer[];
   classrooms: Classroom[];
   entriesBySection: Record<number, WeeklyEntry[]>;
@@ -880,8 +905,7 @@ function SectionsModal({
 
   return (
     <>
-      <Modal opened onClose={onClose} title={`${course.code} — ${course.name}`} size="xl">
-        <Stack>
+      <Stack p="md">
           {/* Ders detayları */}
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Group gap="xs">
@@ -961,7 +985,7 @@ function SectionsModal({
                   return (
                     <Table.Tr key={s.id}>
                       <Table.Td>{s.section_no}</Table.Td>
-                      <Table.Td>{s.lecturer.full_name}</Table.Td>
+                      <Table.Td>{lecturerLabel(s.lecturer)}</Table.Td>
                       <Table.Td>{s.expected_students}</Table.Td>
                       <Table.Td>
                         <Text size="sm" c={rooms.length ? undefined : "dimmed"}>
@@ -1036,7 +1060,7 @@ function SectionsModal({
                   placeholder="Seçin"
                   searchable
                   nothingFoundMessage="Bulunamadı"
-                  data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))}
+                  data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))}
                   {...form.getInputProps("lecturer_id")}
                 />
                 {/* Derslik BURADA sorulmaz — haftalık programda yerleştirilirken
@@ -1051,12 +1075,11 @@ function SectionsModal({
             </form>
           </Paper>
           )}
-        </Stack>
-      </Modal>
+      </Stack>
 
       <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Şubeyi sil">
         <Text>
-          <b>Şube {deleting?.section_no}</b> ({deleting?.lecturer.full_name}) silinecek.
+          <b>Şube {deleting?.section_no}</b> ({deleting && lecturerLabel(deleting.lecturer)}) silinecek.
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
           Haftalık program girişi olan şube silinemez; önce girişleri kaldırın.

@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import type { ComponentType, ReactNode } from "react";
 import { api, ApiError } from "../api/client";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
 import type { ConflictScan, Course, Department, Lecturer, ManagedUser } from "../api/types";
 
@@ -447,20 +447,32 @@ export default function DepartmentsPage() {
                   </Paper>
                 )}
 
-                {/* --- Hızlı İşlemler: yalnızca gezinme, CRUD burada değil --- */}
+                {/* --- Hızlı İşlemler: yalnızca gezinme, CRUD burada değil ---
+                    K-58: EKLEME kısayolları (ders/hoca) YAZMA işidir → yetkiye göre
+                    kilitlenir (karartma + neden tooltip'i). Alt hesap yetkisi
+                    olmayan bir bölümde "Ders Ekle"ye tıklayıp yetkisiz forma
+                    düşmesin (sunucu zaten 403 verir; bu görünüm tutarlılığı).
+                    "Aç" butonları GÖRÜNTÜLEMEdir (K-26: herkes tüm bölümleri okur)
+                    → herkese açık kalır. */}
                 <Paper withBorder radius="md" p="md">
                   <Text fw={600} mb="sm">Hızlı İşlemler</Text>
                   <Group gap="sm">
                     {/* add=1: hedef sayfa ekleme formunu açık getirir; department_id
                         de önceden seçili gelir (ders formu bölüm alanı taşır). */}
-                    <Button variant="light" leftSection={<IconBook2 size={16} />}
-                      onClick={() => navigate(`/courses?add=1&department_id=${selected.id}`)}>
-                      Ders Ekle
-                    </Button>
-                    <Button variant="light" leftSection={<IconSchool size={16} />}
-                      onClick={() => navigate(`/lecturers?add=1&department_id=${selected.id}`)}>
-                      Öğretim Üyesi Ekle
-                    </Button>
+                    <LockedAction
+                      allowed={canWriteIn(user, "can_manage_courses", selected.id)}
+                      tip="Bu bölümde ders ekleme yetkiniz yok"
+                      icon={<IconBook2 size={16} />}
+                      label="Ders Ekle"
+                      onClick={() => navigate(`/courses?add=1&department_id=${selected.id}`)}
+                    />
+                    <LockedAction
+                      allowed={canWriteIn(user, "can_manage_lecturers")}
+                      tip="Öğretim üyesi ekleme yetkiniz yok"
+                      icon={<IconSchool size={16} />}
+                      label="Öğretim Üyesi Ekle"
+                      onClick={() => navigate(`/lecturers?add=1&department_id=${selected.id}`)}
+                    />
                     <Button variant="light" leftSection={<IconCalendarWeek size={16} />}
                       onClick={() => navigate(`/weekly?department_id=${selected.id}`)}>
                       Haftalık Programı Aç
@@ -535,5 +547,32 @@ function KpiCard({ icon: Icon, label, value, valueContent, onClick, color, hint,
       </Paper>
     </Grid.Col>
   );
+}
+
+/** K-58: yetkiye bağlı hızlı işlem butonu. Yetki yoksa KARARTILIR (Mantine
+ *  `data-disabled`) + tıklama engellenir + neden tooltip'i gösterilir. Native
+ *  `disabled` yerine data-disabled: buton hover alır → tooltip görünür kalır.
+ *  Görünüm kararı yalnız; otorite sunucudadır (yetkisiz istek yine 403). */
+function LockedAction({ allowed, tip, icon, label, onClick }: {
+  allowed: boolean;
+  tip: string;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  const btn = (
+    <Button
+      variant="light"
+      leftSection={icon}
+      data-disabled={!allowed || undefined}
+      onClick={(e) => {
+        if (!allowed) { e.preventDefault(); return; }
+        onClick();
+      }}
+    >
+      {label}
+    </Button>
+  );
+  return allowed ? btn : <Tooltip label={tip} withArrow>{btn}</Tooltip>;
 }
 

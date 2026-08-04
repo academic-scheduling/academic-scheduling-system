@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     # yayinda gercek alan adi. Virgulle ayrilir (allowed_email_domains ile ayni desen).
     cors_origins: str = "http://localhost:5173"
 
+    # K-50 · Fakulte akademik personel import kaynagi (K-08 acik konu 4). URL
+    # koda gomulmez (brief §6.3): baska bir fakulte kendi listesini env'den
+    # verir. Detay sayfalarinin adresi liste sayfasindaki linklerden gelir.
+    lecturer_import_list_url: str = (
+        "https://muhendislik.mu.edu.tr/tr/personel/akademik"
+    )
+    # Detay sayfasi cekimi kac kisiyi asarsa reddedilir: kotu niyetli/degismis
+    # bir liste sayfasi yuzlerce detay istegi tetiklemesin (kabalik + zaman).
+    lecturer_import_max_detail_fetch: int = 200
+    # Detay sayfalari es zamanli kac tane cekilir. Is ag-bekleme agirlikli
+    # (I/O-bound): paralel istek toplam sureyi ~10 kat kisaltir. Havuz kucuk
+    # tutulur -- kaynak siteyi bombalamamak icin (paralel ama kibar).
+    lecturer_import_concurrency: int = 8
+
     # "production" degerinde, asagidaki dogrulama dev varsayilanlariyla
     # acilmayi reddeder. Varsayilan "development" oldugu icin mevcut yerel
     # kurulumlar ve testler bundan etkilenmez.

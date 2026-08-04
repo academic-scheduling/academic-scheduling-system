@@ -52,6 +52,8 @@ def build_label(nesne) -> str | None:
 FIELD_LABELS: dict[str, str] = {
     "name": "Ad",
     "full_name": "Ad",
+    "title": "Ünvan",                       # K-52
+    "email": "E-posta",                     # K-52
     "code": "Kod",
     "room_code": "Derslik kodu",
     "status": "Durum",

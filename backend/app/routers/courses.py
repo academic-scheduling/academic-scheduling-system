@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseCohort, CourseSection, Department, DepartmentMembership,
-    Exam, ExamType, Lecturer, SemesterType, User, UserRole, WeeklyScheduleEntry,
+    EntryStatus, Exam, ExamType, Lecturer, SemesterType, User, UserRole,
+    WeeklyScheduleEntry,
 )
 from app.schemas import (
     CourseCreate, CourseUpdate, CourseOut,
@@ -89,6 +90,30 @@ def _get_owned_section(db: Session, user: User, section_id: int) -> CourseSectio
     if sec is None:
         raise HTTPException(status_code=404, detail="Şube bulunamadı")
     return sec
+
+
+def _find_common_course(db: Session, workgroup_id: int, code: str) -> Course | None:
+    """Bu workgroup'ta aynı KODLU mevcut ortak dersi bul (K-48 birleştirme anahtarı).
+
+    Kod eşleşmesi büyük/küçük harf DUYARSIZ + kırpılmış: "ceng2001" ile "CENG2001"
+    aynı ortak ders sayılır. Yalnız is_common kayıtlar aday — normal ders ortak
+    dersle birleşmez. Hem create_course hem Bologna import BU tek kaynağı kullanır
+    (import ayrı, birleştirmesiz bir yol izlerse K-54'teki çift kayıt geri döner).
+    """
+    return (
+        db.query(Course).join(Department)
+        .filter(Department.workgroup_id == workgroup_id,
+                func.lower(func.trim(Course.code)) == code.strip().lower(),
+                Course.is_common.is_(True))
+        .first()
+    )
+
+
+def _covered_cohorts(course: Course) -> set[tuple[int, int, SemesterType]]:
+    """Ortak dersin efektif cohort kümesi: birincil ∪ ek (bölüm, yıl, dönem)."""
+    covered = {(course.department_id, course.year, course.semester)}
+    covered |= {(cc.department_id, cc.year, cc.semester) for cc in course.extra_cohorts}
+    return covered
 
 
 def _build_extra_cohorts(
@@ -193,20 +218,10 @@ def create_course(
     # tek ders altında toplanır. Tüketen bölümde üyelik aranmaz (sahibinin değil,
     # yeni cohort'un bölümüne erişim yukarıda denetlendi; K-48 tüketim prensibi).
     if payload.is_common:
-        # Kod eşleşmesi büyük/küçük harf DUYARSIZ + kırpılmış: "ceng2001" ile
-        # "CENG2001" aynı ortak ders sayılır (kullanıcı geri bildirimi).
-        existing = (
-            db.query(Course).join(Department)
-            .filter(Department.workgroup_id == user.workgroup_id,
-                    func.lower(func.trim(Course.code)) == payload.code.strip().lower(),
-                    Course.is_common.is_(True))
-            .first()
-        )
+        existing = _find_common_course(db, user.workgroup_id, payload.code)
         if existing:
             new_key = (payload.department_id, payload.year, payload.semester)
-            covered = {(existing.department_id, existing.year, existing.semester)}
-            covered |= {(cc.department_id, cc.year, cc.semester) for cc in existing.extra_cohorts}
-            if new_key in covered:
+            if new_key in _covered_cohorts(existing):
                 raise HTTPException(
                     status_code=409,
                     detail=f"'{existing.code}' ortak dersi zaten bu bölüm/sınıf/dönemde kayıtlı")
@@ -306,6 +321,63 @@ def update_course(
                 detail=f"{data['midterm_count']}'in üstünde sıralı {over} vize kayıtlı — "
                        f"önce onları silin",
             )
+
+    # Programa ETKİ EDEN alan (online bayrakları / T+U+L saatleri) değiştiyse bu
+    # dersin TASLAK yerleşimlerini sıfırla (sil): eski derslik/teslim/oturum
+    # bilgisi sessizce bayat kalmasın — ör. yüz yüzeden online'a çevrilen bir
+    # bileşenin haftalık girişi derslikli görünmeye devam ediyordu. Ders palete
+    # geri döner, kullanıcı yeniden yerleştirir. Yayınlanmış (kilitli) yerleşim
+    # varsa DÜZENLEMEYİ reddet — K-03 yayın kilidine saygılı, önce taslağa çevrilsin.
+    SCHEDULING_FIELDS = (
+        "theory_online", "practice_online", "lab_online",
+        "hours_theory", "hours_practice", "hours_lab",
+    )
+    schedule_changed = any(
+        f in data and data[f] != getattr(course, f) for f in SCHEDULING_FIELDS
+    )
+    if schedule_changed:
+        section_ids = [
+            sid for (sid,) in db.query(CourseSection.id).filter(
+                CourseSection.course_id == course.id
+            )
+        ]
+        submitted_weekly = (
+            db.query(WeeklyScheduleEntry).filter(
+                WeeklyScheduleEntry.section_id.in_(section_ids),
+                WeeklyScheduleEntry.status == EntryStatus.SUBMITTED,
+            ).count() if section_ids else 0
+        )
+        submitted_exam = db.query(Exam).filter(
+            Exam.course_id == course.id,
+            Exam.status == EntryStatus.SUBMITTED,
+        ).count()
+        if submitted_weekly or submitted_exam:
+            parcalar = []
+            if submitted_weekly:
+                parcalar.append(f"{submitted_weekly} haftalık giriş")
+            if submitted_exam:
+                parcalar.append(f"{submitted_exam} sınav")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu dersin yayınlanmış {' ve '.join(parcalar)} var — programa "
+                       "etki eden alanı (online/saat) değiştirmeden önce onları taslağa çevirin.",
+            )
+        draft_weekly = (
+            db.query(WeeklyScheduleEntry).filter(
+                WeeklyScheduleEntry.section_id.in_(section_ids),
+                WeeklyScheduleEntry.status == EntryStatus.DRAFT,
+            ).all() if section_ids else []
+        )
+        draft_exams = db.query(Exam).filter(
+            Exam.course_id == course.id,
+            Exam.status == EntryStatus.DRAFT,
+        ).all()
+        for we in draft_weekly:
+            log_action(db, user, "DELETE", "weekly_entry", we.id, we)
+            db.delete(we)
+        for ex in draft_exams:
+            log_action(db, user, "DELETE", "exam", ex.id, ex)
+            db.delete(ex)
 
     ozet = build_change_summary(course, data)
     for field, value in data.items():

@@ -3,9 +3,10 @@
 Kaynak: obs.mu.edu.tr/oibs/bologna/progCourses.aspx?lang=tr&curSunit=<ID>
 Sunucu-render HTML tablo (grdBolognaDersler), yariyil yariyil dersler.
 
-Yalniz DERS bilgisi cikarilir: kod, ad, T+U+L, zorunlu/secmeli, yariyil ->
+Yalniz DERS bilgisi cikarilir: kod, ad, T+U+L, AKTS, zorunlu/secmeli, yariyil ->
 yil + donem. Hoca/sube ACILMAZ (Bologna'da hoca yok; subeler sonra elle
-eklenir). AKTS ve ogretim sekli okunmaz (Course modelinde karsiligi yok).
+eklenir). Ogretim sekli okunmaz (Course modelinde karsiligi yok). AKTS (K-55)
+courses.ects'e yazilir; parse edilemezse None (kolon nullable).
 
 parse_courses saf fonksiyondur (ag bilmez) — kaydedilmis HTML ile test edilir.
 """
@@ -35,6 +36,7 @@ class ParsedCourse:
     hours_practice: int
     hours_lab: int
     is_elective: bool
+    ects: int | None = None      # K-55: AKTS; sutun bos/sayisal degilse None
 
 
 def extract_cursunit(url: str) -> str:
@@ -91,6 +93,11 @@ def parse_courses(html: str) -> list[ParsedCourse]:
         if not code or code == "Ders Kodu" or tul is None:
             continue  # sutun basligi / Toplam AKTS / bos satir
 
+        # K-55: AKTS cells[5]'te. Bazi satirlarda bos ya da sayisal olmayabilir
+        # ("-", " ") → None birak (kolon nullable). Ondalik gelmez, MU tam sayi verir.
+        ects_raw = cells[5].strip() if len(cells) > 5 else ""
+        ects = int(ects_raw) if ects_raw.isdigit() else None
+
         courses.append(ParsedCourse(
             code=code,
             name=cells[2].strip(),
@@ -100,5 +107,6 @@ def parse_courses(html: str) -> list[ParsedCourse]:
             hours_practice=int(tul.group(2)),
             hours_lab=int(tul.group(3)),
             is_elective=(cells[4].strip() == "Seçmeli"),
+            ects=ects,
         ))
     return courses

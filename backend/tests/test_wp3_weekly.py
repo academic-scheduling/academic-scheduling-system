@@ -323,3 +323,51 @@ def test_filters():
     assert ids(f"lecturer_id={lec['id']}") == [e1["id"]]              # hoca şubeden gelir (K-14)
     assert ids(f"department_id={dep['id']}&year=2&semester=FALL") == [e1["id"], e2["id"]]
     assert ids(f"department_id={dep['id']}&year=3") == []
+
+
+# --- ders özelliği değişince taslak yerleşim sıfırlama ---
+# Programa ETKİ EDEN alan (online/T+U+L saat) değişince dersin taslak haftalık
+# girişleri silinir (bayat derslik/teslim kalmasın); yayınlanmış varsa reddedilir.
+
+def _entries_of(h, section):
+    dep = section["department"]["id"]
+    return client.get(
+        f"/weekly-entries?department_id={dep}&year=2&semester=FALL", headers=h
+    ).json()
+
+
+def test_scheduling_change_resets_draft_entry():
+    h = admin_headers()
+    section = make_section(h)
+    room = make_classroom(h)
+    eid = make_entry(h, section, classroom_id=room["id"]).json()["entry"]["id"]
+    # dersi online yap → programa etki eden alan → taslak giriş sıfırlanır
+    r = client.patch(f"/courses/{section['course']['id']}",
+                     json={"theory_online": True}, headers=h)
+    assert r.status_code == 200, r.text
+    assert all(e["id"] != eid for e in _entries_of(h, section))
+
+
+def test_nonscheduling_change_keeps_entry():
+    h = admin_headers()
+    section = make_section(h)
+    eid = make_entry(h, section).json()["entry"]["id"]
+    # yalnız ad değişir → yerleşim korunur
+    r = client.patch(f"/courses/{section['course']['id']}",
+                     json={"name": "Yeni Ders Adı"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert any(e["id"] == eid for e in _entries_of(h, section))
+
+
+def test_scheduling_change_blocked_by_submitted_entry():
+    h = admin_headers()
+    section = make_section(h)
+    room = make_classroom(h)
+    eid = make_entry(h, section, classroom_id=room["id"]).json()["entry"]["id"]
+    assert client.post("/weekly-entries/submit",
+                       json={"entry_ids": [eid]}, headers=h).status_code == 200
+    # yayınlanmış giriş varken programa etki eden alan değiştirilemez
+    r = client.patch(f"/courses/{section['course']['id']}",
+                     json={"theory_online": True}, headers=h)
+    assert r.status_code == 409, r.text
+    assert any(e["id"] == eid for e in _entries_of(h, section))   # korunur

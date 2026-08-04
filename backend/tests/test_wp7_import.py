@@ -170,6 +170,12 @@ def test_commit_persists_edited_fields(mock_fetch):
     one = _strip_exists(parsed[:1])
     one[0]["name"] = "Düzenlenmiş Ad"               # kullanici adi degistirdi
     one[0]["is_elective"] = True
+    # Bu test, import'ta duzenlenen alanlarin YENI ders acilirken korundugunu
+    # dogrular → ortak isaretini kaldirip (kullanici onizlemede yapabilir) create
+    # yolunu deterministik kil. Ortak birakilsaydi (K-48/K-54) ayni kodlu mevcut
+    # ortak derse cohort eklenir ve ad/secmelilik SAHIBININ degeri kalirdi
+    # (paylasilan alanlari tuketen bolum degistiremez) — o davranis ayri test.
+    one[0]["is_common"] = False
     _commit(h, dep["id"], one)
     got = client.get(f"/courses?department_id={dep['id']}", headers=h).json()
     assert got[0]["name"] == "Düzenlenmiş Ad"
@@ -241,4 +247,84 @@ def test_sub_with_permission_can_preview_and_commit(mock_fetch):
     dep = _make_department(h)
     sub = sub_headers(can_manage_courses=True, department_ids=[dep["id"]])
     parsed = _strip_exists(_preview(sub, dep["id"]).json()["courses"])
-    assert _commit(sub, dep["id"], parsed).json()["added_count"] == 71
+    # Yetkili alt hesap 71 dersin hepsini isleyebilmeli. Kac tanesi YENI acildi
+    # (added) vs mevcut ortak derse cohort olarak eklendi (merged) paylasimli test
+    # DB'sinde onceki testlerin biraktigi ortak derslere baglidir (K-54); bu test
+    # YETKIYI dogrular → hepsi bir sekilde islensin (added + merged = 71).
+    body = _commit(sub, dep["id"], parsed).json()
+    assert body["added_count"] + body["merged_count"] == 71
+
+
+# --- K-48: ortak ders ön-işareti (kod öneki ≠ bölüm kodu) ---
+
+def test_looks_common_prefix_rule():
+    from app.routers.import_courses import _looks_common
+    # Bölüm koduyla başlayan → kendi dersi (ortak değil)
+    assert _looks_common("CENG 1004", "CENG") is False
+    assert _looks_common("CE 2001", "CE") is False
+    # Baştaki HARF dizisi farklı → ortak (startswith değil: "CE" bölümü "CENG"i yutmaz)
+    assert _looks_common("CENG 2001", "CE") is True
+    assert _looks_common("ATB 3801", "CENG") is True
+    assert _looks_common("CHEM 1853", "CENG") is True
+    assert _looks_common("MATH1001", "CENG") is True
+
+
+def test_preview_marks_common_by_prefix(mock_fetch):
+    """CENG bölümünde: CENG dersleri ortak DEĞİL, diğerleri (ATB/MATH…) ortak."""
+    h = admin_headers()
+    r = client.post("/departments", json={"name": "Bilgisayar Müh.", "code": "CENG"}, headers=h)
+    dep = (r.json() if r.status_code == 201
+           else next(d for d in client.get("/departments", headers=h).json()
+                     if d["code"] == "CENG"))
+    courses = _preview(h, dep["id"]).json()["courses"]
+    ceng = next(c for c in courses if c["code"].upper().startswith("CENG"))
+    other = next(c for c in courses if not c["code"].upper().startswith("CENG"))
+    assert ceng["is_common"] is False
+    assert other["is_common"] is True
+
+
+# --- K-54: ortak dersin bölümler-arası BİRLEŞTİRİLMESİ (kullanıcı şikâyeti) ---
+
+def test_import_merges_common_across_departments():
+    """A bölümüne aktarılan ortak ders, B bölümü import edince YENİ kayıt yerine
+    aynı dersin cohort'u olur — eskiden her bölüm için ayrı kayıt açılıp 'Ortak
+    Dersler'de iki kart çıkıyordu."""
+    h = admin_headers()
+    dep_a = _make_department(h)
+    dep_b = _make_department(h)
+    row = {"code": _u("SRV"), "name": "Ortak Servis Dersi", "year": 1,
+           "semester": "FALL", "is_common": True, "ects": 5}
+    # A'ya → yeni ortak ders açılır.
+    ra = _commit(h, dep_a["id"], [row]).json()
+    assert ra["added_count"] == 1 and ra["merged_count"] == 0
+    # B'ye AYNI kod → MERGE (yeni kayıt yok, cohort eklenir).
+    rb = _commit(h, dep_b["id"], [row]).json()
+    assert rb["added_count"] == 0 and rb["merged_count"] == 1
+    # Tek ders iki bölümde: A'nın dersi B'nin listesinde de aynı id ile görünür.
+    a = next(c for c in client.get(f"/courses?department_id={dep_a['id']}", headers=h).json()
+             if c["code"] == row["code"])
+    b = next(c for c in client.get(f"/courses?department_id={dep_b['id']}", headers=h).json()
+             if c["code"] == row["code"])
+    assert a["id"] == b["id"]                         # tek kayıt, iki cohort
+    assert any(cc["department_id"] == dep_b["id"] for cc in a["extra_cohorts"])
+    assert a["ects"] == 5                             # K-55 korunur
+    # Tekrar B'ye aynı satır → artık kapsanıyor, sessizce atlanır (idempotent).
+    rb2 = _commit(h, dep_b["id"], [row]).json()
+    assert rb2["merged_count"] == 0 and rb2["skipped_count"] == 1
+
+
+# --- K-55: AKTS Bologna'dan okunur + saklanır ---
+
+def test_import_parses_and_persists_ects(mock_fetch):
+    h = admin_headers()
+    dep = _make_department(h)
+    parsed = _preview(h, dep["id"]).json()["courses"]
+    intro = next(c for c in parsed if c["code"] == "CENG 1007")
+    assert intro["ects"] == 6                         # fixture: Intro to CS = 6 AKTS
+    row = {k: v for k, v in intro.items() if k != "exists"}
+    row["is_common"] = False                          # kendi bölümünde saklansın
+    row["code"] = _u("ECTS")                          # başka testle çakışmasın
+    _commit(h, dep["id"], [row])
+    saved = next(c for c in client.get(f"/courses?department_id={dep['id']}", headers=h).json()
+                 if c["code"] == row["code"])
+    assert saved["ects"] == 6

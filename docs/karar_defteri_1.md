@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 1 Ağustos 2026 (K-49: ortak ders düzenleme yetkisi paylaşımlı)
+**Son güncelleme:** 4 Ağustos 2026 (K-56: Dersler tablo görünümü · K-55: AKTS · K-54: import birleştirme)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -106,7 +106,7 @@ esneklik ihtiyacını zaten karşılıyor (çakışmalı taslak tutulabilir). Ba
 1. ~~Online derslerin derslik ve cohort davranışı (K-10)~~ → K-19 ile kapandı
 2. XLSX/PDF ayrıntılı format şablonu (K-09) — Hafta 3
 3. `expected_students` zorunlu mu opsiyonel mi — ekip önerisi zorunlu, onay bekliyor (K-07)
-4. Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)
+4. ~~Lecturer import'unun kaynağı olan fakülte sayfasının URL'i ve veri yapısı (K-08)~~ → K-50 ile kapandı
 5. ~~E7 israf uyarısının eşiği~~ → K-40 ile kapandı (margin=10 sabitlendi).
 6. **Çoklu workgroup [S] — hoca talebi, KARAR BEKLİYOR (17 Tem itibarıyla).**
    Bugünkü sistem tek workgroup varsayıyor: `users.workgroup_id` tekil FK,
@@ -1085,3 +1085,285 @@ cohort-listesi değişikliğini sahibe kısıtlamak backlog.
   `_delete_by_consumer`, `_delete_blocked_for_noncohort`,
   `_not_editable_by_noncohort_department`,
   `test_normal_course_edit_still_owner_scoped` (regresyon). Toplam 436 yeşil.
+
+## K-50 · Öğretim üyesi web import: fakülte sayfasından çek [S+E] — K-08 açık konu 4 kapandı
+K-08 "fakülte hocaları: fakülte web sayfasından **bir kerelik import**" demişti;
+kaynağın URL'i ve veri yapısı açık kalmıştı (açık konu 4). Bu karar onu somuta
+bağlar ve kapatır. Yeni uçlar: `POST /lecturers/import/preview` (yalnız okur) +
+`POST /lecturers/import/commit` (onaylananları yazar). Frontend'de Öğretim Üyeleri
+ekranında "Siteden İçe Aktar" butonu.
+
+**Kaynağın iki katmanı [ölçüldü, canlı doğrulandı]:**
+- LİSTE (`muhendislik.mu.edu.tr/tr/personel/akademik`): ~89 kişi, `div.person`
+  içinde `.perName` (ad) + `.perTitle` (unvan) + "Detay" linki. **Bölüm YOK.**
+- DETAY (`www.mu.edu.tr/tr/personel/<slug>` — **farklı domain**): "Kadro
+  Bilgileri" bloğunda (`span#…lbl_kadro`) **Görev Birimi** ve **Kadro Birimi**,
+  ayrıca `[itemprop=email]`. Detay sayfaları büyük (~376 KB).
+
+**İki birim ayrı saklanır (`lecturers.duty_unit` + `cadre_unit`) [S kararı].**
+Detay sayfasındaki tek "Bölüm" yerine ikisi de tutulur ve ekranda gösterilir;
+çünkü **ikisi gerçekten farklı olabiliyor**: Murat Gül → Görev İnşaat / Kadro
+Jeoloji; Deniz Ülgen → Görev *Rektörlük* (idari) / Kadro İnşaat. Yönetici
+hocalarda Görev bir bölüm bile değildir. Bu alanlar GÖRÜNTÜ içindir — çakışma
+matematiği `department_id`/`lecturer_id` kullanır, birim metnini değil.
+- `department_id` (asli bölüm FK) önce **Görev Birimi'nden** eşlenir (fiilen
+  ders verdiği yer); tutmazsa **Kadro Birimi'ne düşülür**. Yönetici hocalarda
+  Görev bir bölüm değildir ("Rektörlük", "Dekanlık") ve asıl bölüm Kadro'da
+  yazar — örn. Görev Rektörlük / Kadro İnşaat → İnşaat'a eşleşir. İkisi de
+  tutmazsa NULL (model nullable). Eşleme aktif bölüm adına göre, sadeleştirilmiş:
+  küçük harf, **tire/noktalama boşluğa** (site "Elektrik Elektronik" yazarken
+  bizde "Elektrik-Elektronik" olabilir), tek boşluk, " Bölümü" eki atılır.
+
+**Önizle → onayla, kör import değil [E].** Scraping kırılgandır; site markup'ı
+sessizce değişir. İnsan kapısı olmadan bozuk bir parser çöpü doğrudan
+`lecturers`'a — çakışma tespitinin kimlik anahtarına (K-08) — yazardı ve W2/E3'ü
+sessizce delerdi. Bu yüzden preview yazmaz, farkı gösterir; kullanıcı görüp
+seçtiklerini commit eder. Parser **gürültülü hata** verir: dolu sayfadan 0 kişi
+ayrıştırılırsa `ScrapeError` → **502** (sessiz "0 yeni hoca" yalanı yerine).
+Site sözleşmesi (selector'lar) tek modülde: `app/scrapers/mu_akademik.py`; site
+değişirse yalnız o dosya + fixture testi kırılır.
+
+**Dedup ada göre; normalize sağlamlaştırıldı [E].** Aday, `normalized_name` ile
+mevcut kayıtlara karşı elenir (workgroup içi UNIQUE zaten var). Site unvanı AÇIK
+yazıyor ("Doktor Öğretim Üyesi", "Araştırma Görevlisi"); elle giriş kısaltma
+kullanıyor ("Dr. Öğr. Üyesi"). Eşleşmeleri için `normalize.TITLE_TOKENS`'a
+**tam-kelime unvan formları** eklendi (doktor/öğretim/görevlisi/araştırma/
+profesör/doçent). Bu kelimeler Türkçe kişi adında geçmez; ad token'ını düşürmez.
+
+**Yalnız yeni kişilerin detayı çekilir [E].** Mevcutlar liste adından elenir,
+detay sayfasına hiç gidilmez → kullanıcının "site güncellenince farkı aktar"
+isteği: ilk tam tarama ağır, sonrakiler yalnız yeni eklenenleri okur. İçe
+aktarılan kayıt `source="IMPORT"`, `is_external=false` (fakülte kadrosu, 40/a
+değil); her satır ayrı `CREATE` loglanır (K-37 deseni; yeni bir audit fiili
+eklenmedi, `source` alanı IMPORT'u zaten ayırt ediyor).
+
+**Config, hardcode değil (brief §6.3):** liste URL'i `settings.
+lecturer_import_list_url` (env'den; başka fakülte kendi listesini verir). Detay
+adresleri liste sayfasındaki linklerden gelir. Yeni bağımlılık YOK: `httpx` +
+`beautifulsoup4` zaten requirements'ta.
+
+**Güven sınırı:** commit istemciden gelen satırlara elle create ile aynı düzeyde
+güvenir; sunucu yine de (a) ada göre benzersizliği YENİDEN denetler (TOCTOU) ve
+(b) `department_id`'nin bu workgroup'a ait olduğunu doğrular, değilse bölümü boş
+geçer (partiyi düşürmez). Yetki: `require_lecturer_manager` (K-25).
+
+**N+1 → sınırlı eşzamanlılık [uygulandı].** İş ağ-bekleme ağırlıklı (I/O-bound):
+detay çekimi her sayfayı hızlandıramaz ama beklemeleri üst üste bindirebilir.
+`fetch_details_bulk` detayları **8'li ThreadPoolExecutor** havuzuyla çeker
+(`lecturer_import_concurrency`, env'den). Site boştayken ölçüm: 24 sayfa
+**61 sn → 10,5 sn (5,8×)**, sonuçlar birebir aynı. Havuz küçük tutuldu —
+kaynak siteyi bombalamamak için (paralel ama kibar). Tek sayfanın hatası o
+kişiyi bölümsüz bırakır, partiyi düşürmez.
+- **Keep-alive denendi ve GERİ ALINDI:** paylaşımlı istemci throttling altında
+  havuzda bayat bağlantı → ReadTimeout üretti (kişi sessizce detaysız kalıyor)
+  ve ölçümde per-request'ten yavaştı. İstek başına taze bağlantı daha sade ve
+  güvenilir; hız kazancı eşzamanlılıktan gelir. `_TIMEOUT` 30 sn'ye çıkarıldı.
+- **Gerçek darboğaz sunucu [ölçüldü]:** kaynak site bazen bizi throttle ediyor
+  (~117 KB/s, sayfa başına ~2 sn); o anlarda 89 kişi ~90 sn sürebilir — istemci
+  tarafında çözülemez. **Asıl pratik kaldıraç: bir kez COMMIT etmek.** İçe
+  aktarılan kişiler sonraki taramada "zaten kayıtlı" diye elenir, detayları hiç
+  çekilmez → tekrar çalıştırma neredeyse anlık. Vazgeçilip tekrar taranırsa her
+  seferinde tam maliyet ödenir.
+- **Kalan pürüz [kabul edildi, MVP]:** spinner ilerleme göstermez ve iptal
+  yoktur (backend istemci kapansa da havuzu bitirir). `lecturer_import_
+  max_detail_fetch` (200) emniyet supabı olarak durur.
+
+**Not:** Sistemde zaten `POST /import/courses` (ders import) uçları vardı; bu iş
+aynı önizle-onayla desenini hocalara taşır.
+
+**Migration:** `f7b3c1a9e2d4` (lecturers.duty_unit + cadre_unit, nullable).
+**Test:** `test_lecturer_import.py` — saf ayrıştırma gerçek HTML fixture'larına
+karşı (`tests/fixtures/mu_*.html`) + uçlar ağ monkeypatch'iyle (internetsiz
+çalışır): dedup, bölüm eşleme (tire + Kadro fallback), TOCTOU, yetki 403,
+ScrapeError 502. Toplam 448 yeşil.
+
+## K-51 · Veri ucundan gelen HER 401 oturumu düşürür [E] — "Not authenticated" düzeltmesi
+**Belirti:** Kullanıcı sitede gezerken bazen "Not authenticated" görüp ekranda
+asılı kalıyordu (login'e atılmıyordu). **Güvenlik açığı DEĞİL:** backend her
+yetkisiz isteği zaten reddediyor (401/403), korumalı veri sızmıyor — otorite
+sunucuda (brief §10.2). Sorun yalnızca **frontend oturum yönetimiydi**: oturum
+ölünce kullanıcı dışarı atılmıyordu.
+
+**Kök neden:** `deps.get_current_user` token YOKKEN **401 "Not authenticated"**
+döner; frontend ise yalnız `401 && token varsa` çıkış yapıyordu. Token bir
+önceki istekte temizlenmiş (süre doldu) ya da paralel isteklerden biri token'sız
+çıkmışsa 401 geliyor ama `token` boş → koşul tutmuyor → ham hata ekranda kalıyor.
+
+**Karar:** `api/client.ts` (`request` + `download`) artık **`/auth/*` DIŞINDAKİ
+her uçtan gelen 401'de** token'ı siler ve `/login`'e yönlendirir — token elimizde
+olsun olmasın. `/auth/*` istisnadır: login/şifre-sıfırlama/davet kendi 401'lerini
+formda gösterir (yoksa sonsuz yönlendirme). Zaten `/login`'deysek tekrar
+assign etmeyiz.
+
+**Kapsam dışı [bilinçli]:** Pasif hesap (K-34) **403** "User account is not
+active" döner ve `test_disabling_kills_the_existing_token` bunu 403'e kilitler;
+403 aynı zamanda meşru "yetkin yok" reddi olduğundan (admin/ yetenek) körlemesine
+çıkış yaptıramayız. Pasife alınan kullanıcının kabuğu açık kalır ama hiçbir
+istek geçmez (her eylem 403 + hata). Temiz çözümü (403'e makine-okur bir sinyal
+eklemek) backlog — K-24'ün "mesaj metnine göre ayırma" uyarısına düşmemek için
+metin eşlemesi yapılmadı.
+
+## K-52 · Unvan ve e-posta ad'dan AYRI alanlar [E] — K-08/K-50'nin devamı
+K-08'den beri unvan `full_name`'in içine gömülüydü ("Doç. Dr. Ayşe Kaya");
+frontend Select ile birleştirip `splitTitle`'la ayrıştırarak taklit ediyordu.
+Bu karar unvanı **gerçek bir kolona** (`lecturers.title`) taşır, `full_name`'i
+**saf ada** indirir; e-postayı da görünür ve elle girilebilir yapar.
+
+**Neden ayrı kolon [E].** Unvanı ad'a gömmek üç yerde sızdırıyordu: (a) ekranda
+"Ad Soyad" sütunu unvanı da taşıyordu, (b) her istemci birleştirme/ayrıştırma
+mantığını tekrar yazmak zorundaydı (kırılgan prefix eşleşmesi), (c) web import
+site formunu ("Doktor Öğretim Üyesi") ada yapıştırıyordu. Artık `title` ayrı;
+`full_name` yalnız ad. **Dedup DEĞİŞMEZ:** `normalized_name` unvanı zaten
+söküyordu, o yüzden ada göre benzersizlik ve W2/E3 hoca çakışması aynı kaldı.
+
+**Kanonikleştirme tek kaynakta [E].** `normalize.canonical_title` serbest unvan
+metnini kısa forma indirir ("Prof.Dr."→"Prof. Dr.", "Araştırma Görevlisi"→
+"Arş. Gör."). Token KÜMESİ eşlemesi (sırasız): site açık yazar, elle giriş
+kısaltır — ikisi de aynı kanonik forma düşer. `split_title` eski birleşik
+adları ayırır (migration bunu kullanır). Bu kelimeler Türkçe kişi adında geçmez
+→ ad token'ı yanlışlıkla tüketilmez. Tanınmayan unvan ham haliyle korunur (bilgi
+kaybolmasın), sadece ekleme formundaki Select'te hazır seçenek olmaz.
+
+**Eksik unvanlar eklendi [S/E].** Frontend listesi 6 unvandı; sitede olup eksik
+olanlar eklendi: "Prof.", "Doç.", "Öğr. Gör. Dr.", "Arş. Gör. Dr.", "Uzman".
+Backend `CANONICAL_TITLES` ile frontend `TITLES` eş tutulur (aynı kısa formlar).
+
+**create/update unvanı AYRIŞTIRMAZ [E].** API `full_name`'i olduğu gibi saklar;
+unvanı istemci ayrı `title` alanında gönderir. Böylece eski testler (unvanı
+`full_name`'e gömen `POST /lecturers`) kırılmaz — sadece o satırlarda `title`
+boş kalır, ad string'i aynen durur. Otomatik ayrıştırma yalnız **migration**'da
+(eski veri) ve **web import**'ta (site formu) yapılır.
+
+**E-posta artık görünür [E].** Alan zaten modelde ve `LecturerCreate`'te vardı
+ama `LecturerOut`'ta yoktu → istemciye hiç dönmüyordu ve ekleme formunda alanı
+yoktu. `LecturerOut`'a eklendi; forma opsiyonel e-posta girişi (basit biçim
+denetimi, zorunlu değil) kondu; tabloda ayrı sütun (`mailto:` linki).
+
+**Diğer ekranlar regresyonsuz [E kararı].** Unvan ad'dan çıkınca Dersler/
+Sınavlar/Haftalık'ta hoca "Ayşe Kaya" olarak görünüp unvanı kaybedebilirdi.
+`types.lecturerLabel(l)` = `title + full_name` yardımcısıyla o ekranlarda ad+unvan
+birlikte gösterilir; backend zaten nested `LecturerOut`'ta `title`'ı taşıdığı
+için ek uç gerekmedi.
+
+**Migration:** `b8d2f4a6c1e3` — `title` kolonu (nullable) + mevcut `full_name`'leri
+`split_title` ile ayırıp unvanı `title`'a taşır, ad'ı saflaştırır. Downgrade
+`full_name`'i geri birleştirmez (kanonik form üretilmişti; kayıpsız değil).
+**Test:** `test_lecturer_import.py`'a `canonical_title`/`split_title` birim
+testleri + import'un unvanı ayrı taşıdığı doğrulaması. Test DB `create_all` ile
+kurulduğundan migration testte çalışmaz; kolon modelden gelir. Toplam yeşil.
+
+## K-53 · Programa etki eden ders değişikliği taslak yerleşimi sıfırlar [E]
+**Belirti:** Kullanıcı bir dersi haftalık programa yüz yüze + derslikli koydu,
+sonra dersi (bileşeni) online yaptı; haftalık girişte derslik öylece kaldı.
+**Kök neden:** online/derslik/teslim bilgisi haftalık GİRİŞ'te tutulur; ders
+bayrağı (K-45 `*_online`) değişince mevcut girişler güncellenmiyordu. Giriş
+kaydındaki "online → derslik olamaz" kontrolü (K-23) yalnız kayıt anında çalışır.
+
+**Karar:** `update_course`'ta **programa etki eden alan** — `theory/practice/
+lab_online` ve `hours_theory/practice/lab` — gerçekten DEĞİŞTİYSE bu dersin
+**taslak** yerleşimleri (tüm şubelerinin haftalık girişleri + dersin sınavları)
+**silinir**; ders palete geri döner, kullanıcı yeniden yerleştirir. Bayat
+derslik/teslim/oturum verisi sessizce kalmaz.
+- **Yalnız programa etki eden alanlar [S/E].** Ad/kod/seçmeli gibi kozmetik
+  düzeltmeler yerleşime dokunmaz — yazım düzeltince program silinmesin. Değişim
+  "gerçekten değişti mi" (`data[f] != course.f`) ile ölçülür; aynı değer
+  gönderilmesi tetiklemez. Frontend aynı karşılaştırmayı yapıp mesajı gösterir.
+- **Yalnız taslak; yayınlanmış varsa REDDET [E].** Yayınlanmış (SUBMITTED)
+  giriş/sınav K-03 gereği kilitli. Programa etki eden alan değiştirilmek istenir
+  ama yayınlanmış yerleşim varsa **409**: "önce onları taslağa çevirin". Silme
+  yalnız DRAFT'lara uygulanır. Böylece yayın kilidi bir ders düzenlemesiyle
+  sessizce delinmez.
+- **Neden hem haftalık hem sınav [E].** Sınav ders düzeyindedir (K-16) ve
+  online/saat onu doğrudan geçersiz kılmaz; yine de kullanıcı "ders özelliği
+  değişince ikisini de sıfırla" istedi — öngörülebilir tek kural. Silinen her
+  giriş/sınav ayrı DELETE loglanır (K-35 deseni), hepsi ders UPDATE'iyle aynı
+  transaction'da.
+- **Frontend [E].** Ders düzenlemesi programa etki eden alanı değiştirdiyse
+  yeşil bildirime "haftalık ve sınav yerleşimleri sıfırlandı, yeniden
+  yerleştirin" eklenir. Ders 409'ları (kod çakışması + yayın bloğu) artık `code`
+  alanına değil bildirime düşer — ikisi de tek satıra sığmayan açıklama taşıyor.
+
+**Test:** `test_wp3_weekly.py` — taslak giriş sıfırlanır, kozmetik değişiklik
+korur, yayınlanmış giriş 409 ile bloklar (üçü de yeşil).
+
+## K-54 · Bologna import ortak dersi BÖLÜMLER-ARASI birleştirir [E] — çift kayıt düzeltmesi
+**Belirti (kullanıcı):** Önce CENG, sonra EEE dersleri import edildi. İki bölümün
+de aldığı ortak dersler (ENG 1803, MATH 1851, CHEM…) "Ortak Dersler" ekranında
+**birleşmedi**, her bölüm için ayrı kart çıktı. AKTS'leri de aynıydı ama yine
+ayrıydı.
+
+**Kök neden:** `create_course` (elle ekleme) K-48'den beri ortak dersi kod'a göre
+birleştiriyordu (aynı kodlu ortak ders varsa yeni kayıt açmayıp gönderilen
+bölüm/sınıf/dönem'i **ek cohort** yapıyor). Ama `POST /import/courses` commit
+döngüsü bu mantığı **ATLIYOR**du: her satır için düz `Course(...)` açıyordu.
+Üstelik çift-kayıt savunması yalnız **hedef bölümde** (`department_id == dep.id`)
+bakıyordu; CENG'in sahiplendiği ENG 1803'ü EEE import'u göremiyordu → ikinci kayıt.
+
+**Karar:** Birleştirme mantığı `courses.py`'de **tek kaynağa** çıkarıldı
+(`_find_common_course` = workgroup'ta aynı kodlu ortak dersi bul; `_covered_cohorts`
+= birincil ∪ ek cohort kümesi). Hem `create_course` hem import bunu kullanır.
+Import commit'te `is_common` satır için: aynı kodlu ortak ders varsa yeni kayıt
+AÇMA — (bölüm, yıl, dönem) onun ek cohort'u olur (kapsanıyorsa sessizce atla).
+Yoksa yeni ortak ders açılır (ilk aktaran bölüm birincil sahibi).
+- **Neden kod'a göre, workgroup-genelinde [E].** Ortak dersin kimliği kodudur
+  (K-48); "iki bölüm de alıyor" tam olarak bu — tek ders, çok cohort. Sahibin
+  ad/saat/AKTS değeri kalır, tüketen bölüm bunları değiştiremez (paylaşılan
+  alanlar). Bu yüzden import'ta ortak dersin düzenlenen ad'ı **yok sayılır**
+  (yalnız cohort eklenir) — create_course ile birebir aynı davranış.
+- **Preview de düzeltildi [E].** Önizleme `exists` işareti eskiden yalnız hedef
+  bölümün KENDİ derslerine bakıyordu; başka bölümün ortak dersini bu bölüm
+  tüketiyorsa yine "yeni" görünüyordu. Artık workgroup'taki ortak derslerin bu
+  bölümü kapsayan cohort'ları da `exists=true` sayılır — commit'in sessizce
+  atlayacağı bir dersi "yeni" diye önermeyiz.
+- **Sonuç şekli genişledi [E].** `CourseImportResult`'a `merged_count`/`merged`
+  eklendi: kaç ders YENİ açıldı (added) vs mevcut ortak derse cohort olarak
+  eklendi (merged) vs zaten kapsanıyordu (skipped). Frontend bunu ayrı gösterir
+  ("N ders mevcut ortak derse eklendi"). Her merge ayrı `UPDATE` loglanır (K-37).
+
+**Test:** `test_wp7_import.py` — `test_import_merges_common_across_departments`
+(A'ya ekle→B import edince tek id iki cohort, tekrar B idempotent atlar) +
+mevcut iki testin varsayımı yeni davranışa göre güncellendi (edit-koruma testi
+create yolunu deterministik kılmak için `is_common=false`; yetki testi
+`added+merged=71` sayar — paylaşımlı test DB'sinde önceki ortak derslere bağımlı
+sayı sabitlenemez).
+
+## K-55 · Ders AKTS (ECTS) alanı [S/E] — kategori + import
+Kullanıcı isteği: AKTS derslerde bir alan olsun (Dersler ekranında görünsün,
+ders eklerken sorulsun, içe aktarırken listelensin). Bologna sayfası AKTS'yi
+zaten taşıyordu ama okunmuyordu ("Course modelinde karşılığı yok" notu).
+
+**`courses.ects` NULLABLE [E].** Zorunlu yapmak mevcut ~yüzlerce dersi ve unvanı
+`full_name`'e gömen eski POST testlerini kırardı; ayrıca elle eklemede kullanıcı
+bilmeyebilir. Bologna import her zaman doldurur (site tam sayı verir), elle
+eklemede opsiyonel (`—`). Ders düzeyindedir (T+U+L gibi şubeler arası ortak),
+**çakışma matematiğine GİRMEZ** — yalnız bilgi/görüntü.
+- **Parse [uygulandı].** `bologna_import` AKTS'yi tablo sütunundan (`cells[5]`)
+  okur; boş/sayısal değilse None. Ondalık gelmez.
+- **Ayrıştırma yok, generic akış [E].** `CourseCreate/Update/Out` + import şekline
+  `ects` eklendi; update generic setattr döngüsüyle uygular (programa-etkili alan
+  DEĞİL → K-53 taslak sıfırlamayı tetiklemez). Merge'de dokunulmaz (aynı ders).
+- **Frontend [E].** Ekleme/düzenleme formunda opsiyonel AKTS girişi; Dersler
+  listesinde (tablo, K-56) ayrı **AKTS sütunu**; import önizleme tablosunda ayrı
+  AKTS sütunu + satır-içi düzenleme.
+
+**Migration:** `a1e4c7f9d2b6` (courses.ects SmallInteger nullable).
+**Test:** `test_wp7_import.py::test_import_parses_and_persists_ects` — önizleme
+AKTS'yi getirir (Intro to CS = 6), commit saklar.
+
+## K-56 · Dersler ekranı: kart yerine TABLO + satır-içi detay [E]
+Kullanıcı isteği: Dersler listesi iki sütunlu kart yerine **sütunlu tablo**
+(Kod · Ad · AKTS · Tür · Sınıf · Dönem) olsun; kategoriler (Ortak Dersler, N.
+Dönem) tablo başlıklarının üstünde kalsın. Bir derse tıklayınca detay + şube
+yönetimi **modal yerine SATIR İÇİNDE** (colSpan'li açılır satır, akordeon) gelsin.
+
+**Neden [E].** Kart-grid çok yer kaplıyordu ve tarama zordu; tablo taranabilir,
+AKTS gibi alanları yan yana gösterir. Modal yerine satır-içi açılım bağlamı
+korur (kullanıcı listedeki yerini kaybetmez). Ortak ders satırında Sınıf/Dönem
+tek değere sığmadığından "—"; cohort'ların tamamı açılan detayda listelenir.
+- **Panel yalnız açıkken mount [E].** Kapalı satır boş bir `<Collapse>` tutar,
+  `CourseDetailPanel` (kendi `useForm`'u var) yalnız açık derste render edilir —
+  uzun listede N form/efekt mount etmemek için.
+- Eski `SectionsModal` → `CourseDetailPanel`'e indirgendi (Modal sarmalayıcı
+  kaldırıldı, içerik doğrudan render); şube silme onayı hâlâ küçük bir modal.
+
+**Not:** Yalnız frontend (`CoursesPage.tsx`); API/şema değişmedi.

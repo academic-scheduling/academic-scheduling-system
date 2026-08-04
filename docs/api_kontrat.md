@@ -221,24 +221,34 @@ bölüm ekranı artık kullanmaz (K-27).
 ## 4. Öğretim Üyeleri (K-08: yönetilen entity · yazma: `can_manage_lecturers`)
 
 ### GET /lecturers?search=ay&include_inactive=false
-Cevap: `[ { "id": 3, "full_name": "Doç. Dr. Ayşe Kaya", "normalized_name": "ayşe kaya",
-  "is_external": false, "active": true } ]`
+Cevap: `[ { "id": 3, "full_name": "Ayşe Kaya", "title": "Doç. Dr.",
+  "normalized_name": "ayşe kaya", "email": null, "is_external": false,
+  "active": true, "department_id": 5, "duty_unit": null, "cadre_unit": null } ]`
+- `title` (K-52): akademik unvan, ad'dan **ayrı alan** — `full_name` artık yalnız
+  ad. Kanonik kısa form ("Prof. Dr.", "Dr. Öğr. Üyesi"); web import site formunu
+  ("Doktor Öğretim Üyesi") bu forma indirir. null = unvan girilmemiş.
+- `email` (K-52): `LecturerOut`'ta artık dönüyor (web import doldurur ya da elle
+  girilir; opsiyonel).
+- `duty_unit` / `cadre_unit` (K-50): web import'ta detay sayfasından okunan
+  Görev/Kadro Birimi; elle eklenen kayıtta null.
 `search` normalized_name üzerinde arar.
 - `normalized_name` (unvansız, küçük harf) istemciye de dönülür: listeyi
-  **alfabetik sıralamak** için gerekir. `full_name` unvanla başladığından ona
-  göre sıralamak "Doç. < Öğr. < Prof." gibi anlamsız bir düzen üretir (K-28).
-  Normalizasyon kuralının tek kaynağı backend'dir; istemci onu tekrar yazmaz.
+  **alfabetik sıralamak** için gerekir. `full_name` (yalnız ad) ile eşdeğerdir
+  ama sıralama tek kaynağı budur; normalizasyon kuralının otoritesi backend'dir.
 - **Varsayılan yalnız aktifleri döner** — ders formundaki autocomplete bu davranışa
   dayanır (pasife alınan hoca yeni derse atanamasın).
 - `include_inactive=true`: pasifler de gelir. Yönetim ekranı bunu kullanır —
   pasif hocayı görüp geri aktifleştirebilmek için (K-28).
 
 ### POST /lecturers (ADMIN veya `can_manage_lecturers` — 40/a elle ekleme)
-İstek: `{ "full_name": "...", "email": null, "is_external": true }` → 201
+İstek: `{ "full_name": "Ayşe Kaya", "title": "Doç. Dr.", "email": null, "is_external": true }` → 201
+- `full_name` yalnız ad; `title` (K-52) ayrı ve opsiyonel — ad'a gömülmez.
+  `email` opsiyonel. Server unvanı ad'dan **ayrıştırmaz**; istemci ayrı gönderir.
 Hata 409: normalized_name zaten var.
 
 ### PATCH /lecturers/{id} (ADMIN veya `can_manage_lecturers`)
-Ad düzeltme / pasife alma: `{ "full_name": "...", "email": "...", "is_external": true, "active": false }`
+Ad/unvan düzeltme / pasife alma:
+`{ "full_name": "...", "title": "...", "email": "...", "is_external": true, "active": false }`
 (hepsi opsiyonel). full_name değişirse normalized_name yeniden hesaplanır.
 Hata 409: yeni ad başka bir hocanın normalized_name'iyle çakışıyor.
 Not: pasife alınan hoca (`active=false`) autocomplete'te (`GET /lecturers?search=`) görünmez.
@@ -253,8 +263,29 @@ Not: Şema zaten korur (`course_sections.lecturer_id` ve `exams.lecturer_id`
 Not: Silme ile pasife alma FARKLI işlerdir — ders vermiş ama ayrılan hoca
   silinemez (RESTRICT), `active=false` ile autocomplete'ten çıkarılır (K-28).
 
-Not: Fakülte sayfasından toplu import bir API endpoint'i DEĞİL, backend'de
-çalıştırılan tek seferlik script'tir (`scripts/import_lecturers.py`).
+### POST /lecturers/import/preview   ← K-50 (ADMIN veya `can_manage_lecturers`)
+Fakülte akademik personel sayfasını tarar, sistemde OLMAYAN kişileri döndürür.
+**Hiçbir şey yazmaz.** Zaten kayıtlı olanlar `normalized_name`'e göre elenir;
+yalnız yeni kişilerin detay sayfası çekilir.
+Cevap 200: `{ "new": [ { "full_name", "title", "normalized_name", "duty_unit",
+  "cadre_unit", "email", "department_id", "department_label", "detail_url" } ],
+  "already_present": 5, "list_total": 89 }`
+- `title` (K-52): liste sayfasındaki unvan, kanonik forma indirilmiş; `full_name`
+  yalnız ad. Commit bu ikisini ayrı kolonlara yazar.
+- `department_id`: Görev Birimi bizim bölüm tablomuza eşleşirse dolu, yoksa null.
+  `department_label` = "KOD — Ad" veya null (eşleşmedi).
+Hata 502: `{ "detail": "..." }` — kaynak site çekilemedi veya yapısı değişti
+  (0 kişi ayrıştırıldı). Sessiz "0 yeni" yerine görünür hata.
+
+### POST /lecturers/import/commit   ← K-50 (ADMIN veya `can_manage_lecturers`)
+Önizlemeden seçilip onaylanan satırları yazar (`source="IMPORT"`).
+İstek: `{ "rows": [ <önizlemedeki ImportRow> ] }`
+Cevap 200: `{ "created": [ LecturerOut ], "skipped": [ "ad", ... ] }`
+- Sunucu benzersizliği YENİDEN denetler (TOCTOU): bu arada eklenmiş/çakışan ad
+  `skipped`'a düşer, yazılmaz. `department_id` bu workgroup'a ait değilse boş geçilir.
+- Her yeni kayıt ayrı `CREATE` loglanır (K-37).
+Not (K-50): K-08'in "toplu import bir script'tir" öngörüsü yerini bu iki uca
+  bıraktı — önizle→onayla insan kapısı, scraping kırılganlığına karşı gerekli.
 
 ---
 
@@ -299,7 +330,7 @@ Cevap (ders + şubeleri iç içe):
 ```json
 [ { "id": 4, "code": "CENG2001", "name": "...", "year": 2, "semester": "SPRING",
     "department_id": 1, "is_elective": false, "is_common": false,
-    "hours_theory": 3, "hours_practice": 2, "hours_lab": 0,
+    "hours_theory": 3, "hours_practice": 2, "hours_lab": 0, "ects": 6,
     "theory_online": false, "practice_online": false, "lab_online": false,
     "midterm_count": 1,
     "active": true,
@@ -327,6 +358,9 @@ birincil (`department_id/year/semester`) ∪ ek. Motorun cohort kuralları
   ← midterm_count (K-46): dersin vize sayısı (1-3, varsayılan 1); final/büt tektir.
   PATCH ile kayıtlı vizelerin altına çekilemez (409).
   ← is_common (K-48): ortak ders mi (varsayılan false). Ek cohort'lar PATCH ile.
+  ← ects (K-55): AKTS/ECTS, **opsiyonel** (null = girilmemiş). Ders düzeyinde bilgi
+  alanı; çakışma matematiğine girmez. PATCH ile düzeltilebilir (taslak yerleşimi
+  sıfırlamaz — programa etki eden alan değil).
 Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
 **Ortak ders BİRLEŞTİRME (K-48):** `is_common:true` ile POST edilirken workgroup'ta
   aynı KODLU bir ortak ders zaten varsa YENİ kayıt açılmaz — gönderilen

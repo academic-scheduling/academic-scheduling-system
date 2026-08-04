@@ -201,9 +201,12 @@ export default function CoursesPage() {
         || a.code.localeCompare(b.code, "tr")),
     [visible]);
 
-  // K-48: Ortak Dersler kategorisi yıl filtresi yokken veya "Ortak dersler"
-  // seçiliyken; normal ders tablosu "Ortak dersler" seçili değilken görünür.
-  const showCommonGroup = (yearFilter === null || yearFilter === COMMON) && commonList.length > 0;
+  // K-57: Ortak Dersler kategorisi ortak ders VARSA her zaman görünür — belirli
+  // bir sınıf seçilince de (cohort o ortak dersleri de alır; backend department_id
+  // filtresi tüketilen ortak dersleri döndürür). Eskiden yıl seçilince gizleniyor,
+  // "8 ders olması gerekirken 1 çıkıyor"a yol açıyordu. Normal ders tablosu
+  // "Ortak dersler" sözde-yılı seçili değilken görünür.
+  const showCommonGroup = commonList.length > 0;
   const showNormalTable = yearFilter !== COMMON && normalList.length > 0;
 
   // K-49: ortak dersi ALAN her bölümün yetkilisi düzenler + şube yönetir + siler

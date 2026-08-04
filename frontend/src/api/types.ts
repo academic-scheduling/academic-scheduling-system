@@ -268,6 +268,28 @@ export type Course = {
   /** K-48: ortak dersin ek cohort'ları (normal derste boş). */
   extra_cohorts: CourseCohort[];
 };
+
+/** K-57: Ders bu cohort'ta mı — BİRİNCİL ∪ EK cohort. Ortak (servis) ders, onu
+ *  tüketen bölümün cohort'undan da sayılır (yalnız ilk atandığı bölümden değil).
+ *  Haftalık/Sınav paletleri ve Dersler filtresi bunu kullanır. */
+export function courseInCohort(
+  c: Course, departmentId: number, year: number, semester: SemesterType,
+): boolean {
+  if (c.department_id === departmentId && c.year === year && c.semester === semester) return true;
+  return c.extra_cohorts.some(
+    (ec) => ec.department_id === departmentId && ec.year === year && ec.semester === semester);
+}
+
+/** K-57: "Ortak dersler" görünümü — bölümün bu dönemde ALDIĞI ortak dersler
+ *  (birincil ∪ ek cohort; yıl fark etmez, dönem eşleşir). */
+export function courseCommonForDept(
+  c: Course, departmentId: number, semester: SemesterType,
+): boolean {
+  if (!c.is_common) return false;
+  if (c.department_id === departmentId && c.semester === semester) return true;
+  return c.extra_cohorts.some(
+    (ec) => ec.department_id === departmentId && ec.semester === semester);
+}
 /** Kontrat §10 · GET /dashboard/summary (K-33).
  *
  *  Sekiz kart çizilir; `weekly_entries` kart değildir ama kontrat onu vaat

@@ -12,7 +12,9 @@ import {
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { EXAM_TYPE_LABELS, lecturerLabel, SEMESTER_LABELS } from "../api/types";
+import {
+  courseCommonForDept, courseInCohort, EXAM_TYPE_LABELS, lecturerLabel, SEMESTER_LABELS,
+} from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
@@ -292,14 +294,17 @@ export default function ExamsPage() {
   const gunler = useMemo(
     () => [0, 1, 2, 3, 4].map((i) => addDays(weekStart, i)), [weekStart]);
 
-  /** Seçili cohort'un dersleri (bölüm + yıl + dönem). K-48: "Ortak dersler"
-   *  seçiliyse yıl yerine ortak (is_common) derslere göre süzülür — palet,
-   *  ızgara, yayınlama kümesi hepsi buradan türediği için tek nokta yeter. */
-  const cohortCourses = useMemo(
-    () => courses.filter((c) =>
-      String(c.department_id) === dep && c.semester === sem
-      && (year === COMMON_YEAR ? c.is_common : String(c.year) === year)),
-    [courses, dep, year, sem]);
+  /** Seçili cohort'un TÜM dersleri (bölüm + yıl + dönem). K-57: ortak ders onu
+   *  tüketen bölümün cohort'undan da gelir (ek cohort). K-48: "Ortak dersler"
+   *  seçiliyse bölümün o dönemde aldığı ortak dersler. Palet, ızgara ve yayınlama
+   *  kümesi hepsi buradan türer — tek nokta yeter. */
+  const cohortCourses = useMemo(() => {
+    const depId = Number(dep);
+    return courses.filter((c) =>
+      year === COMMON_YEAR
+        ? courseCommonForDept(c, depId, sem)
+        : courseInCohort(c, depId, Number(year), sem));
+  }, [courses, dep, year, sem]);
   const cohortCourseIds = useMemo(
     () => new Set(cohortCourses.map((c) => c.id)), [cohortCourses]);
 

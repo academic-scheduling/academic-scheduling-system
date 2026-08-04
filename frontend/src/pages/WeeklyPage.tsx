@@ -13,7 +13,9 @@ import {
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
+import {
+  courseCommonForDept, courseInCohort, lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS,
+} from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
@@ -389,13 +391,17 @@ export default function WeeklyPage() {
     });
   };
 
-  /** Paletin dersleri: seçili sınıfın (bölüm+yıl+dönem) dersleri. K-48: "Ortak
-   *  dersler" seçiliyse yıl yerine ortak (is_common) derslere göre süzülür. */
-  const courses = useMemo(
-    () => allCourses.filter((c) =>
-      String(c.department_id) === dep && c.semester === sem
-      && (year === COMMON_YEAR ? c.is_common : String(c.year) === year)),
-    [allCourses, dep, year, sem]);
+  /** Paletin dersleri: seçili cohort'un (bölüm+yıl+dönem) TÜM dersleri. K-57:
+   *  ortak (servis) ders onu TÜKETEN bölümün cohort'undan da gelir (ek cohort) —
+   *  yalnız ilk atandığı bölümden değil. K-48: "Ortak dersler" seçiliyse yıl
+   *  yerine bölümün o dönemde aldığı ortak dersler. */
+  const courses = useMemo(() => {
+    const depId = Number(dep);
+    return allCourses.filter((c) =>
+      year === COMMON_YEAR
+        ? courseCommonForDept(c, depId, sem)
+        : courseInCohort(c, depId, Number(year), sem));
+  }, [allCourses, dep, year, sem]);
 
   const electiveOf = useMemo(() => {
     const m = new Map<number, boolean>();

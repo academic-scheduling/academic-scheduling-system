@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import build_change_summary, log_action
 from app.conflict_service import check_weekly_save, check_weekly_submit
 from app.deps import get_db, get_current_user, require_weekly_manager
+from app.routers.courses import cohort_course_filter
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus,
     SemesterType, User, UserRole, WeeklyScheduleEntry,
@@ -139,12 +140,15 @@ def list_weekly_entries(
     q = _eager_entry_query(db).filter(Department.workgroup_id == user.workgroup_id)
     # K-26: workgroup içindeki herkes TÜM bölümleri okur — çakışmayı çözebilmek için
     # başka bölümün doluluğunu görmek şarttır. Yazma kısıtı ayrıdır (bayrak + üyelik).
+    # K-57: cohort görünümü ek cohort'ları da kapsar (tüketilen ortak dersin
+    # yerleşimleri de görünsün — grid ile palet tutarlı olsun).
     if department_id is not None:
-        q = q.filter(Course.department_id == department_id)
-    if year is not None:
-        q = q.filter(Course.year == year)
-    if semester is not None:
-        q = q.filter(Course.semester == semester)
+        q = q.filter(cohort_course_filter(department_id, year, semester))
+    else:
+        if year is not None:
+            q = q.filter(Course.year == year)
+        if semester is not None:
+            q = q.filter(Course.semester == semester)
     if classroom_id is not None:
         q = q.filter(WeeklyScheduleEntry.classroom_id == classroom_id)
     if lecturer_id is not None:

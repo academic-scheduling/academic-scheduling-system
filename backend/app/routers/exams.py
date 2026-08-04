@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import build_change_summary, log_action
 from app.conflict_service import check_exams_save, check_exams_submit
 from app.deps import get_db, get_current_user, require_exam_manager
+from app.routers.courses import cohort_course_filter
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus, Exam,
     ExamType, Lecturer, SemesterType, User, UserRole,
@@ -164,8 +165,15 @@ def list_exams(
     q = _eager_exam_query(db).filter(Department.workgroup_id == user.workgroup_id)
     # K-26: workgroup içindeki herkes TÜM bölümleri okur; yazma kısıtı ayrıdır
     # (bayrak + üyelik, yazma uçlarında).
+    # K-57: cohort görünümü ek cohort'ları da kapsar (tüketilen ortak dersin
+    # sınavları da bu cohort'un listesinde görünsün).
     if department_id is not None:
-        q = q.filter(Course.department_id == department_id)
+        q = q.filter(cohort_course_filter(department_id, year, semester))
+    else:
+        if year is not None:
+            q = q.filter(Course.year == year)
+        if semester is not None:
+            q = q.filter(Course.semester == semester)
     if exam_type is not None:
         q = q.filter(Exam.exam_type == exam_type)
     if date_from is not None:
@@ -174,10 +182,6 @@ def list_exams(
         q = q.filter(Exam.exam_date <= date_to)
     if classroom_id is not None:
         q = q.filter(Exam.classrooms.any(Classroom.id == classroom_id))
-    if year is not None:
-        q = q.filter(Course.year == year)
-    if semester is not None:
-        q = q.filter(Course.semester == semester)
     if lecturer_id is not None:
         q = q.filter(Exam.lecturer_id == lecturer_id)
     return q.order_by(Exam.exam_date, Exam.start_time).all()

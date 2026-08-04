@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_db, get_current_user, require_course_manager
@@ -116,6 +116,30 @@ def _covered_cohorts(course: Course) -> set[tuple[int, int, SemesterType]]:
     return covered
 
 
+def cohort_course_filter(department_id: int, year: int | None, semester: SemesterType | None):
+    """K-57: cohort üyeliği filtresi = BİRİNCİL ∪ EK cohort.
+
+    Bir cohort görünümünde (Dersler / Haftalık / Sınav — bölüm+yıl+dönem seçili)
+    year/semester eşleşmesi hem birincile HEM ek cohort'a uygulanır. Böylece ortak
+    (servis) ders, onu TÜKETEN bölümün cohort'undan da gelir — yalnız ilk atandığı
+    (birincil) bölümden değil. Eski filtre `Course.department_id == X` idi ve ek
+    cohort'la tüketilen ortak dersleri (ENG/MATH/PHYS...) kohortun listesinden
+    düşürüyordu (kullanıcı: "8 ders olması gerekirken 2 çıkıyor").
+
+    Course entity'si sorguya JOIN'li olmalı; `extra_cohorts.any(...)` korele EXISTS
+    üretir (join'den bağımsız çalışır).
+    """
+    primary = [Course.department_id == department_id]
+    extra = [CourseCohort.department_id == department_id]
+    if year is not None:
+        primary.append(Course.year == year)
+        extra.append(CourseCohort.year == year)
+    if semester is not None:
+        primary.append(Course.semester == semester)
+        extra.append(CourseCohort.semester == semester)
+    return or_(and_(*primary), Course.extra_cohorts.any(and_(*extra)))
+
+
 def _build_extra_cohorts(
     db: Session, user: User, course: Course, cohorts_in: list
 ) -> list[CourseCohort]:
@@ -186,18 +210,16 @@ def list_courses(
     # K-26: workgroup içindeki herkes TÜM bölümleri okur; yazma kısıtı ayrıdır
     # (bayrak + üyelik, yazma uçlarında). Filtrelemek isteyen department_id kullanır.
     if department_id is not None:
-        # K-48: bölümün KENDİ dersleri + o bölümü EK cohort olarak alan ortak
-        # dersler (o dersler başka bölüme ait olsa da bu bölüm onları alıyor).
-        q = q.filter(
-            (Course.department_id == department_id)
-            | Course.id.in_(
-                db.query(CourseCohort.course_id)
-                .filter(CourseCohort.department_id == department_id))
-        )
-    if year is not None:
-        q = q.filter(Course.year == year)
-    if semester is not None:
-        q = q.filter(Course.semester == semester)
+        # K-48/K-57: bölümün KENDİ dersleri + o bölümü EK cohort olarak alan ortak
+        # dersler. year/semester verildiyse cohort eşleşmesine (birincil VEYA ek)
+        # uygulanır — tüketilen ortak ders kendi biriminin değil, TÜKETEN cohort'un
+        # yıl/döneminden gelsin diye.
+        q = q.filter(cohort_course_filter(department_id, year, semester))
+    else:
+        if year is not None:
+            q = q.filter(Course.year == year)
+        if semester is not None:
+            q = q.filter(Course.semester == semester)
     if search:
         pattern = f"%{search}%"
         q = q.filter(Course.code.ilike(pattern) | Course.name.ilike(pattern))

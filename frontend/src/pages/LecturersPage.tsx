@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Button, Checkbox, Group, Loader, Modal, Paper,
-  Select, Stack, Table, Text, TextInput, Title, Tooltip, UnstyledButton,
+  ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Divider, Group, Loader,
+  Modal, Paper, ScrollArea, Select, Stack, Table, Text, TextInput, Title,
+  Tooltip, UnstyledButton,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconChevronDown, IconChevronUp, IconCircleCheck, IconCircleOff,
-  IconCalendarWeek, IconEye, IconEyeOff, IconPencil, IconSelector, IconTrash,
+  IconCloudDownload, IconEye, IconEyeOff, IconPencil,
+  IconSelector, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import type { Course, Department, Lecturer } from "../api/types";
+import {
+  lecturerLabel,
+  type Course, type Department, type ImportCommit, type ImportPreview,
+  type Lecturer,
+} from "../api/types";
 
 type SortKey = "name" | "departments" | "courses";
 
@@ -21,21 +27,16 @@ type SortKey = "name" | "departments" | "courses";
  *  input içindeki küçük × fark edilmiyor. Geri dönüş yolu listede görünmeli.
  */
 const ALL_DEPARTMENTS = "__all__";
-type LecturerStats = { courseIds: Set<number>; deptIds: Set<number> };
+type LecturerStats = { courseIds: Set<number> };
 
-// Seçilebilir akademik unvanlar. full_name unvan+ad birleşiminden oluşur;
-// backend normalize'i karşılaştırma için unvanı zaten söküyor (K-08).
-// "Dr. Öğr. Üyesi" listede "Dr."den ÖNCE olmalı ki ayrıştırmada gölgede kalmasın.
-const TITLES = ["Prof. Dr.", "Doç. Dr.", "Dr. Öğr. Üyesi", "Arş. Gör.", "Öğr. Gör.", "Dr."];
-
-/** "Doç. Dr. Ayşe Kaya" → { title: "Doç. Dr.", name: "Ayşe Kaya" }.
- *  Bilinen bir unvanla başlamıyorsa unvan boş, ad tümü. */
-function splitTitle(fullName: string): { title: string; name: string } {
-  for (const t of TITLES) {
-    if (fullName.startsWith(t + " ")) return { title: t, name: fullName.slice(t.length + 1) };
-  }
-  return { title: "", name: fullName };
-}
+// Seçilebilir akademik unvanlar (K-52). Backend'in kanonik unvan kümesiyle eş
+// tutulur (bkz. app/normalize.py CANONICAL_TITLES); web import site formunu
+// ("Doktor Öğretim Üyesi") bu kısa formlara indirir. Artık `title` ayrı bir
+// alan olduğu için birleştirme/ayrıştırma YOK — Select doğrudan title'a yazar.
+const TITLES = [
+  "Prof. Dr.", "Prof.", "Doç. Dr.", "Doç.", "Dr. Öğr. Üyesi",
+  "Öğr. Gör. Dr.", "Öğr. Gör.", "Arş. Gör. Dr.", "Arş. Gör.", "Uzman", "Dr.",
+];
 
 /** Durum göstergesi + eylem butonu birleşik.
  *
@@ -106,13 +107,28 @@ export default function LecturersPage() {
   const [deleting, setDeleting] = useState<Lecturer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  // title: unvan (Select). full_name: yalnız ad-soyad; submit'te birleştirilir.
-  // department_id: bölüm. Dış görevli (40/a) HARİÇ zorunlu.
+  // Fakülte web import (K-50): önizle → seç → onayla.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);   // önizleme çekiliyor
+  const [importError, setImportError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  // Onaylanacak satırlar; anahtar detail_url (kişi başına benzersiz).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [committing, setCommitting] = useState(false);
+
+  // K-52: title (unvan) ve email AYRI alanlar — full_name'e gömülmez.
+  // department_id: bölüm. Dış görevli (40/a) HARİÇ zorunlu. email opsiyonel.
   const form = useForm({
-    initialValues: { title: "", full_name: "", is_external: false, department_id: "" as string },
+    initialValues: {
+      title: "", full_name: "", email: "", is_external: false,
+      department_id: "" as string,
+    },
     validate: {
       full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz"),
       department_id: (v, values) => (values.is_external || v ? null : "Bölüm seçin"),
+      // E-posta opsiyonel; yalnız girildiyse basit biçim denetimi.
+      email: (v) => (!v.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim())
+        ? null : "Geçerli bir e-posta girin"),
     },
   });
 
@@ -166,9 +182,8 @@ export default function LecturersPage() {
     const acc: Record<number, LecturerStats> = {};
     for (const c of courses) {
       for (const s of c.sections) {
-        const e = (acc[s.lecturer.id] ??= { courseIds: new Set(), deptIds: new Set() });
+        const e = (acc[s.lecturer.id] ??= { courseIds: new Set() });
         e.courseIds.add(c.id);
-        e.deptIds.add(c.department_id);
       }
     }
     return acc;
@@ -189,12 +204,13 @@ export default function LecturersPage() {
     const depId = deptFilter ? Number(deptFilter) : null;
     const dir = sortDir === "asc" ? 1 : -1;
     return lecturers
-      .filter((l) => !q || l.full_name.toLocaleLowerCase("tr").includes(q))
-      // Bölüm filtresi: hocanın ASLİ bölümü VEYA ders verdiği (türetilmiş) bölüm
-      // eşleşsin. Böylece o bölümün kadrolu hocası, henüz dersi olmasa da görünür.
-      .filter((l) => depId === null
-        || l.department_id === depId
-        || (statsByLecturer[l.id]?.deptIds.has(depId) ?? false))
+      // K-52: unvan+ad birlikte aransın ("Doç" ya da "Ayşe" ikisi de bulsun).
+      .filter((l) => !q || lecturerLabel(l).toLocaleLowerCase("tr").includes(q))
+      // Bölüm filtresi: yalnız o bölümde KADROLU/GÖREVLİ olan (asli bölümü =
+      // department_id) hocalar. Import'ta department_id, Görev Birimi'nden (yoksa
+      // Kadro'dan) eşlenir → "o bölümde ders veren herkes" değil, o bölüme ait
+      // olanlar gelir. Ders verdiği (türetilmiş) bölümler artık süzmeye girmez.
+      .filter((l) => depId === null || l.department_id === depId)
       .sort((a, b) => {
         // Unvansız ada göre: full_name'e göre sıralamak "Doç. < Öğr. < Prof."
         // üretirdi — kişi adı değil unvan sıralanırdı (K-28).
@@ -220,16 +236,20 @@ export default function LecturersPage() {
   // seçili gelir.
   function openAdd(departmentId?: string) {
     setEditing(null);
-    form.setValues({ title: "", full_name: "", is_external: false, department_id: departmentId ?? "" });
+    form.setValues({
+      title: "", full_name: "", email: "", is_external: false,
+      department_id: departmentId ?? "",
+    });
     setModalOpen(true);
   }
 
   function openEdit(lec: Lecturer) {
     setEditing(lec);
-    const { title, name } = splitTitle(lec.full_name);
+    // K-52: title/email artık ayrı alan — ayrıştırmaya gerek yok.
     form.setValues({
-      title,
-      full_name: name,
+      title: lec.title ?? "",
+      full_name: lec.full_name,
+      email: lec.email ?? "",
       is_external: lec.is_external,
       department_id: lec.department_id != null ? String(lec.department_id) : "",
     });
@@ -238,10 +258,11 @@ export default function LecturersPage() {
 
   async function handleSubmit(values: typeof form.values) {
     setSubmitting(true);
-    // Unvan + ad birleştirilir; backend normalize'i unvanı zaten söker (K-08).
-    const name = values.full_name.trim();
+    // K-52: unvan ve e-posta AYRI alanlar — ad'a gömülmez.
     const payload = {
-      full_name: values.title ? `${values.title} ${name}` : name,
+      full_name: values.full_name.trim(),
+      title: values.title || null,
+      email: values.email.trim() || null,
       is_external: values.is_external,
       // Select değeri string; API int|null bekler. Boş = bölümsüz (dış görevli).
       department_id: values.department_id ? Number(values.department_id) : null,
@@ -309,6 +330,57 @@ export default function LecturersPage() {
     }
   }
 
+  // "Siteden İçe Aktar" → fakülte sayfasını tara, sistemde OLMAYANLARI getir.
+  // Yazma yapmaz; kullanıcı modalda görüp onaylayınca commit edilir.
+  async function runImportPreview() {
+    setImportOpen(true);
+    setImportLoading(true);
+    setImportError(null);
+    setPreview(null);
+    try {
+      const data = await api.post<ImportPreview>("/lecturers/import/preview");
+      setPreview(data);
+      // Varsayılan: bulunan yeni kişilerin hepsi seçili gelir.
+      setSelected(new Set(data.new.map((r) => r.detail_url)));
+    } catch (e) {
+      // Site çekilemedi / yapısı değişti (502) → görünür hata, sessiz "0 yeni" değil.
+      setImportError(e instanceof ApiError ? e.message : "İçe aktarma başarısız");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleImportCommit() {
+    if (!preview) return;
+    const rows = preview.new.filter((r) => selected.has(r.detail_url));
+    if (rows.length === 0) return;
+    setCommitting(true);
+    try {
+      const res = await api.post<ImportCommit>("/lecturers/import/commit", { rows });
+      const parts = [`${res.created.length} öğretim üyesi eklendi`];
+      if (res.skipped.length) parts.push(`${res.skipped.length} atlandı (zaten kayıtlı)`);
+      notifications.show({ color: "green", message: parts.join(" · ") });
+      setImportOpen(false);
+      await load();
+    } catch (e) {
+      notifications.show({
+        color: "red",
+        message: e instanceof ApiError ? e.message : "İçe aktarma başarısız",
+      });
+    } finally {
+      setCommitting(false);
+    }
+  }
+
+  function toggleRow(url: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  }
+
   if (loading) return <Loader mt="xl" />;
   if (loadError) return <Alert color="red" mt="md">{loadError}</Alert>;
 
@@ -316,7 +388,20 @@ export default function LecturersPage() {
     <>
       <Group justify="space-between" mb="md">
         <Title order={3}>Öğretim Üyeleri</Title>
-        {canWrite && <Button onClick={() => openAdd()}>+ Öğretim Üyesi Ekle</Button>}
+        {canWrite && (
+          <Group gap="sm">
+            <Tooltip label="Fakülte akademik personel sayfasından yeni öğretim üyelerini getir">
+              <Button
+                variant="light"
+                leftSection={<IconCloudDownload size={18} />}
+                onClick={runImportPreview}
+              >
+                Siteden İçe Aktar
+              </Button>
+            </Tooltip>
+            <Button onClick={() => openAdd()}>+ Öğretim Üyesi Ekle</Button>
+          </Group>
+        )}
       </Group>
 
       <Group mb="md" align="flex-end">
@@ -352,6 +437,7 @@ export default function LecturersPage() {
           <Table highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
+                <Table.Th w={110}>Ünvan</Table.Th>
                 <SortableTh
                   label="Ad Soyad"
                   active={sortBy === "name"}
@@ -359,18 +445,19 @@ export default function LecturersPage() {
                   onClick={() => toggleSort("name")}
                 />
                 <SortableTh
-                  label="Bölüm"
+                  label="Birim (Görev / Kadro)"
                   active={sortBy === "departments"}
                   dir={sortDir}
                   onClick={() => toggleSort("departments")}
                 />
+                <Table.Th>E-posta</Table.Th>
                 <SortableTh
                   label="Ders"
                   active={sortBy === "courses"}
                   dir={sortDir}
                   onClick={() => toggleSort("courses")}
                 />
-                <Table.Th w={canWrite ? 170 : 44}>İşlemler</Table.Th>
+                {canWrite && <Table.Th w={150}>İşlemler</Table.Th>}
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -381,7 +468,18 @@ export default function LecturersPage() {
                   ? (deptCodeById[lec.department_id] ?? "?") : null;
                 const courseCount = st?.courseIds.size ?? 0;
                 return (
-                  <Table.Tr key={lec.id} opacity={lec.active ? 1 : 0.55}>
+                  <Table.Tr
+                    key={lec.id}
+                    opacity={lec.active ? 1 : 0.55}
+                    style={{ cursor: "pointer" }}
+                    // Satıra tıklama → hocanın haftalık programı (herkes için).
+                    onClick={() => navigate(`/weekly?view=lecturer&lecturer_id=${lec.id}`)}
+                  >
+                    <Table.Td>
+                      {lec.title
+                        ? <Text size="sm" c="dimmed">{lec.title}</Text>
+                        : <Text size="sm" c="dimmed">—</Text>}
+                    </Table.Td>
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
                         <Text size="sm">{lec.full_name}</Text>
@@ -393,29 +491,37 @@ export default function LecturersPage() {
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      {homeCode === null ? (
-                        <Text c="dimmed" size="sm">—</Text>
-                      ) : (
+                      {lec.duty_unit || lec.cadre_unit ? (
+                        <Stack gap={2}>
+                          {lec.duty_unit && (
+                            <Text size="xs">
+                              <Text span c="dimmed">Görev: </Text>{lec.duty_unit}
+                            </Text>
+                          )}
+                          {lec.cadre_unit && lec.cadre_unit !== lec.duty_unit && (
+                            <Text size="xs">
+                              <Text span c="dimmed">Kadro: </Text>{lec.cadre_unit}
+                            </Text>
+                          )}
+                        </Stack>
+                      ) : homeCode ? (
                         <Badge variant="light" color="blue" size="sm">{homeCode}</Badge>
+                      ) : (
+                        <Text c="dimmed" size="sm">—</Text>
                       )}
+                    </Table.Td>
+                    <Table.Td>
+                      {lec.email
+                        ? <Anchor href={`mailto:${lec.email}`} size="xs">{lec.email}</Anchor>
+                        : <Text c="dimmed" size="sm">—</Text>}
                     </Table.Td>
                     <Table.Td>
                       <Text c={courseCount ? undefined : "dimmed"}>{courseCount}</Text>
                     </Table.Td>
-                    <Table.Td>
-                      <Group gap={4} wrap="nowrap">
-                        <Tooltip label="Haftalık programı görüntüle">
-                          <ActionIcon
-                            variant="subtle"
-                            color="blue"
-                            aria-label={`${lec.full_name} haftalık programını görüntüle`}
-                            onClick={() => navigate(`/weekly?view=lecturer&lecturer_id=${lec.id}`)}
-                          >
-                            <IconCalendarWeek size={18} />
-                          </ActionIcon>
-                        </Tooltip>
-                        {canWrite && (
-                          <>
+                    {canWrite && (
+                      // Butonlar satır tıklamasını tetiklemesin (haftalığa atmasın).
+                      <Table.Td onClick={(e) => e.stopPropagation()}>
+                        <Group gap={4} wrap="nowrap">
                           <Tooltip label="Düzenle">
                             <ActionIcon variant="subtle" onClick={() => openEdit(lec)}>
                               <IconPencil size={18} />
@@ -427,10 +533,9 @@ export default function LecturersPage() {
                               <IconTrash size={18} />
                             </ActionIcon>
                           </Tooltip>
-                          </>
-                        )}
-                      </Group>
-                    </Table.Td>
+                        </Group>
+                      </Table.Td>
+                    )}
                   </Table.Tr>
                 );
               })}
@@ -457,6 +562,11 @@ export default function LecturersPage() {
               label="Ad Soyad"
               placeholder="Ayşe Kaya"
               {...form.getInputProps("full_name")}
+            />
+            <TextInput
+              label="E-posta"
+              placeholder="ayse.kaya@mu.edu.tr (opsiyonel)"
+              {...form.getInputProps("email")}
             />
             <Select
               label="Bölüm"
@@ -492,6 +602,130 @@ export default function LecturersPage() {
           <Button variant="default" onClick={() => setDeleting(null)}>Vazgeç</Button>
           <Button color="red" loading={deleteBusy} onClick={handleDelete}>Sil</Button>
         </Group>
+      </Modal>
+
+      <Modal
+        opened={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Siteden Öğretim Üyesi İçe Aktar"
+        size="xl"
+      >
+        {importLoading ? (
+          <Group justify="center" py="xl" gap="sm">
+            <Loader size="sm" />
+            <Text c="dimmed">Fakülte sayfası taranıyor…</Text>
+          </Group>
+        ) : importError ? (
+          <Alert color="red" title="İçe aktarma başarısız">
+            {importError}
+            <Text size="xs" c="dimmed" mt="xs">
+              Kaynak site geçici olarak erişilemez olabilir ya da sayfa yapısı
+              değişmiş olabilir. Sorun sürerse yöneticinize bildirin.
+            </Text>
+          </Alert>
+        ) : preview ? (
+          <Stack>
+            <Text size="sm" c="dimmed">
+              Listede {preview.list_total} kişi bulundu · {preview.already_present} zaten
+              kayıtlı · <Text span fw={700} c="green">{preview.new.length} yeni</Text>.
+            </Text>
+
+            {preview.new.length === 0 ? (
+              <Text c="dimmed" py="md">
+                Eklenecek yeni öğretim üyesi yok — liste sistemle güncel.
+              </Text>
+            ) : (
+              <>
+                <Divider />
+                <Group justify="space-between">
+                  <Checkbox
+                    label="Tümünü seç"
+                    checked={selected.size === preview.new.length}
+                    indeterminate={selected.size > 0 && selected.size < preview.new.length}
+                    onChange={(e) =>
+                      setSelected(
+                        e.currentTarget.checked
+                          ? new Set(preview.new.map((r) => r.detail_url))
+                          : new Set(),
+                      )
+                    }
+                  />
+                  <Text size="sm" c="dimmed">{selected.size} seçili</Text>
+                </Group>
+
+                <ScrollArea.Autosize mah={420}>
+                  <Table stickyHeader verticalSpacing="xs">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th w={36} />
+                        <Table.Th>Ünvan</Table.Th>
+                        <Table.Th>Ad Soyad</Table.Th>
+                        <Table.Th>Görev / Kadro Birimi</Table.Th>
+                        <Table.Th>E-posta</Table.Th>
+                        <Table.Th>Eşlenen Bölüm</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {preview.new.map((row) => (
+                        <Table.Tr key={row.detail_url}>
+                          <Table.Td>
+                            <Checkbox
+                              checked={selected.has(row.detail_url)}
+                              onChange={() => toggleRow(row.detail_url)}
+                            />
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" c="dimmed">{row.title ?? "—"}</Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Anchor href={row.detail_url} target="_blank" size="sm">
+                              {row.full_name}
+                            </Anchor>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs">{row.duty_unit ?? "—"}</Text>
+                            {row.cadre_unit && row.cadre_unit !== row.duty_unit && (
+                              <Text size="xs" c="dimmed">Kadro: {row.cadre_unit}</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" c={row.email ? undefined : "dimmed"}>
+                              {row.email ?? "—"}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            {row.department_label ? (
+                              <Badge variant="light" color="blue" size="sm">
+                                {row.department_label}
+                              </Badge>
+                            ) : (
+                              <Tooltip label="Bu bölüm sistemde yok; kayıt bölümsüz eklenir">
+                                <Text size="xs" c="dimmed">eşleşmedi</Text>
+                              </Tooltip>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea.Autosize>
+
+                <Group justify="flex-end" mt="sm">
+                  <Button variant="default" onClick={() => setImportOpen(false)}>
+                    Vazgeç
+                  </Button>
+                  <Button
+                    loading={committing}
+                    disabled={selected.size === 0}
+                    onClick={handleImportCommit}
+                  >
+                    {selected.size} kişiyi ekle
+                  </Button>
+                </Group>
+              </>
+            )}
+          </Stack>
+        ) : null}
       </Modal>
     </>
   );

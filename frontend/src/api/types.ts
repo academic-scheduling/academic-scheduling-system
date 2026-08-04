@@ -60,14 +60,51 @@ export type Department = {
 /** Kontrat §4 · GET /lecturers elemanı (K-28: active dahil) */
 export type Lecturer = {
   id: number;
+  /** K-52: yalnız ad (unvansız). Unvan ayrı `title` alanında. */
   full_name: string;
+  /** K-52: akademik unvan ("Prof. Dr."), ad'dan ayrı. null = girilmemiş. */
+  title: string | null;
   /** Unvansız, küçük harf ad — alfabetik sıralama bunun üzerinden yapılır (K-28). */
   normalized_name: string;
+  /** K-52: e-posta (opsiyonel; web import doldurur ya da elle girilir). */
+  email: string | null;
   is_external: boolean;
   active: boolean;
   /** Asli (kendi) bölüm. Hoca başka bölümlerde de ders verebilir; bu aidiyettir.
    *  null = eski/import kayıt, henüz atanmadı. */
   department_id: number | null;
+  /** K-50: web import'ta detay sayfasından okunan birimler. Görev = fiilen
+   *  ders verdiği bölüm, Kadro = resmi kadro; ikisi farklı olabilir. Elle
+   *  eklenen kayıtta null. */
+  duty_unit: string | null;
+  cadre_unit: string | null;
+};
+
+/** K-50 · POST /lecturers/import/preview cevabındaki tek aday satır. */
+export type ImportRow = {
+  full_name: string;
+  /** K-52: siteden kanonikleştirilen unvan ("Dr. Öğr. Üyesi"), ad'dan ayrı. */
+  title: string | null;
+  normalized_name: string;
+  duty_unit: string | null;
+  cadre_unit: string | null;
+  email: string | null;
+  department_id: number | null;
+  department_label: string | null;
+  detail_url: string;
+};
+
+/** K-50 · önizleme cevabı — hiçbir şey yazılmadan sistemdeki farkı gösterir. */
+export type ImportPreview = {
+  new: ImportRow[];
+  already_present: number;
+  list_total: number;
+};
+
+/** K-50 · commit cevabı. */
+export type ImportCommit = {
+  created: Lecturer[];
+  skipped: string[];
 };
 
 /** Kontrat §5 · GET /buildings elemanı (K-18, K-30) */
@@ -174,7 +211,16 @@ export type Exam = {
 /** POST/PATCH cevabı: conflicts dolu olsa bile kayıt BAŞARILIDIR (K-03). */
 export type ExamSaveResponse = { exam: Exam; conflicts: ConflictResult[] };
 
-export type SectionLecturerRef = { id: number; full_name: string };
+/** Şube/sınav cevabına gömülü hoca. Backend tam LecturerOut döner; burada
+ *  yalnız gösterim için gereken alanlar. K-52: unvan ayrı geldiği için
+ *  `lecturerLabel` ile ad'la birleştirilir. */
+export type SectionLecturerRef = { id: number; full_name: string; title: string | null };
+
+/** Hoca gösterim adı: unvan + ad ("Doç. Dr. Ayşe Kaya"). Unvan yoksa yalnız ad.
+ *  K-52: unvan ayrı kolonda tutulur; ekranlarda birlikte gösterilir. */
+export function lecturerLabel(l: { full_name: string; title: string | null }): string {
+  return l.title ? `${l.title} ${l.full_name}` : l.full_name;
+}
 
 export type CourseSection = {
   id: number;
@@ -208,6 +254,8 @@ export type Course = {
   hours_theory: number;
   hours_practice: number;
   hours_lab: number;
+  /** K-55: AKTS/ECTS kredisi. null = girilmemiş (eski/elle eklenen ders). */
+  ects: number | null;
   /** K-45: bileşen bazında online mı. Saati 0 olan bileşende her zaman false.
    *  Senkron/asenkron ayrımı haftalık girişte (delivery_mode) seçilir. */
   theory_online: boolean;

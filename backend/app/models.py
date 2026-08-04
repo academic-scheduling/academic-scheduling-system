@@ -369,6 +369,12 @@ class Lecturer(Base):
     )
     full_name: Mapped[str] = mapped_column(String(200))
     normalized_name: Mapped[str] = mapped_column(String(200))
+    # K-52 · Akademik unvan, ad'dan AYRI kolon. Once full_name'e gomuluydu
+    # ("Doç. Dr. Ayşe Kaya"); artik full_name saf ad, title unvan. Kanonik kisa
+    # form (bkz. normalize.canonical_title); web import site formunu ("Doktor
+    # Öğretim Üyesi") kanonik forma eşler. normalized_name unvani zaten soktugu
+    # icin dedup degismez. NULL = unvan girilmemis (40/a / eski kayit).
+    title: Mapped[str | None] = mapped_column(String(50))
     email: Mapped[str | None] = mapped_column(String(254))
     is_external: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     source: Mapped[str] = mapped_column(String(20), server_default=text("'IMPORT'"))
@@ -380,6 +386,13 @@ class Lecturer(Base):
     department_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("departments.id", ondelete="SET NULL")
     )
+    # K-50 · Fakülte web import'unda detay sayfasindan okunan iki serbest-metin
+    # birim. "Gorev Birimi" = fiilen ders verdigi bolum, "Kadro Birimi" = resmi
+    # kadro; ikisi farkli olabilir (ornek: Gorev Insaat, Kadro Jeoloji). Bunlar
+    # GORUNTU icindir; cakisma matematigi department_id/lecturer_id kullanir.
+    # Elle eklenen kayitta NULL kalir. department_id, gorev_birimi'nden eslenir.
+    duty_unit: Mapped[str | None] = mapped_column(String(200))
+    cadre_unit: Mapped[str | None] = mapped_column(String(200))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="lecturers")
     department: Mapped["Department | None"] = relationship()
@@ -494,6 +507,10 @@ class Course(Base):
         SmallInteger, server_default=text("0")
     )
     hours_lab: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    # K-55: AKTS (ECTS) kredisi. NULLABLE — eski dersler ve elle ekleme AKTS'siz
+    # olabilir; Bologna import'u her zaman doldurur. Ders düzeyindedir (T+U+L gibi
+    # şubeler arası ortak), çakışma matematiğine girmez; yalnız bilgi/görüntü.
+    ects: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # K-45: bileşen bazında online mı. Yalnız saati>0 olan bileşen için anlamlı;
     # saat 0 ise ilgili bayrak zorla false (router). "Online mı" ders düzeyinde
     # sabittir; SENKRON/ASENKRON ayrımı haftalık girişte seçilir (K-19 giriş

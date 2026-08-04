@@ -166,7 +166,8 @@ class DepartmentOut(BaseModel):
 # --- Lecturers (WP2) ---
 
 class LecturerCreate(BaseModel):
-    full_name: str
+    full_name: str                            # K-52: yalnız ad (unvansız)
+    title: str | None = None                  # K-52: akademik unvan, ayrı alan
     email: str | None = None
     is_external: bool = False
     # Asli bölüm. API'de opsiyonel (import ve eski akışlar bölümsüz kayıt
@@ -175,6 +176,7 @@ class LecturerCreate(BaseModel):
 
 class LecturerUpdate(BaseModel):
     full_name: str | None = None
+    title: str | None = None                  # K-52
     email: str | None = None
     is_external: bool | None = None
     active: bool | None = None
@@ -183,11 +185,44 @@ class LecturerUpdate(BaseModel):
 class LecturerOut(BaseModel):
     id: int
     full_name: str
+    title: str | None = None                  # K-52: unvan (ad'dan ayrı)
     normalized_name: str                      # K-28: unvansız ad — istemci sıralaması bunu kullanır
+    email: str | None = None                  # K-52: LecturerOut'ta artık dönüyor (formda opsiyonel)
     is_external: bool
     active: bool                              # K-28: yönetim ekranı pasifi ayırt eder
     department_id: int | None = None          # asli bölüm (frontend ad'a kendi eşler)
+    duty_unit: str | None = None              # K-50: Görev Birimi (web import)
+    cadre_unit: str | None = None             # K-50: Kadro Birimi (web import)
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Öğretim üyesi web import (K-50) ---
+
+class ImportRow(BaseModel):
+    """Önizlemedeki (ve commit'e geri gönderilen) tek aday satır."""
+    full_name: str                            # K-52: yalnız ad (unvansız)
+    title: str | None = None                  # K-52: siteden kanonikleştirilen unvan
+    normalized_name: str
+    duty_unit: str | None = None
+    cadre_unit: str | None = None
+    email: str | None = None
+    department_id: int | None = None          # görev biriminden eşlenen bölüm
+    department_label: str | None = None        # "CENG — Bilgisayar Müh." veya None
+    detail_url: str
+
+class ImportPreviewOut(BaseModel):
+    """`POST /lecturers/import/preview` cevabı — hiçbir şey yazılmaz."""
+    new: list[ImportRow]                       # sistemde olmayan, eklenebilecek kişiler
+    already_present: int                       # ada göre zaten kayıtlı olanların sayısı
+    list_total: int                            # liste sayfasında bulunan toplam kişi
+
+class ImportCommitIn(BaseModel):
+    """Kullanıcının önizlemeden seçip onayladığı satırlar."""
+    rows: list[ImportRow]
+
+class ImportCommitOut(BaseModel):
+    created: list[LecturerOut]
+    skipped: list[str]                         # bu arada eklenmiş/çakışan adlar (TOCTOU)
 
 # --- Binalar (WP2, K-18) ---
 
@@ -294,6 +329,7 @@ class CourseCreate(BaseModel):
     hours_theory: int = Field(0, ge=0)        # K-20: T+U+L, varsayılan 0
     hours_practice: int = Field(0, ge=0)
     hours_lab: int = Field(0, ge=0)
+    ects: int | None = Field(None, ge=0)      # K-55: AKTS, opsiyonel
     # K-45: bileşen online mı. Saati 0 olan bileşenin bayrağı router'da
     # zorla false'a çekilir (anlamsız veri tutulmaz).
     theory_online: bool = False
@@ -314,6 +350,7 @@ class CourseUpdate(BaseModel):
     hours_theory: int | None = Field(None, ge=0)
     hours_practice: int | None = Field(None, ge=0)
     hours_lab: int | None = Field(None, ge=0)
+    ects: int | None = Field(None, ge=0)      # K-55: AKTS düzeltilebilir
     theory_online: bool | None = None
     practice_online: bool | None = None
     lab_online: bool | None = None
@@ -332,6 +369,7 @@ class CourseOut(BaseModel):
     hours_theory: int
     hours_practice: int
     hours_lab: int
+    ects: int | None                          # K-55: AKTS (null = girilmemiş)
     theory_online: bool
     practice_online: bool
     lab_online: bool

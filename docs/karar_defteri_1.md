@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 4 Ağustos 2026 (K-56: Dersler tablo görünümü · K-55: AKTS · K-54: import birleştirme)
+**Son güncelleme:** 4 Ağustos 2026 (K-58: hızlı işlemler yetkiye göre kilitli · K-57: cohort filtresi ek cohort'ları kapsar)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -1367,3 +1367,61 @@ tek değere sığmadığından "—"; cohort'ların tamamı açılan detayda lis
   kaldırıldı, içerik doğrudan render); şube silme onayı hâlâ küçük bir modal.
 
 **Not:** Yalnız frontend (`CoursesPage.tsx`); API/şema değişmedi.
+
+## K-57 · Cohort filtresi EK cohort'ları kapsar (Haftalık/Sınav/Dersler) [E]
+**Belirti (kullanıcı):** CE — İnşaat 1. sınıf Güz cohortu seçilince Haftalık
+paletinde 2, Dersler'de 1 ders çıkıyordu; Bologna'da o cohortta 8 ders var.
+"Ortak dersleri seçince sadece 4 ders" geliyordu.
+
+**Kök neden:** Cohort üyeliği = **birincil ∪ ek cohort** (K-48). Ama palet ve
+liste filtreleri yalnız BİRİNCİL'e (`course.department_id == dep`) bakıyordu —
+ortak (servis) dersi TÜKETEN bölümün cohort'undan (`extra_cohorts`) düşürüyordu.
+Yani ortak dersin haftalık/sınav kontrolü fiilen yalnız "ilk atandığı (birincil)
+bölüme" yapılıyordu; ENG/MATH/PHYS gibi CE'nin ek cohort'la aldığı dersler
+listede yoktu. `/courses` bölüm filtresi ek cohort'ları katıyordu ama year/
+semester yine birincile uygulanıyordu; `/weekly-entries` ve `/exams` ek cohort'u
+hiç katmıyordu.
+
+**Karar:** Tek kaynak `courses.cohort_course_filter(department_id, year, semester)`
+= birincil VEYA ek cohort eşleşmesi (SQL `or_(and_(primary...), extra_cohorts.
+any(and_(extra...)))`). year/semester **cohort eşleşmesine** uygulanır (birincile
+DEĞİL) — ortak ders tüketen bölümün yıl/döneminden gelsin. Üç uç da bunu kullanır:
+`/courses`, `/weekly-entries`, `/exams`. Ölçüm: CE/1/FALL → 2 yerine **9 ders**.
+- **Frontend simetrik [E].** `types.courseInCohort` (birincil ∪ ek) ve
+  `courseCommonForDept` ("Ortak dersler" görünümü: bölümün o dönemde aldığı tüm
+  ortaklar). WeeklyPage paleti + ExamsPage cohortCourses artık bunları kullanır.
+- **Dersler ekranı [E].** Ortak Dersler kategorisi belirli sınıf seçilince
+  gizleniyordu → artık ortak ders varsa her zaman görünür (cohort o ortakları da
+  alır). Böylece CE/1/Güz: 8 ortak + 1 bölüm dersi = tam cohort.
+- **Derslik merceği kapsam dışı:** cohort ders listesi kullanmaz (classroom_id/
+  lecturer_id ile süzülür), dokunulmadı.
+
+**Test:** mevcut suite yeşil (cohort filtresi gerçek veriyle doğrulandı; CE/1/FALL
+9 ders). Not: import edilmiş veride ek cohort'lar birincil ile aynı yıl/dönemde
+olduğundan eski year/semester filtresi tesadüfen kısmen çalışıyordu; yeni filtre
+farklı yıl/döneme de dayanıklı.
+
+## K-58 · Bölüm "Hızlı İşlemler" YAZMA kısayolları yetkiye göre kilitli [E]
+**Belirti (kullanıcı):** Ders ekleme yetkisi OLMAYAN alt hesap, Bölümler → bir
+bölümün "Hızlı İşlemler"inden "Ders Ekle"ye tıklayıp ekleme formuna düşebiliyordu
+(her bölümde, üye olmasa da).
+
+**Güvenlik açığı DEĞİL:** Sunucu otoritesi sağlam (brief §10.2) — `POST /courses`
+`require_course_manager` ile `can_manage_courses` yoksa **403**, ayrıca bölüm
+üyeliği ikinci katman (`_ensure_department_access`). Yani veri yazılamıyordu;
+sorun yalnız yanıltıcı UI: kullanıcı yetkisiz bir forma yönlendiriliyordu.
+
+**Karar:** Hızlı İşlemler'deki **YAZMA** kısayolları (`Ders Ekle`, `Öğretim Üyesi
+Ekle`) `canWriteIn` ile kilitlenir; yetki yoksa **karartılır** (Mantine
+`data-disabled`) + tıklama engellenir + neden tooltip'i ("Bu bölümde ders ekleme
+yetkiniz yok"). `LockedAction` yardımcı bileşeni: native `disabled` yerine
+`data-disabled` kullanılır ki buton hover alsın ve tooltip görünsün.
+- **`Ders Ekle`** → `can_manage_courses` + seçili bölüm üyeliği (K-25 iki boyut).
+- **`Öğretim Üyesi Ekle`** → `can_manage_lecturers` (paylaşımlı kaynak, bölümsüz).
+- **`Haftalık/Sınav ... Aç`** → GÖRÜNTÜLEME (K-26: herkes tüm bölümleri okur) →
+  herkese açık kalır; kilitlenmez. "Aç" bir yazma değil, gezinmedir.
+
+**Not:** Yalnız frontend (`DepartmentsPage.tsx`); görünüm kararı — otorite yine
+sunucuda. Diğer ekranlar (Dersler/Haftalık/Sınav) zaten `canWriteIn` ile yazma
+düğmelerini gizliyordu; bu, Bölümler genel-bakışındaki kısayolları da aynı
+kurala bağlar.

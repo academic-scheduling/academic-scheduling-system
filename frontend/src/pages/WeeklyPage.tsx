@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -13,8 +13,10 @@ import {
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
+import { lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
+import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
+import { useUndoStack } from "../hooks/useUndoStack";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -220,6 +222,14 @@ export default function WeeklyPage() {
   // (başlık yüksekliği, satır sayısı, Paper dolgusu) değişince sessizce bozulur.
   const gridRef = useRef<HTMLDivElement>(null);
   const conflictsRef = useRef<HTMLDivElement>(null);
+  // Sürükleme sırasında imleç ekran kenarına gelince programı o yöne kaydır:
+  // grid ekrana sığmasa da görünmeyen hücrelere ders bırakılabilsin.
+  useDragEdgeScroll(drag !== null, gridRef);
+
+  // Geri Al: taslak girişlere yapılan taşıma/düzenleme/ekleme/silmeyi geri alır.
+  // Kalıcı (localStorage) ve çok adımlı — sayfa yenilense de yığın durur.
+  const { record: recordUndo, undo: popUndo, count: undoCount, busy: undoBusy } =
+    useUndoStack("weekly-undo");
   // Yakılacak satırlar KURALA göre değil, TIKLANAN kartın girişlerine göre
   // seçilir: aynı kuralın (ör. W2) başka derslere ait satırları yanmasın,
   // yalnız o kartın çakışmaları yansın.
@@ -369,6 +379,16 @@ export default function WeeklyPage() {
   };
   useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter]);
 
+  const handleUndo = async () => {
+    const res = await popUndo();
+    if (!res) return;
+    reload();
+    notifications.show({
+      color: res.ok ? "gray" : "red",
+      message: res.ok ? `Geri alındı: ${res.label}` : `${res.label} — ${res.message}`,
+    });
+  };
+
   /** Paletin dersleri: seçili sınıfın (bölüm+yıl+dönem) dersleri. K-48: "Ortak
    *  dersler" seçiliyse yıl yerine ortak (is_common) derslere göre süzülür. */
   const courses = useMemo(
@@ -400,7 +420,7 @@ export default function WeeklyPage() {
   const lecturerBySection = useMemo(() => {
     const names = new Map<number, string>();
     for (const course of allCourses) {
-      for (const section of course.sections) names.set(section.id, section.lecturer.full_name);
+      for (const section of course.sections) names.set(section.id, lecturerLabel(section.lecturer));
     }
     return names;
   }, [allCourses]);
@@ -438,10 +458,17 @@ export default function WeeklyPage() {
       return;
     }
     if (entry.day_of_week === day && entry.start_slot === slot) return;
+    const prevDay = entry.day_of_week, prevSlot = entry.start_slot;   // geri al için
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
         `/weekly-entries/${entry.id}`, { day_of_week: day, start_slot: slot },
       );
+      recordUndo({
+        label: `${entry.section.course.code}-${entry.section.section_no} taşıma`,
+        entity: "weekly-entries",
+        action: { type: "patch", id: entry.id,
+          body: { day_of_week: prevDay, start_slot: prevSlot } },
+      });
       reload();
       showConflicts(res.conflicts, "Giriş taşındı");
     } catch (err) {
@@ -467,6 +494,18 @@ export default function WeeklyPage() {
     if (!window.confirm(`${e.section.course.code}-${e.section.section_no} girişi silinsin mi?`)) return;
     try {
       await api.delete(`/weekly-entries/${e.id}`);
+      // Geri al = aynı girişi yeniden yarat (yeni id alır, remap yığında yapılır).
+      recordUndo({
+        label: `${e.section.course.code}-${e.section.section_no} silme`,
+        entity: "weekly-entries",
+        action: { type: "create", restoreId: e.id, body: {
+          section_id: e.section.id,
+          classroom_id: e.classroom ? e.classroom.id : null,
+          day_of_week: e.day_of_week, start_slot: e.start_slot,
+          slot_count: e.slot_count, session_type: e.session_type,
+          delivery_mode: e.delivery_mode,
+        } },
+      });
       notifications.show({ message: "Giriş silindi", color: "gray" });
       reload();
     } catch (err) {
@@ -630,11 +669,23 @@ export default function WeeklyPage() {
               <Select size="xs" w={280} radius="md" searchable clearable
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
                 placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
-                data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
+                data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />
             )}
           </Group>
 
           <Group gap={6} align="center" wrap="nowrap">
+            {canWrite && (
+              <Tooltip label="Son taslak değişikliğini geri al">
+                <Button size="xs" radius="md" variant="default"
+                  leftSection={<IconArrowBackUp size={15} />}
+                  disabled={undoCount === 0 || undoBusy}
+                  loading={undoBusy}
+                  style={{ height: CONTROL_H }}
+                  onClick={handleUndo}>
+                  Geri Al{undoCount ? ` (${undoCount})` : ""}
+                </Button>
+              </Tooltip>
+            )}
             <ExportMenu disabled={!activeQuery()} items={[
               { label: "Excel (.xlsx)", path: exportPath("xlsx") },
               { label: "CSV (.csv)", path: exportPath("csv") },
@@ -752,7 +803,13 @@ export default function WeeklyPage() {
                    background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
                    boxShadow: SHADOW }}>
           {loading ? (
-            <Group justify="center" p="xl"><Loader size="sm" /></Group>
+            // Yüklenirken de grid'in TAM yüksekliğini (HEAD_H + 9 slot) rezerve
+            // et: yoksa spinner kutusu kısa kalıp altındaki Çakışmalar bölümü
+            // yukarı çıkıyor, grid gelince aşağı zıplıyordu (route-fade sırasında
+            // bu reflow gözle görülür jank üretiyordu).
+            <Group justify="center" align="center" style={{ height: HEAD_H + ROW_H * 9 }}>
+              <Loader size="sm" />
+            </Group>
           ) : (
             <div style={{ display: "flex", minWidth: 520 }}>
               {/* Zaman cetveli: slot başlangıçları + pencerenin KAPANIŞI (17:30).
@@ -996,10 +1053,20 @@ export default function WeeklyPage() {
               ? [{ value: String(r.section.id), label: `${r.course.code}-${r.section.section_no} — ${r.course.name}` }]
               : [])}
           onClose={() => setPlacing(null)}
-          onSubmit={(body) => api.post<{ conflicts: ConflictResult[] }>("/weekly-entries", {
-            section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
-            day_of_week: placing.day, start_slot: placing.slot, ...body,
-          })}
+          onSubmit={async (body) => {
+            const res = await api.post<{ entry: WeeklyEntry; conflicts: ConflictResult[] }>(
+              "/weekly-entries", {
+                section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
+                day_of_week: placing.day, start_slot: placing.slot, ...body,
+              });
+            // Geri al = eklenen girişi sil.
+            recordUndo({
+              label: `${res.entry.section.course.code}-${res.entry.section.section_no} ekleme`,
+              entity: "weekly-entries",
+              action: { type: "delete", id: res.entry.id },
+            });
+            return res;
+          }}
           onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
         />
       )}
@@ -1037,7 +1104,25 @@ export default function WeeklyPage() {
             slotCount: editing.slot_count,
           }}
           onClose={() => setEditing(null)}
-          onSubmit={(body) => api.patch<{ conflicts: ConflictResult[] }>(`/weekly-entries/${editing.id}`, body)}
+          onSubmit={async (body) => {
+            // Geri al = düzenlenen alanları eski değerlerine döndür.
+            const before = {
+              classroom_id: editing.classroom ? editing.classroom.id : null,
+              session_type: editing.session_type,
+              delivery_mode: editing.delivery_mode,
+              slot_count: editing.slot_count,
+              day_of_week: editing.day_of_week,
+              start_slot: editing.start_slot,
+            };
+            const res = await api.patch<{ conflicts: ConflictResult[] }>(
+              `/weekly-entries/${editing.id}`, body);
+            recordUndo({
+              label: `${editing.section.course.code}-${editing.section.section_no} düzenleme`,
+              entity: "weekly-entries",
+              action: { type: "patch", id: editing.id, body: before },
+            });
+            return res;
+          }}
           onDone={(conflicts) => { setEditing(null); reload(); showConflicts(conflicts, "Giriş güncellendi"); }}
         />
       )}
@@ -1075,17 +1160,19 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
   const gunSayisi = new Set(entries.map((e) => e.day_of_week)).size;
   const doluluk = Math.round((slotToplam / (9 * 5)) * 100);
 
-  // Hocanın dersleri: şubelerinden geriye yürüyerek ders ve bölüm çıkarılır.
+  // Hocanın dersleri: şubelerinden geriye yürüyerek ders/şube sayısı çıkarılır.
+  // Bölüm ise yalnız hocanın ASLİ bölümü (department_id) — ders verdiği tüm
+  // bölümler değil (kullanıcı: sadece kendi bölümü yazsın).
   const hocaOzet = useMemo(() => {
     if (!lecturer) return null;
     const dersler = courses.filter((c) =>
       c.sections.some((s) => s.lecturer.id === lecturer.id));
     const subeSayisi = dersler.reduce(
       (t, c) => t + c.sections.filter((s) => s.lecturer.id === lecturer.id).length, 0);
-    const bolumler = [...new Set(dersler.map((c) => c.department_id))]
-      .map((id) => departments.find((d) => d.id === id)?.code)
-      .filter(Boolean) as string[];
-    return { dersler, subeSayisi, bolumler };
+    const homeDept = lecturer.department_id != null
+      ? (departments.find((d) => d.id === lecturer.department_id)?.code ?? null)
+      : null;
+    return { dersler, subeSayisi, homeDept };
   }, [lecturer, courses, departments]);
 
   const secili = view === "classroom" ? room : lecturer;
@@ -1125,7 +1212,7 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
             {view === "lecturer" && lecturer && hocaOzet && (
               <>
                 <div>
-                  <Text size="sm" fw={500} style={{ lineHeight: 1.3 }}>{lecturer.full_name}</Text>
+                  <Text size="sm" fw={500} style={{ lineHeight: 1.3 }}>{lecturerLabel(lecturer)}</Text>
                   <Group gap={4} mt={4}>
                     {lecturer.is_external && (
                       <Badge size="xs" variant="light" color="grape">fakülte dışı</Badge>
@@ -1134,8 +1221,7 @@ function InfoPanel({ view, room, lecturer, entries, courses, departments, height
                   </Group>
                 </div>
                 <Stack gap={6}>
-                  <Satir k="Bölüm"
-                    v={hocaOzet.bolumler.length ? hocaOzet.bolumler.join(", ") : "—"} />
+                  <Satir k="Bölüm" v={hocaOzet.homeDept ?? "—"} />
                   <Satir k="Ders" v={hocaOzet.dersler.length} />
                   <Satir k="Şube" v={hocaOzet.subeSayisi} />
                 </Stack>

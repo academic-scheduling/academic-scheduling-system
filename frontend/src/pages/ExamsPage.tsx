@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, MultiSelect,
-  NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title,
+  NumberInput, Paper, Popover, ScrollArea, Select, Stack, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -12,8 +12,10 @@ import {
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { EXAM_TYPE_LABELS, SEMESTER_LABELS } from "../api/types";
+import { EXAM_TYPE_LABELS, lecturerLabel, SEMESTER_LABELS } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
+import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
+import { useUndoStack } from "../hooks/useUndoStack";
 import ExportMenu from "../components/ExportMenu";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
@@ -200,6 +202,16 @@ export default function ExamsPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  // Sürükleme sırasında imleç ekran kenarına gelince programı o yöne kaydır:
+  // takvim ekrana sığmasa da görünmeyen hücrelere sınav bırakılabilsin.
+  const examGridRef = useRef<HTMLDivElement>(null);
+  useDragEdgeScroll(drag !== null, examGridRef);
+
+  // Geri Al: taslak sınavlara yapılan taşıma/düzenleme/ekleme/silmeyi geri alır.
+  // Kalıcı (localStorage) ve çok adımlı — sayfa yenilense de yığın durur.
+  const { record: recordUndo, undo: popUndo, count: undoCount, busy: undoBusy } =
+    useUndoStack("exams-undo");
+
   const load = () => {
     setLoading(true);
     setError(null);
@@ -366,10 +378,32 @@ export default function ExamsPage() {
     });
   };
 
+  const handleUndo = async () => {
+    const res = await popUndo();
+    if (!res) return;
+    load();
+    notifications.show({
+      color: res.ok ? "gray" : "red",
+      message: res.ok ? `Geri alındı: ${res.label}` : `${res.label} — ${res.message}`,
+    });
+  };
+
   const sil = async (e: Exam) => {
     if (!window.confirm(`${e.course.code} ${examTypeLabel(e)} sınavı silinsin mi?`)) return;
     try {
       await api.delete(`/exams/${e.id}`);
+      // Geri al = aynı sınavı yeniden yarat (yeni id alır, remap yığında yapılır).
+      recordUndo({
+        label: `${e.course.code} ${examTypeLabel(e)} silme`,
+        entity: "exams",
+        action: { type: "create", restoreId: e.id, body: {
+          course_id: e.course.id, exam_type: e.exam_type, exam_index: e.exam_index,
+          exam_date: e.exam_date, start_time: e.start_time,
+          duration_minutes: e.duration_minutes,
+          classroom_ids: e.classrooms.map((c) => c.id),
+          lecturer_id: e.lecturer.id, notes: e.notes,
+        } },
+      });
       notifications.show({ message: "Sınav silindi", color: "gray" });
       load();
     } catch (err) {
@@ -380,9 +414,16 @@ export default function ExamsPage() {
   /** Taşıma: yalnız tarih ve saat değişir; derslik, süre, sorumlu korunur. */
   const tasi = async (e: Exam, tarih: string, dk: number) => {
     if (e.exam_date === tarih && toMin(e.start_time) === dk) return;
+    const prevDate = e.exam_date, prevTime = e.start_time;   // geri al için
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
         `/exams/${e.id}`, { exam_date: tarih, start_time: fmt(dk) });
+      recordUndo({
+        label: `${e.course.code} ${examTypeLabel(e)} taşıma`,
+        entity: "exams",
+        action: { type: "patch", id: e.id,
+          body: { exam_date: prevDate, start_time: prevTime } },
+      });
       load();
       showConflicts(res.conflicts, "Sınav taşındı");
     } catch (err) {
@@ -500,6 +541,18 @@ export default function ExamsPage() {
                 sayfa düzeni — bu yüzden xlsx/csv değil, iki anlamlı seçenek.
                 Diğer sayfalarla aynı ExportMenu bileşeni: tetikleyici her yerde
                 birebir aynı görünür. */}
+            {canWriteAny && (
+              <Tooltip label="Son taslak değişikliğini geri al">
+                <Button variant="default" size="xs" radius="md"
+                  leftSection={<IconArrowBackUp size={15} />}
+                  disabled={undoCount === 0 || undoBusy}
+                  loading={undoBusy}
+                  style={{ height: CONTROL_H, borderColor: BORDER }}
+                  onClick={handleUndo}>
+                  Geri Al{undoCount ? ` (${undoCount})` : ""}
+                </Button>
+              </Tooltip>
+            )}
             <ExportMenu disabled={!dep} items={[
               { label: "Vize Programı (Excel)", path: examExportPath("midterm") },
               { label: "Final + Bütünleme (Excel)", path: examExportPath("final") },
@@ -550,12 +603,18 @@ export default function ExamsPage() {
         </Paper>
 
         {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen */}
-        <Paper p="md" radius="md"
+        <Paper ref={examGridRef} p="md" radius="md"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
                    background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
                    boxShadow: SHADOW }}>
           {loading ? (
-            <Group justify="center" p="xl"><Loader size="sm" /></Group>
+            // Yüklenirken takvimin TAM yüksekliğini rezerve et: yoksa spinner
+            // kutusu kısa kalıp altındaki Çakışmalar bölümü grid gelince aşağı
+            // zıplıyor (route-fade sırasında görünür jank).
+            <Group justify="center" align="center"
+              style={{ height: HEAD_H + HOUR_H * (HOURS.length - 1) }}>
+              <Loader size="sm" />
+            </Group>
           ) : (
             <div style={{ display: "flex", minWidth: 560 }}>
               {/* saat cetveli */}
@@ -806,6 +865,28 @@ export default function ExamsPage() {
           lecturers={lecturers}
           exams={exams}
           onClose={() => { setPlacing(null); setEditing(null); }}
+          onSaved={(info) => {
+            if (info.created) {
+              recordUndo({
+                label: `${info.created.course.code} ${examTypeLabel(info.created)} ekleme`,
+                entity: "exams",
+                action: { type: "delete", id: info.created.id },
+              });
+            } else if (info.before) {
+              const b = info.before;
+              recordUndo({
+                label: `${b.course.code} ${examTypeLabel(b)} düzenleme`,
+                entity: "exams",
+                action: { type: "patch", id: b.id, body: {
+                  exam_type: b.exam_type, exam_index: b.exam_index,
+                  exam_date: b.exam_date, start_time: b.start_time,
+                  duration_minutes: b.duration_minutes,
+                  classroom_ids: b.classrooms.map((c) => c.id),
+                  lecturer_id: b.lecturer.id, notes: b.notes,
+                } },
+              });
+            }
+          }}
           onDone={(conflicts, baslik) => {
             setPlacing(null); setEditing(null); load(); showConflicts(conflicts, baslik);
           }} />
@@ -1125,7 +1206,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
       {showLecturer && (
         <Group gap={4} wrap="nowrap" mt={3} style={{ minWidth: 0 }}>
           <IconUser size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
-          <Text fz={12} truncate style={{ color: TEXT_MUTED }}>{e.lecturer.full_name}</Text>
+          <Text fz={12} truncate style={{ color: TEXT_MUTED }}>{lecturerLabel(e.lecturer)}</Text>
         </Group>
       )}
 
@@ -1166,7 +1247,7 @@ function examTypeLabel(e: { exam_type: ExamType; exam_index: number }): string {
   return EXAM_TYPE_LABELS[e.exam_type];
 }
 
-function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone }: {
+function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone, onSaved }: {
   exam: Exam | null;
   initialDate?: string;
   initialMin?: number;
@@ -1180,6 +1261,9 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   exams: Exam[];
   onClose: () => void;
   onDone: (conflicts: ConflictResult[], baslik: string) => void;
+  /** Geri Al için: kayıt başarılı olunca eklenen sınav (created) ya da
+   *  düzenleme öncesi durum (before) üst bileşene verilir. */
+  onSaved?: (info: { created?: Exam; before?: Exam }) => void;
 }) {
   const duzenle = exam != null;
   const [courseId, setCourseId] = useState<string | null>(
@@ -1222,11 +1306,16 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         duration_minutes: sure, classroom_ids: odalar.map(Number),
         lecturer_id: Number(hoca), notes: not || null,
       };
-      const res = duzenle
-        ? await api.patch<{ conflicts: ConflictResult[] }>(`/exams/${exam!.id}`, govde)
-        : await api.post<{ conflicts: ConflictResult[] }>("/exams",
-            { course_id: Number(courseId), ...govde });
-      onDone(res.conflicts, duzenle ? "Sınav güncellendi" : "Sınav kaydedildi (taslak)");
+      if (duzenle) {
+        const res = await api.patch<{ conflicts: ConflictResult[] }>(`/exams/${exam!.id}`, govde);
+        onSaved?.({ before: exam! });      // geri al = eski alanlara döndür
+        onDone(res.conflicts, "Sınav güncellendi");
+      } else {
+        const res = await api.post<{ exam: Exam; conflicts: ConflictResult[] }>(
+          "/exams", { course_id: Number(courseId), ...govde });
+        onSaved?.({ created: res.exam });  // geri al = eklenen sınavı sil
+        onDone(res.conflicts, "Sınav kaydedildi (taslak)");
+      }
     } catch (err) {
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Kaydedilemedi" });
     } finally {
@@ -1273,7 +1362,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
             label: `${c.building.name} ${c.room_code}${c.exam_capacity != null ? ` · ${c.exam_capacity} kişi` : " · kontenjan yok"}` }))} />
         <Select label="Sorumlu" value={hoca} onChange={setHoca} searchable
           placeholder="Öğretim üyesi seç"
-          data={lecturers.map((l) => ({ value: String(l.id), label: l.full_name }))} />
+          data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />
         <TextInput label="Not" value={not} onChange={(ev) => setNot(ev.currentTarget.value)}
           placeholder="isteğe bağlı" />
         <Group justify="flex-end" gap="xs" mt="xs">

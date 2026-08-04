@@ -16,7 +16,7 @@ import type { ComponentType, ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
-import type { ConflictScan, Course, Department, ManagedUser } from "../api/types";
+import type { ConflictScan, Course, Department, Lecturer, ManagedUser } from "../api/types";
 
 // Bu ekran bir YÖNETİM ekranı değil, bir GENEL BAKIŞ/gezinme merkezidir: her
 // varlığın kendi sayfası var (Dersler, Öğretim Üyeleri, Derslikler, Haftalık,
@@ -69,6 +69,7 @@ export default function DepartmentsPage() {
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [lecturers, setLecturers] = useState<Lecturer[]>([]);   // asli bölüm sayacı için
   const [scan, setScan] = useState<ConflictScan | null>(null);
   const [members, setMembers] = useState<ManagedUser[]>([]);   // yalnız ADMIN doldurur
 
@@ -99,14 +100,16 @@ export default function DepartmentsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      // Herkesin okuyabildiği veriler (K-26): bölüm/ders/çakışma taraması.
-      const [deps, crs, cf] = await Promise.all([
+      // Herkesin okuyabildiği veriler (K-26): bölüm/ders/hoca/çakışma taraması.
+      const [deps, crs, lecs, cf] = await Promise.all([
         api.get<Department[]>("/departments"),
         api.get<Course[]>("/courses"),
+        api.get<Lecturer[]>("/lecturers"),          // varsayılan: yalnız aktifler
         api.get<ConflictScan>("/conflicts"),
       ]);
       setDepartments(deps);
       setCourses(crs);
+      setLecturers(lecs);
       setScan(cf);
 
       // Yetkili hesaplar yalnız ADMIN'e açık /users'tan gelir; alt hesap için
@@ -127,20 +130,21 @@ export default function DepartmentsPage() {
 
   useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Bölüm başına ders + öğretim üyesi sayısı. Pasif ders/şube sayıma girmez (K-33).
-  // Öğretim üyesi = o bölümde DERS VEREN farklı hocalar (şube üzerinden türetilir;
-  // hocanın asli bölümünden bağımsız — farklı bölümde ders verebilir).
+  // Bölüm başına ders + öğretim üyesi sayısı. Pasif ders sayıma girmez (K-33).
+  // Öğretim üyesi = ASLİ bölümü (department_id) o bölüm olan aktif hocalar —
+  // "o bölümde ders veren herkes" değil (başka bölümde ders verebilir).
   const statsByDept = useMemo(() => {
-    const acc: Record<number, { courses: number; lecturers: Set<number> }> = {};
-    const ensure = (id: number) => (acc[id] ??= { courses: 0, lecturers: new Set() });
+    const acc: Record<number, { courses: number; lecturers: number }> = {};
+    const ensure = (id: number) => (acc[id] ??= { courses: 0, lecturers: 0 });
     for (const c of courses) {
       if (!c.active) continue;
-      const e = ensure(c.department_id);
-      e.courses += 1;
-      for (const s of c.sections) if (s.active) e.lecturers.add(s.lecturer.id);
+      ensure(c.department_id).courses += 1;
+    }
+    for (const l of lecturers) {
+      if (l.department_id != null) ensure(l.department_id).lecturers += 1;
     }
     return acc;
-  }, [courses]);
+  }, [courses, lecturers]);
 
   // Bölüm başına çakışma: bir çakışma, etkilediği HER bölüme bir kez sayılır
   // (affected içinde aynı bölüm iki kez geçse de). Bölümler-arası bir çakışma
@@ -355,7 +359,7 @@ export default function DepartmentsPage() {
                   <Grid gutter="md">
                     <KpiCard icon={IconBook2} label="Dersler" value={st?.courses ?? 0}
                       onClick={() => navigate(`/courses?department_id=${selected.id}`)} />
-                    <KpiCard icon={IconSchool} label="Öğretim Üyeleri" value={st?.lecturers.size ?? 0}
+                    <KpiCard icon={IconSchool} label="Öğretim Üyeleri" value={st?.lecturers ?? 0}
                       onClick={() => navigate(`/lecturers?department_id=${selected.id}`)} />
                     {/* Çakışma sayacı: bu bölümü etkileyen hard+warning. Tıklayınca
                         rapor bu bölüme süzülü açılır. */}

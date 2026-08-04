@@ -13,10 +13,10 @@ import {
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import type { Building, Classroom, RoomType } from "../api/types";
+import type { Building, Classroom, RoomType, WeeklyEntry } from "../api/types";
 import { ROOM_TYPE_LABELS } from "../api/types";
 
-type SortKey = "building" | "room" | "type" | "capacity" | "exam";
+type SortKey = "building" | "room" | "type" | "capacity" | "exam" | "weekly";
 
 const ALL_BUILDINGS = "__all__";
 const EXTERNAL_ONLY = "__external__";
@@ -66,6 +66,7 @@ export default function ClassroomsPage() {
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [weeklyEntries, setWeeklyEntries] = useState<WeeklyEntry[]>([]);   // haftalık ders sayacı
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -108,12 +109,14 @@ export default function ClassroomsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [rooms, blds] = await Promise.all([
+      const [rooms, blds, entries] = await Promise.all([
         api.get<Classroom[]>("/classrooms"),
         api.get<Building[]>("/buildings"),
+        api.get<WeeklyEntry[]>("/weekly-entries"),   // tüm workgroup girişleri (filtresiz)
       ]);
       setClassrooms(rooms);
       setBuildings(blds);
+      setWeeklyEntries(entries);
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
     } finally {
@@ -130,6 +133,20 @@ export default function ClassroomsPage() {
     for (const c of classrooms) acc[c.building.id] = (acc[c.building.id] ?? 0) + 1;
     return acc;
   }, [classrooms]);
+
+  // Derslik başına haftalık FARKLI ders sayısı: her ders bir kez sayılır (saat/
+  // slot değil). Aynı dersin birden çok oturumu ya da şubesi tek ders sayılır.
+  const weeklyCourseCount = useMemo(() => {
+    const perRoom: Record<number, Set<number>> = {};
+    for (const e of weeklyEntries) {
+      const rid = e.classroom?.id;
+      if (rid == null) continue;                       // online giriş: derslik yok
+      (perRoom[rid] ??= new Set()).add(e.section.course.id);
+    }
+    const out: Record<number, number> = {};
+    for (const [rid, set] of Object.entries(perRoom)) out[Number(rid)] = set.size;
+    return out;
+  }, [weeklyEntries]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("tr");
@@ -153,18 +170,22 @@ export default function ClassroomsPage() {
           return dir * (cmp !== 0 ? cmp : a.room_code.localeCompare(b.room_code, "tr"));
         }
         // Sayısal sütunlar: exam_capacity NULL olabilir, en sona itilir.
-        const va = sortBy === "capacity" ? a.capacity : (a.exam_capacity ?? -1);
-        const vb = sortBy === "capacity" ? b.capacity : (b.exam_capacity ?? -1);
+        const numVal = (c: Classroom) =>
+          sortBy === "capacity" ? c.capacity
+            : sortBy === "exam" ? (c.exam_capacity ?? -1)
+              : (weeklyCourseCount[c.id] ?? 0);          // weekly
+        const va = numVal(a);
+        const vb = numVal(b);
         if (va !== vb) return dir * (va - vb);
         return a.room_code.localeCompare(b.room_code, "tr");
       });
-  }, [classrooms, query, buildingFilter, typeFilter, sortBy, sortDir]);
+  }, [classrooms, query, buildingFilter, typeFilter, sortBy, sortDir, weeklyCourseCount]);
 
   function toggleSort(key: SortKey) {
     if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortBy(key);
-      setSortDir(key === "capacity" || key === "exam" ? "desc" : "asc");
+      setSortDir(key === "capacity" || key === "exam" || key === "weekly" ? "desc" : "asc");
     }
   }
 
@@ -357,14 +378,19 @@ export default function ClassroomsPage() {
                 <SortableTh label="Tür" active={sortBy === "type"} dir={sortDir} onClick={() => toggleSort("type")} />
                 <SortableTh label="Kapasite" active={sortBy === "capacity"} dir={sortDir} onClick={() => toggleSort("capacity")} />
                 <SortableTh label="Sınav Kont." active={sortBy === "exam"} dir={sortDir} onClick={() => toggleSort("exam")} />
-                <Table.Th>Durum</Table.Th>
+                <SortableTh label="Haftalık Ders" active={sortBy === "weekly"} dir={sortDir} onClick={() => toggleSort("weekly")} />
                 <Table.Th w={canWrite ? 170 : 44}>İşlemler</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {visible.map((c) => (
                 <Table.Tr key={c.id} opacity={c.active ? 1 : 0.55}>
-                  <Table.Td fw={500}>{c.room_code}</Table.Td>
+                  <Table.Td fw={500}>
+                    <Group gap={6} wrap="nowrap">
+                      <Text size="sm" fw={500}>{c.room_code}</Text>
+                      {!c.active && <Badge color="gray" size="sm">Pasif</Badge>}
+                    </Group>
+                  </Table.Td>
                   <Table.Td>
                     <Group gap={6} wrap="nowrap">
                       <Text size="sm">{c.building.name}</Text>
@@ -393,7 +419,9 @@ export default function ClassroomsPage() {
                     )}
                   </Table.Td>
                   <Table.Td>
-                    {!c.active && <Badge color="gray" size="sm">Pasif</Badge>}
+                    <Text c={weeklyCourseCount[c.id] ? undefined : "dimmed"}>
+                      {weeklyCourseCount[c.id] ?? 0}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">

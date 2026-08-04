@@ -3,16 +3,18 @@ import {
   ActionIcon,
   AppShell,
   Badge,
-  Burger,
   Button,
+  Divider,
   Group,
   NavLink,
+  ScrollArea,
+  Stack,
   Text,
   Tooltip,
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
-import { useDisclosure, useLocalStorage } from "@mantine/hooks";
+import { useLocalStorage } from "@mantine/hooks";
 import {
   IconAlertTriangle,
   IconBook2,
@@ -23,6 +25,7 @@ import {
   IconLayoutDashboard,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconLogout,
   IconMoon,
   IconPencil,
   IconSun,
@@ -56,11 +59,10 @@ const COLLAPSED_WIDTH = 72;
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
-  const [opened, { toggle, close }] = useDisclosure();          // mobil çekmece
   // Tema: "auto"yu gerçek görünen şemaya (light/dark) çözer; düğme onu ters çevirir.
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true });
-  // Masaüstü ray durumu localStorage'da: sayfa yenilense/gezinilse de korunur.
+  // Ray durumu localStorage'da: sayfa yenilense/gezinilse de korunur.
   const [collapsed, setCollapsed] = useLocalStorage({
     key: "sidebar-collapsed",
     defaultValue: false,
@@ -71,30 +73,37 @@ export default function AppLayout() {
   // Buradaki filtre yalnız kullanıcıyı çalışmayacak bir sayfaya sokmamak için.
   const items = MENU.filter((m) => !m.adminOnly || user?.role === "ADMIN");
 
+  const themeLabel = scheme === "dark" ? "Aydınlık moda geç" : "Karanlık moda geç";
+  const ThemeIcon = scheme === "dark" ? IconSun : IconMoon;
+  const toggleTheme = () => setColorScheme(scheme === "dark" ? "light" : "dark");
+
   return (
+    // Üst bar KALDIRILDI (eski AppShell.Header): başlık, tema, rol ve çıkış artık
+    // sol menüde. Menü masaüstünde ve mobilde HER ZAMAN görünür (yalnız daralır),
+    // o yüzden ayrı bir mobil çekmece/burger'e gerek yok.
     <AppShell
-      header={{ height: 56 }}
       navbar={{
         width: collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH,
         breakpoint: "sm",
-        // Masaüstünde ASLA gizlenmez, yalnız daralır. Mobilde çekmece davranışı sürer.
-        collapsed: { mobile: !opened, desktop: false },
+        collapsed: { mobile: false, desktop: false },
       }}
       padding="md"
     >
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="xs">
-            {/* Mobil: çekmeceyi aç/kapat */}
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            {/* Masaüstü: menüyü daralt/genişlet */}
-            <Tooltip label={collapsed ? "Menüyü genişlet" : "Menüyü daralt"}>
+      <AppShell.Navbar p="xs">
+        {/* ÜST: başlık + daraltma düğmesi */}
+        <AppShell.Section>
+          <Group gap="xs" wrap="nowrap" justify={collapsed ? "center" : "space-between"}>
+            {!collapsed && (
+              <Text fw={600} size="sm" style={{ lineHeight: 1.2 }}>
+                Akademik Program Yönetimi
+              </Text>
+            )}
+            <Tooltip label={collapsed ? "Menüyü genişlet" : "Menüyü daralt"} position="right">
               <ActionIcon
                 variant="subtle"
                 color="gray"
                 size="lg"
                 onClick={() => setCollapsed((c) => !c)}
-                visibleFrom="sm"
                 aria-label="Menüyü daralt/genişlet"
               >
                 {collapsed ? (
@@ -104,68 +113,101 @@ export default function AppLayout() {
                 )}
               </ActionIcon>
             </Tooltip>
-            <Text fw={600}>Akademik Program Yönetimi</Text>
           </Group>
-          <Group gap="sm">
-            <Tooltip label={scheme === "dark" ? "Aydınlık moda geç" : "Karanlık moda geç"}>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="lg"
-                onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
-                aria-label="Temayı değiştir"
-              >
-                {scheme === "dark" ? <IconSun size={20} /> : <IconMoon size={20} />}
-              </ActionIcon>
-            </Tooltip>
-            <Text size="sm">{user?.name}</Text>
-            <Badge variant="light">{user?.role}</Badge>
-            <Button variant="subtle" size="xs" onClick={logout}>
-              Çıkış
-            </Button>
-          </Group>
-        </Group>
-      </AppShell.Header>
+        </AppShell.Section>
 
-      <AppShell.Navbar p="xs">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.path;
-          const link = (
-            <NavLink
-              component={Link}
-              to={item.path}
-              label={collapsed ? undefined : item.label}
-              leftSection={<Icon size={20} stroke={1.5} />}
-              active={active}
-              onClick={close}
-              // Daraltılmışken ikonu ortala, boş etiket alanını gizle.
-              styles={
-                collapsed
-                  ? {
-                      root: { justifyContent: "center", paddingInline: 0 },
-                      section: { marginInlineEnd: 0 },
-                      body: { display: "none" },
-                    }
-                  : undefined
-              }
-            />
-          );
-          // Daraltılmışken etiket ikonun yanında yok → hover'da tooltip göster.
-          return collapsed ? (
-            <Tooltip key={item.path} label={item.label} position="right" withArrow>
-              {link}
-            </Tooltip>
+        <Divider my="xs" />
+
+        {/* ORTA: menü öğeleri (kaydırılabilir) */}
+        <AppShell.Section grow component={ScrollArea}>
+          {items.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.path;
+            const link = (
+              <NavLink
+                component={Link}
+                to={item.path}
+                label={collapsed ? undefined : item.label}
+                leftSection={<Icon size={20} stroke={1.5} />}
+                active={active}
+                // Daraltılmışken ikonu ortala, boş etiket alanını gizle.
+                styles={
+                  collapsed
+                    ? {
+                        root: { justifyContent: "center", paddingInline: 0 },
+                        section: { marginInlineEnd: 0 },
+                        body: { display: "none" },
+                      }
+                    : undefined
+                }
+              />
+            );
+            // Daraltılmışken etiket ikonun yanında yok → hover'da tooltip göster.
+            return collapsed ? (
+              <Tooltip key={item.path} label={item.label} position="right" withArrow>
+                {link}
+              </Tooltip>
+            ) : (
+              <div key={item.path}>{link}</div>
+            );
+          })}
+        </AppShell.Section>
+
+        {/* ALT: kullanıcı + rol, tema, çıkış */}
+        <AppShell.Section>
+          <Divider mb="xs" />
+          {collapsed ? (
+            <Stack gap="xs" align="center">
+              <Tooltip label={themeLabel} position="right" withArrow>
+                <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleTheme}
+                  aria-label="Temayı değiştir">
+                  <ThemeIcon size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip
+                label={`${user?.name} (${user?.role}) — Çıkış`}
+                position="right"
+                withArrow
+              >
+                <ActionIcon variant="subtle" color="red" size="lg" onClick={logout}
+                  aria-label="Çıkış">
+                  <IconLogout size={20} />
+                </ActionIcon>
+              </Tooltip>
+            </Stack>
           ) : (
-            <div key={item.path}>{link}</div>
-          );
-        })}
+            <Stack gap="xs">
+              <Group justify="space-between" wrap="nowrap">
+                <div style={{ minWidth: 0 }}>
+                  <Text size="sm" truncate>{user?.name}</Text>
+                  <Badge variant="light" size="sm">{user?.role}</Badge>
+                </div>
+                <Tooltip label={themeLabel}>
+                  <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleTheme}
+                    aria-label="Temayı değiştir">
+                    <ThemeIcon size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
+              <Button
+                variant="subtle"
+                color="red"
+                size="xs"
+                leftSection={<IconLogout size={16} />}
+                onClick={logout}
+                justify="flex-start"
+              >
+                Çıkış
+              </Button>
+            </Stack>
+          )}
+        </AppShell.Section>
       </AppShell.Navbar>
 
       <AppShell.Main>
         {/* key={pathname}: her rota değişiminde içerik yeniden monte olur ve
-            route-fade animasyonu (Bölümler'deki geçişin sistem geneli sürümü)
-            baştan oynar. Aynı yol + farklı query (deep-link) remount etmez. */}
+            route-fade animasyonu baştan oynar. Aynı yol + farklı query
+            (deep-link) remount etmez. */}
         <div key={pathname} className="route-fade">
           <Outlet />
         </div>

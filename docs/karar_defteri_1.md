@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 4 Ağustos 2026 (K-58: hızlı işlemler yetkiye göre kilitli · K-57: cohort filtresi ek cohort'ları kapsar)
+**Son güncelleme:** 5 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-58: hızlı işlemler yetkiye göre kilitli)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -1425,3 +1425,21 @@ yetkiniz yok"). `LockedAction` yardımcı bileşeni: native `disabled` yerine
 sunucuda. Diğer ekranlar (Dersler/Haftalık/Sınav) zaten `canWriteIn` ile yazma
 düğmelerini gizliyordu; bu, Bölümler genel-bakışındaki kısayolları da aynı
 kurala bağlar.
+
+## Not · Üç çakışma kuralı DB şemasıyla zaten engelli (W6/E2/E6) [gözlem]
+Çakışma motorunun 3 kuralı, geçerli bir kayıtla asla tetiklenemez; ilgili geçersiz
+veri veritabanı kısıtlarıyla (CHECK/UNIQUE) baştan reddedilir. Yani bu kurallar
+motorda **savunma amaçlı** (defense-in-depth) durur — pratikte ölü kod değildir
+ama normal akışta hiç ateşlenmez:
+- **W6** (pencere dışı haftalık): `weekly_schedule_entries` CHECK'leri —
+  `day_of_week BETWEEN 1 AND 5` + `start_slot + slot_count - 1 <= 9` — hafta sonu
+  veya taşan slot satırını saklatmaz.
+- **E2** (mükerrer sınav): `exams` üzerinde `UNIQUE(course_id, exam_type,
+  exam_index)` — aynı ders+tip+sıra ikinci kez eklenemez.
+- **E6** (hafta sonu sınavı): `exams` CHECK `ck_exams_weekday_only` — Cmt/Paz
+  tarihli sınav saklanamaz.
+
+Bu gözlem, çakışma örnekleri seed edilirken çıktı: kalan 17 kural gerçek veriyle
+kurulup GET /conflicts'te doğrulandı (9 HARD + 13 WARNING); bu 3'ü kurulamadı.
+İleride motor testlerinde bu 3 kural yalnız birim düzeyde (elle dict ile) test
+edilebilir — uçtan uca (DB üzerinden) değil.

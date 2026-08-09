@@ -8,9 +8,11 @@ duz dict listeleri alir. Bu dosya iki dunyayi birbirine baglar:
     motor sonuclari (kontrat §0 ConflictResult) --> router --> istemci
 
 Tasarim kararlari:
-  - **Evren:** her kontrol, adayi workgroup'un DRAFT + SUBMITTED TUM girislerine
-    karsi test eder (kural seti). Taslak bir ders, baska bolumun kilitli dersiyle
-    cakisabilir; submit edilecek kume kendi icinde de cakisabilir.
+  - **Evren (K-59):** iki bicimi var. Taslaksiz cagrilarda evren YAYINDAKI
+    programdir. Bir taslak verildiginde evren, taslagin satirlari + yayinin o
+    taslagin cohort'u DISINDA kalan kismidir; boylece taslak, kendi diliminin
+    yayindaki halini ikame eder. Baska hesaplarin taslaklari asla girmez —
+    taslak ozeldir, "taslaklar arasi cakisma" diye bir kavram yoktur.
   - **Aday filtresi:** motor evrenin tamamini tarar, biz yalnizca adayi (veya
     submit kumesini) ilgilendiren sonuclari donduruyoruz. Aksi halde kullanici
     kendi kaydini yaparken baskasinin cakismasini gorurdu.
@@ -19,14 +21,16 @@ Tasarim kararlari:
     bayrak DB'den okunup motora parametre olarak gecirilir.
 """
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
+from app.cohort import cohort_course_filter
 from app.conflicts.orchestrator import (
     scan_completeness, scan_cross, scan_exams, scan_weekly,
 )
 from app.models import (
-    Classroom, Course, CourseCohort, CourseSection, Department, Exam, Workgroup,
-    WeeklyScheduleEntry,
+    Classroom, Course, CourseCohort, CourseSection, Department, Exam,
+    ScheduleDraft, Workgroup, WeeklyScheduleEntry,
 )
 
 
@@ -66,6 +70,9 @@ def _weekly_to_dict(e: WeeklyScheduleEntry) -> dict:
     return {
         "id": e.id,
         "type": "weekly_entry",
+        # K-59: motor bu alani OKUMAZ; sonuclari "taslagi ilgilendiren" ve
+        # "zaten yayinda olan" diye ayirmak icin burada tasiyoruz.
+        "draft_id": e.draft_id,
         "section_id": e.section_id,
         "course_id": c.id,
         "classroom_id": e.classroom_id,
@@ -130,17 +137,48 @@ def _exam_to_dict(x: Exam) -> dict:
 # Evren sorgulari: workgroup izolasyonu + eager yukleme
 # ==================================================================
 
-def _weekly_universe(db: Session, workgroup_id: int) -> list[dict]:
+def _weekly_universe(
+    db: Session, workgroup_id: int, draft: ScheduleDraft | None = None
+) -> list[dict]:
     """Workgroup'un cakisma evrenine giren haftalik girisleri.
 
-    DRAFT + SUBMITTED tumune bakilir (status filtresi YOK): kural seti her iki
-    anda da taslak+kilitli tumunu sart kosar. AMA pasif sube/ders DISLANIR
-    (K-39): girisi olan bir sube/ders pasife alindiginda o girisler artik
-    kimseyle cakismaz — projenin her yerinde "pasif = kapsam disi" (K-16
-    ogrenci sayisi, K-33 dashboard sayaci, K-15 "tum aktif sube ciftleri").
+    **Evren iki bicimde kurulur (K-59):**
+
+    - `draft` YOK -> yalniz YAYINDAKI satirlar (`draft_id IS NULL`). Cakisma
+      raporu, dashboard ve yayin uzerindeki kontroller bunu kullanir.
+    - `draft` VAR -> taslagin kendi satirlari + yayinin taslak DISINDA kalan
+      kismi. Taslak, kendi cohort'unun yayindaki dilimini KOMPLE ikame eder;
+      o dilim disarida birakilmazsa ayni ders hem yayindaki hem taslaktaki
+      yeriyle iki kez sayilir ve motor hayali cakisma uretir.
+
+    Dilimin sinirini `cohort_course_filter` cizer — taslagin acilirken hangi
+    dersleri kopyaladigini belirleyen filtrenin AYNISI. Ortak ders (K-48) de
+    dahildir: tuketen bolumun cohort'undan geldigi icin filtreye takilir,
+    yayindaki tek fiziksel satiri dislanir, yerine taslaktaki kopyasi gecer.
+
+    BASKA HESAPLARIN TASLAKLARI HICBIR BICIMDE GIRMEZ: taslak ozeldir (K-59),
+    "taslaklar arasi cakisma" diye bir kavram yoktur. Iki dalda da satirlar ya
+    `draft_id IS NULL` ya da `draft_id = bu taslak`.
+
+    Pasif sube/ders her iki bicimde de DISLANIR (K-39): girisi olan bir
+    sube/ders pasife alindiginda o girisler artik kimseyle cakismaz —
+    projenin her yerinde "pasif = kapsam disi" (K-16 ogrenci sayisi, K-33
+    dashboard sayaci, K-15 "tum aktif sube ciftleri").
+
     Eager yukleme N+1'i onler — adaptor her giris icin
     section/course/department/classroom'a dokunuyor.
     """
+    if draft is None:
+        scope = WeeklyScheduleEntry.draft_id.is_(None)
+    else:
+        in_draft_cohort = cohort_course_filter(
+            draft.department_id, draft.year, draft.semester
+        )
+        scope = or_(
+            WeeklyScheduleEntry.draft_id == draft.id,
+            and_(WeeklyScheduleEntry.draft_id.is_(None), ~in_draft_cohort),
+        )
+
     entries = (
         db.query(WeeklyScheduleEntry)
         .join(CourseSection).join(Course).join(Department)
@@ -148,6 +186,7 @@ def _weekly_universe(db: Session, workgroup_id: int) -> list[dict]:
             Department.workgroup_id == workgroup_id,
             CourseSection.active.is_(True),
             Course.active.is_(True),
+            scope,
         )
         .options(
             selectinload(WeeklyScheduleEntry.section)
@@ -222,15 +261,21 @@ def _wg_of_exam(exam: Exam) -> int:
 # Seam: haftalik program
 # ==================================================================
 
-def check_weekly_save(db: Session, entry: WeeklyScheduleEntry) -> list[dict]:
+def check_weekly_save(
+    db: Session, entry: WeeklyScheduleEntry, draft: ScheduleDraft | None = None
+) -> list[dict]:
     """Tek haftalik girisin kayit ani kontrolu.
 
     Sonuc BILGILENDIRIR, kaydi ENGELLEMEZ (K-03) — engelleme karari router'da.
     W8 tamlik kurali burada URETILMEZ (K-20): yerlestirme surerken "hala eksik"
     uyarisi yagdirmamak icin yalniz submit'te calisir.
+
+    `draft` verilirse kontrol o taslagin evreninde yapilir (K-59): taslak
+    icindeki duzenleme, kendi cohort'unun yayindaki haline degil taslaktaki
+    haline karsi test edilir.
     """
     wg = _wg_of_entry(entry)
-    weeklies = _weekly_universe(db, wg)
+    weeklies = _weekly_universe(db, wg, draft)
     exams = _exam_universe(db, wg)
 
     results = scan_weekly(weeklies)
@@ -270,6 +315,49 @@ def check_weekly_submit(
 
 
 # ==================================================================
+# Seam: taslak (K-59)
+# ==================================================================
+
+def scan_draft(db: Session, draft: ScheduleDraft) -> dict[str, list[dict]]:
+    """Bir taslagin TAM cakisma tablosu: kendi ici + yayindaki diger cohort'lar.
+
+    Uc yerde ayni cagri kullanilir; ucunun ayni sayiyi gostermesi sart:
+      1. Taslak editoru — kullanici duzenlerken durumu gorsun.
+      2. Onaya gonderme kapisi — HARD varsa talep hic olusmasin.
+      3. Onay ani — arada yayin degistiyse HARD cikabilir, onay engellenir
+         ("bu talep artik guncel programla cakisiyor", K-59).
+
+    **Sonuc suzgeci:** yalniz taslagin KENDI satirlarina dokunan cakismalar
+    dondurulur. Baska cohort'larin yayinda zaten var olan cakismasi taslagin
+    sucu degildir; gosterilirse kullanici duzeltemeyecegi bir listeye bakar ve
+    onay kapisi baskasinin hatasi yuzunden kilitlenir.
+
+    **W8 (tamlik, K-20) BURADA URETILIR:** kayit aninda susmasinin gerekcesi
+    "yerlestirme surerken rahatsiz etme"ydi; taslagin tablosu ise kullanicinin
+    bilerek "durum ne" dedigi yerdir (scan_workgroup'taki K-39 gerekcesinin
+    aynisi). Yalniz taslagin satirlari degerlendirilir — taslak kendi
+    cohort'unun tamamini tasidigi icin sube bazinda tamlik dogru hesaplanir.
+    """
+    wg = draft.workgroup_id
+    weeklies = _weekly_universe(db, wg, draft)
+    exams = _exam_universe(db, wg)
+
+    draft_rows = [w for w in weeklies if w["draft_id"] == draft.id]
+
+    results = scan_weekly(weeklies)
+    results += scan_cross(exams, weeklies, _cross_flag(db, wg))
+    results += scan_completeness(draft_rows)
+
+    wanted = {("weekly_entry", w["id"]) for w in draft_rows}
+    results = [r for r in results if _involves(r, wanted)]
+
+    return {
+        "hard": [r for r in results if r["severity"] == "HARD"],
+        "warnings": [r for r in results if r["severity"] == "WARNING"],
+    }
+
+
+# ==================================================================
 # Seam: sinavlar
 # ==================================================================
 
@@ -305,7 +393,11 @@ def check_exams_submit(db: Session, exams_to_submit: list[Exam]) -> list[dict]:
 # ==================================================================
 
 def scan_workgroup(db: Session, workgroup_id: int) -> dict[str, list[dict]]:
-    """Workgroup'un TAMAMINI tarar; aday filtresi YOK, her sey raporlanir.
+    """Workgroup'un YAYINDAKI programini tarar; aday filtresi YOK, her sey raporlanir.
+
+    K-59: evren yalniz yayindir (`draft_id IS NULL`). Taslaklar ozeldir ve
+    kimseyi etkilemez; rapora karisirlarsa herkes birbirinin denemesini
+    "cakisma" diye gorurdu. Taslagin kendi tablosu `scan_draft` ile alinir.
 
     Tek cagri iki tuketiciyi besler: dashboard ozeti yalnizca len() alir,
     GET /conflicts ayni listeleri oldugu gibi doner. Ikisi ayri ayri tarasaydi

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import build_change_summary, log_action
 from app.conflict_service import check_weekly_save, check_weekly_submit
 from app.deps import get_db, get_current_user, require_weekly_manager
-from app.routers.courses import cohort_course_filter
+from app.cohort import cohort_course_filter
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus,
     SemesterType, User, UserRole, WeeklyScheduleEntry,

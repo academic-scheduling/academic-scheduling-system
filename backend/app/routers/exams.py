@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import build_change_summary, log_action
 from app.conflict_service import check_exams_save, check_exams_submit
 from app.deps import get_db, get_current_user, require_exam_manager
-from app.routers.courses import cohort_course_filter
+from app.cohort import cohort_course_filter
 from app.models import (
     Classroom, Course, CourseSection, Department, EntryStatus, Exam,
     ExamType, Lecturer, SemesterType, User, UserRole,

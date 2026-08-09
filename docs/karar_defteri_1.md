@@ -1560,7 +1560,10 @@ YERLEŞTİREMİYOR.
    `draft_affected_departments`, `weekly_schedule_entries.draft_id`,
    `users.can_approve_schedule`). ✅ `d3f8b1c47a09`; up/down/up doğrulandı,
    9 şema testi (`test_k59_draft_schema.py`) + mevcut 467 test yeşil.
-2. Motor dikişi: `_weekly_universe(..., draft_id=None)`.
+2. Motor dikişi: `_weekly_universe(..., draft=None)` + `scan_draft`. ✅
+   `cohort_course_filter` router'dan `app/cohort.py`'ye taşındı (servisin
+   router'dan import etmesi bağımlılığı ters çevirirdi). 8 test
+   (`test_k59_draft_universe.py`).
 3. Taslak API'si: oluştur (kopyala) / temizle / düzenle / fark / gönder / geri çek.
 4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet.
 5. Frontend haftalık: yayın-taslak modu, "taslağa geçilsin mi?" diyaloğu,

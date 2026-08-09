@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
+from app.cohort import cohort_course_filter
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseCohort, CourseSection, Department, DepartmentMembership,
@@ -114,30 +115,6 @@ def _covered_cohorts(course: Course) -> set[tuple[int, int, SemesterType]]:
     covered = {(course.department_id, course.year, course.semester)}
     covered |= {(cc.department_id, cc.year, cc.semester) for cc in course.extra_cohorts}
     return covered
-
-
-def cohort_course_filter(department_id: int, year: int | None, semester: SemesterType | None):
-    """K-57: cohort üyeliği filtresi = BİRİNCİL ∪ EK cohort.
-
-    Bir cohort görünümünde (Dersler / Haftalık / Sınav — bölüm+yıl+dönem seçili)
-    year/semester eşleşmesi hem birincile HEM ek cohort'a uygulanır. Böylece ortak
-    (servis) ders, onu TÜKETEN bölümün cohort'undan da gelir — yalnız ilk atandığı
-    (birincil) bölümden değil. Eski filtre `Course.department_id == X` idi ve ek
-    cohort'la tüketilen ortak dersleri (ENG/MATH/PHYS...) kohortun listesinden
-    düşürüyordu (kullanıcı: "8 ders olması gerekirken 2 çıkıyor").
-
-    Course entity'si sorguya JOIN'li olmalı; `extra_cohorts.any(...)` korele EXISTS
-    üretir (join'den bağımsız çalışır).
-    """
-    primary = [Course.department_id == department_id]
-    extra = [CourseCohort.department_id == department_id]
-    if year is not None:
-        primary.append(Course.year == year)
-        extra.append(CourseCohort.year == year)
-    if semester is not None:
-        primary.append(Course.semester == semester)
-        extra.append(CourseCohort.semester == semester)
-    return or_(and_(*primary), Course.extra_cohorts.any(and_(*extra)))
 
 
 def _build_extra_cohorts(

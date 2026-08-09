@@ -1443,3 +1443,144 @@ Bu gözlem, çakışma örnekleri seed edilirken çıktı: kalan 17 kural gerçe
 kurulup GET /conflicts'te doğrulandı (9 HARD + 13 WARNING); bu 3'ü kurulamadı.
 İleride motor testlerinde bu 3 kural yalnız birim düzeyde (elle dict ile) test
 edilebilir — uçtan uca (DB üzerinden) değil.
+
+## K-59 · Yayın onay akışı: özel cohort taslağı + yetkili onayı [E] — K-03 revizyonu
+**Belirti (kullanıcı):** Program düzenleme yetkisi olan tek kişi, yaptığı
+değişikliği doğrudan yayına alabiliyordu. "Son programa ilk kullanıcı tek başına
+etki ediyor." İkinci bir göz yok.
+
+**Mevcut durumun tespiti (tasarım öncesi okuma):**
+- Program "sürüm" taşımıyor; `DRAFT`/`SUBMITTED` bütün programın değil TEK TEK
+  SATIRLARIN durumu. "Yayınlamak" = seçili satırları SUBMITTED yapmak.
+- Taslaklar **zaten herkese görünüyordu**: `GET /weekly-entries` status'e hiç
+  bakmıyor (K-26), frontend yalnız rozetle ayırıyordu. Yani "yayınlayınca
+  herkese düşer" değil, satır oluştuğu anda düşüyordu.
+- `revert-to-draft` **denetimsiz bir yayından-kaldırmaydı**: `can_manage_weekly`
+  olan biri yayındaki satırı tek istekle indirebiliyordu. Onay kapısı yalnız
+  submit'e konsaydı bu delik açık kalırdı.
+- Export status'e bakmıyor, taslakları da basıyordu.
+
+**Karar — model:** Onay birimi satır değil, **cohort taslağı**. Bir taslak, bir
+cohort'un (bölüm+yıl+dönem) bağımsız ve tam program halidir; açılırken o anki
+yayının kopyasıyla dolar, "Temizle" ile sıfırdan da dizilebilir.
+
+- **Taslak ÖZELDİR.** Yalnız sahibi görür ve saklanır (sonradan devam edilir).
+  Herkesin gördüğü tek şey yayındaki onaylı programdır. Bunun sonucu: **taslaklar
+  arası çakışma diye bir şey yoktur** — başka hesabın taslağı hiçbir sorguya,
+  hiçbir çakışma evrenine girmez.
+- **Fark CANLIDIR.** Taslağın açıldığı andaki hali saklanmaz; fark her seferinde
+  *o anki yayına* karşı hesaplanır (eşleştirme: şube + oturum tipi).
+  Dolayısıyla taban anlık görüntüsü, sürüm sayacı, `origin_entry_id`, "bayat
+  taban" kavramı ve buna dayalı engelleme kuralları **yoktur**.
+- **Onay, farkı uygular** — taslağın tamamını yayının yerine geçirmez.
+  > Tasarım sırasında önce "onay = cohort'un satırlarını taslağınkilerle
+  > değiştir" kurulmuştu. Bu, iki kişinin aynı cohorttan taslak açtığı durumda
+  > sonra onaylananın diğerinin onaylanmış değişikliğini SESSİZCE silmesine yol
+  > açıyordu. Canlı fark bunu çözer: onaylayıcı "PHYS101 Sal 3 → Pzt 2" satırını
+  > ekranda görür, geri alındığını bilerek karar verir. Sorun üzerine yazmak
+  > değil, sessizce yazmaktı; çözüm engelleme değil şeffaflık.
+
+**Karar — yetki:** Yeni tek bayrak `users.can_approve_schedule` (K-25 fabrikası
+`_require_capability` ile), haftalık + sınav ortak. Onaylamak bir alan
+uzmanlığı değil gözetim rolüdür; ikiye bölmek kuyruğu/UI/testi ikiye katlar.
+- **Taslak açmak:** herkese açık. Özel taslak kimseyi etkilemez, "şunu taşısak
+  ne olur" kum havuzu olarak değerlidir.
+- **Onaya göndermek:** `can_manage_weekly` + bölüm üyeliği (K-25 iki boyut aynen).
+- **Onaylamak:** `can_approve_schedule` + bölüm üyeliği.
+- **Öz-onay YASAK, ADMIN dahil.** İstisna yok: tek yetkilisi olan workgroup
+  yayın yapamaz, ikinci onay yetkilisi davet etmek zorundadır. Bilinen sonuç —
+  seed/demo ve test hesabı kurulumu buna göre güncellenecek.
+
+**Karar — yaşam döngüsü:** `OPEN → PENDING → APPROVED | REJECTED`.
+- Bekleyen taslak **donar** (salt-okunur): onaylayıcı hareketli hedef
+  incelemesin. Sahibi "geri çek" derse `OPEN`'a döner.
+- Onaylanan taslak salt-okunur geçmiş kaydı olur; reddedilen gerekçesiyle
+  `OPEN`'a döner, düzeltilip yeniden gönderilir.
+- Kuyruk **ortak ve atamasız** (bölümün onay yetkilileri görür) + gönderende
+  serbest not alanı. Atama kolonu sonradan eklenebilir, sökülmesi zordur.
+
+**Karar — şema:**
+- Yeni `schedule_drafts`: cohort kimliği (department_id, year, semester), ad,
+  durum, `created_by`, gönderim (`submitted_at`, `submit_note`), inceleme
+  (`reviewed_by`, `reviewed_at`, `review_note`), etkilenen bölümler (ortak ders).
+- `weekly_schedule_entries.draft_id` (nullable FK). **`draft_id IS NULL` = yayında.**
+- `weekly_schedule_entries.status` ve `submitted_at` **KALKAR**: `draft_id` ile
+  aynı gerçeği söyleyen iki kolon er geç birbiriyle çelişir. `(status =
+  'SUBMITTED') = (submitted_at IS NOT NULL)` CHECK'i de onunla birlikte gider.
+  **Ama ilk migration'da değil.** `status`'ü hemen düşürmek `schemas.py`,
+  `weekly_entries.py`, `export_service.py`, seed'ler, testler ve frontend'i aynı
+  anda kırar — bunları düzeltmek zaten 3-6. adımların işi. Bu yüzden ilk
+  migration **tamamen eklemelidir** (hiçbir kolon düşmez, mevcut akış aynen
+  çalışır); düşürme + artık `DRAFT` satırlarının **silinmesi** (kullanıcı kararı:
+  taşınmayacak) yeni uçlar devreye girdikten sonra ayrı bir **temizlik
+  migration'ına** bırakılır. Böylece her commit'te ağaç yeşil kalır.
+- `entry_status` enum TİPİ kalır: sınavlar hâlâ kullanıyor (sınav fazı ayrı).
+- Onaylanan taslak kaydı **değişiklik kaydının kendisidir** — ayrı bildirim
+  tablosu yok. Uygulama içi akış ("bölümünüzü etkileyen son değişiklikler")
+  bu tablodan türetilir. E-posta bu fazda YOK (kullanıcı kararı).
+
+**Karar — çakışma motoru:** Motorun kendisine (`app/conflicts/`, saf Python)
+DOKUNULMAZ. Tek değişiklik `conflict_service._weekly_universe(...)` dikişinde
+bir `draft_id` parametresi (K-22'nin "motoru tek dikişten çağır" kararı tam
+burada ödüyor):
+- `draft_id` yok → evren = yalnız yayındaki satırlar.
+- `draft_id` var → diğer cohort'ların yayını + taslağın kendi satırları.
+- Cohort kapsamı için yeni sorgu yazılmaz, K-57'nin `cohort_course_filter`'ı
+  kullanılır (ortak dersi tüketen bölümden de getirir).
+- Kontrol **hem gönderimde hem onayda** koşar. Talep temizken başka bölüm bir şey
+  yayınlayabilir; onay anında hard çakışma çıkarsa onay engellenir ("bu talep
+  artık güncel programla çakışıyor"). Kullanıcının en baştaki isteği buydu:
+  "o anki program ile çalışmaları kontrol edilip".
+- Çakışma raporu ve dashboard **yalnız yayını** tarar. Bugünkü "DRAFT + SUBMITTED
+  hepsi" evreni sadeleşir.
+
+**Karar — ortak ders (K-48/K-49 ile ilişki):** K-49 ortak dersin düzenlenmesini,
+şube yönetimini ve silinmesini tüketen bölümlere açtı; ama **haftalık yerleşimi
+açmadı** — `weekly_entries` uçları hâlâ birincil bölüme bakıyor
+(`_ensure_department_access(user, section.course.department_id)`). Bugünkü
+tutarsız sonuç: CE, MATH101'e kendi şubesini ekleyebiliyor ama o şubeyi programa
+YERLEŞTİREMİYOR.
+- **Yerleştirme de paylaşıma açılır:** haftalık uçlarda K-49'un mevcut
+  `_ensure_course_access` yardımcısı kullanılır. Şubeye bölüm kolonu
+  (`course_sections.department_id`) EKLENMEZ — yerleştirme paylaşımlıysa şubeyi
+  bir bölüme atfetmeye gerek yoktur.
+- Ortak dersin tek fiziksel yerleşimi vardır; "onaylanınca tüm programlarda yeri
+  değişir" davranışı bu yüzden kendiliğinden gelir, ek iş gerektirmez.
+- **Uyarı zorunlu:** ortak ders taşınmadan önce etkilenen bölümleri listeleyen
+  pop-up (`_course_cohorts()` verisi hazır).
+- **Tek onay + bildirim:** talebi gönderen bölümün onaylayıcısı tek başına
+  onaylar, etkilenen bölümler akışta görür. K-49'un kabul ettiği "güvenilen
+  fakülte ölçeği" toleransıyla tutarlı.
+- **"Temizle" ortakları silmez** (varsayılan): yalnız cohort'un kendi dersleri.
+  Ortakları da silmek ayrı ve açıkça uyaran bir seçenektir — aksi halde masum
+  görünen bir düğme üç bölümün programından ders düşürür.
+
+**Uygulama sırası:**
+1. Şema + migration — **eklemeli** (`schedule_drafts`,
+   `draft_affected_departments`, `weekly_schedule_entries.draft_id`,
+   `users.can_approve_schedule`). ✅ `d3f8b1c47a09`; up/down/up doğrulandı,
+   9 şema testi (`test_k59_draft_schema.py`) + mevcut 467 test yeşil.
+2. Motor dikişi: `_weekly_universe(..., draft_id=None)`.
+3. Taslak API'si: oluştur (kopyala) / temizle / düzenle / fark / gönder / geri çek.
+4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet.
+5. Frontend haftalık: yayın-taslak modu, "taslağa geçilsin mi?" diyaloğu,
+   temizle, ortak ders uyarısı.
+6. Frontend onay sayfası: kuyruk + yan yana ızgara + fark listesi + çakışma listesi.
+7. Ortak ders yerleştirme yetkisi (`_ensure_course_access`) + değişiklik akışı.
+8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).
+9. **Temizlik migration'ı:** kalan `DRAFT` satırlarını sil, `status` +
+   `submitted_at` + tutarlılık CHECK'i + `idx_wse_status` düşür.
+
+**Açık uçlar (bu fazda değil):**
+- **Sınavlar.** K-16 gereği sınav ders düzeyindedir, cohort'a bağlanmaz; ortak
+  dersin sınavı birçok cohort'a aittir. "Cohort taslağı" kavramı sınavda
+  karşılıksız — sınav fazının taslak birimi ayrıca kararlaştırılacak
+  (muhtemelen bölüm + sınav dönemi).
+- **Bildirim merkezi.** Kişi başına okundu/okunmadı durumu + zil ikonu; uygulama
+  içi akışın üstüne sonradan eklenebilir.
+- **Cohort dışı düzenleme.** Taslaklar yalnız cohort modunda olduğu için derslik/
+  hoca merceğinden düzenleme kalkar (mercekler görüntüleme olarak kalır). "Şu
+  derslik tadilata girdi, boşalt" işi cohort cohort dolaşmayı gerektirir —
+  bilerek kabul edildi.
+- **Export.** "Resmî program" kavramı ancak bu fazla anlam kazanıyor; export'un
+  varsayılan olarak yalnız yayını basması ayrıca ele alınacak.

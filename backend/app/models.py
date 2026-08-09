@@ -97,6 +97,21 @@ class EntryStatus(str, enum.Enum):
     SUBMITTED = "SUBMITTED"
 
 
+class DraftStatus(str, enum.Enum):
+    """draft_status — cohort taslaginin yasam dongusu (K-59).
+
+    EntryStatus'un yerini ALMAZ; farkli bir seviyede durur. EntryStatus tek
+    satirin durumuydu, bu bir TASLAGIN durumu. Haftalik satirin durumu artik
+    `draft_id`'den okunur (NULL = yayinda); EntryStatus yalniz sinavlarda
+    kalir (sinav fazi ayri, K-16 gerekcesiyle).
+    """
+
+    OPEN = "OPEN"           # sahibi duzenliyor
+    PENDING = "PENDING"     # onay bekliyor -> DONDU, salt-okunur
+    APPROVED = "APPROVED"   # onaylandi, farki yayina uygulandi (gecmis kaydi)
+    REJECTED = "REJECTED"   # reddedildi; OPEN gibi duzenlenebilir, gerekce durur
+
+
 class SessionType(str, enum.Enum):
     """session_type — haftalik girisin karsiladigi T/U/L bileseni (K-20)."""
 
@@ -207,6 +222,12 @@ class User(Base):
         Boolean, server_default=text("false")
     )
     can_manage_lecturers: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
+    # K-59: taslagi YAYINA alma yetkisi. Digerlerinden farkli bir eksende durur —
+    # otekiler "neyi yazabilirim", bu "baskasinin yazdigini yayina gecirebilir
+    # miyim". Haftalik + sinav ortak: onaylamak alan uzmanligi degil gozetim rolu.
+    can_approve_schedule: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false")
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -644,12 +665,127 @@ class Slot(Base):
 # ==================================================================
 
 
+# Onaylanan taslagin ETKILEDIGI bolumler (K-59). Yalniz ortak ders (K-48)
+# tasindiginda dolar: dersin efektif cohort'undaki, taslagin kendi bolumu
+# DISINDAKI bolumler. Degisiklik akisi ("bolumunuzu etkileyen son degisiklikler")
+# bu satirlar uzerinden calisir -- ayri bir bildirim tablosu YOKTUR.
+draft_affected_departments = Table(
+    "draft_affected_departments",
+    Base.metadata,
+    Column(
+        "draft_id",
+        BigInteger,
+        ForeignKey("schedule_drafts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "department_id",
+        BigInteger,
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Index("idx_draft_affected_department", "department_id"),
+)
+
+
+class ScheduleDraft(Base):
+    """schedule_drafts — bir cohort'un OZEL, alternatif program hali (K-59).
+
+    Bir taslak, bir cohort'un (bolum + yil + donem) bagimsiz ve TAM program
+    halidir; acilirken o anki yayinin kopyasiyla dolar. Kopyalanan satirlar
+    weekly_schedule_entries'te `draft_id` ile bu kayda baglanir.
+
+    OZEL: yalniz sahibi gorur. Baska hesabin taslagi hicbir sorguya, hicbir
+    cakisma evrenine girmez -- "taslaklar arasi cakisma" diye bir kavram yoktur.
+
+    Taslagin acildigi ANDAKI hali SAKLANMAZ: fark her seferinde o anki yayina
+    karsi canli hesaplanir. Bu yuzden taban anlik goruntusu, surum sayaci ve
+    "bayat taban" kavrami bilerek yoktur (K-59).
+    """
+
+    __tablename__ = "schedule_drafts"
+    __table_args__ = (
+        CheckConstraint("year BETWEEN 1 AND 6", name="ck_schedule_drafts_year_range"),
+        # Bir kullanici bir cohort icin ayni anda TEK aktif taslak tutar (K-59).
+        # APPROVED disarida: onaylanan taslak gecmis kaydidir, yeni taslak
+        # acmayi engellememeli. REJECTED iceride: reddedileni duzeltmek yerine
+        # yanina yenisini acmak, gerekcenin kaybolmasi demek olurdu.
+        Index(
+            "uq_schedule_drafts_active_per_owner",
+            "created_by", "department_id", "year", "semester",
+            unique=True,
+            postgresql_where=text("status <> 'APPROVED'"),
+        ),
+        Index("idx_schedule_drafts_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # Izolasyon (K-04) tek filtreyle kurulabilsin diye workgroup dogrudan tasinir;
+    # department uzerinden turetilebilirdi ama her sorgu fazladan JOIN isterdi.
+    workgroup_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workgroups.id", ondelete="CASCADE")
+    )
+
+    # --- cohort kimligi: taslagin kapsami ---
+    department_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("departments.id", ondelete="CASCADE")
+    )
+    year: Mapped[int] = mapped_column(SmallInteger)
+    semester: Mapped[SemesterType] = mapped_column(
+        Enum(SemesterType, name="semester_type")
+    )
+
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[DraftStatus] = mapped_column(
+        Enum(DraftStatus, name="draft_status"), server_default=text("'OPEN'")
+    )
+
+    # CASCADE (diger tablolardaki created_by SET NULL iken): taslak sahibine
+    # OZELDIR, sahipsiz taslagin anlami yok. Kullanici silmek zaten engelli (K-34).
+    created_by: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # --- onaya gonderim ---
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submit_note: Mapped[str | None] = mapped_column(Text)  # PR aciklamasi gibi
+
+    # --- inceleme ---
+    reviewed_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)  # ret gerekcesi
+    # Onay aninda yazilan insan-okur ozet ("MATH101 Car 1 -> Sal 3"). Taslagin
+    # satirlari onaydan sonra yayina gectigi icin fark geriye donuk yeniden
+    # hesaplanamaz; kayit kendi kendine yetsin diye ozet donduruluyor (K-36 deseni).
+    applied_summary: Mapped[str | None] = mapped_column(Text)
+
+    # --- iliskiler ---
+    department: Mapped["Department"] = relationship()          # tek yonlu
+    owner: Mapped["User"] = relationship(foreign_keys=[created_by])
+    reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
+    entries: Mapped[list["WeeklyScheduleEntry"]] = relationship(
+        back_populates="draft", passive_deletes=True
+    )
+    affected_departments: Mapped[list["Department"]] = relationship(
+        secondary=draft_affected_departments
+    )
+
+
 class WeeklyScheduleEntry(Base):
     """weekly_schedule_entries — haftalik ders programindaki tek bir yerlesim.
 
     Subeye baglanir (K-14). session_type: bu yerlesim T/U/L'nin hangisini
     karsiliyor (K-20, W8 tamlik kurali). delivery_mode=ONLINE_ASYNC girisler
     normal gun/saat tasir ama cakisma karsilastirmalarina girmez (K-19).
+
+    K-59: satirin "yayinda mi" sorusunu artik `draft_id` cevaplar (NULL = yayinda).
+    `status`/`submitted_at` gecis suresince yerinde duruyor ama yeni kod onlari
+    OKUMAZ; yeni uclar devreye girince temizlik migration'iyla dusecekler.
     """
 
     __tablename__ = "weekly_schedule_entries"
@@ -664,9 +800,16 @@ class WeeklyScheduleEntry(Base):
         Index("idx_wse_classroom_day", "classroom_id", "day_of_week"),
         Index("idx_wse_section", "section_id"),
         Index("idx_wse_status", "status"),
+        # Her sorgu ya yayini (draft_id IS NULL) ya tek bir taslagi suzecek.
+        Index("idx_wse_draft", "draft_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # K-59: NULL = YAYINDA. Dolu = o taslagin ozel kopyasi.
+    # CASCADE: taslak silinince kopyalari da gider (yayina hicbir etkisi yok).
+    draft_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("schedule_drafts.id", ondelete="CASCADE")
+    )
     section_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("course_sections.id", ondelete="CASCADE")
     )
@@ -704,6 +847,7 @@ class WeeklyScheduleEntry(Base):
         back_populates="schedule_entries"
     )
     classroom: Mapped["Classroom | None"] = relationship()  # tek yonlu
+    draft: Mapped["ScheduleDraft | None"] = relationship(back_populates="entries")
 
 
 # Sinav <-> derslik cok-a-cok baglantisi (K-17). Ek kolonu olmadigi icin

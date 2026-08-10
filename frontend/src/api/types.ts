@@ -21,6 +21,7 @@ export type User = {
   can_manage_exams: boolean;
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
+  can_approve_schedule: boolean;      // K-59: taslağı yayına alma
 };
 
 /** Kontrat §1 · POST /auth/login cevabı */
@@ -364,15 +365,21 @@ export type ManagedUser = {
   can_manage_exams: boolean;
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
+  can_approve_schedule: boolean;      // K-59
 };
 
-/** K-25'in beş yetenek bayrağı — form ve rozet listelerinin tek kaynağı. */
+/** Yetenek bayrakları — form ve rozet listelerinin tek kaynağı (K-25, K-59).
+ *
+ *  İlk beşi "neyi YAZABİLİRİM" der. Sonuncusu farklı bir eksende durur:
+ *  "başkasının yazdığını YAYINA geçirebilir miyim" (K-59). Bu yüzden ayrı
+ *  bir grup olarak işaretlenir; form onu ayrı başlık altında gösterir. */
 export const CAPABILITIES = [
-  { key: "can_manage_courses", label: "Dersler" },
-  { key: "can_manage_weekly", label: "Haftalık Program" },
-  { key: "can_manage_exams", label: "Sınavlar" },
-  { key: "can_manage_classrooms", label: "Derslikler" },
-  { key: "can_manage_lecturers", label: "Öğretim Üyeleri" },
+  { key: "can_manage_courses", label: "Dersler", group: "write" },
+  { key: "can_manage_weekly", label: "Haftalık Program", group: "write" },
+  { key: "can_manage_exams", label: "Sınavlar", group: "write" },
+  { key: "can_manage_classrooms", label: "Derslikler", group: "write" },
+  { key: "can_manage_lecturers", label: "Öğretim Üyeleri", group: "write" },
+  { key: "can_approve_schedule", label: "Program Onaylama", group: "approve" },
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
@@ -380,6 +387,7 @@ export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
 /** Kontrat §12 · işlem kayıtları (K-35). */
 export type AuditAction =
   | "CREATE" | "UPDATE" | "DELETE" | "SUBMIT"
+  | "APPROVE" | "REJECT" | "WITHDRAW"     // yayın onay akışı (K-59)
   | "INVITE" | "ACTIVATE"           // davet akışı (K-37)
   | "RESET_REQUEST" | "RESET_PASSWORD";   // şifre sıfırlama (K-43)
 
@@ -410,7 +418,13 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
   CREATE: { label: "Ekledi", color: "green" },
   UPDATE: { label: "Düzenledi", color: "blue" },
   DELETE: { label: "Sildi", color: "red" },
-  SUBMIT: { label: "Yayınladı", color: "violet" },
+  // K-59: "SUBMIT" artık YAYINLAMAK değil ONAYA GÖNDERMEK demek. Yayına geçiren
+  // tek eylem APPROVE. Eski satırlar da bu etiketle görünür; o dönemde submit
+  // gerçekten yayınlamaktı, ama iki ayrı etiket taşımak logu okunmaz yapardı.
+  SUBMIT: { label: "Onaya gönderdi", color: "violet" },
+  APPROVE: { label: "Onayladı (yayına aldı)", color: "green" },
+  REJECT: { label: "Reddetti", color: "red" },
+  WITHDRAW: { label: "Geri çekti", color: "gray" },
   // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
   INVITE: { label: "Davet etti", color: "cyan" },
   ACTIVATE: { label: "Hesabını açtı", color: "teal" },
@@ -432,4 +446,106 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
   exam: "Sınav",
   weekly_entry: "Haftalık giriş",
   user: "Kullanıcı",
+};
+
+
+/* ==================================================================
+ * Program taslakları ve onay akışı (K-59)
+ * ================================================================== */
+
+/** Taslağın yaşam döngüsü. REJECTED, OPEN gibi DÜZENLENEBİLİR bir durumdur —
+ *  ret gerekçesi üstünde durur, sahibi düzeltip yeniden gönderir. */
+export type DraftStatus = "OPEN" | "PENDING" | "APPROVED" | "REJECTED";
+
+export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
+  OPEN: "Taslak", PENDING: "Onay bekliyor",
+  APPROVED: "Onaylandı", REJECTED: "Reddedildi",
+};
+
+export const DRAFT_STATUS_COLORS: Record<DraftStatus, string> = {
+  OPEN: "yellow", PENDING: "blue", APPROVED: "green", REJECTED: "red",
+};
+
+export type DraftUserRef = { id: number; name: string };
+
+export type ScheduleDraft = {
+  id: number;
+  department_id: number;
+  department_name: string;
+  year: number;
+  semester: SemesterType;
+  name: string;
+  status: DraftStatus;
+  entry_count: number;
+  /** Yayına göre kaç fark var. CANLI hesaplanır (K-59) — taslak açıldığındaki
+   *  hale göre değil, O ANKİ yayına göre. */
+  change_count: number;
+  owner: DraftUserRef;
+  created_at: string;
+  submitted_at: string | null;
+  submit_note: string | null;
+  reviewer: DraftUserRef | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  applied_summary: string | null;
+};
+
+export type DraftPlacement = {
+  day_of_week: number;
+  start_slot: number;
+  slot_count: number;
+  classroom_id: number | null;
+  classroom_label: string | null;
+  delivery_mode: DeliveryMode;
+};
+
+export type DraftDiffItem = {
+  kind: "ADDED" | "REMOVED" | "MOVED";
+  section_id: number;
+  course_code: string;
+  course_name: string;
+  section_no: number;
+  session_type: SessionType;
+  /** K-48: ders başka cohort'lar tarafından da alınıyor. Taşımadan/silmeden
+   *  önce uyarı gösterilir — konumu onların programını da etkiler. */
+  is_shared: boolean;
+  affected_departments: { id: number; name: string }[];
+  before: DraftPlacement | null;
+  after: DraftPlacement | null;
+};
+
+export const DIFF_KIND_LABELS: Record<DraftDiffItem["kind"], string> = {
+  ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı",
+};
+
+export const DIFF_KIND_COLORS: Record<DraftDiffItem["kind"], string> = {
+  ADDED: "green", REMOVED: "red", MOVED: "blue",
+};
+
+export type DraftDiff = { draft_id: number; items: DraftDiffItem[] };
+
+export type DraftClearResponse = { deleted: number; preserved_shared: number };
+
+/** Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).
+ *  Fark zaten satır satır gösterir; bu, onaylayıcıya dikkatli bakması
+ *  gerektiğini söyleyen üst düzey işaret. */
+export type DraftStaleness = {
+  opened_at: string;
+  publications_since: number;
+  last_published_at: string | null;
+  last_published_by: string | null;
+};
+
+export type DraftReview = {
+  draft: ScheduleDraft;
+  items: DraftDiffItem[];
+  entries: WeeklyEntry[];
+  conflicts: ConflictScan;
+  staleness: DraftStaleness;
+};
+
+export type DraftApproveResponse = {
+  draft: ScheduleDraft;
+  applied: DraftDiffItem[];
+  warnings: ConflictResult[];
 };

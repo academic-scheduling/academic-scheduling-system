@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
+import DraftBar from "../components/DraftBar";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
   courseCommonForDept, courseInCohort, lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS,
@@ -19,6 +20,7 @@ import {
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
+import type { UndoEntity } from "../hooks/useUndoStack";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -28,7 +30,7 @@ import {
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
-  Lecturer, SemesterType, SessionType, WeeklyEntry,
+  Lecturer, ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 
 const DAYS = [1, 2, 3, 4, 5];
@@ -216,7 +218,9 @@ export default function WeeklyPage() {
   const [placing, setPlacing] = useState<{ day: number; slot: number; drag?: Drag } | null>(null);
   const [editing, setEditing] = useState<WeeklyEntry | null>(null);
   const [group, setGroup] = useState<Cluster | null>(null);   // toplu kart detayı
-  const [submitOpen, setSubmitOpen] = useState(false);
+  // K-59: NULL = yayındaki program (salt-okunur). Dolu = kendi özel taslağım;
+  // ızgara, çakışma ve bütün yazma işlemleri o taslağın içine yönlenir.
+  const [draft, setDraft] = useState<ScheduleDraft | null>(null);
   const [paletteSearch, setPaletteSearch] = useState("");
 
   // Palet yüksekliği GRID'e bağlanır, kendi içeriğine değil: ders sayısı arttıkça
@@ -254,10 +258,22 @@ export default function WeeklyPage() {
     return () => ro.disconnect();
   }, []);
 
-  // Yazma yalnız cohort bakışında: derslik/hoca mercekleri farklı cohort'ların
-  // derslerini bir arada gösterir, "bunu nereye yazıyorum" sorusu belirsizleşir.
-  const canWrite = view === "cohort"
-    && canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
+  // K-59: YAYINDAKİ programa artık kimse doğrudan yazamaz. Yazma yalnız kendi
+  // taslağının içinde olur ve yetki İSTEMEZ — özel taslak kimseyi etkilemez.
+  // Yetki (can_manage_weekly + bölüm üyeliği) ONAYA GÖNDERME kapısında aranır.
+  //
+  // Cohort bakışı şartı duruyor: derslik/hoca mercekleri farklı cohort'ların
+  // derslerini bir arada gösterir, "bunu nereye yazıyorum" belirsizleşir.
+  const canWrite = view === "cohort" && draft !== null
+    && (draft.status === "OPEN" || draft.status === "REJECTED");
+
+  const canSubmitDraft = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
+
+  /** Yazma uçlarının kökü. Taslaktayken bütün CRUD taslağın altına gider;
+   *  yayın modunda yazma zaten kapalı (canWrite false). */
+  const writeBase: UndoEntity = draft
+    ? `schedule-drafts/${draft.id}/entries`
+    : "weekly-entries";
 
   useEffect(() => {
     Promise.all([
@@ -367,19 +383,63 @@ export default function WeeklyPage() {
   };
 
   const reload = () => {
-    const qs = activeQuery();
-    if (!qs) { setEntries([]); return; }
     setLoading(true);
     setError(null);
-    Promise.all([
-      api.get<WeeklyEntry[]>(`/weekly-entries?${qs}`),
-      api.get<ConflictScan>("/conflicts"),
-    ])
+    // K-59: taslaktayken ızgara TASLAĞIN kopyasını gösterir ve çakışma tablosu
+    // taslağın evreninde hesaplanır (kendi satırları + diğer cohort'ların
+    // yayını). Yayın modunda eski davranış aynen sürer.
+    const istek = draft
+      ? Promise.all([
+          api.get<WeeklyEntry[]>(`/schedule-drafts/${draft.id}/entries`),
+          api.get<ConflictScan>(`/schedule-drafts/${draft.id}/conflicts`),
+        ])
+      : (() => {
+          const qs = activeQuery();
+          if (!qs) { setEntries([]); setLoading(false); return null; }
+          return Promise.all([
+            api.get<WeeklyEntry[]>(`/weekly-entries?${qs}`),
+            api.get<ConflictScan>("/conflicts"),
+          ]);
+        })();
+    if (!istek) return;
+    istek
       .then(([e, s]) => { setEntries(e); setScan(s); })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Program yüklenemedi"))
       .finally(() => setLoading(false));
   };
-  useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter]);
+  useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter, draft?.id, draft?.status]);
+
+  /** Taslak sayaçlarını (change_count) tazeler: ızgarada bir şey değiştiğinde
+   *  çubuktaki "N değişiklik" yazısı da güncellenmeli. */
+  const refreshDraft = () => {
+    if (!draft) return;
+    api.get<ScheduleDraft>(`/schedule-drafts/${draft.id}`)
+      .then(setDraft)
+      .catch(() => { /* taslak silinmişse çubuk zaten yayına dönecek */ });
+  };
+
+  /** Cohort değişince taslak ilişiği kesilir: CE/1/Güz taslağıyla EEE/2/Bahar
+   *  ızgarasını göstermek anlamsız olurdu. Kullanıcı yeni cohortta kendi
+   *  taslağını yeniden seçer/açar. */
+  useEffect(() => {
+    setDraft((d) => (d && (String(d.department_id) !== dep
+      || String(d.year) !== year
+      || d.semester !== sem) ? null : d));
+  }, [dep, year, sem]);
+
+  /** Bu cohort için AÇIK taslağım varsa çubuk onu hatırlatsın (sayfa yenilense
+   *  de kaybolmasın). Yalnız kendi taslaklarım döner — sunucu başkasınınkini
+   *  hiçbir koşulda listelemez (K-59). */
+  useEffect(() => {
+    if (view !== "cohort" || !dep || year === COMMON_YEAR) return;
+    api.get<ScheduleDraft[]>("/schedule-drafts")
+      .then((liste) => {
+        const eslesen = liste.find((d) => String(d.department_id) === dep
+          && String(d.year) === year && d.semester === sem);
+        if (eslesen) setDraft(eslesen);
+      })
+      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
+  }, [view, dep, year, sem]);
 
   const handleUndo = async () => {
     const res = await popUndo();
@@ -457,28 +517,54 @@ export default function WeeklyPage() {
     });
   };
 
+  /** K-48/K-59: ders başka cohort'lar tarafından da alınıyorsa, yerini
+   *  değiştirmek ONLARIN programını da değiştirir — tek fiziksel yerleşim var.
+   *  Onay ekranında da görünür ama kullanıcı burada, daha karar anındayken
+   *  uyarılmalı. `false` dönerse işlem yapılmaz. */
+  const sharedCourseOk = (entry: WeeklyEntry, fiil: string): boolean => {
+    const c = allCourses.find((x) => x.id === entry.section.course.id);
+    if (!c || c.extra_cohorts.length === 0) return true;
+    const bolumler = c.extra_cohorts
+      .map((ec) => departments.find((d) => d.id === ec.department_id)?.code
+        ?? String(ec.department_id));
+    const hepsi = Array.from(new Set([
+      ...(c.department_id !== Number(dep)
+        ? [departments.find((d) => d.id === c.department_id)?.code ?? ""] : []),
+      ...bolumler,
+    ])).filter(Boolean);
+    return window.confirm(
+      `${entry.section.course.code} ORTAK bir derstir.
+
+`
+      + `Bu dersi ${fiil}, onu alan diğer bölümlerin programını da etkiler:
+`
+      + `${hepsi.join(", ")}
+
+`
+      + "Devam edilsin mi? (Değişiklik onaylanana kadar yayına geçmez.)",
+    );
+  };
+
   /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
   const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
-    if (entry.status !== "DRAFT") {
-      notifications.show({ color: "red", message: "Yayınlanmış girişler taşınamaz. Önce taslağa çevirin." });
-      return;
-    }
     if (entry.day_of_week === day && entry.start_slot === slot) return;
+    if (!sharedCourseOk(entry, "taşımak")) return;
     const prevDay = entry.day_of_week, prevSlot = entry.start_slot;   // geri al için
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
-        `/weekly-entries/${entry.id}`, { day_of_week: day, start_slot: slot },
+        `/${writeBase}/${entry.id}`, { day_of_week: day, start_slot: slot },
       );
       recordUndo({
         label: `${entry.section.course.code}-${entry.section.section_no} taşıma`,
-        entity: "weekly-entries",
+        entity: writeBase,
         action: { type: "patch", id: entry.id,
           body: { day_of_week: prevDay, start_slot: prevSlot } },
       });
       reload();
+      refreshDraft();
       showConflicts(res.conflicts, "Giriş taşındı");
     } catch (err) {
-      // Pencere taşması (400) ve SUBMITTED kilidi (409) burada görünür.
+      // Pencere taşması (400) ve donmuş taslak (409) burada görünür.
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Taşınamadı" });
     }
   };
@@ -489,7 +575,6 @@ export default function WeeklyPage() {
     setDrag(null);
     if (!d || !canWrite) return;
     if (d.kind === "move") {
-      if (d.entry.status !== "DRAFT") return;
       void moveEntry(d.entry, day, slot);
     } else {
       setPlacing({ drag: d, day, slot });
@@ -498,12 +583,13 @@ export default function WeeklyPage() {
 
   const deleteEntry = async (e: WeeklyEntry) => {
     if (!window.confirm(`${e.section.course.code}-${e.section.section_no} girişi silinsin mi?`)) return;
+    if (!sharedCourseOk(e, "kaldırmak")) return;
     try {
-      await api.delete(`/weekly-entries/${e.id}`);
+      await api.delete(`/${writeBase}/${e.id}`);
       // Geri al = aynı girişi yeniden yarat (yeni id alır, remap yığında yapılır).
       recordUndo({
         label: `${e.section.course.code}-${e.section.section_no} silme`,
-        entity: "weekly-entries",
+        entity: writeBase,
         action: { type: "create", restoreId: e.id, body: {
           section_id: e.section.id,
           classroom_id: e.classroom ? e.classroom.id : null,
@@ -514,25 +600,12 @@ export default function WeeklyPage() {
       });
       notifications.show({ message: "Giriş silindi", color: "gray" });
       reload();
+      refreshDraft();
     } catch (err) {
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Silinemedi" });
     }
   };
 
-  /** Yayından taslağa geri al (K-03 değişiklik-seti modeli): kilidi açar,
-   *  giriş yeniden düzenlenebilir/taşınabilir hale gelir. */
-  const revertEntry = async (e: WeeklyEntry) => {
-    try {
-      await api.post(`/weekly-entries/${e.id}/revert-to-draft`);
-      notifications.show({ message: "Giriş taslağa çevrildi", color: "gray" });
-      reload();
-    } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Çevrilemedi" });
-    }
-  };
-
-  // Yayınlanacak küme: bu cohort görünümündeki taslaklar.
-  const drafts = useMemo(() => entries.filter((e) => e.status === "DRAFT"), [entries]);
 
   /** Sayfa altındaki çakışma listesi.
    *
@@ -696,16 +769,23 @@ export default function WeeklyPage() {
               { label: "Excel (.xlsx)", path: exportPath("xlsx") },
               { label: "CSV (.csv)", path: exportPath("csv") },
             ]} />
-            {canWrite && (
-              <Button size="xs" radius="md" disabled={drafts.length === 0}
-                style={{ height: CONTROL_H }}
-                onClick={() => setSubmitOpen(true)}>
-                Yayınla{drafts.length ? ` (${drafts.length})` : ""}
-              </Button>
-            )}
           </Group>
         </Group>
       </Paper>
+
+      {/* K-59: yayın mı taslak mı — kullanıcının bunu hiç merak etmemesi
+          gerekir, o yüzden ızgaranın hemen üstünde ve taslaktayken renkli. */}
+      {view === "cohort" && (
+        <DraftBar
+          departmentId={dep ? Number(dep) : null}
+          year={year === COMMON_YEAR ? null : Number(year)}
+          semester={sem}
+          draft={draft}
+          canSubmit={canSubmitDraft}
+          onSelect={(d) => setDraft(d)}
+          onChanged={() => { reload(); refreshDraft(); }}
+        />
+      )}
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
       {view !== "cohort" && !activeQuery() && (
@@ -937,7 +1017,6 @@ export default function WeeklyPage() {
                         onDragEnd={() => setDrag(null)}
                         onEdit={setEditing}
                         onDelete={deleteEntry}
-                        onRevert={revertEntry}
                         onOpenGroup={() => setGroup(c)} />
                     ))}
                   </div>
@@ -1061,14 +1140,14 @@ export default function WeeklyPage() {
           onClose={() => setPlacing(null)}
           onSubmit={async (body) => {
             const res = await api.post<{ entry: WeeklyEntry; conflicts: ConflictResult[] }>(
-              "/weekly-entries", {
+              `/${writeBase}`, {
                 section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
                 day_of_week: placing.day, start_slot: placing.slot, ...body,
               });
             // Geri al = eklenen girişi sil.
             recordUndo({
               label: `${res.entry.section.course.code}-${res.entry.section.section_no} ekleme`,
-              entity: "weekly-entries",
+              entity: writeBase,
               action: { type: "delete", id: res.entry.id },
             });
             return res;
@@ -1079,23 +1158,9 @@ export default function WeeklyPage() {
 
       {group && (
         <GroupModal cluster={group} canWrite={canWrite} onClose={() => setGroup(null)}
-          onEdit={setEditing} onDelete={deleteEntry} onRevert={revertEntry} />
+          onEdit={setEditing} onDelete={deleteEntry} />
       )}
 
-      {submitOpen && (
-        <SubmitModal drafts={drafts} onClose={() => setSubmitOpen(false)}
-          onDone={(warnings) => {
-            setSubmitOpen(false);
-            reload();
-            notifications.show({
-              color: warnings.length ? "orange" : "green",
-              title: "Program yayınlandı",
-              message: warnings.length
-                ? `${warnings.length} uyarı görünür kalıyor: ${warnings.map((w) => w.rule_id).join(", ")}`
-                : "Çakışma yok",
-            });
-          }} />
-      )}
 
       {editing && (
         <EntryModal
@@ -1121,10 +1186,10 @@ export default function WeeklyPage() {
               start_slot: editing.start_slot,
             };
             const res = await api.patch<{ conflicts: ConflictResult[] }>(
-              `/weekly-entries/${editing.id}`, body);
+              `/${writeBase}/${editing.id}`, body);
             recordUndo({
               label: `${editing.section.course.code}-${editing.section.section_no} düzenleme`,
-              entity: "weekly-entries",
+              entity: writeBase,
               action: { type: "patch", id: editing.id, body: before },
             });
             return res;
@@ -1274,13 +1339,13 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onRevert, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onOpenGroup }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
   lecturerName?: string; onWarningClick?: () => void;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
-  onRevert: (e: WeeklyEntry) => void; onOpenGroup: () => void;
+  onOpenGroup: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
@@ -1294,9 +1359,10 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
   const e = c.entries[0];
   const online = e.delivery_mode !== "FACE_TO_FACE";
   // Kümede karışık durum olabilir; taslak durumu en az bir taslak varsa görünür.
-  const draft = c.entries.some((x) => x.status === "DRAFT");
-  const editable = canWrite && !many && e.status === "DRAFT";
-  const revertable = canWrite && !many && e.status === "SUBMITTED";
+  // K-59: satırın kendi "durumu" yok artık — hangi moddaysak o. canWrite
+  // yalnız düzenlenebilir bir TASLAKTAYKEN true olur (yayın salt-okunur).
+  const draft = canWrite;
+  const editable = canWrite && !many;
 
   // Renk yalnızca sol vurgu çizgisinde kullanılır. Böylece yoğun bir takvimde
   // metin hiyerarşisi, durum renginden önce gelir.
@@ -1342,11 +1408,11 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
       onDragStart={(ev) => {
         if (!editable) {
           ev.preventDefault();
-          if (revertable) {
+          if (view === "cohort") {
             notifications.show({
               color: "orange",
-              title: "Kilitli Giriş",
-              message: "Yayınlanmış girişler taşınamaz. Önce kilit butonundan taslağa çevirin.",
+              title: "Yayındaki program salt-okunur",
+              message: "Değişiklik yapmak için yukarıdan bir taslak açın (K-59).",
             });
           }
           return;
@@ -1363,11 +1429,11 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
           onOpenGroup();
         } else if (editable) {
           onEdit(e);
-        } else if (revertable) {
+        } else if (view === "cohort") {
           notifications.show({
             color: "orange",
-            title: "Kilitli Giriş",
-            message: "Yayınlanmış girişler kilitlidir. Düzenlemek için önce kilit butonundan taslağa çevirin.",
+            title: "Yayındaki program salt-okunur",
+            message: "Değişiklik yapmak için yukarıdan bir taslak açın (K-59).",
           });
         }
       }}
@@ -1375,14 +1441,14 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         ? `${c.entries.length} paralel şube — listelemek için tıkla`
         : editable
         ? "Düzenlemek için tıkla, taşımak için sürükle"
-        : revertable
-        ? `${e.section.course.code} · Yayınlanmış (kilitli) — düzenlemek veya taşımak için önce taslağa çevirin`
+        : view === "cohort"
+        ? `${e.section.course.code} · Yayındaki program salt-okunur — değiştirmek için taslak açın`
         : undefined}
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
         borderRadius: CARD_RADIUS, padding: CARD_PADDING, lineHeight: 1.25, overflow: "hidden",
-        cursor: many ? "pointer" : editable ? "grab" : revertable ? "not-allowed" : "default", ...style,
+        cursor: many ? "pointer" : editable ? "grab" : "default", ...style,
         transition: "box-shadow 130ms ease, border-color 130ms ease",
         /* Paletten gezinme vurgusu artık BÜYÜTMEYLE değil, mavi kontur +
            yükseltilmiş gölgeyle veriliyor: scale(1.04) kartı ızgara hizasından
@@ -1414,13 +1480,6 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
             title="Sil" style={{ flexShrink: 0 }}
             onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}>
             <IconTrash size={15} />
-          </ActionIcon>
-        )}
-        {hover && revertable && (
-          <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
-            title="Taslağa çevir" style={{ flexShrink: 0 }}
-            onClick={(ev) => { ev.stopPropagation(); onRevert(e); }}>
-            <IconArrowBackUp size={15} />
           </ActionIcon>
         )}
       </Group>
@@ -1464,10 +1523,9 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
 /** Toplu kartın detayı: paralel şubeler burada tek tek listelenir ve yönetilir.
  *  Gridde 8 şubeyi yan yana çizmek yerine buraya taşıdık — grid okunur kalıyor,
  *  şube düzeyindeki işlemler (düzenle/sil/taslağa çevir) kaybolmuyor. */
-function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete, onRevert }: {
+function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete }: {
   cluster: Cluster; canWrite: boolean; onClose: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
-  onRevert: (e: WeeklyEntry) => void;
 }) {
   const first = cluster.entries[0];
   return (
@@ -1487,108 +1545,19 @@ function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete, onRevert }: 
                   ? `${e.classroom.building.name} ${e.classroom.room_code}`
                   : "derslik yok"}
               </Text>
-              <Badge size="xs" variant="light" color={e.status === "SUBMITTED" ? "green" : "yellow"}>
-                {e.status === "SUBMITTED" ? "yayında" : "taslak"}
-              </Badge>
             </Group>
             {canWrite && (
               <Group gap={4} wrap="nowrap">
-                {e.status === "DRAFT" ? (
-                  <>
-                    <Button size="compact-xs" variant="subtle"
-                      onClick={() => { onClose(); onEdit(e); }}>Düzenle</Button>
-                    <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sil"
-                      onClick={() => { onClose(); onDelete(e); }}>
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </>
-                ) : (
-                  <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
-                    onClick={() => { onClose(); onRevert(e); }}>
-                    <IconArrowBackUp size={14} />
-                  </ActionIcon>
-                )}
+                <Button size="compact-xs" variant="subtle"
+                  onClick={() => { onClose(); onEdit(e); }}>Düzenle</Button>
+                <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sil"
+                  onClick={() => { onClose(); onDelete(e); }}>
+                  <IconTrash size={14} />
+                </ActionIcon>
               </Group>
             )}
           </Group>
         ))}
-      </Stack>
-    </Modal>
-  );
-}
-
-/** Yayınlama kapısı (K-03): HARD çakışma varsa sunucu hep-veya-hiç reddeder.
- *  Reddi sessiz "hata" olarak geçmek yerine SEBEBİYLE gösteriyoruz — brief §3.6
- *  "genel hata mesajı değil, açık gerekçe" şartı tam da burada karşılanır. */
-function SubmitModal({ drafts, onClose, onDone }: {
-  drafts: WeeklyEntry[];
-  onClose: () => void;
-  onDone: (warnings: ConflictResult[]) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
-
-  const submit = async () => {
-    setBusy(true);
-    setBlockers(null);
-    try {
-      const res = await api.post<{ submitted: number[]; warnings: ConflictResult[] }>(
-        "/weekly-entries/submit", { entry_ids: drafts.map((d) => d.id) },
-      );
-      onDone(res.warnings);
-    } catch (err) {
-      // 409 gövdesi {detail, conflicts} taşır — listeyi modalda açık bırakırız
-      // ki kullanıcı neyi düzelteceğini görsün ve düzeltip tekrar denesin.
-      if (err instanceof ApiError && err.status === 409) {
-        const body = err.body as { conflicts?: ConflictResult[] } | null;
-        setBlockers(body?.conflicts ?? []);
-      } else {
-        notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Yayınlanamadı" });
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal opened onClose={onClose} title="Programı yayınla" size="lg">
-      <Stack gap="sm">
-        <Text size="sm">
-          {drafts.length} taslak giriş yayınlanacak. Yayınlanan girişler kilitlenir;
-          düzenlemek için tekrar taslağa çevirmen gerekir.
-        </Text>
-
-        {blockers && (
-          <Alert color="red" variant="light" title="Yayınlama reddedildi">
-            <Text size="sm" mb={6}>
-              Engelleyici çakışmalar var — hiçbir giriş yayınlanmadı. Düzeltip tekrar dene.
-            </Text>
-            <Stack gap={4}>
-              {blockers.map((c, i) => (
-                <Group key={i} gap={6} wrap="nowrap" align="flex-start">
-                  <Badge size="xs" color="red">{c.rule_id}</Badge>
-                  <Text size="xs">{c.message}</Text>
-                </Group>
-              ))}
-            </Stack>
-          </Alert>
-        )}
-
-        <Stack gap={2} style={{ maxHeight: 200, overflowY: "auto" }}>
-          {drafts.map((d) => (
-            <Text key={d.id} size="xs" c="dimmed">
-              {d.section.course.code}-{d.section.section_no} · {DAY_SHORT[d.day_of_week]} {SLOT_START[d.start_slot]}
-              {d.classroom ? ` · ${d.classroom.room_code}` : " · online"}
-            </Text>
-          ))}
-        </Stack>
-
-        <Group justify="flex-end" gap="xs" mt="xs">
-          <Button variant="subtle" onClick={onClose} disabled={busy}>Vazgeç</Button>
-          <Button onClick={submit} loading={busy}>
-            {blockers ? "Tekrar dene" : "Yayınla"}
-          </Button>
-        </Group>
       </Stack>
     </Modal>
   );

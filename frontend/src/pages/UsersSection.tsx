@@ -72,6 +72,7 @@ const BOS_FORM: FormValues = {
   caps: {
     can_manage_courses: false, can_manage_weekly: false, can_manage_exams: false,
     can_manage_classrooms: false, can_manage_lecturers: false,
+    can_approve_schedule: false,          // K-59
   },
 };
 
@@ -228,6 +229,7 @@ export default function UsersSection() {
         can_manage_exams: u.can_manage_exams,
         can_manage_classrooms: u.can_manage_classrooms,
         can_manage_lecturers: u.can_manage_lecturers,
+        can_approve_schedule: u.can_approve_schedule,   // K-59
       },
     });
     setFormModal(true);
@@ -431,7 +433,8 @@ export default function UsersSection() {
                     ) : (
                       <Group gap={4}>
                         {CAPABILITIES.filter((c) => u[c.key]).map((c) => (
-                          <Badge key={c.key} variant="light" color="teal" size="sm">
+                          <Badge key={c.key} variant="light" size="sm"
+                                 color={c.group === "approve" ? "grape" : "teal"}>
                             {c.label}
                           </Badge>
                         ))}
@@ -557,10 +560,26 @@ export default function UsersSection() {
             {form.values.role !== "ADMIN" && (
               <Stack gap={6}>
                 <Text size="sm" fw={500}>Yetkiler</Text>
-                {CAPABILITIES.map((c) => (
+                {CAPABILITIES.filter((c) => c.group === "write").map((c) => (
                   <Checkbox
                     key={c.key}
                     label={c.label}
+                    checked={form.values.caps[c.key]}
+                    onChange={(e) =>
+                      form.setFieldValue(`caps.${c.key}`, e.currentTarget.checked)}
+                  />
+                ))}
+
+                {/* K-59: onaylama farklı bir eksende — ötekiler "neyi
+                    yazabilirim", bu "başkasının yazdığını yayına geçirebilir
+                    miyim". Aynı listede sıradan bir kutu gibi durursa yanlışlıkla
+                    verilmesi kolaylaşır; ayrı başlık ve açıklama taşıyor. */}
+                <Text size="sm" fw={500} mt="xs">Onay yetkisi</Text>
+                {CAPABILITIES.filter((c) => c.group === "approve").map((c) => (
+                  <Checkbox
+                    key={c.key}
+                    label={c.label}
+                    description="Başkalarının taslaklarını inceleyip yayına alabilir. Kendi talebini onaylayamaz."
                     checked={form.values.caps[c.key]}
                     onChange={(e) =>
                       form.setFieldValue(`caps.${c.key}`, e.currentTarget.checked)}

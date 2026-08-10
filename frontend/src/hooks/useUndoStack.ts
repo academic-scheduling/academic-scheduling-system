@@ -13,7 +13,15 @@ import { api, ApiError } from "../api/client";
 // create geri alınınca öğe yeni bir id ile döner; yığında kalan ve aynı ESKİ
 // id'ye atıfta bulunan işlemler yeni id'ye REMAP edilir (id kayması bozmasın).
 
-export type UndoEntity = "weekly-entries" | "exams";
+/** Geri alma isteğinin gideceği uç kökü: `/${entity}/${id}`.
+ *
+ *  K-59: haftalık yerleşimler artık TASLAĞIN altında düzenleniyor
+ *  (`schedule-drafts/12/entries`), yayına doğrudan yazılmıyor. Şablon değişmez
+ *  — yalnız kök değişiyor. */
+export type UndoEntity =
+  | "weekly-entries"
+  | "exams"
+  | `schedule-drafts/${number}/entries`;
 
 export type UndoAction =
   | { type: "patch"; id: number; body: Record<string, unknown> }

@@ -89,6 +89,7 @@ def invite_user(
         can_manage_exams=False if is_admin else payload.can_manage_exams,
         can_manage_classrooms=False if is_admin else payload.can_manage_classrooms,
         can_manage_lecturers=False if is_admin else payload.can_manage_lecturers,
+        can_approve_schedule=False if is_admin else payload.can_approve_schedule,
     )
     db.add(user)
     db.flush()  # user.id'yi almak için
@@ -208,7 +209,8 @@ def update_user(
         user.role = yeni_rol
 
     for bayrak in ("can_manage_courses", "can_manage_weekly", "can_manage_exams",
-                   "can_manage_classrooms", "can_manage_lecturers"):
+                   "can_manage_classrooms", "can_manage_lecturers",
+                   "can_approve_schedule"):
         if yeni_rol == UserRole.ADMIN:
             # Admin'e çıkarılan hesapta bayraklar false'a çekilir: rol muafiyeti
             # zaten her yetkiyi veriyor. true yazılsaydı, rol sonradan

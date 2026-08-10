@@ -20,6 +20,7 @@ class UserPublic(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59: taslağı yayına alma
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
@@ -37,6 +38,9 @@ class UserPublic(BaseModel):
             self.can_manage_exams = True
             self.can_manage_classrooms = True
             self.can_manage_lecturers = True
+            # K-59: ADMIN bayraktan muaftır (başkasının talebini onaylayabilir).
+            # ÖZ-ONAY yasağından muaf DEĞİLDİR — onu sunucu ayrıca denetler.
+            self.can_approve_schedule = True
         return self
 
 class TokenResponse(BaseModel):
@@ -57,6 +61,8 @@ class InviteRequest(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59
+
 
 class InviteResponse(BaseModel):
     id: int
@@ -124,6 +130,7 @@ class UserUpdate(BaseModel):
     can_manage_exams: bool | None = None
     can_manage_classrooms: bool | None = None
     can_manage_lecturers: bool | None = None
+    can_approve_schedule: bool | None = None      # K-59
 
 
 class UserListItem(BaseModel):
@@ -138,6 +145,7 @@ class UserListItem(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59
     model_config = ConfigDict(from_attributes=True)
 
 # --- Bölümler (WP2) ---

@@ -1596,8 +1596,25 @@ YERLEŞTİREMİYOR.
    fark ile onayın UYGULADIĞI fark aynı hesaptan çıkar, yoksa ekranda bir şey
    görünüp başka bir şey yayına geçebilirdi. 12 test
    (`test_k59_approval_api.py`); öz-onay yasağı admin dahil doğrulandı.
-5. Frontend haftalık: yayın-taslak modu, "taslağa geçilsin mi?" diyaloğu,
-   temizle, ortak ders uyarısı.
+5. Frontend haftalık: yayın-taslak modu, temizle, ortak ders uyarısı. ✅
+   `components/DraftBar.tsx` (mod çubuğu + fark tablosu + onaya gönderme) ve
+   `WeeklyPage.tsx` bağlantısı. Kilit noktalar:
+   - **Yazma yetkisi yer değiştirdi.** `canWrite` artık "düzenlenebilir bir
+     taslağın içindeyim" demek; `can_manage_weekly` + üyelik **onaya gönderme**
+     kapısına taşındı. Taslak açmak/düzenlemek yetki istemez (K-59).
+   - Bütün CRUD `writeBase` üzerinden taslağın altına gider; geri-al yığını da
+     (`UndoEntity` şablon tipiyle) aynı kökü kullanır.
+   - **Satır bazlı `status` arayüzden kalktı**: "yayında/taslak" rozeti, kilit
+     ikonu ve "taslağa çevir" düğmesi silindi — durum artık satırın değil
+     MODUN özelliği. Eski `Yayınla` düğmesi ve `SubmitModal` da kaldırıldı.
+   - Ortak ders taşınırken/kaldırılırken etkilenen bölümleri sayan onay
+     diyaloğu (`sharedCourseOk`, veri `Course.extra_cohorts`'tan).
+   - Taslaklar yalnız cohort bakışında; "Ortak dersler" sözde-yılında taslak
+     açılamaz (cohort'un sayısal yılı yok).
+   - Yetki arayüzü: `can_approve_schedule` kontrata bağlandı (UserPublic /
+     UserListItem / InviteRequest / UserUpdate + users router) ve
+     `UsersSection`'da YAZMA yetkilerinden **ayrı başlık** altında gösteriliyor —
+     aynı listede sıradan bir kutu gibi dursa yanlışlıkla verilmesi kolaylaşırdı.
 6. Frontend onay sayfası: kuyruk + yan yana ızgara + fark listesi + çakışma listesi.
 7. Ortak ders yerleştirme yetkisi (`_ensure_course_access`) + değişiklik akışı.
 8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).

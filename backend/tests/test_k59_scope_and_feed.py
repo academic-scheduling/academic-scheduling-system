@@ -247,3 +247,44 @@ def test_overlapping_but_different_placement_is_still_allowed():
     }, headers=h)
     assert r.status_code == 201, r.text          # engellenmez
     assert any(c["rule_id"] == "W5" for c in r.json()["conflicts"]), r.json()["conflicts"]
+
+
+# ------------------------------------------------------------------
+# Taslak satırları OKUMA yollarına sızmamalı
+# ------------------------------------------------------------------
+
+def test_draft_rows_do_not_leak_into_public_reads():
+    """K-59'un gizlilik güvencesi OKUMA tarafında da tutmalı.
+
+    Bulunma hikâyesi: `GET /weekly-entries` filtresizdi ve herkesin özel
+    taslak satırlarını döndürüyordu. Sonucu iki katmanlı: (1) gizlilik ihlali,
+    (2) aynı ders ızgarada birkaç kez çizilir — kullanıcının "aynı saatte 4
+    tane aynı ders var" şikâyeti buydu (2 yayın + 2 taslak kopyası).
+    """
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    yayin_id = publish_entry(sec["id"], cls["id"], day=1, slot=1)
+
+    # Başka bir hesap kendi taslağını açar (yayının kopyasını taşır)
+    baskasi = make_account([dep["id"]], can_manage_weekly=True)
+    draft = create_draft(baskasi, dep["id"], year=1)
+    taslak_satirlari = {
+        e["id"] for e in
+        client.get(f"/schedule-drafts/{draft['id']}/entries", headers=baskasi).json()
+    }
+    assert taslak_satirlari, "taslak yayından kopya almalıydı"
+
+    # Genel liste: yalnız yayın
+    liste = {e["id"] for e in client.get(
+        f"/weekly-entries?department_id={dep['id']}&year=1&semester=FALL",
+        headers=h).json()}
+    assert yayin_id in liste
+    assert not (liste & taslak_satirlari), "taslak satırları genel listeye sızdı"
+
+    # Export da aynı evreni görmeli
+    r = client.get(f"/export/weekly?department_id={dep['id']}&format=csv", headers=h)
+    assert r.status_code == 200, r.text
+    # Kopyalar aynı dersi taşıdığı için satır sayısı üzerinden ölçüyoruz:
+    # yayında 1 yerleşim varsa CSV'de (başlık + 1) satır olmalı.
+    satirlar = [s for s in r.content.decode("utf-8-sig").splitlines() if s.strip()]
+    assert len(satirlar) == 2, satirlar

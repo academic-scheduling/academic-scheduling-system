@@ -145,7 +145,7 @@ def review_draft(
     """
     draft = _get_reviewable(db, user, draft_id)
     entries = (
-        _eager_entry_query(db)
+        _eager_entry_query(db, published_only=False)
         .filter(WeeklyScheduleEntry.draft_id == draft.id)
         .order_by(WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot)
         .all()

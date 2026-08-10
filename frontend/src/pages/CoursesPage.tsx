@@ -1000,9 +1000,11 @@ function CourseDetailPanel({
                           <Text size="sm" c="dimmed">programda değil</Text>
                         ) : (
                           <Group gap={4}>
+                            {/* K-59: satırın "yayında mı" durumu YOK. Bu liste
+                                GET /weekly-entries'ten gelir ve o uç yalnız
+                                yayındakileri döner — hepsi yayındadır. */}
                             {entries.map((e) => (
-                              <Badge key={e.id} variant="light" size="sm"
-                                color={e.status === "SUBMITTED" ? "green" : "yellow"}>
+                              <Badge key={e.id} variant="light" size="sm" color="green">
                                 {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
                               </Badge>
                             ))}

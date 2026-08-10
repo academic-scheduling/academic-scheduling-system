@@ -1647,8 +1647,32 @@ YERLEŞTİREMİYOR.
      yok — bu bir akış, bildirim merkezi değil. Ana sayfada ve haftalık
      ekranın YAYIN modunda görünür (taslaktayken gürültü olurdu).
 8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).
-9. **Temizlik migration'ı:** kalan `DRAFT` satırlarını sil, `status` +
-   `submitted_at` + tutarlılık CHECK'i + `idx_wse_status` düşür.
+9. **Temizlik + eski uçların kapatılması.** ✅ (`e6b2d95c31af`)
+   - **Eski YAZMA uçları kaldırıldı** (`POST/PATCH/DELETE /weekly-entries`,
+     `/submit`, `/revert-to-draft`). Duran her kopyası onay adımını atlamanın
+     bir yoluydu; arayüz kullanmasa da API açıktı. `GET` kaldı.
+   - `weekly_schedule_entries.status` + `submitted_at` + tutarlılık CHECK'i +
+     `idx_wse_status` düşürüldü. `entry_status` TİPİ durur — sınavlar kullanıyor.
+   - **"Kalan DRAFT satırlarını sil" adımı İPTAL EDİLDİ.** Plandaki varsayım
+     "DRAFT = yarım kalmış iş" idi; gerçek veride import/seed her şeyi `DRAFT`
+     yazmış ve adım 1'den beri bu satırların TAMAMI `draft_id IS NULL` olduğu
+     için uygulama onları YAYIN olarak gösteriyor. Ölçüm: 19 yayın satırının
+     19'u da `status=DRAFT`. Status'e bakıp silmek **programın tamamını**
+     silerdi. Kolonu düşürmek zaten doğru sonucu veriyor.
+   - **Bulunan sızıntı (adım 1'den beri taşınıyordu):** `GET /weekly-entries`,
+     export ve dashboard sayacı `draft_id` süzmüyordu — herkesin ÖZEL taslak
+     satırları genel okuma yollarından görünüyordu. İki sonucu vardı:
+     gizlilik ihlali ve aynı dersin ızgarada birkaç kez çizilmesi (kullanıcının
+     "aynı saatte 4 tane ISG 1801" şikâyeti tam olarak buydu: ölçüm sırasında
+     uç 6 satır dönüyordu — 2 yayın + 4 taslak kopyası).
+     Düzeltme `_eager_entry_query(db, published_only=True)` ile **güvenli
+     varsayılana** bağlandı: yeni bir çağıran filtreyi unutursa sızıntı değil
+     eksik veri olur — ikincisi fark edilir, birincisi edilmez.
+     Regresyon testi: `test_draft_rows_do_not_leak_into_public_reads`.
+   - Testler: `test_wp3_weekly.py` doğrulama kuralları taslak ucuna çevrildi
+     (kural aynı, kapı değişti); yaşam döngüsü testleri `test_k59_*`'e
+     devredildi. `test_wp5/wp6` için `tests/helpers.publish_weekly` eklendi.
+     `test_wp0_smoke`'taki CHECK testi sınava taşındı. 524 test yeşil.
    **Ayrıca ZORUNLU — eski yazma uçlarını kapat.** `POST/PATCH/DELETE
    /weekly-entries`, `/weekly-entries/submit` ve `/weekly-entries/{id}/
    revert-to-draft` hâlâ ayakta ve `can_manage_weekly` yetkisi olan biri

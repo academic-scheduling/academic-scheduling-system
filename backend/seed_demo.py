@@ -334,16 +334,14 @@ def seed():
 
     # --- haftalık program ---
     def giris(subesi, derslik_, gun, baslangic, adet, *,
-              tur=SessionType.THEORY, mod=DeliveryMode.FACE_TO_FACE,
-              durum=EntryStatus.DRAFT):
+              tur=SessionType.THEORY, mod=DeliveryMode.FACE_TO_FACE):
         e = WeeklyScheduleEntry(
             id=next_id(WeeklyScheduleEntry),
             section_id=subesi.id, classroom_id=derslik_.id if derslik_ else None,
             day_of_week=gun, start_slot=baslangic, slot_count=adet,
-            session_type=tur, delivery_mode=mod, status=durum,
-            # DB kısıtı: (status = SUBMITTED) = (submitted_at IS NOT NULL).
-            # İkisi birlikte yürümek zorunda, ayrı ayrı set edilemez.
-            submitted_at=SIMDI if durum is EntryStatus.SUBMITTED else None,
+            session_type=tur, delivery_mode=mod,
+            # K-59: haftalık satırın status/submitted_at kolonu YOK.
+            # draft_id NULL = yayında; seed doğrudan yayın üretir.
             created_by=admin.id,
         )
         db.add(e)
@@ -351,13 +349,12 @@ def seed():
         log("CREATE", "weekly_entry", e)
         return e
 
-    S, D = EntryStatus.SUBMITTED, EntryStatus.DRAFT
 
     # PAZARTESİ — cohort ve hoca çakışmaları
-    giris(s2001, b201, 1, 1, 2, durum=S)      # çapa: 08:30-10:15
+    giris(s2001, b201, 1, 1, 2)      # çapa: 08:30-10:15
     giris(s2003, b202, 1, 2, 2)              # → W3 (aynı cohort, ikisi zorunlu)
-    giris(e2015_1, a101, 1, 1, 2, durum=S)   # → W2 (Kaya iki bölümde aynı anda)
-    giris(s2030_1, b203, 1, 1, 3, durum=S)   # CENG2030 şube 1
+    giris(e2015_1, a101, 1, 1, 2)   # → W2 (Kaya iki bölümde aynı anda)
+    giris(s2030_1, b203, 1, 1, 3)   # CENG2030 şube 1
     # CENG2030 şube 2 PERŞEMBE'de: CENG2001 ile uyumlu bir kombinasyon KALIR,
     # bu yüzden CENG2001 × CENG2030 W3 ÜRETMEZ (K-15 kanıtı).
 
@@ -368,22 +365,23 @@ def seed():
     # SALI — seçmeli uyarısı, online ders, derslik çakışması
     giris(s2051, None, 2, 2, 2, mod=DeliveryMode.ONLINE_SYNC)  # derslik NULL (K-23)
     giris(s2052, lab1, 2, 3, 2)              # → W4 (ikisi seçmeli, slot 3 kesişir)
-    giris(s2020, b202, 2, 5, 2, tur=SessionType.PRACTICE, durum=S)
+    giris(s2020, b202, 2, 5, 2, tur=SessionType.PRACTICE)
     giris(e2010_1, b202, 2, 5, 2)            # → W1 (aynı derslik, aynı slotlar)
 
     # ÇARŞAMBA — kapasite
-    giris(s2020, lab1, 3, 1, 2, durum=S)     # → W7 (55 öğrenci > LAB-1 kapasite 30)
+    giris(s2020, lab1, 3, 1, 2)     # → W7 (55 öğrenci > LAB-1 kapasite 30)
 
     # PERŞEMBE — mükerrer oturum
-    giris(s2030_2, b201, 4, 3, 2, durum=S)
+    giris(s2030_2, b201, 4, 3, 2)
     giris(s2030_2, b202, 4, 4, 1)            # → W5 (aynı şube) + W2 (aynı hoca)
 
     # --- sınavlar (hepsi MIDTERM — K-41) ---
-    def sinav(dersi, hoca_, tarih, saat, sure, derslikler, *, durum=EntryStatus.DRAFT):
+    def sinav(dersi, hoca_, tarih, saat, sure, derslikler):
         x = Exam(id=next_id(Exam), course_id=dersi.id, exam_type=ExamType.MIDTERM,
                  exam_date=tarih, start_time=saat, duration_minutes=sure,
-                 lecturer_id=hoca_.id, status=durum,
-                 submitted_at=SIMDI if durum is EntryStatus.SUBMITTED else None,
+                 lecturer_id=hoca_.id,
+                 # Sınavlarda status/submitted_at DURUYOR (K-16, sınav fazı ayrı);
+                 # seed taslak sınav üretir → submitted_at boş.
                  created_by=admin.id)
         x.classrooms = derslikler
         db.add(x)
@@ -393,7 +391,7 @@ def seed():
 
     # ÇARŞAMBA akşamı — sınavlarda saat penceresi YOKTUR (K-06), 18:00 geçerli.
     # 17:30 sonrası olduğu için hiçbir haftalık dersle kesişemez → X sessiz.
-    sinav(c2001, kaya, CAR, time(18, 0), 90, [a101], durum=S)
+    sinav(c2001, kaya, CAR, time(18, 0), 90, [a101])
     sinav(c2003, demir, CAR, time(18, 30), 90, [a101])   # → E1 (ortak A-101) + E4a
     sinav(c2051, arslan, CAR, time(18, 0), 60, [b201])   # → E4b ×2 (seçmeli)
     sinav(e2015, kaya, CAR, time(18, 0), 90, [b202, b203])   # → E3 (Kaya)

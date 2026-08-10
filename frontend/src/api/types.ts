@@ -155,6 +155,7 @@ export const SEMESTER_LABELS: Record<SemesterType, string> = {
 
 export type SessionType = "THEORY" | "PRACTICE" | "LAB";
 export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
+/** K-59: yalnız SINAVLARDA kullanılır — haftalık yerleşimde status kalmadı. */
 export type EntryStatus = "DRAFT" | "SUBMITTED";
 
 /** Kontrat §7 · GET /weekly-entries elemanı */
@@ -167,7 +168,8 @@ export type WeeklyEntry = {
   slot_count: number;
   session_type: SessionType;
   delivery_mode: DeliveryMode;
-  status: EntryStatus;
+  // K-59: satırın status'ü YOK. "Yayında mı" sorusunu sunucuda `draft_id`
+  // cevaplar; istemcide MOD cevaplar (yayın görünümü mü, taslak mı).
 };
 
 /** Kontrat §8 · Sınav türleri (K-16: sınav DERS düzeyindedir, şubeden bağımsız) */

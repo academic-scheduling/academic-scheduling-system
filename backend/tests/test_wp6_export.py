@@ -13,6 +13,7 @@ import io
 from openpyxl import load_workbook
 
 from tests.helpers import client, admin_headers, foreign_admin_headers, _u
+from tests.helpers import publish_weekly
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -42,11 +43,8 @@ def _setup(h):
     section = _post(h, f"/courses/{course['id']}/sections", {
         "section_no": 1, "lecturer_id": lec["id"], "expected_students": 30,
     })
-    _post(h, "/weekly-entries", {
-        "section_id": section["id"], "classroom_id": room["id"],
-        "day_of_week": 1, "start_slot": 1, "slot_count": 2,
-        "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
-    })
+    publish_weekly(section["id"], classroom_id=room["id"],
+                   day_of_week=1, start_slot=1, slot_count=2)
     _post(h, "/exams", {
         "course_id": course["id"], "exam_type": "MIDTERM",
         "exam_date": "2026-11-12", "start_time": "10:00", "duration_minutes": 90,

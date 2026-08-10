@@ -522,20 +522,12 @@ class WeeklyEntryOut(BaseModel):
     slot_count: int
     session_type: SessionType
     delivery_mode: DeliveryMode
-    status: EntryStatus
     model_config = ConfigDict(from_attributes=True)
 
 class WeeklyEntrySaveResponse(BaseModel):
     """POST/PATCH cevabı: conflicts dolu olsa bile kayıt başarılıdır (K-03)."""
     entry: WeeklyEntryOut
     conflicts: list[ConflictResultOut]
-
-class WeeklyEntrySubmitRequest(BaseModel):
-    entry_ids: list[int] = Field(min_length=1)
-
-class WeeklyEntrySubmitResponse(BaseModel):
-    submitted: list[int]
-    warnings: list[ConflictResultOut]
 
 # --- Program taslaklari (K-59) ---
 

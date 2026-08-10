@@ -1,4 +1,4 @@
-"""Haftalik program endpoint'leri (WP3) — kontrat §7, save/submit deseni (K-03).
+"""Haftalik program OKUMA ucu (WP3, K-59 sonrasi) — kontrat §7.
 
 Yerlesim SUBEYE baglanir (K-14). session_type T/U/L'nin hangisini karsiladigini
 soyler (K-20, W8). delivery_mode=ONLINE_ASYNC girisler gun/saat tasir ama
@@ -6,27 +6,15 @@ cakisma karsilastirmasina girmez (K-19). Cakisma kontrolu conflict_service
 dikisi uzerinden yapilir (K-22); motor WP5'te C tarafindan takilir.
 """
 
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.audit import build_change_summary, log_action
-from app.conflict_service import check_weekly_save, check_weekly_submit
-from app.deps import get_db, get_current_user, require_weekly_manager
+from app.deps import get_db, get_current_user
 from app.cohort import cohort_course_filter
-from app.models import (
-    Classroom, Course, CourseSection, Department, EntryStatus,
-    SemesterType, User, UserRole, WeeklyScheduleEntry,
-)
-from app.schemas import (
-    WeeklyEntryCreate, WeeklyEntryOut, WeeklyEntrySaveResponse,
-    WeeklyEntrySubmitRequest, WeeklyEntrySubmitResponse, WeeklyEntryUpdate,
-)
+from app.schemas import WeeklyEntryOut
 
 from app.models import (
-    Classroom, Course, CourseSection, DeliveryMode, Department, EntryStatus,
+    Classroom, Course, CourseSection, DeliveryMode, Department,
     SemesterType, User, UserRole, WeeklyScheduleEntry,
 )
 
@@ -102,18 +90,22 @@ def _ensure_online_has_no_classroom(delivery_mode: DeliveryMode,
                             detail="Online girişte derslik seçilemez (K-23: hibrit ders yok)")
 
 
-def _ensure_draft(entry: WeeklyScheduleEntry) -> None:
-    if entry.status != EntryStatus.DRAFT:
-        raise HTTPException(status_code=409,
-                            detail="Giriş SUBMITTED durumda — önce draft'a çevrilmeli")
-
-
-def _eager_entry_query(db: Session):
+def _eager_entry_query(db: Session, *, published_only: bool = True):
     """WeeklyEntryOut'un ihtiyaç duyduğu ilişkileri tek seferde yükler (N+1 önleme).
 
     section → course (iç içe gösterim) ve classroom → building gerekir.
+
+    **`published_only` VARSAYILAN OLARAK AÇIK (K-59).** Taslak satırları
+    sahiplerine ÖZELDİR; genel okuma yollarına (liste, export, ders ekranı
+    rozetleri) karışırlarsa herkes birbirinin özel denemesini görür ve aynı
+    ders ızgarada birkaç kez çizilir. Varsayılanın güvenli olmasının sebebi:
+    yeni bir çağıran filtreyi eklemeyi UNUTURSA sızıntı değil, eksik veri olur —
+    ikincisi fark edilir, birincisi edilmez.
+
+    Taslağın KENDİ satırlarını okuyan yerler (schedule_drafts,
+    schedule_approvals) `published_only=False` verip `draft_id` ile süzer.
     """
-    return (
+    q = (
         db.query(WeeklyScheduleEntry)
         .join(CourseSection).join(Course).join(Department)
         .options(
@@ -121,6 +113,7 @@ def _eager_entry_query(db: Session):
             selectinload(WeeklyScheduleEntry.classroom).selectinload(Classroom.building),
         )
     )
+    return q.filter(WeeklyScheduleEntry.draft_id.is_(None)) if published_only else q
 
 # ------------------------------------------------------------------
 # Listeleme
@@ -161,143 +154,19 @@ def list_weekly_entries(
 
 
 # ------------------------------------------------------------------
-# Kayıt (save) — asla engellemez, conflicts bilgilendirir (K-03)
+# YAZMA UÇLARI KALDIRILDI (K-59)
 # ------------------------------------------------------------------
-
-@router.post("/weekly-entries", response_model=WeeklyEntrySaveResponse,
-             status_code=status.HTTP_201_CREATED)
-def create_weekly_entry(
-    payload: WeeklyEntryCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_weekly_manager),
-):
-    section = _get_owned_section(db, user, payload.section_id)
-    _ensure_department_access(user, section.course.department_id)
-
-    data = payload.model_dump()
-    _validate_classroom(db, user, data["classroom_id"])
-    _ensure_slot_window(payload.start_slot, payload.slot_count)
-    _ensure_online_has_no_classroom(payload.delivery_mode, payload.classroom_id)
-
-    entry = WeeklyScheduleEntry(created_by=user.id, **data)
-    db.add(entry)
-    db.flush()
-    log_action(db, user, "CREATE", "weekly_entry", entry.id, entry)
-    db.commit()
-
-    entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
-    conflicts = check_weekly_save(db, entry)
-    # conflicts DOLU OLSA BİLE kayıt başarılıdır (K-03) — 201 döner.
-    return {"entry": entry, "conflicts": conflicts}
-
-
-@router.patch("/weekly-entries/{entry_id}", response_model=WeeklyEntrySaveResponse)
-def update_weekly_entry(
-    entry_id: int,
-    payload: WeeklyEntryUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_weekly_manager),
-):
-    entry = _get_owned_entry(db, user, entry_id)
-    _ensure_department_access(user, entry.section.course.department_id)
-    _ensure_draft(entry)  # yalnız DRAFT düzenlenir (kontrat §7)
-
-    data = payload.model_dump(exclude_unset=True)
-    if "classroom_id" in data:
-        _validate_classroom(db, user, data["classroom_id"])
-    # Taşma kontrolü, değişen ve değişmeyen alanların BİRLEŞİMİ üzerinden yapılmalı
-    _ensure_slot_window(
-        data.get("start_slot", entry.start_slot),
-        data.get("slot_count", entry.slot_count),
-    )
-    _ensure_online_has_no_classroom(
-        data.get("delivery_mode", entry.delivery_mode),
-        data.get("classroom_id", entry.classroom_id),
-    )
-
-    ozet = build_change_summary(entry, data)
-    for field, value in data.items():
-        setattr(entry, field, value)
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry, ozet)
-    db.commit()
-
-    entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
-    conflicts = check_weekly_save(db, entry)
-    return {"entry": entry, "conflicts": conflicts}
-
-# ------------------------------------------------------------------
-# Yaşam döngüsü: submit / revert / delete (K-03)
-# ------------------------------------------------------------------
-
-@router.post("/weekly-entries/submit", response_model=WeeklyEntrySubmitResponse)
-def submit_weekly_entries(
-    payload: WeeklyEntrySubmitRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_weekly_manager),
-):
-    entries: list[WeeklyScheduleEntry] = []
-    for entry_id in payload.entry_ids:
-        entry = _get_owned_entry(db, user, entry_id)
-        _ensure_department_access(user, entry.section.course.department_id)
-        if entry.status == EntryStatus.SUBMITTED:
-            raise HTTPException(status_code=409,
-                                detail=f"Giriş {entry_id} zaten submit edilmiş")
-        entries.append(entry)
-
-    conflicts = check_weekly_submit(db, entries)
-    hard = [c for c in conflicts if c["severity"] == "HARD"]
-    warnings = [c for c in conflicts if c["severity"] == "WARNING"]
-
-    if hard:
-        # Hep-veya-hiç: tek HARD bile tüm kümeyi düşürür (K-03).
-        # Kontrat 409 gövdesi detail + conflicts içerir; HTTPException
-        # detail'i sarmaladığından JSONResponse kullanıyoruz.
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={"detail": "Hard çakışma nedeniyle submit reddedildi",
-                     "conflicts": hard},
-        )
-
-    now = datetime.now(timezone.utc)
-    for entry in entries:
-        entry.status = EntryStatus.SUBMITTED
-        entry.submitted_at = now  # CHECK: status ile tutarlı olmak zorunda
-        log_action(db, user, "SUBMIT", "weekly_entry", entry.id, entry)
-    db.commit()
-    # W8 tamlık uyarıları dahil WARNING'ler submit'i durdurmaz, görünür kalır (K-20)
-    return {"submitted": [e.id for e in entries], "warnings": warnings}
-
-
-@router.post("/weekly-entries/{entry_id}/revert-to-draft", response_model=WeeklyEntryOut)
-def revert_weekly_entry_to_draft(
-    entry_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_weekly_manager),
-):
-    entry = _get_owned_entry(db, user, entry_id)
-    _ensure_department_access(user, entry.section.course.department_id)
-    if entry.status != EntryStatus.SUBMITTED:
-        raise HTTPException(status_code=409, detail="Giriş zaten taslak durumda")
-
-    entry.status = EntryStatus.DRAFT
-    entry.submitted_at = None
-    # Değişiklik sabit ve bilinen: SUBMITTED → DRAFT (K-38).
-    log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry,
-               "Durum: Yayınlandı → Taslak")
-    db.commit()
-    return _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
-
-
-@router.delete("/weekly-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_weekly_entry(
-    entry_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_weekly_manager),
-):
-    entry = _get_owned_entry(db, user, entry_id)
-    _ensure_department_access(user, entry.section.course.department_id)
-    _ensure_draft(entry)  # SUBMITTED silinemez; önce draft'a çevrilir
-
-    log_action(db, user, "DELETE", "weekly_entry", entry.id, entry)
-    db.delete(entry)
-    db.commit()
+#
+# Eskiden burada POST/PATCH/DELETE /weekly-entries, /weekly-entries/submit ve
+# /weekly-entries/{id}/revert-to-draft vardı: `can_manage_weekly` yetkisi olan
+# herkes YAYINDAKİ programa doğrudan yazabiliyordu.
+#
+# K-59 ile yayına yazan TEK yol onaydır (routers/schedule_approvals.py).
+# Bu uçlar durdukça arayüz kullanmasa bile API üzerinden onay adımı tümden
+# atlanabiliyordu — yani onay sisteminin bütün amacı boşa çıkıyordu. Bu yüzden
+# kaldırıldılar; düzenleme artık yalnız kendi taslağının içinde yapılır
+# (routers/schedule_drafts.py).
+#
+# Bu dosyada KALAN: okuma ucu (GET) + doğrulama yardımcıları. Yardımcıları
+# schedule_drafts.py import eder — doğrulama kuralları (slot penceresi, online
+# derslik yasağı, çapraz-FK izolasyonu) tek yerde dursun.

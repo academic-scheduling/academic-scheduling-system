@@ -340,10 +340,13 @@ def update_course(
                 CourseSection.course_id == course.id
             )
         ]
+        # K-59: "yayınlanmış" artık `draft_id IS NULL` demek. Taslaklardaki
+        # kopyalar SAYILMAZ — onlar sahiplerine özeldir ve yayına ancak onayla
+        # geçerler; birinin özel denemesi ders düzenlemesini bloklamamalı.
         submitted_weekly = (
             db.query(WeeklyScheduleEntry).filter(
                 WeeklyScheduleEntry.section_id.in_(section_ids),
-                WeeklyScheduleEntry.status == EntryStatus.SUBMITTED,
+                WeeklyScheduleEntry.draft_id.is_(None),
             ).count() if section_ids else 0
         )
         submitted_exam = db.query(Exam).filter(
@@ -358,15 +361,15 @@ def update_course(
                 parcalar.append(f"{submitted_exam} sınav")
             raise HTTPException(
                 status_code=409,
-                detail=f"Bu dersin yayınlanmış {' ve '.join(parcalar)} var — programa "
-                       "etki eden alanı (online/saat) değiştirmeden önce onları taslağa çevirin.",
+                detail=f"Bu dersin yayında {' ve '.join(parcalar)} var — programa "
+                       "etki eden alanı (online/saat) değiştirmeden önce bir taslakla "
+                       "onları programdan çıkarıp onaylatın.",
             )
-        draft_weekly = (
-            db.query(WeeklyScheduleEntry).filter(
-                WeeklyScheduleEntry.section_id.in_(section_ids),
-                WeeklyScheduleEntry.status == EntryStatus.DRAFT,
-            ).all() if section_ids else []
-        )
+        # K-59: eskiden buradaki DRAFT satırları silinirdi. Artık taslak satırı
+        # BAŞKASININ ÖZEL kopyasıdır; sessizce silmek onun işini yok etmek olur.
+        # Yayında satır kalmadığı için silinecek bir şey de yok; taslak sahibi
+        # değişikliği kendi ekranında W8/çakışma uyarısı olarak görecek.
+        draft_weekly: list[WeeklyScheduleEntry] = []
         draft_exams = db.query(Exam).filter(
             Exam.course_id == course.id,
             Exam.status == EntryStatus.DRAFT,

@@ -383,7 +383,7 @@ def list_draft_entries(
 ):
     draft = _get_own_draft(db, user, draft_id)
     return (
-        _eager_entry_query(db)
+        _eager_entry_query(db, published_only=False)
         .filter(WeeklyScheduleEntry.draft_id == draft.id)
         .order_by(WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot)
         .all()
@@ -418,7 +418,8 @@ def create_draft_entry(
                f"Taslak #{draft.id}")
     db.commit()
 
-    entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
+    entry = (_eager_entry_query(db, published_only=False)
+             .filter(WeeklyScheduleEntry.id == entry.id).first())
     return {"entry": entry, "conflicts": check_weekly_save(db, entry, draft)}
 
 
@@ -462,7 +463,8 @@ def update_draft_entry(
     log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry, ozet)
     db.commit()
 
-    entry = _eager_entry_query(db).filter(WeeklyScheduleEntry.id == entry.id).first()
+    entry = (_eager_entry_query(db, published_only=False)
+             .filter(WeeklyScheduleEntry.id == entry.id).first())
     return {"entry": entry, "conflicts": check_weekly_save(db, entry, draft)}
 
 

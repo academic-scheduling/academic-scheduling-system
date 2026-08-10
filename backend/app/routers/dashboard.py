@@ -55,7 +55,10 @@ def get_summary(
         .join(CourseSection)
         .join(Course)
         .join(Department)
-        .filter(Department.workgroup_id == wg)
+        .filter(Department.workgroup_id == wg,
+                # K-59: sayaç YAYINDAKİ programı anlatır; kimsenin özel
+                # taslağı fakültenin ders sayısını şişirmemeli.
+                WeeklyScheduleEntry.draft_id.is_(None))
         .count()
     )
 

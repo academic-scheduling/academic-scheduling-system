@@ -783,9 +783,10 @@ class WeeklyScheduleEntry(Base):
     karsiliyor (K-20, W8 tamlik kurali). delivery_mode=ONLINE_ASYNC girisler
     normal gun/saat tasir ama cakisma karsilastirmalarina girmez (K-19).
 
-    K-59: satirin "yayinda mi" sorusunu artik `draft_id` cevaplar (NULL = yayinda).
-    `status`/`submitted_at` gecis suresince yerinde duruyor ama yeni kod onlari
-    OKUMAZ; yeni uclar devreye girince temizlik migration'iyla dusecekler.
+    K-59: satirin "yayinda mi" sorusunu `draft_id` cevaplar (NULL = yayinda).
+    Eski `status`/`submitted_at` kolonlari DUSTU — ayni gercegi soyleyen iki
+    kolon er gec birbiriyle celisirdi. `EntryStatus` tipi yalniz SINAVLARDA
+    kalmaya devam ediyor (sinav fazi ayri, K-16).
     """
 
     __tablename__ = "weekly_schedule_entries"
@@ -793,13 +794,8 @@ class WeeklyScheduleEntry(Base):
         CheckConstraint(
             "start_slot + slot_count - 1 <= 9", name="ck_wse_slot_overflow"
         ),
-        CheckConstraint(
-            "(status = 'SUBMITTED') = (submitted_at IS NOT NULL)",
-            name="ck_wse_status_submitted_consistency",
-        ),
         Index("idx_wse_classroom_day", "classroom_id", "day_of_week"),
         Index("idx_wse_section", "section_id"),
-        Index("idx_wse_status", "status"),
         # Her sorgu ya yayini (draft_id IS NULL) ya tek bir taslagi suzecek.
         Index("idx_wse_draft", "draft_id"),
     )
@@ -832,10 +828,6 @@ class WeeklyScheduleEntry(Base):
         Enum(DeliveryMode, name="delivery_mode"),
         server_default=text("'FACE_TO_FACE'"),
     )
-    status: Mapped[EntryStatus] = mapped_column(
-        Enum(EntryStatus, name="entry_status"), server_default=text("'DRAFT'")
-    )
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )

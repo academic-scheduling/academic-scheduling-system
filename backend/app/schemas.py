@@ -698,6 +698,7 @@ class ScheduleChangeOut(BaseModel):
     department_name: str
     year: int
     semester: SemesterType
+    kind: DraftKind                           # K-60: ders programı mı, sınav mı
     summary: str | None                       # "1 taşındı, 1 kaldırıldı · ..."
     published_at: datetime | None
     published_by: str                         # değişikliği yapan (taslak sahibi)

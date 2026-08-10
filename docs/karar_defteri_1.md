@@ -1984,7 +1984,36 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
      "1 değişiklik" → Farkı Gör tablosunda TAŞINDI satırı, ortak ders uyarısı
      ve "8 Eyl 08:30 → 8 Eyl 14:30" → taslak silindi, yayındaki 11 sınav ve
      saatleri değişmedi.
-6. ○ `ApprovalsPage`: kind sekmesi/rozeti + `DiffTable`'ın metinleştiricisi.
+6. ✅ `ApprovalsPage`: tür rozeti + sınav incelemesi. `tsc --noEmit` temiz,
+   571 backend testi yeşil.
+   - **Kuyruk BÖLÜNMEDİ, rozetlendi.** Sekme/ayrı kuyruk düşünüldü ve
+     reddedildi: onaylamak tek bir gözetim rolü (`can_approve_schedule`,
+     K-59) ve "bugün ne bekliyor" sorusunun tek bir cevabı olmalı. Ama
+     onaylayıcının neye baktığını ilk bakışta bilmesi gerekir — her satır ve
+     inceleme başlığı türünü rozetle söylüyor.
+   - **Sınavda IZGARA YOK, kronolojik liste var** (`ProposedExamList`).
+     Haftalık ızgara işini görüyor çünkü haftalık program TEK haftaya sığar;
+     sınav takvimi iki-üç haftalık bir döneme yayılır. Doğrulamada açılan
+     gerçek talep 7 Eylül–16 Eylül arasına yayıldı — tek haftalık bir ızgara
+     bu takvimin yarısını gösteremezdi. Aynı soruya ("bu değişiklik takvimin
+     bütününde nereye oturuyor") cevap veren şey güne göre gruplanmış sıra:
+     onaylayıcı aynı günde başka ne var, gün yüklü mü, sınavlar arka arkaya
+     mı düşüyor görür.
+   - Vurgu yine YERLEŞİME bağlı, derse değil — K-59'da haftalıkta şube bazlı
+     vurgunun yaptığı hatanın (değişmeyen kardeş satırı da "taşındı" göstermek)
+     sınav karşılığı bir dersin birden çok sınavı olduğunda çıkardı.
+   - **Değişiklik akışına `kind` eklendi** (`ScheduleChangeOut.kind`) ve akış
+     sınav ekranının YAYIN moduna da kondu: iki tür onay aynı akışta akıyor,
+     hangisinin değiştiği özetten tahmin edilmemeli.
+   - Tarayıcıda uçtan uca, İKİ hesapla (öz-onay yasak): `program@` talebi
+     gönderdi → `onay@` kuyrukta "SINAV TAKVİMİ" rozetli satırı gördü →
+     incelemede fark tablosu ("7 Eyl 15:30 → 7 Eyl 16:30"), 5 uyarı ve
+     güne göre gruplanmış öneri listesi → "Onayla ve yayına al" → yayına
+     geçti, akışta sınav dili özetiyle göründü.
+     **Doğrulama değişikliği aynı akıştan geçirilerek geri alındı**; yayın
+     15:30'a döndü, 11 sınav yerinde. Geliştirme veritabanında kalan tek iz
+     değişiklik akışındaki iki kayıt (K-59 gereği onaylanmış taslak silinmez,
+     geçmiş kaydıdır).
 7. ○ Temizlik: `/exams/submit` ve `/exams/{id}/revert-to-draft` kaldırılır;
    `Exam.status`, `submitted_at`, CHECK ve `idx_exams_status` düşürülür;
    kullananı kalmadıysa `entry_status` tipi de düşer.

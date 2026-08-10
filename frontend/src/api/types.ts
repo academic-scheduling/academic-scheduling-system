@@ -614,6 +614,8 @@ export type ScheduleChange = {
   department_name: string;
   year: number;
   semester: SemesterType;
+  /** K-60: akışta ders programı ve sınav onayları bir arada akıyor. */
+  kind: DraftKind;
   summary: string | null;
   published_at: string | null;
   published_by: string;

@@ -46,6 +46,12 @@ export default function ChangeFeed({ limit = 5 }: { limit?: number }) {
               <Text size="sm" fw={500}>
                 {c.department_name} · {c.year}. sınıf · {SEMESTER_LABELS[c.semester]}
               </Text>
+              {/* K-60: iki tür onay aynı akışta; hangisinin değiştiği özetten
+                  tahmin edilmemeli. */}
+              <Badge size="xs" variant="light"
+                color={c.kind === "EXAM" ? "grape" : "teal"}>
+                {c.kind === "EXAM" ? "sınav takvimi" : "ders programı"}
+              </Badge>
               <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at)}</Text>
               {c.affected_departments.length > 0 && (
                 <Badge size="xs" variant="light" color="orange">

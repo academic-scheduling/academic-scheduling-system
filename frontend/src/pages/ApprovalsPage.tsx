@@ -10,10 +10,12 @@ import {
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import DiffTable from "../components/DiffTable";
-import { SEMESTER_LABELS } from "../api/types";
+import {
+  DRAFT_KIND_LABELS, EXAM_TYPE_LABELS, lecturerLabel, SEMESTER_LABELS,
+} from "../api/types";
 import type {
-  ConflictResult, DraftApproveResponse, DraftDiffItem, DraftReview, ScheduleDraft,
-  WeeklyEntry,
+  ConflictResult, DraftApproveResponse, DraftDiffItem, DraftReview, Exam,
+  ScheduleDraft, WeeklyEntry,
 } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import {
@@ -33,6 +35,27 @@ function tarih(s: string | null): string {
 
 function cohortAdi(d: ScheduleDraft): string {
   return `${d.department_name} · ${d.year}. sınıf · ${SEMESTER_LABELS[d.semester]}`;
+}
+
+/** K-60: kuyrukta haftalık ve sınav talepleri BİR ARADA durur (tek kuyruk,
+ *  tek gözetim rolü) — ama onaylayıcının neye baktığını ilk bakışta bilmesi
+ *  gerekir, o yüzden her satır türünü rozetle söyler. */
+function KindBadge({ d }: { d: ScheduleDraft }) {
+  const sinav = d.kind === "EXAM";
+  return (
+    <Badge size="sm" variant="light" color={sinav ? "grape" : "teal"}>
+      {sinav ? "Sınav takvimi" : "Ders programı"}
+    </Badge>
+  );
+}
+
+const AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
+                 "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+const GUN_KISA = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+
+function gunBasligi(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return `${d.getDate()} ${AY_KISA[d.getMonth()]} ${d.getFullYear()} · ${GUN_KISA[d.getDay()]}`;
 }
 
 
@@ -73,8 +96,9 @@ export default function ApprovalsPage() {
       </Group>
 
       <Text size="sm" c={TEXT_MUTED}>
-        Program değişiklikleri yayına ancak buradan geçer. Kendi gönderdiğiniz
-        talebi onaylayamazsınız — başka bir onay yetkilisi incelemelidir.
+        Ders programı ve sınav takvimi değişiklikleri yayına ancak buradan
+        geçer. Kendi gönderdiğiniz talebi onaylayamazsınız — başka bir onay
+        yetkilisi incelemelidir.
       </Text>
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
@@ -98,6 +122,7 @@ export default function ApprovalsPage() {
               <Stack gap={4} style={{ flex: 1, minWidth: 260 }}>
                 <Group gap={8}>
                   <Text fw={600}>{cohortAdi(d)}</Text>
+                  <KindBadge d={d} />
                   <Badge size="sm" variant="light" color="blue">
                     {d.change_count} değişiklik
                   </Badge>
@@ -149,8 +174,10 @@ function ReviewPanel({ draftId, onBack }: { draftId: number; onBack: () => void 
   if (error) return <Alert color="red" variant="light" radius="md">{error}</Alert>;
   if (!data) return <Loader size="sm" />;
 
-  const { draft, items, entries, conflicts, staleness } = data;
+  const { draft, items, entries, exams, conflicts, staleness } = data;
   const kendi = draft.owner.id === user?.id;
+  const sinav = draft.kind === "EXAM";
+  const turAdi = DRAFT_KIND_LABELS[draft.kind];   // "haftalık program" / "sınav takvimi"
 
   const onayla = async () => {
     setBusy(true);
@@ -187,6 +214,7 @@ function ReviewPanel({ draftId, onBack }: { draftId: number; onBack: () => void 
           <IconArrowLeft size={18} />
         </ActionIcon>
         <Title order={2} fw={600} fz={20}>{cohortAdi(draft)}</Title>
+        <KindBadge d={draft} />
         <Badge variant="light" color="blue">{items.length} değişiklik</Badge>
       </Group>
 
@@ -211,8 +239,8 @@ function ReviewPanel({ draftId, onBack }: { draftId: number; onBack: () => void 
           icon={<IconAlertTriangle size={18} />}
           title="Bu taslak güncel olmayabilir">
           <Text size="sm">
-            Taslak {tarih(staleness.opened_at)} tarihinde açıldı; program o
-            tarihten sonra <b>{staleness.publications_since} kez</b> güncellendi
+            Taslak {tarih(staleness.opened_at)} tarihinde açıldı; yayındaki
+            {" "}{turAdi} o tarihten sonra <b>{staleness.publications_since} kez</b> güncellendi
             {staleness.last_published_by && ` (son: ${staleness.last_published_by}, ${tarih(staleness.last_published_at)})`}.
           </Text>
           <Text size="sm" mt={4}>
@@ -269,10 +297,21 @@ function ReviewPanel({ draftId, onBack }: { draftId: number; onBack: () => void 
       <Paper radius="md" p="md"
         style={{ border: `1px solid ${BORDER}`, background: PAGE_SURFACE, boxShadow: SHADOW }}>
         <Group justify="space-between" mb="xs">
-          <Text fw={600} fz={15}>Önerilen program</Text>
-          <Text size="xs" c="dimmed">değişen yerleşimler vurgulu</Text>
+          <Text fw={600} fz={15}>
+            {sinav ? "Önerilen sınav takvimi" : "Önerilen program"}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {sinav ? "değişen sınavlar vurgulu" : "değişen yerleşimler vurgulu"}
+          </Text>
         </Group>
-        <ProposedGrid entries={entries} changed={items} />
+        {/* K-60: sınavda IZGARA YOK, kronolojik liste var. Haftalık ızgara
+            işini görüyor çünkü haftalık program TEK haftaya sığar; sınav
+            takvimi ise iki-üç haftalık bir döneme yayılır ve o dönemi bir
+            ızgaraya sıkıştırmak "bütününde nereye oturuyor" sorusunu
+            cevaplamak yerine okunmaz hale getirirdi. */}
+        {sinav
+          ? <ProposedExamList exams={exams} changed={items} />
+          : <ProposedGrid entries={entries} changed={items} />}
       </Paper>
 
       <Group justify="flex-end" gap="sm">
@@ -346,6 +385,106 @@ function RejectModal({ opened, draftId, onClose, onDone }: {
         </Group>
       </Stack>
     </Modal>
+  );
+}
+
+
+/** Önerilen sınav takviminin salt-okunur listesi (K-60).
+ *
+ *  Haftalıktaki ızgaranın karşılığı ama ızgara DEĞİL: sınav takvimi bir sınav
+ *  dönemine (iki-üç hafta) yayılır, tek haftalık bir ızgaraya sığmaz. Aynı
+ *  soruya — "bu değişiklik takvimin bütününde nereye oturuyor" — cevap veren
+ *  şey burada güne göre gruplanmış kronolojik sıradır: onaylayıcı aynı günde
+ *  başka ne var, gün çok mu yüklü, iki sınav arka arkaya mı düşüyor görür.
+ *
+ *  Vurgu YERLEŞİME bağlanır, derse değil: K-59'da haftalıkta şube bazlı vurgu
+ *  aynı şubenin DEĞİŞMEYEN öteki satırını da "taşındı" göstermişti; aynı hata
+ *  burada da yapılabilirdi (bir dersin birden çok sınavı olabilir). */
+function ProposedExamList({ exams, changed }: {
+  exams: Exam[];
+  changed: DraftDiffItem[];
+}) {
+  const vurgu = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of changed) {
+      if (c.entity !== "exam") continue;
+      if (!c.after) continue;                       // KALDIRILDI: listede yok
+      m.set(`${c.course_id}-${c.exam_type}-${c.exam_index}`, c.kind);
+    }
+    return m;
+  }, [changed]);
+
+  const gunler = useMemo(() => {
+    const m = new Map<string, Exam[]>();
+    for (const e of [...exams].sort((a, b) =>
+      a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time))) {
+      m.set(e.exam_date, [...(m.get(e.exam_date) ?? []), e]);
+    }
+    return [...m.entries()];
+  }, [exams]);
+
+  if (gunler.length === 0) {
+    return <Text size="sm" c="dimmed">Taslakta hiç sınav yok.</Text>;
+  }
+
+  return (
+    <ScrollArea.Autosize mah={420}>
+      <Stack gap={10}>
+        {gunler.map(([gun, liste]) => (
+          <div key={gun}>
+            <Text fz={12} fw={600} c={TEXT_MUTED} mb={4}
+              style={{ letterSpacing: "0.02em" }}>
+              {gunBasligi(gun)}
+            </Text>
+            <Stack gap={4}>
+              {liste.map((e) => {
+                const k = vurgu.get(`${e.course.id}-${e.exam_type}-${e.exam_index}`);
+                const degisen = k !== undefined;
+                const bit = new Date(`${gun}T${e.start_time}`);
+                bit.setMinutes(bit.getMinutes() + e.duration_minutes);
+                const saatAraligi = `${e.start_time.slice(0, 5)}–`
+                  + `${String(bit.getHours()).padStart(2, "0")}:${String(bit.getMinutes()).padStart(2, "0")}`;
+                return (
+                  <Group key={e.id} gap={8} wrap="nowrap" align="flex-start"
+                    style={{
+                      background: degisen ? HEADER_BG : GRID_CELL_BG,
+                      border: `1px solid ${BORDER}`,
+                      borderLeft: `3px solid ${degisen ? "var(--mantine-color-blue-6)" : BORDER}`,
+                      borderRadius: 6, padding: "6px 9px",
+                    }}>
+                    <Text fz={12} fw={600} style={{ minWidth: 96,
+                      fontVariantNumeric: "tabular-nums" }}>
+                      {saatAraligi}
+                    </Text>
+                    <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
+                      <Group gap={6} wrap="nowrap">
+                        <Text fz={13} fw={600} truncate>{e.course.code}</Text>
+                        <Badge size="xs" variant="default">
+                          {EXAM_TYPE_LABELS[e.exam_type]}
+                          {e.exam_type === "MIDTERM" && e.exam_index > 1
+                            ? ` ${e.exam_index}` : ""}
+                        </Badge>
+                        {degisen && (
+                          <Badge size="xs" variant="light" color="blue">
+                            {k === "ADDED" ? "eklendi" : "taşındı"}
+                          </Badge>
+                        )}
+                      </Group>
+                      <Text fz={12} c={TEXT_MUTED} truncate>
+                        {e.classrooms.map((c) => `${c.building.name} ${c.room_code}`)
+                          .join(", ") || "Derslik atanmadı"}
+                        {" · "}{lecturerLabel(e.lecturer)}
+                        {" · "}{e.total_expected_students} öğrenci
+                      </Text>
+                    </Stack>
+                  </Group>
+                );
+              })}
+            </Stack>
+          </div>
+        ))}
+      </Stack>
+    </ScrollArea.Autosize>
   );
 }
 

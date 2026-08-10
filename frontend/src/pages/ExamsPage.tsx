@@ -19,6 +19,7 @@ import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
+import ChangeFeed from "../components/ChangeFeed";
 import DraftBar from "../components/DraftBar";
 import ExportMenu from "../components/ExportMenu";
 import {
@@ -669,6 +670,10 @@ export default function ExamsPage() {
         onCreate={async () => { await createDraft(); }}
         onChanged={() => { load(); refreshDraft(); }}
       />
+
+      {/* Yalnız YAYIN modunda: taslaktayken kullanıcı kendi işine bakıyor,
+          arka plandaki yayın hareketleri o an gürültü olur (K-59 gerekçesi). */}
+      {!draft && <ChangeFeed limit={3} />}
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
 

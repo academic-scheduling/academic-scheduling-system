@@ -67,6 +67,9 @@ def list_recent_changes(
             "department_name": d.department.name,
             "year": d.year,
             "semester": d.semester,
+            # K-60: akista haftalik ve sinav onaylari BIR ARADA akiyor; okuyanin
+            # hangisinin degistigini ozetten tahmin etmesi beklenemez.
+            "kind": d.kind,
             "summary": d.applied_summary,
             "published_at": d.reviewed_at,
             "published_by": d.owner.name,

@@ -148,7 +148,10 @@ def test_rejected_draft_still_blocks_a_second_one(session):
 
 
 def test_other_cohorts_and_owners_are_independent(session):
-    """Kisit (sahip + bolum + yil + donem) dortlusune baglidir, daha genisine degil."""
+    """Kisit (sahip + bolum + yil + donem [+ kind]) anahtarina baglidir, daha genisine degil.
+
+    `kind` boyutu K-60'ta eklendi; testi orada (`test_k60_exam_draft_schema`).
+    """
     wg, dep, _, _, _ = make_base(session)
     owner = make_user(session, wg)
     baskasi = make_user(session, wg)

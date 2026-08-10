@@ -1869,10 +1869,18 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
 `test_wp3_weekly.py` dönüşümünün aynısı: kural aynı, uç farklı).
 
 **Uygulama sırası:**
-1. ○ Şema + migration — **eklemeli** (`schedule_drafts.kind`, indekse `kind`,
+1. ✅ Şema + migration — **eklemeli** (`schedule_drafts.kind`, indekse `kind`,
    `exams.draft_id`, `uq_exams_course_type_index`'in iki kısmi indekse
-   bölünmesi). Hiçbir kolon düşmez. up/down/up elle doğrulanır (testler
-   `create_all` ile kurulduğu için migration'ları çalıştırmıyor).
+   bölünmesi). Hiçbir kolon düşmedi. `b7d3e0a15c92`; up/down/up elle
+   doğrulandı (testler `create_all` ile kurulduğu için migration'ları
+   çalıştırmıyor), 8 şema testi (`test_k60_exam_draft_schema.py`) + mevcut
+   524 test yeşil (532).
+   - Geliştirme veritabanında ölçüldü: iki kısmi indeks beklendiği gibi kuruldu,
+     eski koşulsuz constraint `pg_constraint`'ten düştü, mevcut 3 taslak
+     `server_default` sayesinde `WEEKLY` aldı, 11 sınavın 11'i de `draft_id
+     IS NULL` (yayında).
+   - Tarayıcı: sınav ekranı ve çakışma taraması bozulmadan çalışıyor, eski
+     "Yayınla" akışı aynen duruyor — eklemeli migration'ın amacı buydu.
 2. ○ Motor dikişi: `_exam_universe(..., draft=None)` + `scan_draft`'in kind'a
    göre evren seçimi + altı okuma yolunun `published_only=True`'ya bağlanması.
 3. ○ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /

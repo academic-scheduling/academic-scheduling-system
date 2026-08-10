@@ -112,6 +112,28 @@ class DraftStatus(str, enum.Enum):
     REJECTED = "REJECTED"   # reddedildi; OPEN gibi duzenlenebilir, gerekce durur
 
 
+class DraftKind(str, enum.Enum):
+    """draft_kind — taslagin NEYI kapsadigi (K-60).
+
+    Sinav takvimi de haftalik program gibi onay kapisinin arkasina alindi. Ayri
+    bir mekanizma kurmak yerine ayni tabloya bir ayrac konuldu: yasam dongusu,
+    oz-onay yasagi, kuyruk, inceleme ekrani, bayatlik bandi ve degisiklik akisi
+    ikisi icin de AYNI.
+
+    Taslak birimi her ikisinde de COHORT'tur. Sinav ders duzeyinde olsa da
+    (K-16) ders `(department_id, year, semester)` + `extra_cohorts` tasidigi
+    icin bir cohort'un sinavlari `cohort_course_filter` ile tam secilebilir --
+    haftaligin kapsamini belirleyen filtrenin AYNISI.
+
+    Haftalik ve sinav AYRI AYRI onaylanir: sinav donemi planlamasi ders
+    programindan bagimsiz yurur, tek talepte birlestirmek "vize takvimini
+    onaylatmak icin ders programini da onaylatmak" demeye gelirdi.
+    """
+
+    WEEKLY = "WEEKLY"
+    EXAM = "EXAM"
+
+
 class SessionType(str, enum.Enum):
     """session_type — haftalik girisin karsiladigi T/U/L bileseni (K-20)."""
 
@@ -710,9 +732,11 @@ class ScheduleDraft(Base):
         # APPROVED disarida: onaylanan taslak gecmis kaydidir, yeni taslak
         # acmayi engellememeli. REJECTED iceride: reddedileni duzeltmek yerine
         # yanina yenisini acmak, gerekcenin kaybolmasi demek olurdu.
+        # K-60: `kind` de anahtara girdi -- ayni cohort icin haftalik ve sinav
+        # taslagi AYNI ANDA acilabilmeli; iki is birbirinden bagimsiz yuruyor.
         Index(
             "uq_schedule_drafts_active_per_owner",
-            "created_by", "department_id", "year", "semester",
+            "created_by", "department_id", "year", "semester", "kind",
             unique=True,
             postgresql_where=text("status <> 'APPROVED'"),
         ),
@@ -736,6 +760,11 @@ class ScheduleDraft(Base):
     )
 
     name: Mapped[str] = mapped_column(String(200))
+    # K-60: taslak neyi kapsiyor -- haftalik program mi, sinav takvimi mi.
+    # server_default WEEKLY: K-60 oncesi acilmis taslaklarin tamami haftalik.
+    kind: Mapped[DraftKind] = mapped_column(
+        Enum(DraftKind, name="draft_kind"), server_default=text("'WEEKLY'")
+    )
     status: Mapped[DraftStatus] = mapped_column(
         Enum(DraftStatus, name="draft_status"), server_default=text("'OPEN'")
     )
@@ -769,6 +798,12 @@ class ScheduleDraft(Base):
     owner: Mapped["User"] = relationship(foreign_keys=[created_by])
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
     entries: Mapped[list["WeeklyScheduleEntry"]] = relationship(
+        back_populates="draft", passive_deletes=True
+    )
+    # K-60: EXAM taslaginin satirlari. Bir taslakta kind'a gore yalniz BIRI
+    # dolar; ikisini tek koleksiyonda toplamak (polimorfik satir) iki farkli
+    # yerlesim seklini ayni tabloya sikistirmak olurdu.
+    exams: Mapped[list["Exam"]] = relationship(
         back_populates="draft", passive_deletes=True
     )
     affected_departments: Mapped[list["Department"]] = relationship(
@@ -880,8 +915,23 @@ class Exam(Base):
         # (ders, tip, sira) tektir — ayni numarali vize iki kez girilemez.
         # Final/but'te exam_index hep 1 oldugundan bu kisit onlar icin "tek kayit"
         # anlamini korur (eski uq_exams_course_type ile ayni etki).
-        UniqueConstraint(
-            "course_id", "exam_type", "exam_index", name="uq_exams_course_type_index"
+        #
+        # K-60: bu kisit KOSULSUZ bir UniqueConstraint idi; taslak yayinin
+        # KOPYASINI tasidigi icin kopyalama aninda ihlal ediliyordu. Iki KISMI
+        # indekse bolundu. Tek bir dort kolonlu (…, draft_id) UNIQUE YETMEZ:
+        # Postgres NULL'lari birbirine esit saymaz, o indeks altinda YAYINDA
+        # ayni sinavin iki kopyasi gecerdi.
+        Index(
+            "uq_exams_course_type_index",     # ad korundu: yayindaki tekillik ayni kural
+            "course_id", "exam_type", "exam_index",
+            unique=True,
+            postgresql_where=text("draft_id IS NULL"),
+        ),
+        Index(
+            "uq_exams_course_type_index_draft",
+            "course_id", "exam_type", "exam_index", "draft_id",
+            unique=True,
+            postgresql_where=text("draft_id IS NOT NULL"),
         ),
         CheckConstraint("exam_index BETWEEN 1 AND 3", name="ck_exams_exam_index"),
         CheckConstraint(
@@ -894,9 +944,17 @@ class Exam(Base):
         ),
         Index("idx_exams_date", "exam_date"),
         Index("idx_exams_status", "status"),
+        # Her sorgu ya yayini (draft_id IS NULL) ya tek bir taslagi suzecek.
+        Index("idx_exams_draft", "draft_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # K-60: NULL = YAYINDA. Dolu = o taslagin ozel kopyasi. Haftalikla ayni
+    # tek-gercek kurali; `status` bu fazin sonunda dusecek.
+    # CASCADE: taslak silinince kopyalari da gider (yayina hicbir etkisi yok).
+    draft_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("schedule_drafts.id", ondelete="CASCADE")
+    )
     course_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("courses.id", ondelete="CASCADE")
     )
@@ -923,6 +981,7 @@ class Exam(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    draft: Mapped["ScheduleDraft | None"] = relationship(back_populates="exams")
     course: Mapped["Course"] = relationship(back_populates="exams")
     lecturer: Mapped["Lecturer"] = relationship(back_populates="exams")
     classrooms: Mapped[list["Classroom"]] = relationship(

@@ -1940,8 +1940,22 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
    - Gerçek veriyle ölçüm: CE/4/Güz sınav taslağı açıldı → 5 sınav çok-derslikli
      M2M'iyle kopyalandı, bir sınav taşındı → fark tek MOVED satırı, çakışma
      tablosu 0 engel/5 uyarı, yayındaki 11 sınav değişmedi, taslak silindi.
-4. ○ Onay API'si: sınav onayının uçtan uca testi (fark uygulama, öz-onay,
-   bayatlık, ortak ders etkisi) + `applied_summary`'nin sınav metni.
+4. ✅ Onay API'si. Kod adım 3'te dağıtıcıya bağlanmıştı; bu adım **kanıt**:
+   10 test (`test_k60_exam_approval_api.py`), toplam 571 yeşil.
+   - K-59'da kanıtlanmış genel kapılar (kuyruk yetkisi, ret gerekçesi,
+     öz-onay yasağının genel hali) TEKRAR EDİLMEDİ; dosya yalnız sınava özgü
+     olanı ölçüyor: taşımanın satır kimliğini koruması, derslik listesinin
+     onayla geçmesi, ekleme/kaldırma, `applied_summary`'nin sınav dili
+     ("1 taşındı · CE 4523 Vize 1 14 Eyl → 15 Eyl"), incelemenin `entries`
+     değil `exams` taşıması.
+   - **Bayat sınav taslağı testi** haftalıktaki eşinin aynısı: ikinci onay,
+     dokunulmayan satırı da geri alır ve bu inceleme ekranında ayrı bir satır
+     olarak görünür. Ayrıca `kind` süzgecinin karşılığı ölçüldü — haftalık bir
+     onay, sınav taslağının bayatlık sayacını artırmıyor.
+   - Gerçek veride uçtan uca (yayına yazmadan): taslak → 5 sınav kopyası →
+     değişiklik → onaya gönder → kuyrukta `kind=EXAM` → inceleme
+     (`entries: 0, exams: 5`, bayatlık 0, fark tek MOVED satırı notuyla,
+     0 engel/5 uyarı) → geri çek → sil. Yayındaki 11 sınav ve saatleri aynı.
 5. ○ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
    satır bazlı durum rozetlerinin kaldırılması.
 6. ○ `ApprovalsPage`: kind sekmesi/rozeti + `DiffTable`'ın metinleştiricisi.

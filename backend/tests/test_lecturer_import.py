@@ -27,9 +27,24 @@ FIX = Path(__file__).parent / "fixtures"
 @pytest.fixture(autouse=True)
 def _clean_lecturers():
     """Modül içinde DB sıfırlanmadığından her test taze hoca tablosuyla başlar
-    (dedup/commit sayıları testler arası kirlenmesin)."""
+    (dedup/commit sayıları testler arası kirlenmesin).
+
+    BAĞIMLISI OLAN HOCALAR ATLANIR. Eskiden `query(Lecturer).delete()` idi ve
+    yalnızca alfabetik sırada bu modülden ÖNCE şube üreten bir test dosyası
+    olmadığı için çalışıyordu; ilk böyle dosya eklendiğinde (K-59 taslak
+    testleri) 24 test birden `ForeignKeyViolation` ile düştü — şube/sınav
+    RESTRICT ile hocayı tutuyor (K-08).
+
+    Bu modülün ihtiyacı zaten "tablo boş olsun" değil, "KENDİ örnek hocalarım
+    önceden var olmasın" (dedup davranışı ölçülüyor). Örnek adlar HTML
+    fixture'larından gelir ve başka modüller onları kullanmaz; bağımlısı olan
+    yabancı satırları bırakmak ölçümü etkilemez.
+    """
     db = SessionLocal()
-    db.query(Lecturer).delete()
+    db.query(Lecturer).filter(
+        ~Lecturer.sections.any(),      # şubesi olan hoca silinemez (RESTRICT)
+        ~Lecturer.exams.any(),         # sınavı olan hoca da öyle
+    ).delete(synchronize_session=False)
     db.commit()
     db.close()
     yield

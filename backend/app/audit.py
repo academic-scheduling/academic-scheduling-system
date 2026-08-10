@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AuditLog, Building, Classroom, Course, CourseSection, Department,
-    Exam, Lecturer, User, WeeklyScheduleEntry,
+    Exam, Lecturer, ScheduleDraft, User, WeeklyScheduleEntry,
 )
 
 
@@ -42,6 +42,8 @@ def build_label(nesne) -> str | None:
     if isinstance(nesne, WeeklyScheduleEntry):
         return f"{nesne.section.course.code} Şube {nesne.section.section_no}"
     if isinstance(nesne, User):
+        return nesne.name
+    if isinstance(nesne, ScheduleDraft):
         return nesne.name
     return None
 

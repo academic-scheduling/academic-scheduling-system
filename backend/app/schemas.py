@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
 from app.models import EntryStatus, ExamType, DeliveryMode, SessionType, RoomType
+from app.models import DraftStatus
 
 class LoginRequest(BaseModel):
     email: str
@@ -517,6 +518,87 @@ class WeeklyEntrySubmitRequest(BaseModel):
 class WeeklyEntrySubmitResponse(BaseModel):
     submitted: list[int]
     warnings: list[ConflictResultOut]
+
+# --- Program taslaklari (K-59) ---
+
+class DraftCreate(BaseModel):
+    """Taslak bir COHORT uzerinde acilir (K-59) — kapsami bu uclu belirler."""
+    department_id: int
+    year: int = Field(ge=1, le=6)
+    semester: SemesterType
+    name: str | None = None          # boş bırakılırsa sunucu üretir
+
+class DraftRename(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+class DraftClearRequest(BaseModel):
+    # K-59: ortak dersler varsayılan olarak KORUNUR — silmek üç bölümün
+    # programından ders düşürebilir, bu yüzden açıkça istenmeli.
+    include_shared: bool = False
+
+class DraftSubmitRequest(BaseModel):
+    note: str | None = Field(None, max_length=2000)   # PR açıklaması gibi
+
+class DraftUserRef(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class DraftOut(BaseModel):
+    id: int
+    department_id: int
+    department_name: str
+    year: int
+    semester: SemesterType
+    name: str
+    status: DraftStatus
+    entry_count: int                              # taslaktaki yerleşim sayısı
+    change_count: int                             # yayına göre kaç fark var
+    owner: DraftUserRef
+    created_at: datetime
+    submitted_at: datetime | None = None
+    submit_note: str | None = None
+    reviewer: DraftUserRef | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+
+class DraftPlacementOut(BaseModel):
+    day_of_week: int
+    start_slot: int
+    slot_count: int
+    classroom_id: int | None
+    classroom_label: str | None
+    delivery_mode: DeliveryMode
+
+class DraftAffectedDepartmentOut(BaseModel):
+    id: int
+    name: str
+
+class DraftDiffItemOut(BaseModel):
+    """Tek bir değişiklik satırı — inceleme ekranının okuduğu birim."""
+    kind: Literal["ADDED", "REMOVED", "MOVED"]
+    section_id: int
+    course_code: str
+    course_name: str
+    section_no: int
+    session_type: SessionType
+    is_shared: bool                               # K-48 ortak ders mi
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+    before: DraftPlacementOut | None = None
+    after: DraftPlacementOut | None = None
+
+class DraftDiffOut(BaseModel):
+    draft_id: int
+    items: list[DraftDiffItemOut] = []
+
+class DraftSubmitResponse(BaseModel):
+    draft: DraftOut
+    warnings: list[ConflictResultOut] = []        # engellemez, görünür kalır
+
+class DraftClearResponse(BaseModel):
+    deleted: int
+    preserved_shared: int                         # korunan ortak ders yerleşimi
+
 
 # --- Dashboard (WP6, K-33) ---
 

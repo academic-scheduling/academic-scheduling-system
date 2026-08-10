@@ -33,6 +33,9 @@ app.include_router(exams_router)
 from app.routers.weekly_entries import router as weekly_entries_router
 app.include_router(weekly_entries_router)
 
+from app.routers.schedule_drafts import router as schedule_drafts_router
+app.include_router(schedule_drafts_router)
+
 from app.routers.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 

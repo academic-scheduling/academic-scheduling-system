@@ -1564,7 +1564,13 @@ YERLEŞTİREMİYOR.
    `cohort_course_filter` router'dan `app/cohort.py`'ye taşındı (servisin
    router'dan import etmesi bağımlılığı ters çevirirdi). 8 test
    (`test_k59_draft_universe.py`).
-3. Taslak API'si: oluştur (kopyala) / temizle / düzenle / fark / gönder / geri çek.
+3. Taslak API'si: oluştur (kopyala) / temizle / düzenle / fark / gönder / geri çek. ✅
+   `app/draft_service.py` (kopyalama + temizleme + **canlı fark**) ve
+   `routers/schedule_drafts.py` (14 uç). Fark eşleştirmesi `(şube, oturum tipi)`
+   grubu içinde yapılır; aynı yerleşimler birebir eşleşip elenir, artan varsa
+   TAŞINDI / EKLENDİ / KALDIRILDI çıkar. "Temizle"den sonra baştan dizilse bile
+   sonuç doğru: fark "nasıl yapıldığını" değil "sonucun neresi farklı"yı anlatır.
+   15 test (`test_k59_draft_api.py`).
 4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet.
 5. Frontend haftalık: yayın-taslak modu, "taslağa geçilsin mi?" diyaloğu,
    temizle, ortak ders uyarısı.

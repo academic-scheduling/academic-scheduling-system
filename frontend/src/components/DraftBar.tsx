@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
-  Alert, Badge, Button, Group, Modal, Paper, ScrollArea, Stack, Table, Text,
-  Textarea, Tooltip,
+  Alert, Badge, Button, Group, Modal, Paper, Stack, Text, Textarea, Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -9,26 +8,15 @@ import {
   IconPencil, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
-import {
-  DIFF_KIND_COLORS, DIFF_KIND_LABELS, DRAFT_STATUS_COLORS, DRAFT_STATUS_LABELS,
-} from "../api/types";
+import { DRAFT_STATUS_COLORS, DRAFT_STATUS_LABELS } from "../api/types";
+import DiffTable from "./DiffTable";
 import type {
-  ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem, DraftPlacement,
+  ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem,
   ScheduleDraft, SemesterType,
 } from "../api/types";
-import { DAY_SHORT } from "../utils/slots";
 import {
   BORDER, CONTROL_H, DRAFT_BORDER, DRAFT_SURFACE, SHADOW,
 } from "../utils/scheduleTheme";
-
-/** Yerleşimin okunur konumu: "Çar 5 · A Blok 101". Fark tablosu bunu iki
- *  sütunda yan yana gösterir; boş taraf (ekleme/kaldırma) "—" olur. */
-function yer(p: DraftPlacement | null): string {
-  if (!p) return "—";
-  const gun = DAY_SHORT[p.day_of_week] ?? String(p.day_of_week);
-  const sure = p.slot_count > 1 ? `-${p.start_slot + p.slot_count - 1}` : "";
-  return `${gun} ${p.start_slot}${sure}${p.classroom_label ? ` · ${p.classroom_label}` : ""}`;
-}
 
 export type DraftBarProps = {
   /** Aktif cohort. `year` null ise (ör. "Ortak dersler" görünümü) taslak açılamaz. */
@@ -268,8 +256,8 @@ export default function DraftBar({
 }
 
 
-/** Fark tablosu: "sonucun neresi farklı" (K-59). Ortak ders satırları
- *  etkilenen bölümleri de yazar — o değişiklik onların programına da düşer. */
+/** Taslak sahibinin "Farkı Gör" penceresi. Tablo onaylayıcının inceleme
+ *  ekranıyla ORTAK (DiffTable) — ikisi ayrı çizilseydi zamanla ayrışırdı. */
 function DiffModal({ items, onClose }: {
   items: DraftDiffItem[] | null;
   onClose: () => void;
@@ -277,47 +265,7 @@ function DiffModal({ items, onClose }: {
   return (
     <Modal opened={items !== null} onClose={onClose} size="lg" radius="md"
       title="Yayındaki programa göre fark">
-      {items && items.length === 0 && (
-        <Text size="sm" c="dimmed">Taslak yayındaki programla birebir aynı.</Text>
-      )}
-      {items && items.length > 0 && (
-        <ScrollArea.Autosize mah={460}>
-          <Table striped highlightOnHover verticalSpacing={6} fz="sm">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th w={96}>Değişim</Table.Th>
-                <Table.Th>Ders</Table.Th>
-                <Table.Th>Önce</Table.Th>
-                <Table.Th>Sonra</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {items.map((i, ix) => (
-                <Table.Tr key={`${i.section_id}-${i.kind}-${ix}`}>
-                  <Table.Td>
-                    <Badge size="sm" variant="light" color={DIFF_KIND_COLORS[i.kind]}>
-                      {DIFF_KIND_LABELS[i.kind]}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" fw={500}>
-                      {i.course_code} · Şube {i.section_no}
-                    </Text>
-                    {i.is_shared && (
-                      <Text size="xs" c="orange.7">
-                        Ortak ders — etkilenen:{" "}
-                        {i.affected_departments.map((d) => d.name).join(", ") || "—"}
-                      </Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td c="dimmed">{yer(i.before)}</Table.Td>
-                  <Table.Td>{yer(i.after)}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </ScrollArea.Autosize>
-      )}
+      {items && <DiffTable items={items} />}
     </Modal>
   );
 }

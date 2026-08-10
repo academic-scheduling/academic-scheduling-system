@@ -31,6 +31,7 @@ import {
   IconSun,
   IconUsers,
   type IconProps,
+  IconChecklist,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
 import { useAuth } from "../auth/AuthContext";
@@ -40,6 +41,10 @@ type MenuItem = {
   path: string;
   icon: ComponentType<IconProps>;
   adminOnly?: boolean;
+  /** K-59: yalnız onay yetkisi olanlarda görünür (ADMIN dahil — bayrağı
+   *  sunucu ADMIN için true raporlar). Gizlemek GÖRÜNÜM kararıdır; otorite
+   *  sunucuda (brief §10.2). */
+  approverOnly?: boolean;
 };
 
 const MENU: MenuItem[] = [
@@ -51,6 +56,7 @@ const MENU: MenuItem[] = [
   { label: "Öğretim Üyeleri", path: "/lecturers", icon: IconUsers },
   { label: "Haftalık Program", path: "/weekly", icon: IconCalendarWeek },
   { label: "Sınavlar", path: "/exams", icon: IconPencil },
+  { label: "Onay Bekleyenler", path: "/approvals", icon: IconChecklist, approverOnly: true },
   { label: "Çakışma Raporu", path: "/conflicts", icon: IconAlertTriangle },
 ];
 
@@ -71,7 +77,9 @@ export default function AppLayout() {
 
   // Menüde gizlemek GÜVENLİK DEĞİLDİR — otorite backend'de (403).
   // Buradaki filtre yalnız kullanıcıyı çalışmayacak bir sayfaya sokmamak için.
-  const items = MENU.filter((m) => !m.adminOnly || user?.role === "ADMIN");
+  const items = MENU.filter((m) =>
+    (!m.adminOnly || user?.role === "ADMIN")
+    && (!m.approverOnly || !!user?.can_approve_schedule));
 
   const themeLabel = scheme === "dark" ? "Aydınlık moda geç" : "Karanlık moda geç";
   const ThemeIcon = scheme === "dark" ? IconSun : IconMoon;

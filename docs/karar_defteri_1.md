@@ -1615,7 +1615,19 @@ YERLEŞTİREMİYOR.
      UserListItem / InviteRequest / UserUpdate + users router) ve
      `UsersSection`'da YAZMA yetkilerinden **ayrı başlık** altında gösteriliyor —
      aynı listede sıradan bir kutu gibi dursa yanlışlıkla verilmesi kolaylaşırdı.
-6. Frontend onay sayfası: kuyruk + yan yana ızgara + fark listesi + çakışma listesi.
+6. Frontend onay sayfası: kuyruk + inceleme + fark + ızgara + onay/ret. ✅
+   `pages/ApprovalsPage.tsx` + `components/DiffTable.tsx` (taslak sahibinin
+   "Farkı Gör"ü ile onaylayıcının incelemesi AYNI tabloyu kullanır — ayrı
+   çizilseydi zamanla ayrışırlardı). Menü girişi `approverOnly` ile gizli.
+   - **"Yan yana ızgara" yerine tek ızgara + fark tablosu.** İki ızgarayı yan
+     yana sıkıştırmak ikisini de okunmaz yapıyordu; fark tablosu zaten "ne
+     değişti"yi anlatıyor, ızgara "haftanın bütününde nereye oturuyor"u.
+     Değişen yerleşimler ızgarada vurgulu.
+   - **Vurgu ŞUBEYE değil YERLEŞİME bağlı.** İlk hali şube bazlıydı ve gerçek
+     veride bir şubenin aynı slotta iki satırı olunca DEĞİŞMEYEN kopyayı da
+     "taşındı" gibi gösteriyordu (tarayıcıda yakalandı).
+   - Bayatlık bandı, hard çakışmada onay düğmesinin kapanması, öz-onayda
+     ikisinin de kapanması ve gerekçe zorunlu ret ekranı burada.
 7. Ortak ders yerleştirme yetkisi (`_ensure_course_access`) + değişiklik akışı.
 8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).
 9. **Temizlik migration'ı:** kalan `DRAFT` satırlarını sil, `status` +

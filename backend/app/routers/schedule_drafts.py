@@ -113,6 +113,9 @@ def _default_name(db: Session, payload: DraftCreate) -> str:
 def _to_out(db: Session, draft: ScheduleDraft) -> dict:
     """DraftOut govdesi: sayaclar taslagin O ANKI haline gore hesaplanir."""
     entries = draft_entries(db, draft)
+    # Onaylanan taslagin satirlari yayina gecip silinir; canli fark hesabi o
+    # noktada anlamsizdir (bos taslak "her sey kaldirildi" gibi gorunurdu).
+    canli = draft.status != DraftStatus.APPROVED
     return {
         "id": draft.id,
         "department_id": draft.department_id,
@@ -122,7 +125,7 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "name": draft.name,
         "status": draft.status,
         "entry_count": len(entries),
-        "change_count": len(compute_diff(db, draft)),
+        "change_count": len(compute_diff(db, draft)) if canli else 0,
         "owner": draft.owner,
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
@@ -130,6 +133,7 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "reviewer": draft.reviewer,
         "reviewed_at": draft.reviewed_at,
         "review_note": draft.review_note,
+        "applied_summary": draft.applied_summary,
     }
 
 

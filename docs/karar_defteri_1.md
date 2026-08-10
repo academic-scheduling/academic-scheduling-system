@@ -1480,6 +1480,25 @@ yayının kopyasıyla dolar, "Temizle" ile sıfırdan da dizilebilir.
   > ekranda görür, geri alındığını bilerek karar verir. Sorun üzerine yazmak
   > değil, sessizce yazmaktı; çözüm engelleme değil şeffaflık.
 
+- **DÜZELTME [uygulama sırasında ölçüldü].** Yukarıdaki paragraf, ilk yazıldığında
+  "farkı uygulamak diğerinin değişikliğini KORUR" gibi okunuyordu. **Korumaz.**
+  Fark, "gönderen ne değiştirdi" değil "gönderenin taslağı ŞU ANKİ yayından
+  nerede farklı" demektir. Mehmet'in taslağı Ayşe'nin taşıdığı dersin eski
+  halini taşıyorsa, Mehmet'in onayı o dersi de eski yerine geri götürür — ve
+  bu, onay ekranında ayrı bir satır olarak görünür.
+  - Sonuç olarak fark-uygulama ile toptan-ikame **aynı son duruma** varır;
+    aradaki gerçek fark **satır kimliğinin korunması**dır (taşıma, satırı silip
+    yeniden yaratmaz → denetim izi kopmaz).
+  - Yani sessiz üzerine yazmaya karşı tek koruma **görünürlüktür**: onaylayıcı
+    geri alınacak her satırı fark listesinde görür.
+    Test: `test_approving_a_stale_draft_also_reverts_the_other_persons_change`.
+  - **Bayatlık işareti (bu düzeltmenin gereği):** inceleme ekranı "taslak şu
+    tarihte açıldı, program o tarihten sonra N kez güncellendi (son: kim,
+    ne zaman)" bilgisini taşır (`DraftReviewOut.staleness`). Fark zaten satır
+    satır gösteriyor; bu, onaylayıcıya DİKKATLİ BAKMASI gerektiğini söyleyen
+    üst düzey işaret. Yeni şema gerekmedi: aynı cohort'un onaylanmış
+    taslakları + `affected_departments` üzerinden ortak ders etkisi sayılır.
+
 **Karar — yetki:** Yeni tek bayrak `users.can_approve_schedule` (K-25 fabrikası
 `_require_capability` ile), haftalık + sınav ortak. Onaylamak bir alan
 uzmanlığı değil gözetim rolüdür; ikiye bölmek kuyruğu/UI/testi ikiye katlar.
@@ -1571,7 +1590,12 @@ YERLEŞTİREMİYOR.
    TAŞINDI / EKLENDİ / KALDIRILDI çıkar. "Temizle"den sonra baştan dizilse bile
    sonuç doğru: fark "nasıl yapıldığını" değil "sonucun neresi farklı"yı anlatır.
    15 test (`test_k59_draft_api.py`).
-4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet.
+4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet. ✅
+   `routers/schedule_approvals.py` + `deps.require_schedule_approver`.
+   `draft_service.pair_changes` TEK eşleştirme noktası: onaylayıcının GÖRDÜĞÜ
+   fark ile onayın UYGULADIĞI fark aynı hesaptan çıkar, yoksa ekranda bir şey
+   görünüp başka bir şey yayına geçebilirdi. 12 test
+   (`test_k59_approval_api.py`); öz-onay yasağı admin dahil doğrulandı.
 5. Frontend haftalık: yayın-taslak modu, "taslağa geçilsin mi?" diyaloğu,
    temizle, ortak ders uyarısı.
 6. Frontend onay sayfası: kuyruk + yan yana ızgara + fark listesi + çakışma listesi.

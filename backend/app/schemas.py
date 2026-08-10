@@ -399,6 +399,16 @@ class ConflictResultOut(BaseModel):
     affected: list[ConflictAffectedRef] = []
 
 
+class ConflictScanOut(BaseModel):
+    """GET /conflicts cevabi (kontrat 9).
+
+    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
+    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
+    """
+    hard: list[ConflictResultOut] = []
+    warnings: list[ConflictResultOut] = []
+
+
 # --- Sınavlar (WP4, K-16/K-17/K-22) ---
 
 class ExamCreate(BaseModel):
@@ -561,6 +571,10 @@ class DraftOut(BaseModel):
     reviewer: DraftUserRef | None = None
     reviewed_at: datetime | None = None
     review_note: str | None = None
+    # Onay anında dondurulan özet — onaylandıktan sonra fark yeniden
+    # hesaplanamaz (taslağın satırları yayına geçip silinir), kayıt kendi
+    # kendine yetsin diye saklanır (K-36 deseni).
+    applied_summary: str | None = None
 
 class DraftPlacementOut(BaseModel):
     day_of_week: int
@@ -595,6 +609,40 @@ class DraftSubmitResponse(BaseModel):
     draft: DraftOut
     warnings: list[ConflictResultOut] = []        # engellemez, görünür kalır
 
+class DraftRejectRequest(BaseModel):
+    # Gerekçesiz ret işe yaramaz: gönderen neyi düzelteceğini bilemez.
+    note: str = Field(min_length=1, max_length=2000)
+
+class DraftStalenessOut(BaseModel):
+    """Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).
+
+    Taslak, açıldığı andaki yayının kopyasıdır ve eskiyebilir; sahibinin
+    dokunmadığı satırlar bile arada başkasının onayı geçtiyse farkta "geri
+    alınacak değişiklik" olarak belirir. Fark bunu zaten satır satır gösterir;
+    bu, onaylayıcıya DİKKATLİ BAKMASI gerektiğini söyleyen üst düzey işaret.
+    """
+    opened_at: datetime
+    publications_since: int
+    last_published_at: datetime | None = None
+    last_published_by: str | None = None
+
+class DraftReviewOut(BaseModel):
+    """İnceleme ekranının tek çağrıda ihtiyaç duyduğu her şey.
+
+    Yayındaki ızgara ayrı uçtan (`GET /weekly-entries`) gelir; burada
+    ÖNERİLEN taraf + fark + çakışma + bayatlık işareti durur.
+    """
+    draft: DraftOut
+    items: list[DraftDiffItemOut] = []
+    entries: list[WeeklyEntryOut] = []            # önerilen ızgara
+    conflicts: ConflictScanOut
+    staleness: DraftStalenessOut
+
+class DraftApproveResponse(BaseModel):
+    draft: DraftOut
+    applied: list[DraftDiffItemOut] = []          # yayına ne geçti
+    warnings: list[ConflictResultOut] = []
+
 class DraftClearResponse(BaseModel):
     deleted: int
     preserved_shared: int                         # korunan ortak ders yerleşimi
@@ -618,16 +666,6 @@ class DashboardSummary(BaseModel):
     exams: int
     unresolved_hard: int
     unresolved_warnings: int
-
-
-class ConflictScanOut(BaseModel):
-    """GET /conflicts cevabi (kontrat 9).
-
-    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
-    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
-    """
-    hard: list[ConflictResultOut] = []
-    warnings: list[ConflictResultOut] = []
 
 
 # --- Islem kayitlari (WP6, K-35) ---

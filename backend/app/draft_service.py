@@ -12,11 +12,12 @@ farki artik yeni yayina gore hesaplanir; onaylayici neyin geri alinacagini
 ekranda GORUR. Sorun uzerine yazmak degil, sessizce yazmakti.
 """
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.cohort import cohort_course_filter
 from app.models import (
-    Classroom, Course, CourseSection, Department, ScheduleDraft,
+    Classroom, Course, CourseSection, Department, DraftStatus, ScheduleDraft,
     WeeklyScheduleEntry,
 )
 
@@ -184,22 +185,31 @@ def _describe(draft: ScheduleDraft, e: WeeklyScheduleEntry) -> dict:
     }
 
 
-def compute_diff(db: Session, draft: ScheduleDraft) -> list[dict]:
-    """Taslak ile O ANKI yayin arasindaki fark.
+Change = tuple[str, WeeklyScheduleEntry | None, WeeklyScheduleEntry | None]
+#          kind          yayindaki satir          taslaktaki satir
+
+
+def pair_changes(db: Session, draft: ScheduleDraft) -> list[Change]:
+    """Taslak ile O ANKI yayini eslestirir. TEK hesap noktasi.
+
+    Hem `compute_diff` (onaylayicinin GORDUGU) hem `apply_draft` (onayin
+    UYGULADIGI) buradan beslenir. Ayri hesaplasalardi ekranda bir sey gorunup
+    baska bir sey yayina gecebilirdi — bu, onay adiminin butun anlamini
+    bosa cikarirdi.
 
     Eslestirme `(sube, oturum tipi)` grubu icinde yapilir; grup icinde AYNI
     yerlesime sahip satirlar birebir eslesip elenir. Geriye kalanlar:
-      - iki tarafta da artan varsa -> TASINDI (sirali eslestirme)
-      - yalniz yayinda artan -> KALDIRILDI
-      - yalniz taslakta artan -> EKLENDI
+      - iki tarafta da artan varsa -> MOVED (sirali eslestirme)
+      - yalniz yayinda artan -> REMOVED
+      - yalniz taslakta artan -> ADDED
 
     Neden "grup icinde": bir subenin ayni tipte birden cok oturumu olabilir
     (2 saatlik teori, iki ayri gunde). Tek anahtarla eslestirmek bunlari
     birbirine karistirirdi.
 
-    Kullanici "Temizle" deyip programi bastan dizse bile bu hesap dogru
-    calisir: ayni yere geri koyduklari eslesip elenir, gercekten degisenler
-    kalir. Fark "nasil yapildigini" degil "sonucun neresi farkli"yi anlatir.
+    Kullanici "Temizle" deyip programi bastan dizse bile hesap dogru calisir:
+    ayni yere geri koyduklari eslesip elenir. Fark "nasil yapildigini" degil
+    "sonucun neresi farkli"yi anlatir.
     """
     def grupla(entries):
         g: dict[tuple, list[WeeklyScheduleEntry]] = {}
@@ -210,38 +220,167 @@ def compute_diff(db: Session, draft: ScheduleDraft) -> list[dict]:
     yayin = grupla(published_entries(db, draft))
     taslak = grupla(draft_entries(db, draft))
 
-    fark: list[dict] = []
+    degisiklikler: list[Change] = []
     for key in sorted(set(yayin) | set(taslak), key=lambda k: (k[0], str(k[1]))):
-        onceki = list(yayin.get(key, []))
-        sonraki = list(taslak.get(key, []))
-
-        # Ayni yerlesime sahip olanlari birebir esleyip ele
-        kalan_taslak = list(sonraki)
+        kalan_taslak = list(taslak.get(key, []))
         kalan_yayin = []
-        for p in onceki:
+        for p in yayin.get(key, []):
             esi = next((d for d in kalan_taslak if _placement(d) == _placement(p)), None)
             if esi is not None:
-                kalan_taslak.remove(esi)
+                kalan_taslak.remove(esi)      # degismemis: farka girmez
             else:
                 kalan_yayin.append(p)
 
-        siralama = lambda e: (e.day_of_week, e.start_slot)   # noqa: E731
+        def siralama(e):
+            return (e.day_of_week, e.start_slot)
+
         kalan_yayin.sort(key=siralama)
         kalan_taslak.sort(key=siralama)
 
         # Iki tarafta da artan varsa TASINMA olarak eslestir (okunakli olsun);
-        # artikligi tek tarafta kalanlar ekleme/kaldirma.
+        # tek tarafta kalanlar ekleme/kaldirma.
         for p, d in zip(kalan_yayin, kalan_taslak):
-            fark.append({**_describe(draft, d), "kind": "MOVED",
-                         "before": _placement_out(p), "after": _placement_out(d)})
+            degisiklikler.append(("MOVED", p, d))
         for p in kalan_yayin[len(kalan_taslak):]:
-            fark.append({**_describe(draft, p), "kind": "REMOVED",
-                         "before": _placement_out(p), "after": None})
+            degisiklikler.append(("REMOVED", p, None))
         for d in kalan_taslak[len(kalan_yayin):]:
-            fark.append({**_describe(draft, d), "kind": "ADDED",
-                         "before": None, "after": _placement_out(d)})
+            degisiklikler.append(("ADDED", None, d))
 
+    return degisiklikler
+
+
+def compute_diff(db: Session, draft: ScheduleDraft) -> list[dict]:
+    """Farkin gosterime hazir hali (kontrat sekli)."""
+    fark = []
+    for kind, onceki, sonraki in pair_changes(db, draft):
+        temsil = sonraki if sonraki is not None else onceki
+        fark.append({
+            **_describe(draft, temsil),
+            "kind": kind,
+            "before": _placement_out(onceki) if onceki is not None else None,
+            "after": _placement_out(sonraki) if sonraki is not None else None,
+        })
     return fark
+
+
+# ==================================================================
+# Onay: farki yayina uygula
+# ==================================================================
+
+_GUN = {1: "Pzt", 2: "Sal", 3: "Çar", 4: "Per", 5: "Cum"}
+
+
+def _yer_metni(p: dict | None) -> str:
+    if p is None:
+        return "—"
+    return f"{_GUN[p['day_of_week']]} {p['start_slot']}"
+
+
+def build_applied_summary(fark: list[dict]) -> str:
+    """Onay aninda DONDURULAN insan-okur ozet (K-36 deseni).
+
+    Taslagin satirlari onaydan sonra silindigi ve yayin yoluna devam ettigi
+    icin fark geriye donuk yeniden hesaplanamaz. Degisiklik akisi ve gecmis
+    kaydi bu metni okur; kayit kendi kendine yetsin diye burada saklanir.
+    """
+    sayac = {"MOVED": 0, "ADDED": 0, "REMOVED": 0}
+    for item in fark:
+        sayac[item["kind"]] += 1
+    basliklar = []
+    if sayac["MOVED"]:
+        basliklar.append(f"{sayac['MOVED']} taşındı")
+    if sayac["ADDED"]:
+        basliklar.append(f"{sayac['ADDED']} eklendi")
+    if sayac["REMOVED"]:
+        basliklar.append(f"{sayac['REMOVED']} kaldırıldı")
+
+    ayrinti = [
+        f"{i['course_code']} Ş{i['section_no']} "
+        f"{_yer_metni(i['before'])} → {_yer_metni(i['after'])}"
+        for i in fark[:10]
+    ]
+    if len(fark) > 10:
+        ayrinti.append(f"(+{len(fark) - 10} değişiklik daha)")
+    return ", ".join(basliklar) + " · " + "; ".join(ayrinti)
+
+
+def apply_draft(db: Session, draft: ScheduleDraft) -> list[dict]:
+    """Taslagin FARKINI o anki yayina uygular ve uygulanan farki doner (K-59).
+
+    Taslagin TAMAMI yayinin yerine GECMEZ. Aradaki fark su senaryoda gorunur:
+    iki kisi ayni cohorttan taslak actiysa ve biri onaylandiysa, otekinin
+    onayi yalniz KENDI degisikliklerini tasir; oteki kisinin dokunmadigi
+    satirlar yerinde kalir.
+
+    Satir KIMLIGI korunur: tasima, yayindaki satirin yerini gunceller — silip
+    yeniden yaratmaz. Boylece denetim izi bir dersin gecmisini takip edebilir
+    ve o satira bakan baska kayitlar kopmaz.
+
+    `created_by`: eklenen satir, onaylayanin degil TASLAK SAHIBININ adina
+    yazilir — yerlesimi yapan odur, onaylayan yalnizca izin vermistir.
+    """
+    fark = compute_diff(db, draft)          # once GOSTERIM (ozet + akis icin)
+    for kind, onceki, sonraki in pair_changes(db, draft):
+        if kind == "MOVED":
+            for f in _PLACEMENT_FIELDS:
+                setattr(onceki, f, getattr(sonraki, f))
+        elif kind == "REMOVED":
+            db.delete(onceki)
+        elif kind == "ADDED":
+            db.add(WeeklyScheduleEntry(
+                draft_id=None,                       # NULL = yayinda
+                section_id=sonraki.section_id,
+                session_type=sonraki.session_type,
+                created_by=draft.created_by,
+                **{f: getattr(sonraki, f) for f in _PLACEMENT_FIELDS},
+            ))
+
+    # Taslagin kopyalari artik gereksiz: onaylanan taslak GECMIS kaydidir,
+    # duzenlenebilir gorunen donmus bir kopya tasimasi yaniltici olur.
+    for e in draft_entries(db, draft):
+        db.delete(e)
+
+    db.flush()
+    return fark
+
+
+def publications_since_opened(db: Session, draft: ScheduleDraft) -> list[ScheduleDraft]:
+    """Bu taslak ACILDIKTAN SONRA bu cohort'un programini degistiren onaylar.
+
+    Neden gerekli: taslak, acildigi andaki yayinin kopyasidir ve o kopya
+    ESKIYEBILIR. Sahibi dokunmadigi satirlar bile, arada baskasinin onayi
+    gectiyse fark listesinde "geri alinacak degisiklik" olarak belirir. Fark
+    zaten bunu satir satir gosterir; bu sayac onaylayiciya BAKMASI GEREKTIGINI
+    soyleyen ust duzey isarettir ("taslak 8 Ağustos'ta açıldı, program o
+    tarihten sonra 2 kez güncellendi").
+
+    Iki yoldan etkilenme sayilir:
+      - ayni cohort'un onaylanmis taslaklari,
+      - baska bir cohort'un onayi ORTAK DERS uzerinden bu bolumu etkilediyse
+        (`affected_departments`, K-48).
+    """
+    return (
+        db.query(ScheduleDraft)
+        .options(selectinload(ScheduleDraft.owner))
+        .filter(
+            ScheduleDraft.workgroup_id == draft.workgroup_id,
+            ScheduleDraft.status == DraftStatus.APPROVED,
+            ScheduleDraft.reviewed_at > draft.created_at,
+            ScheduleDraft.id != draft.id,
+            or_(
+                and_(
+                    ScheduleDraft.department_id == draft.department_id,
+                    ScheduleDraft.year == draft.year,
+                    ScheduleDraft.semester == draft.semester,
+                ),
+                ScheduleDraft.affected_departments.any(
+                    Department.id == draft.department_id
+                ),
+            ),
+        )
+        .order_by(ScheduleDraft.reviewed_at.desc())
+        .all()
+    )
 
 
 def diff_affected_department_ids(fark: list[dict], draft: ScheduleDraft) -> set[int]:

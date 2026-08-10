@@ -90,3 +90,11 @@ require_classroom_manager = _require_capability(
 require_lecturer_manager = _require_capability(
     "can_manage_lecturers", "Öğretim üyesi yönetim yetkisi gerekli"
 )
+
+# K-59: taslağı YAYINA alma yetkisi. Diğerleri "neyi yazabilirim" der, bu
+# "başkasının yazdığını yayına geçirebilir miyim" der. Bayrak tek başına
+# yetmez: bölüm üyeliği + öz-onay yasağı router'da aranır (ADMIN bayraktan
+# muaftır ama öz-onay yasağından DEĞİL — K-59).
+require_schedule_approver = _require_capability(
+    "can_approve_schedule", "Program onaylama yetkisi gerekli"
+)

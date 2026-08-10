@@ -129,12 +129,23 @@ def _load_classrooms(db: Session, classroom_ids: list[int]) -> list[Classroom]:
     return db.query(Classroom).filter(Classroom.id.in_(classroom_ids)).all()
 
 
-def _eager_exam_query(db: Session):
+def _eager_exam_query(db: Session, published_only: bool = True):
     """ExamOut'un ihtiyaç duyduğu ilişkileri tek seferde yükler (N+1 önleme).
 
     course.sections, total_expected_students hesabı için gerekir (K-16).
+
+    K-60: `published_only` GÜVENLİ VARSAYILAN olarak True. Taslak sınavlar
+    sahiplerine özeldir; genel okuma yollarından (liste, export) görünmemeleri
+    gerekir. Varsayılanı True tutmanın gerekçesi K-59'un pahalı dersi: haftalıkta
+    bu süzgeç unutulmuştu ve herkesin özel taslak satırları ızgarada çizildi
+    ("aynı saatte 4 tane ISG 1801"). Yeni bir çağıran süzgeci unutursa sızıntı
+    değil EKSİK VERİ olur — ikincisi fark edilir, birincisi edilmez.
+
+    Bütünlük kontrolleri (silme engelleri) bu sorguyu KULLANMAZ ve kullanmamalı:
+    ders/hoca silinirken taslaktaki kopya da FK'ya takılır, onu saymamak
+    kullanıcıya "silinebilir" deyip ham DB hatası göstermek olurdu.
     """
-    return (
+    q = (
         db.query(Exam)
         .join(Course).join(Department)
         .options(
@@ -143,6 +154,7 @@ def _eager_exam_query(db: Session):
             selectinload(Exam.lecturer),
         )
     )
+    return q.filter(Exam.draft_id.is_(None)) if published_only else q
 
 
 # ------------------------------------------------------------------

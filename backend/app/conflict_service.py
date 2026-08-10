@@ -29,7 +29,7 @@ from app.conflicts.orchestrator import (
     scan_completeness, scan_cross, scan_exams, scan_weekly,
 )
 from app.models import (
-    Classroom, Course, CourseCohort, CourseSection, Department, Exam,
+    Classroom, Course, CourseCohort, CourseSection, Department, DraftKind, Exam,
     ScheduleDraft, Workgroup, WeeklyScheduleEntry,
 )
 
@@ -111,6 +111,10 @@ def _exam_to_dict(x: Exam) -> dict:
     return {
         "id": x.id,
         "type": "exam",
+        # K-60: motor bu alani OKUMAZ; sonuclari "taslagi ilgilendiren" ve
+        # "zaten yayinda olan" diye ayirmak icin burada tasiyoruz (haftaligin
+        # `draft_id` alaninin karsiligi).
+        "draft_id": x.draft_id,
         "course_id": x.course_id,
         "exam_type": x.exam_type.value,
         "exam_index": x.exam_index,           # K-46: kaçıncı vize (E2 buna bakar)
@@ -168,6 +172,13 @@ def _weekly_universe(
     Eager yukleme N+1'i onler — adaptor her giris icin
     section/course/department/classroom'a dokunuyor.
     """
+    # K-60: SINAV taslagi haftalik evrende hicbir seyi ikame etmez. Cagiran
+    # `scan_draft` iki evrene de ayni taslagi veriyor; her biri YALNIZ kendi
+    # turunu alsin diye suzgec burada. Sessiz bir hata degil, dogru bir ifade:
+    # "bir sinav taslagi haftalik programin hicbir dilimini degistirmez".
+    if draft is not None and draft.kind is not DraftKind.WEEKLY:
+        draft = None
+
     if draft is None:
         scope = WeeklyScheduleEntry.draft_id.is_(None)
     else:
@@ -204,19 +215,55 @@ def _weekly_universe(
     return [_weekly_to_dict(e) for e in entries]
 
 
-def _exam_universe(db: Session, workgroup_id: int) -> list[dict]:
-    """Workgroup'un cakisma evrenine giren sinavlari (DRAFT + SUBMITTED).
+def _exam_universe(
+    db: Session, workgroup_id: int, draft: ScheduleDraft | None = None
+) -> list[dict]:
+    """Workgroup'un cakisma evrenine giren sinavlari.
+
+    **Evren iki bicimde kurulur (K-60)** — `_weekly_universe` ile birebir ayni
+    desen, gerekceleri de ayni:
+
+    - `draft` YOK -> yalniz YAYINDAKI sinavlar (`draft_id IS NULL`).
+      Eski hali "DRAFT + SUBMITTED hepsi" idi; artik yarim isler kimsenin
+      evrenine girmiyor.
+    - `draft` VAR (ve EXAM turunde) -> taslagin kendi sinavlari + yayinin
+      taslak DISINDA kalan kismi. Taslak, kendi cohort'unun sinav dilimini
+      KOMPLE ikame eder; dilim disarida birakilmazsa ayni sinav hem yayindaki
+      hem taslaktaki tarihiyle iki kez sayilir ve motor hayali cakisma uretir.
+
+    Dilimin sinirini yine `cohort_course_filter` cizer: sinav ders duzeyinde
+    olsa da (K-16) ders `(department_id, year, semester)` + `extra_cohorts`
+    tasidigi icin bir cohort'un sinavlari tam secilebilir. Ortak dersin sinavi
+    tuketen bolumun cohort'undan da gelir, tek fiziksel satiri dislanir.
+
+    HAFTALIK taslagi buraya verilirse YOK SAYILIR: haftalik taslak sinav
+    evreninde hicbir seyi degistirmez (bkz. `_weekly_universe`'un simetrigi).
 
     Pasif dersin sinavi evren disidir (K-39; sinav ders duzeyindedir, ders
     pasifse sinav da kapsam disi). Sinavda `active` alani yok — pasiflik
     dersten gelir.
     """
+    if draft is not None and draft.kind is not DraftKind.EXAM:
+        draft = None
+
+    if draft is None:
+        scope = Exam.draft_id.is_(None)
+    else:
+        in_draft_cohort = cohort_course_filter(
+            draft.department_id, draft.year, draft.semester
+        )
+        scope = or_(
+            Exam.draft_id == draft.id,
+            and_(Exam.draft_id.is_(None), ~in_draft_cohort),
+        )
+
     exams = (
         db.query(Exam)
         .join(Course).join(Department)
         .filter(
             Department.workgroup_id == workgroup_id,
             Course.active.is_(True),
+            scope,
         )
         .options(
             selectinload(Exam.course).selectinload(Course.department),
@@ -315,7 +362,7 @@ def check_weekly_submit(
 
 
 # ==================================================================
-# Seam: taslak (K-59)
+# Seam: taslak (K-59 haftalik, K-60 sinav)
 # ==================================================================
 
 def scan_draft(db: Session, draft: ScheduleDraft) -> dict[str, list[dict]]:
@@ -337,18 +384,32 @@ def scan_draft(db: Session, draft: ScheduleDraft) -> dict[str, list[dict]]:
     bilerek "durum ne" dedigi yerdir (scan_workgroup'taki K-39 gerekcesinin
     aynisi). Yalniz taslagin satirlari degerlendirilir — taslak kendi
     cohort'unun tamamini tasidigi icin sube bazinda tamlik dogru hesaplanir.
+    W8 haftaliga ozgudur (T+U+L saat hedefi); SINAV taslaginda uretilmez.
+
+    **K-60 — kind'a gore taraf secimi:** iki evren de kurulur, ama taslak
+    yalnizca KENDI turunu ikame eder; oteki taraf her zaman yayindir. Yani
+    haftalik taslak "yayindaki sinavlara karsi", sinav taslagi "yayindaki
+    derslere karsi" test edilir. X kurallari (K-06, sinav-ders) boylece
+    taslagin icinde de dogru kosar.
     """
     wg = draft.workgroup_id
+    # Her iki cagriya da ayni taslak veriliyor; her evren yalniz kendi turunu
+    # alir, otekinde taslak yok sayilir (bkz. universe fonksiyonlarindaki suzgec).
     weeklies = _weekly_universe(db, wg, draft)
-    exams = _exam_universe(db, wg)
+    exams = _exam_universe(db, wg, draft)
+    cross = _cross_flag(db, wg)
 
-    draft_rows = [w for w in weeklies if w["draft_id"] == draft.id]
+    if draft.kind is DraftKind.EXAM:
+        draft_rows = [x for x in exams if x["draft_id"] == draft.id]
+        wanted = {("exam", r["id"]) for r in draft_rows}
+        results = scan_exams(exams)
+    else:
+        draft_rows = [w for w in weeklies if w["draft_id"] == draft.id]
+        wanted = {("weekly_entry", r["id"]) for r in draft_rows}
+        results = scan_weekly(weeklies)
+        results += scan_completeness(draft_rows)
 
-    results = scan_weekly(weeklies)
-    results += scan_cross(exams, weeklies, _cross_flag(db, wg))
-    results += scan_completeness(draft_rows)
-
-    wanted = {("weekly_entry", w["id"]) for w in draft_rows}
+    results += scan_cross(exams, weeklies, cross)
     results = [r for r in results if _involves(r, wanted)]
 
     return {
@@ -361,11 +422,18 @@ def scan_draft(db: Session, draft: ScheduleDraft) -> dict[str, list[dict]]:
 # Seam: sinavlar
 # ==================================================================
 
-def check_exams_save(db: Session, exam: Exam) -> list[dict]:
-    """Tek sinavin kayit ani kontrolu. Engellemez, bilgilendirir (K-03)."""
+def check_exams_save(
+    db: Session, exam: Exam, draft: ScheduleDraft | None = None
+) -> list[dict]:
+    """Tek sinavin kayit ani kontrolu. Engellemez, bilgilendirir (K-03).
+
+    `draft` verilirse kontrol o taslagin evreninde yapilir (K-60): taslak
+    icindeki duzenleme, kendi cohort'unun yayindaki haline degil taslaktaki
+    haline karsi test edilir (`check_weekly_save`'in simetrigi).
+    """
     wg = _wg_of_exam(exam)
-    exams = _exam_universe(db, wg)
-    weeklies = _weekly_universe(db, wg)
+    exams = _exam_universe(db, wg, draft)
+    weeklies = _weekly_universe(db, wg, draft)
 
     results = scan_exams(exams)
     results += scan_cross(exams, weeklies, _cross_flag(db, wg))

@@ -6,7 +6,7 @@ from app.cohort import cohort_course_filter
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseCohort, CourseSection, Department, DepartmentMembership,
-    EntryStatus, Exam, ExamType, Lecturer, SemesterType, User, UserRole,
+    Exam, ExamType, Lecturer, SemesterType, User, UserRole,
     WeeklyScheduleEntry,
 )
 from app.schemas import (
@@ -349,9 +349,15 @@ def update_course(
                 WeeklyScheduleEntry.draft_id.is_(None),
             ).count() if section_ids else 0
         )
+        # K-60: sınavda da "yayında" artık `draft_id IS NULL`. Eski hali
+        # `status == SUBMITTED` idi ve BİR VERİ KAYBI HATASI taşıyordu: gerçek
+        # veride import/seed her sınavı `DRAFT` yazmış, dolayısıyla bu sayaç 0
+        # dönüyor, aşağıdaki "taslakları sil" bloğu ise YAYINDAKİ sınavların
+        # tamamını siliyordu. K-59'da haftalıkta ölçülen tuzağın aynısı
+        # ("status'e bakıp silmek programın tamamını silerdi").
         submitted_exam = db.query(Exam).filter(
             Exam.course_id == course.id,
-            Exam.status == EntryStatus.SUBMITTED,
+            Exam.draft_id.is_(None),
         ).count()
         if submitted_weekly or submitted_exam:
             parcalar = []
@@ -365,21 +371,11 @@ def update_course(
                        "etki eden alanı (online/saat) değiştirmeden önce bir taslakla "
                        "onları programdan çıkarıp onaylatın.",
             )
-        # K-59: eskiden buradaki DRAFT satırları silinirdi. Artık taslak satırı
-        # BAŞKASININ ÖZEL kopyasıdır; sessizce silmek onun işini yok etmek olur.
-        # Yayında satır kalmadığı için silinecek bir şey de yok; taslak sahibi
-        # değişikliği kendi ekranında W8/çakışma uyarısı olarak görecek.
-        draft_weekly: list[WeeklyScheduleEntry] = []
-        draft_exams = db.query(Exam).filter(
-            Exam.course_id == course.id,
-            Exam.status == EntryStatus.DRAFT,
-        ).all()
-        for we in draft_weekly:
-            log_action(db, user, "DELETE", "weekly_entry", we.id, we)
-            db.delete(we)
-        for ex in draft_exams:
-            log_action(db, user, "DELETE", "exam", ex.id, ex)
-            db.delete(ex)
+        # K-59/K-60: eskiden buradaki DRAFT satırları (haftalık ve sınav)
+        # silinirdi. Artık taslak satırı BAŞKASININ ÖZEL kopyasıdır; sessizce
+        # silmek onun işini yok etmek olur. Yayında satır kalmadığı için
+        # silinecek bir şey de yok — bu yüzden burada hiçbir silme YOK. Taslak
+        # sahibi değişikliği kendi ekranında W8/çakışma uyarısı olarak görecek.
 
     ozet = build_change_summary(course, data)
     for field, value in data.items():

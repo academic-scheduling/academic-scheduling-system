@@ -1881,8 +1881,32 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
      IS NULL` (yayında).
    - Tarayıcı: sınav ekranı ve çakışma taraması bozulmadan çalışıyor, eski
      "Yayınla" akışı aynen duruyor — eklemeli migration'ın amacı buydu.
-2. ○ Motor dikişi: `_exam_universe(..., draft=None)` + `scan_draft`'in kind'a
-   göre evren seçimi + altı okuma yolunun `published_only=True`'ya bağlanması.
+2. ✅ Motor dikişi: `_exam_universe(..., draft=None)` + `scan_draft`'in kind'a
+   göre evren seçimi + okuma yollarının süzülmesi. 11 test
+   (`test_k60_exam_universe.py`), toplam 543 yeşil.
+   - **kind süzgeci evrenin İÇİNE kondu**, çağırana bırakılmadı: `scan_draft`
+     aynı taslağı iki evrene de veriyor, her biri yalnız kendi türünü alıyor
+     (`_weekly_universe` bir EXAM taslağını yok sayar, `_exam_universe` bir
+     WEEKLY taslağını). Sessiz bir hata değil doğru bir ifade — "sınav taslağı
+     haftalık programın hiçbir dilimini değiştirmez" — ve yanlış kullanımı
+     imkânsız kılıyor. Öteki taraf hep yayın olduğu için K-06'nın X kuralları
+     taslağın içinde de yayındaki gerçeğe karşı koşuyor (X1 testi).
+   - **Okuma yolları ikiye ayrıldı, hepsine aynı muamele YAPILMADI:**
+     görüntüleme/sızıntı yolları (`_eager_exam_query` → liste + export,
+     dashboard sayacı, çakışma evreni) `published_only`ye bağlandı; **bütünlük
+     kontrolleri bilerek her satırı saymaya devam ediyor** (ders/hoca silme
+     engelleri — taslaktaki kopya da FK'ya takılır, saymamak kullanıcıya
+     "silinebilir" deyip ham DB hatası göstermek olurdu). K-59'un haftalıkta
+     kurduğu ayrımın aynısı (`courses.py:485`, `classrooms.py:129`).
+   - **Bulunan canlı veri kaybı hatası:** `courses.py`'de "programa etki eden
+     alan değişti → taslak yerleşimleri sil" bloğu sınav tarafında hâlâ
+     `status`'e bakıyordu. Gerçek veride her sınav `DRAFT` olduğu için
+     `SUBMITTED` sayacı 0 dönüyor, blok ise o dersin **yayındaki** sınavlarını
+     siliyordu — K-59'da haftalıkta ölçülen tuzağın aynısı. `draft_id`
+     semantiğine çevrildi; artık 409 ile duruyor. Canlı ölçüm: CE 4523'ün
+     dersinde `theory_online` değişikliği → 409, 11 sınav yerinde.
+     (Silme bloğu bu değişiklikten sonra ispatlanabilir biçimde ölü kaldığı
+     için haftalıktaki eşiyle birlikte kaldırıldı.)
 3. ○ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /
    fark / gönder / geri çek. Kapsam denetimi `cohort_course_filter` ile.
 4. ○ Onay API'si: kuyruğa kind süzgeci, sınav farkının uygulanması,

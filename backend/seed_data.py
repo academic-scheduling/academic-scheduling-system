@@ -4,7 +4,7 @@ from app.db import engine, SessionLocal
 from app.models import (
     Base, Workgroup, User, UserRole, UserStatus, Department,
     Building, Classroom, RoomType, Lecturer, Course, CourseSection,
-    Slot, WeeklyScheduleEntry, SessionType, DeliveryMode, EntryStatus,
+    Slot, WeeklyScheduleEntry, SessionType, DeliveryMode,
     Exam, ExamType, SemesterType
 )
 from app.security import hash_password

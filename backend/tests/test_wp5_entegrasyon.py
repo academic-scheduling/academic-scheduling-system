@@ -9,7 +9,9 @@ Ortak DB kullanıldığı için hiçbir test mutlak sayı iddia etmez; hep "bu i
 cevabında şu rule_id var mı" diye bakılır.
 """
 
-from tests.helpers import client, admin_headers, foreign_admin_headers, _u
+from tests.helpers import (
+    client, admin_headers, foreign_admin_headers, publish_exam, _u,
+)
 from tests.test_wp2_courses import make_department, make_lecturer
 from tests.test_wp3_weekly import make_classroom, make_entry, make_section
 from app.db import SessionLocal
@@ -47,13 +49,9 @@ def save_conflicts(response) -> list[dict]:
 
 
 def make_exam(h, course_id, lecturer_id, **overrides):
-    body = {
-        "course_id": course_id, "exam_type": "MIDTERM",
-        "exam_date": "2026-11-12", "start_time": "10:00",
-        "duration_minutes": 90, "classroom_ids": [], "lecturer_id": lecturer_id,
-    }
-    body.update(overrides)
-    return client.post("/exams", json=body, headers=h)
+    """K-60: eski `POST /exams` kalktı; motor testleri YAYINDAKİ sınava bakar.
+    `h` artık kullanılmıyor ama imza korundu — çağrı yerleri sabit kalsın."""
+    return publish_exam(course_id, lecturer_id, **overrides)
 
 
 def make_course(h, dep, **overrides):
@@ -243,17 +241,35 @@ def test_e5a_missing_exam_capacity_warning():
 
 
 def test_exam_submit_rejected_by_hard_conflict():
+    """Hard çakışma onaya göndermeyi engeller — talep hiç oluşmaz (K-03/K-60).
+
+    Kapı değişti (`/exams/submit` yerine taslak submit'i), kural aynı: motorun
+    E1'i gönderim kapısına ULAŞIYOR mu, bu testin ölçtüğü şey o.
+    """
     h = admin_headers()
     dep = make_department(h)
     lec = make_lecturer(h)
     room = make_classroom(h)
+    a = make_course(h, dep)
+    b = make_course(h, dep)
 
-    x1 = make_exam(h, make_course(h, dep)["id"], lec["id"],
-                   classroom_ids=[room["id"]]).json()["exam"]
-    x2 = make_exam(h, make_course(h, dep)["id"], lec["id"],
-                   classroom_ids=[room["id"]], exam_type="FINAL").json()["exam"]
+    r = client.post("/schedule-drafts", json={
+        "department_id": dep["id"], "year": 2, "semester": "FALL", "kind": "EXAM",
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    draft = r.json()
 
-    r = client.post("/exams/submit", json={"exam_ids": [x1["id"], x2["id"]]}, headers=h)
+    # Aynı derslik, aynı gün-saat, farklı ders → E1 (HARD)
+    for course, tip in ((a, "MIDTERM"), (b, "FINAL")):
+        r = client.post(f"/schedule-drafts/{draft['id']}/exams", json={
+            "course_id": course["id"], "exam_type": tip,
+            "exam_date": "2026-11-12", "start_time": "10:00",
+            "duration_minutes": 90, "classroom_ids": [room["id"]],
+            "lecturer_id": lec["id"],
+        }, headers=h)
+        assert r.status_code == 201, r.text
+
+    r = client.post(f"/schedule-drafts/{draft['id']}/submit", json={}, headers=h)
     assert r.status_code == 409, r.text
     assert "E1" in rule_ids(r.json()["conflicts"])
 

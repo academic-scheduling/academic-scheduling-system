@@ -27,7 +27,6 @@ from app.models import (
     Course,
     CourseSection,
     Department,
-    EntryStatus,
     Exam,
     ExamType,
     Lecturer,
@@ -215,26 +214,6 @@ def test_slot_overflow_rejected(session):
         section_id=sec.id, day_of_week=1, start_slot=8, slot_count=3
     )
     session.add(wse)
-    with pytest.raises(IntegrityError):
-        session.flush()
-
-
-def test_exam_submitted_requires_timestamp(session):
-    """K-03 tutarlilik CHECK'i: SUBMITTED ise submitted_at dolu olmali.
-
-    K-59: haftalik yerlesimde status/submitted_at kolonlari DUSTU (yayin/taslak
-    ayrimi artik `draft_id`'de). Kisit SINAVLARDA duruyor -- sinav fazi ayri
-    (K-16) ve orada K-03 modeli aynen gecerli.
-    """
-    _, dep, lec, _, _ = make_base(session)
-    course = make_course(session, dep, code="CE106")
-    exam = Exam(
-        course_id=course.id, exam_type=ExamType.FINAL,
-        exam_date=date(2026, 9, 14), start_time=time(10, 0),
-        duration_minutes=90, lecturer_id=lec.id,
-        status=EntryStatus.SUBMITTED, submitted_at=None,
-    )
-    session.add(exam)
     with pytest.raises(IntegrityError):
         session.flush()
 

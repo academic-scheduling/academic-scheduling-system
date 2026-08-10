@@ -52,7 +52,7 @@ from app.conflict_service import scan_workgroup
 from app.db import SessionLocal, engine
 from app.models import (
     Building, Classroom, Course, CourseSection, Department,
-    DepartmentMembership, DeliveryMode, EntryStatus, Exam, ExamType, Lecturer,
+    DepartmentMembership, DeliveryMode, Exam, ExamType, Lecturer,
     SemesterType, SessionType, Slot, User, UserRole, UserStatus,
     WeeklyScheduleEntry, Workgroup,
 )
@@ -82,8 +82,6 @@ TABLES = (
 # Sınavlar MIDTERM olmak ZORUNDA: K-41 gereği X kuralları yalnız vizede çalışır.
 PZT, SAL, CAR, PER, CUM = (date(2026, 4, d) for d in (13, 14, 15, 16, 17))
 
-# SUBMITTED kayıtların submitted_at damgası (DB kısıtı zorunlu kılıyor).
-SIMDI = datetime.now(timezone.utc)
 
 # Seed'in sözleşmesi: tam tarama bu kural kümesini üretmeli. Ne eksik ne fazla.
 # Fazlası da hatadır — istenmeyen bir çakışma sızdıysa veri kurgusu bozulmuş
@@ -387,8 +385,8 @@ def seed():
         x = Exam(id=next_id(Exam), course_id=dersi.id, exam_type=ExamType.MIDTERM,
                  exam_date=tarih, start_time=saat, duration_minutes=sure,
                  lecturer_id=hoca_.id,
-                 # Sınavlarda status/submitted_at DURUYOR (K-16, sınav fazı ayrı);
-                 # seed taslak sınav üretir → submitted_at boş.
+                 # K-60: sınavda da status/submitted_at KALKTI. draft_id NULL
+                 # (varsayılan) = yayında; seed doğrudan yayın üretir.
                  created_by=admin.id)
         x.classrooms = derslikler
         db.add(x)

@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 10 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-60: sınav onay akışı tasarlandı, uygulanmadı)
+**Son güncelleme:** 11 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-60: sınav onay akışı tamamlandı — yayına yazan tek yol onay)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -2014,9 +2014,42 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
      15:30'a döndü, 11 sınav yerinde. Geliştirme veritabanında kalan tek iz
      değişiklik akışındaki iki kayıt (K-59 gereği onaylanmış taslak silinmez,
      geçmiş kaydıdır).
-7. ○ Temizlik: `/exams/submit` ve `/exams/{id}/revert-to-draft` kaldırılır;
-   `Exam.status`, `submitted_at`, CHECK ve `idx_exams_status` düşürülür;
-   kullananı kalmadıysa `entry_status` tipi de düşer.
+7. ✅ Temizlik + eski uçların kapatılması. `c4a70f2d9e83`; up/down/up elle
+   doğrulandı, 570 test yeşil, `tsc --noEmit` temiz.
+   - **Kaldırılan uç listesi plandakinden GENİŞ.** Plan yalnız
+     `/exams/submit` ve `/exams/{id}/revert-to-draft` diyordu; ama
+     `POST/PATCH/DELETE /exams` de kaldırıldı. Onları bırakmak, K-59'un
+     haftalıkta kapattığı bypass'ı sınavda açık bırakmak olurdu:
+     `can_manage_exams` yetkisi olan biri onları çağırarak onay adımını
+     tümden atlayıp doğrudan yayına yazabilirdi. `GET /exams` kaldı.
+     Ölçüm: `POST /exams → 405`, `PATCH/DELETE /exams/{id} → 404`,
+     `/exams/submit → 404`, `/exams/{id}/revert-to-draft → 404`,
+     `GET /exams → 200`.
+   - `Exam.status`, `submitted_at`, tutarlılık CHECK'i ve `idx_exams_status`
+     düştü. **`entry_status` TİPİ de düştü** — kullananı kalmadığı ölçüldü
+     (haftalık onu K-59'da, sınav burada bıraktı). Kontrattan `ExamOut.status`
+     ve frontend'den `EntryStatus` kalktı.
+   - **Veri silinmedi.** K-59'un dersi burada da geçerli: gerçek veride her
+     sınav `DRAFT` yazılmış, `status`'e bakıp satır silmek yayındaki takvimin
+     tamamını silerdi. Kolonu düşürmek zaten doğru sonucu veriyor. Ölçüm:
+     11 yayın sınavı, 19 yayın haftalık satırı yerinde.
+   - **`require_weekly_manager` ve `require_exam_manager` bağımlılıkları da
+     kalktı** (ilki K-59'dan beri ölüydü, fark edilmemişti). İkisi de "yayına
+     yazma" kapısıydı; yayına yazan uç kalmayınca karşılıkları da kalmadı.
+     Bayrakların kendisi duruyor ve hâlâ aranıyor — ama onaya gönderme
+     kapısında, taslağın türüne göre.
+   - **`test_wp4_exams.py` dönüştürüldü** (K-59'daki `test_wp3_weekly.py`
+     dönüşümünün aynısı): doğrulama kuralları — hafta sonu yasağı, E2
+     ön-kontrolü, K-46 sıra normalizasyonu, çapraz-FK izolasyonu, derslik
+     listesinin tam değişimi — aynı gövdeyle taslak ucuna taşındı. Yaşam
+     döngüsü testleri `test_k60_*`'e devredildi. `tests/helpers.publish_exam`
+     eklendi (`publish_weekly`'nin ikizi); wp2/wp5/wp6 testleri ona bağlandı.
+   - **Bulunan tutarsızlık:** `midterm_count` düşürme engeli taslaktaki
+     kopyaları da sayıyordu — yani birinin özel denemesi başkasının ders
+     düzenlemesini bloklayabiliyordu. K-59'un "özel taslak kimseyi engellemez"
+     kuralı gereği yayına daraltıldı; bayat kalan taslak sahibinin sorunudur.
+   - Tarayıcı: her iki ekran da (haftalık + sınav) yayın modunda sağlam,
+     değişiklik akışı tür rozetleriyle çalışıyor, tüm istekler 200.
 
 **Açık uçlar (bu fazda değil):**
 - **Bildirim merkezi** ve **export'un yalnız yayını basması** — K-59'dan

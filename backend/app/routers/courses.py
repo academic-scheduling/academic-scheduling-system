@@ -309,8 +309,14 @@ def update_course(
     # yoksa yüksek sıralı vize "kapsam dışı" kalır (aynı deseni K-27/K-32'de
     # olduğu gibi engelliyoruz). Önce ilgili vizeler silinsin.
     if "midterm_count" in data and data["midterm_count"] < course.midterm_count:
+        # K-60: yalnız YAYINDAKİ vizeler sayılır. Taslaktaki kopya BAŞKASININ
+        # özel denemesidir; onun yüzünden ders düzenlemesini bloklamak, K-59'un
+        # "birinin özel taslağı kimseyi engellemez" kuralını çiğnerdi. Bayat
+        # kalan taslak sahibinin sorunudur ve o taslağı bir dahaki düzenleyişinde
+        # görünür (aynı tolerans K-59'da online/saat değişikliği için kabul edildi).
         over = db.query(Exam).filter(
             Exam.course_id == course.id,
+            Exam.draft_id.is_(None),
             Exam.exam_type == ExamType.MIDTERM,
             Exam.exam_index > data["midterm_count"],
         ).count()

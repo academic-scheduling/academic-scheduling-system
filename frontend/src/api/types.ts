@@ -155,8 +155,9 @@ export const SEMESTER_LABELS: Record<SemesterType, string> = {
 
 export type SessionType = "THEORY" | "PRACTICE" | "LAB";
 export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
-/** K-59: yalnız SINAVLARDA kullanılır — haftalık yerleşimde status kalmadı. */
-export type EntryStatus = "DRAFT" | "SUBMITTED";
+/* K-60: `EntryStatus` KALKTI. Satırın "yayında mı" cevabı artık tek bir
+   gerçekten okunur (`draft_id IS NULL`) ve istemciye ayrıca söylenmez —
+   hangi uçtan geldiği zaten söylüyor. */
 
 /** Kontrat §7 · GET /weekly-entries elemanı */
 export type WeeklyEntry = {
@@ -208,7 +209,6 @@ export type Exam = {
   /** Türetilir: dersin aktif şubelerinin expected_students toplamı (K-16) */
   total_expected_students: number;
   notes: string | null;
-  status: EntryStatus;
 };
 
 /** POST/PATCH cevabı: conflicts dolu olsa bile kayıt BAŞARILIDIR (K-03). */

@@ -25,7 +25,7 @@ from app.db import SessionLocal, engine
 from app.models import (
     Exam, ExamType,
     Building, Classroom, Course, CourseSection, Department, DepartmentMembership,
-    DeliveryMode, EntryStatus, Lecturer, SemesterType, SessionType, Slot, User,
+    DeliveryMode, Lecturer, SemesterType, SessionType, Slot, User,
     UserRole, UserStatus, WeeklyScheduleEntry, Workgroup,
 )
 from app.normalize import normalize_lecturer_name

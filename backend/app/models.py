@@ -90,20 +90,17 @@ class ExamType(str, enum.Enum):
     MAKEUP = "MAKEUP"
 
 
-class EntryStatus(str, enum.Enum):
-    """entry_status — DRAFT/SUBMITTED yasam dongusu (K-03)."""
-
-    DRAFT = "DRAFT"
-    SUBMITTED = "SUBMITTED"
+# K-03'un `EntryStatus` (DRAFT/SUBMITTED) tipi BURADAN KALKTI. Haftalik onu
+# K-59'da, sinav K-60'ta biraktı; kullanani kalmayinca tip de dustu. Satirin
+# "yayinda mi" sorusunu artik tek bir gercek cevapliyor: `draft_id IS NULL`.
 
 
 class DraftStatus(str, enum.Enum):
     """draft_status — cohort taslaginin yasam dongusu (K-59).
 
-    EntryStatus'un yerini ALMAZ; farkli bir seviyede durur. EntryStatus tek
-    satirin durumuydu, bu bir TASLAGIN durumu. Haftalik satirin durumu artik
-    `draft_id`'den okunur (NULL = yayinda); EntryStatus yalniz sinavlarda
-    kalir (sinav fazi ayri, K-16 gerekcesiyle).
+    Yerini aldigi sey K-03'un satir durumu DEGILDIR; farkli bir seviyede durur.
+    O tek SATIRIN durumuydu, bu bir TASLAGIN durumu. Satirin durumu artik
+    `draft_id`'den okunur (NULL = yayinda).
     """
 
     OPEN = "OPEN"           # sahibi duzenliyor
@@ -820,8 +817,7 @@ class WeeklyScheduleEntry(Base):
 
     K-59: satirin "yayinda mi" sorusunu `draft_id` cevaplar (NULL = yayinda).
     Eski `status`/`submitted_at` kolonlari DUSTU — ayni gercegi soyleyen iki
-    kolon er gec birbiriyle celisirdi. `EntryStatus` tipi yalniz SINAVLARDA
-    kalmaya devam ediyor (sinav fazi ayri, K-16).
+    kolon er gec birbiriyle celisirdi. (K-60'ta sinav da ayni yola girdi.)
     """
 
     __tablename__ = "weekly_schedule_entries"
@@ -938,19 +934,15 @@ class Exam(Base):
             "EXTRACT(ISODOW FROM exam_date) BETWEEN 1 AND 5",
             name="ck_exams_weekday_only",
         ),
-        CheckConstraint(
-            "(status = 'SUBMITTED') = (submitted_at IS NOT NULL)",
-            name="ck_exams_status_submitted_consistency",
-        ),
         Index("idx_exams_date", "exam_date"),
-        Index("idx_exams_status", "status"),
         # Her sorgu ya yayini (draft_id IS NULL) ya tek bir taslagi suzecek.
         Index("idx_exams_draft", "draft_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     # K-60: NULL = YAYINDA. Dolu = o taslagin ozel kopyasi. Haftalikla ayni
-    # tek-gercek kurali; `status` bu fazin sonunda dusecek.
+    # tek-gercek kurali — eski `status`/`submitted_at` kolonlari ve tutarlilik
+    # CHECK'i DUSTU; ayni gercegi soyleyen iki kolon er gec celisirdi.
     # CASCADE: taslak silinince kopyalari da gider (yayina hicbir etkisi yok).
     draft_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("schedule_drafts.id", ondelete="CASCADE")
@@ -970,10 +962,6 @@ class Exam(Base):
         BigInteger, ForeignKey("lecturers.id", ondelete="RESTRICT")
     )
     notes: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[EntryStatus] = mapped_column(
-        Enum(EntryStatus, name="entry_status"), server_default=text("'DRAFT'")
-    )
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )

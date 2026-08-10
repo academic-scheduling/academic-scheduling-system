@@ -441,21 +441,6 @@ def check_exams_save(
     return [r for r in results if _involves(r, {("exam", exam.id)})]
 
 
-def check_exams_submit(db: Session, exams_to_submit: list[Exam]) -> list[dict]:
-    """Submit kumesinin kontrolu. HARD -> router 409 (hep-veya-hic)."""
-    if not exams_to_submit:
-        return []
-    wg = _wg_of_exam(exams_to_submit[0])
-    exams = _exam_universe(db, wg)
-    weeklies = _weekly_universe(db, wg)
-
-    results = scan_exams(exams)
-    results += scan_cross(exams, weeklies, _cross_flag(db, wg))
-
-    wanted = {("exam", x.id) for x in exams_to_submit}
-    return [r for r in results if _involves(r, wanted)]
-
-
 # ==================================================================
 # Seam: tam tarama (kontrat §9 + §10 sayaclari)
 # ==================================================================

@@ -1,6 +1,8 @@
 """WP2 CRUD testleri — dersler + şubeler (K-14 iç içe yapı, üyelik yetkisi)."""
 
-from tests.helpers import client, admin_headers, foreign_admin_headers, sub_headers, _u
+from tests.helpers import (
+    client, admin_headers, foreign_admin_headers, publish_exam, sub_headers, _u,
+)
 
 
 def make_department(h):
@@ -236,12 +238,8 @@ def test_delete_course_blocked_by_exam_without_section():
     dep = make_department(h)
     course = make_course(h, dep)
     lec = make_lecturer(h)
-    r = client.post("/exams", json={
-        "course_id": course["id"], "exam_type": "MIDTERM", "exam_date": "2026-11-12",
-        "start_time": "10:00", "duration_minutes": 90, "classroom_ids": [],
-        "lecturer_id": lec["id"],
-    }, headers=h)
-    assert r.status_code == 201, r.text
+    # K-60: eski `POST /exams` kalktı; engelin konusu YAYINDAKİ sınav.
+    publish_exam(course["id"], lec["id"])
 
     r = client.delete(f"/courses/{course['id']}", headers=h)
     assert r.status_code == 409

@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
-from app.models import EntryStatus, ExamType, DeliveryMode, SessionType, RoomType
+from app.models import ExamType, DeliveryMode, SessionType, RoomType
 from app.models import DraftKind, DraftStatus
 
 class LoginRequest(BaseModel):
@@ -470,21 +470,15 @@ class ExamOut(BaseModel):
     lecturer: LecturerOut
     total_expected_students: int              # türetilir: aktif şubelerin toplamı (K-16)
     notes: str | None
-    status: EntryStatus
+    # K-60: `status` KALKTI. Satırın "yayında mı" cevabı artık `draft_id`'den
+    # okunur ve istemciye ayrıca söylenmesi gerekmez — hangi uçtan geldiği
+    # zaten söylüyor (`/exams` yayın, `/schedule-drafts/{id}/exams` taslak).
     model_config = ConfigDict(from_attributes=True)
 
 class ExamSaveResponse(BaseModel):
     """POST/PATCH cevabı: conflicts dolu olsa bile kayıt başarılıdır (K-03)."""
     exam: ExamOut
     conflicts: list[ConflictResultOut]
-
-class ExamSubmitRequest(BaseModel):
-    exam_ids: list[int] = Field(min_length=1)
-
-class ExamSubmitResponse(BaseModel):
-    submitted: list[int]
-    warnings: list[ConflictResultOut]
-
 
 # --- Haftalık Program (WP3, K-03/K-14/K-19/K-20) ---
 

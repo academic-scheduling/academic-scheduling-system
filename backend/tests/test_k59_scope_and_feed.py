@@ -190,3 +190,60 @@ def test_pending_and_rejected_drafts_are_not_in_the_feed():
         assert db.get(ScheduleDraft, draft["id"]).status == DraftStatus.PENDING
     finally:
         db.close()
+
+
+# ------------------------------------------------------------------
+# Mükerrer yerleşim koruması
+# ------------------------------------------------------------------
+
+def test_exact_duplicate_placement_is_rejected():
+    """Gerçek veride görülen hata: aynı şubenin aynı gün/saatte iki özdeş
+    satırı. Bir şubenin öğrencileri tek gruptur, aynı anda iki yerde olamaz."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    draft = create_draft(h, dep["id"], year=1)
+
+    ilk = yerlestir(h, draft["id"], sec["id"], cls["id"], day=5, slot=1)
+    assert ilk.status_code == 201, ilk.text
+
+    ikinci = yerlestir(h, draft["id"], sec["id"], cls["id"], day=5, slot=1)
+    assert ikinci.status_code == 409, ikinci.text
+    assert "zaten var" in ikinci.json()["detail"]
+
+
+def test_moving_onto_an_identical_placement_is_rejected():
+    """Taşıma da mükerrer üretebilir: bir satırı ötekinin tam üstüne bırakmak."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    draft = create_draft(h, dep["id"], year=1)
+    a = yerlestir(h, draft["id"], sec["id"], cls["id"], day=5, slot=1).json()
+    b = yerlestir(h, draft["id"], sec["id"], cls["id"], day=5, slot=4).json()
+
+    r = client.patch(f"/schedule-drafts/{draft['id']}/entries/{b['entry']['id']}",
+                     json={"start_slot": 1}, headers=h)
+    assert r.status_code == 409, r.text
+    assert a["entry"]["id"] != b["entry"]["id"]
+
+
+def test_overlapping_but_different_placement_is_still_allowed():
+    """Kapsam DAR tutuldu: üst üste binen ama özdeş OLMAYAN yerleşim
+    engellenmez — W5 uyarısı olarak bildirilmeye devam eder (K-03/K-05)."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    draft = create_draft(h, dep["id"], year=1)
+    # İlk oturum 1-2. slotları kaplar
+    ilk = client.post(f"/schedule-drafts/{draft['id']}/entries", json={
+        "section_id": sec["id"], "classroom_id": cls["id"],
+        "day_of_week": 5, "start_slot": 1, "slot_count": 2,
+        "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
+    }, headers=h)
+    assert ilk.status_code == 201, ilk.text
+
+    # İkincisi 2. slotta başlar: ÜST ÜSTE BİNİYOR ama özdeş değil
+    r = client.post(f"/schedule-drafts/{draft['id']}/entries", json={
+        "section_id": sec["id"], "classroom_id": cls["id"],
+        "day_of_week": 5, "start_slot": 2, "slot_count": 1,
+        "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
+    }, headers=h)
+    assert r.status_code == 201, r.text          # engellenmez
+    assert any(c["rule_id"] == "W5" for c in r.json()["conflicts"]), r.json()["conflicts"]

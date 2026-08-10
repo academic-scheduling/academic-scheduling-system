@@ -63,9 +63,14 @@ type Cluster = {
   lanes: number;
 };
 
-/** Sürüklenen şey: paletten YENİ giriş mi, yoksa var olan girişin TAŞINMASI mı. */
+/** Sürüklenen şey: paletten YENİ giriş mi, yoksa var olan girişin TAŞINMASI mı.
+ *
+ *  Palet artık ŞUBE değil DERS taşır: servis derslerinin 7-8 şubesi listeyi
+ *  şişiriyor ve "hangi şubeyi sürüklüyorum" kararı, daha yeri bile seçilmeden
+ *  verilmek zorunda kalıyordu. Şube, bırakma anında sorulur (tek şube varsa
+ *  soru sorulmaz). */
 type Drag =
-  | { kind: "new"; sectionId: number; label: string }
+  | { kind: "new"; courseId: number; label: string }
   | { kind: "move"; entry: WeeklyEntry };
 
 type ViewMode = "cohort" | "classroom" | "lecturer";
@@ -204,8 +209,10 @@ export default function WeeklyPage() {
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const [over, setOver] = useState<string | null>(null);           // "day-slot"
-  // Palette üzerinde gezinilen şube: gridde o şubenin kartları vurgulanır.
-  const [hoverSection, setHoverSection] = useState<number | null>(null);
+  // Palette üzerinde gezinilen DERS: gridde o dersin (tüm şubelerinin)
+  // kartları vurgulanır — ders haftada nereye düşüyor, listeden ayrılmadan
+  // görülsün.
+  const [hoverCourse, setHoverCourse] = useState<number | null>(null);
   // Çakışma Raporu'ndan gelen derin bağlantı vurgusu ID'leri (hedef bulunduğunda başlar, 3.5s kalır)
   const [deepHighlightIds, setDeepHighlightIds] = useState<number[]>([]);
   // Çakışma Raporu'ndan gelindiğinde üstte gösterilecek çakışan dersler bilgi kutusu
@@ -694,7 +701,7 @@ export default function WeeklyPage() {
    *  Sıralama: önce yerleşimi EKSİK olanlar (yapılacak iş), sonra tamamlananlar;
    *  her grup kendi içinde ders koduna, aynı derste şube numarasına göre. */
   type PaletteRow =
-    | { kind: "section"; course: Course; section: CourseSection; done: boolean }
+    | { kind: "course"; course: Course; sections: CourseSection[]; done: boolean }
     | { kind: "empty"; course: Course };
   const paletteItems = useMemo<PaletteRow[]>(() => {
     const q = paletteSearch.trim().toLocaleLowerCase("tr");
@@ -709,27 +716,26 @@ export default function WeeklyPage() {
     // "önce şube ekleyin" uyarısı verilir.
     const rows: PaletteRow[] = [];
     for (const c of courses) {
-      if (c.sections.length === 0) {
+      const subeler = c.sections.filter((s) => s.active);
+      if (subeler.length === 0) {
         rows.push({ kind: "empty", course: c });
       } else {
-        for (const s of c.sections) rows.push({ kind: "section", course: c, section: s, done: tamam(c, s.id) });
+        // Ders "tamam" ise TÜM şubelerinin T/U/L yerleşimi bitmiştir. Şube
+        // başına satır olmadığı için ilerleme ders düzeyinde özetlenir.
+        rows.push({
+          kind: "course", course: c, sections: subeler,
+          done: subeler.every((s) => tamam(c, s.id)),
+        });
       }
     }
     return rows
-      .filter((r) => {
-        if (!q) return true;
-        const hay = r.kind === "section"
-          ? `${r.course.code}-${r.section.section_no} ${r.course.name}`
-          : `${r.course.code} ${r.course.name}`;
-        return hay.toLocaleLowerCase("tr").includes(q);
-      })
+      .filter((r) => !q || `${r.course.code} ${r.course.name}`
+        .toLocaleLowerCase("tr").includes(q))
       .sort((a, b) => {
         // Şubesiz ders "yapılacak iş"tir → tamamlanmamışlarla birlikte üstte.
-        const aDone = a.kind === "section" ? Number(a.done) : 0;
-        const bDone = b.kind === "section" ? Number(b.done) : 0;
-        const aNo = a.kind === "section" ? a.section.section_no : 0;
-        const bNo = b.kind === "section" ? b.section.section_no : 0;
-        return aDone - bDone || a.course.code.localeCompare(b.course.code, "tr") || aNo - bNo;
+        const aDone = a.kind === "course" ? Number(a.done) : 0;
+        const bDone = b.kind === "course" ? Number(b.done) : 0;
+        return aDone - bDone || a.course.code.localeCompare(b.course.code, "tr");
       });
   }, [courses, paletteSearch, placedBySection]);
 
@@ -892,25 +898,34 @@ export default function WeeklyPage() {
                 <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
               </Paper>
             ) : (
-              <Paper key={r.section.id} p="xs" radius="sm"
+              <Paper key={r.course.id} p="xs" radius="sm"
                 draggable={canWrite}
                 onDragStart={(ev) => {
                   ev.dataTransfer.effectAllowed = "copy";
-                  ev.dataTransfer.setData("text/plain", String(r.section.id));
-                  setDrag({ kind: "new", sectionId: r.section.id, label: `${r.course.code}-${r.section.section_no}` });
+                  ev.dataTransfer.setData("text/plain", String(r.course.id));
+                  setDrag({ kind: "new", courseId: r.course.id, label: r.course.code });
                 }}
                 onDragEnd={() => setDrag(null)}
-                // Üzerine gelince gridde bu şubenin kartları vurgulanır: dersin
-                // haftada NEREYE düştüğü listeden ayrılmadan görülür.
-                onMouseEnter={() => setHoverSection(r.section.id)}
-                onMouseLeave={() => setHoverSection(null)}
-                style={{ ...paletteItemStyle(hoverSection === r.section.id),
+                // Üzerine gelince gridde bu DERSİN (tüm şubelerinin) kartları
+                // vurgulanır: ders haftada NEREYE düşüyor, listeden ayrılmadan.
+                onMouseEnter={() => setHoverCourse(r.course.id)}
+                onMouseLeave={() => setHoverCourse(null)}
+                style={{ ...paletteItemStyle(hoverCourse === r.course.id),
                          cursor: canWrite ? "grab" : "default", flexShrink: 0 }}>
                 <Group gap={6} wrap="nowrap" align="center">
                   <Text fz={12} fw={600}
                     style={{ color: r.done ? TEXT_MUTED : TEXT_STRONG }}>
-                    {r.course.code}-{r.section.section_no}
+                    {r.course.code}
                   </Text>
+                  {/* Şube sayısı bilgi olarak durur; hangisi olduğu bırakma
+                      anında sorulur. Tek şubede rozet gereksiz gürültü. */}
+                  {r.sections.length > 1 && (
+                    <Badge size="xs" variant="default" radius="sm"
+                      style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
+                               color: TEXT_MUTED, borderColor: BORDER }}>
+                      {r.sections.length} şube
+                    </Badge>
+                  )}
                   {r.course.is_elective && (
                     <Badge size="xs" variant="default" radius="sm"
                       style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
@@ -1057,7 +1072,7 @@ export default function WeeklyPage() {
                     {dayClusters.map((c) => (
                       <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
-                        highlight={hoverSection != null && c.entries.some((x) => x.section.id === hoverSection)}
+                        highlight={hoverCourse != null && c.entries.some((x) => x.section.course.id === hoverCourse)}
                         deepHighlight={deepHighlightIds.some((id) => c.entries.some((x) => x.id === id))}
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
@@ -1179,25 +1194,45 @@ export default function WeeklyPage() {
         )}
       </Paper>
 
-      {placing && (
+      {placing && (() => {
+        // Bırakılan ders belliyse şubeleri ONUN şubeleridir; tek şubeliyse hiç
+        // sorulmaz. Boş slota tıklanarak gelindiyse tüm cohort'un şubeleri.
+        const yeni = placing.drag?.kind === "new" ? placing.drag : undefined;
+        const birakilan = yeni
+          ? courses.find((c) => c.id === yeni.courseId)
+          : undefined;
+        const adaylar = birakilan
+          ? birakilan.sections.filter((s) => s.active)
+          : null;
+        const tekSube = adaylar && adaylar.length === 1 ? adaylar[0].id : undefined;
+        const secenekler = adaylar
+          ? (tekSube ? undefined : adaylar.map((s) => ({
+              value: String(s.id),
+              label: `Şube ${s.section_no} — ${lecturerLabel(s.lecturer)}`
+                     + ` · ${s.expected_students} öğrenci`,
+            })))
+          : paletteItems.flatMap((r) => r.kind === "course"
+              ? r.sections.map((s) => ({
+                  value: String(s.id),
+                  label: `${r.course.code}-${s.section_no} — ${r.course.name}`,
+                }))
+              : []);
+        return (
         <EntryModal
-          title={placing.drag?.kind === "new"
-            ? `${placing.drag.label} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
+          title={birakilan
+            ? `${birakilan.code} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
             : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
-          // Sürükleyerek gelindiyse ders bellidir (id modala verilir ki online
-          // bileşenini bilsin); boş slota tıklanarak gelindiyse modal dersi sorar.
-          fixedSectionId={placing.drag?.kind === "new" ? placing.drag.sectionId : undefined}
-          sections={placing.drag?.kind === "new" ? undefined
-            : paletteItems.flatMap((r) => r.kind === "section"
-              ? [{ value: String(r.section.id), label: `${r.course.code}-${r.section.section_no} — ${r.course.name}` }]
-              : [])}
+          // Tek şubeli derste şube bellidir (modal yalnız online bileşenini
+          // bilmek için alır); çok şubelide modal ŞUBEYİ sorar.
+          fixedSectionId={tekSube}
+          sections={secenekler}
           onClose={() => setPlacing(null)}
           onSubmit={async (body) => {
             const res = await api.post<{ entry: WeeklyEntry; conflicts: ConflictResult[] }>(
               `/${writeBase}`, {
-                section_id: placing.drag?.kind === "new" ? placing.drag.sectionId : body.section_id,
+                section_id: tekSube ?? body.section_id,
                 day_of_week: placing.day, start_slot: placing.slot, ...body,
               });
             // Geri al = eklenen girişi sil.
@@ -1210,7 +1245,8 @@ export default function WeeklyPage() {
           }}
           onDone={(conflicts) => { setPlacing(null); reload(); refreshDraft(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
         />
-      )}
+        );
+      })()}
 
       {group && (
         <GroupModal cluster={group} canWrite={canWrite} onClose={() => setGroup(null)}

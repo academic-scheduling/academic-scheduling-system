@@ -127,6 +127,38 @@ def _ensure_section_in_cohort(
         )
 
 
+def _ensure_not_duplicate(
+    db: Session, draft: ScheduleDraft, section_id: int, day: int, slot: int,
+    session_type, exclude_id: int | None = None,
+) -> None:
+    """BIREBIR ayni yerlesim iki kez girilemez (K-59 eki).
+
+    Ayni sube + ayni gun + ayni baslangic slotu + ayni oturum turu; yani
+    "ayni satiri iki kez ekledim" durumu. Bu hicbir zaman kasitli degildir:
+    bir subenin ogrencileri tek gruptur, ayni anda iki yerde olamaz.
+
+    KAPSAM BILEREK DAR: yalniz TAM ayni yerlesim engellenir. Ust uste BINEN
+    ama ayni olmayan yerlesimler (or. 1. slotta 2 saatlik ve 2. slotta 1
+    saatlik) W5 kuraliyla UYARI olarak bildirilmeye devam eder — K-03/K-05'in
+    "uyar ama engelleme" cizgisi burada degistirilmiyor. Gercek veride goruleni
+    (ISG 1801 Sube 1, Cuma 1. slot, iki ozdes satir) durduran budur.
+    """
+    q = db.query(WeeklyScheduleEntry).filter(
+        WeeklyScheduleEntry.draft_id == draft.id,
+        WeeklyScheduleEntry.section_id == section_id,
+        WeeklyScheduleEntry.day_of_week == day,
+        WeeklyScheduleEntry.start_slot == slot,
+        WeeklyScheduleEntry.session_type == session_type,
+    )
+    if exclude_id is not None:
+        q = q.filter(WeeklyScheduleEntry.id != exclude_id)
+    if q.first() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu şubenin aynı gün ve saatte aynı türde bir oturumu zaten var",
+        )
+
+
 def _get_draft_entry(db: Session, draft: ScheduleDraft, entry_id: int) -> WeeklyScheduleEntry:
     entry = (
         db.query(WeeklyScheduleEntry)
@@ -375,6 +407,8 @@ def create_draft_entry(
     _validate_classroom(db, user, payload.classroom_id)
     _ensure_slot_window(payload.start_slot, payload.slot_count)
     _ensure_online_has_no_classroom(payload.delivery_mode, payload.classroom_id)
+    _ensure_not_duplicate(db, draft, payload.section_id, payload.day_of_week,
+                          payload.start_slot, payload.session_type)
 
     entry = WeeklyScheduleEntry(draft_id=draft.id, created_by=user.id,
                                 **payload.model_dump())
@@ -412,6 +446,14 @@ def update_draft_entry(
     _ensure_online_has_no_classroom(
         data.get("delivery_mode", entry.delivery_mode),
         data.get("classroom_id", entry.classroom_id),
+    )
+    # Tasima da mukerrer uretebilir: bir satiri otekinin tam ustune birakmak.
+    _ensure_not_duplicate(
+        db, draft, entry.section_id,
+        data.get("day_of_week", entry.day_of_week),
+        data.get("start_slot", entry.start_slot),
+        data.get("session_type", entry.session_type),
+        exclude_id=entry.id,
     )
 
     ozet = build_change_summary(entry, data)

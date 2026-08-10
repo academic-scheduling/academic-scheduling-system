@@ -1658,6 +1658,28 @@ YERLEŞTİREMİYOR.
    (Kasıtlı olarak ertelendi: bu uçları şimdi kaldırmak `test_wp3_weekly.py`'yi
    toptan yeniden yazmayı gerektiriyor ve ağacı fazlar boyunca kırık bırakırdı.)
 
+**Ek · Palet ders düzeyine geçti + mükerrer yerleşim koruması [E]**
+**Belirti (kullanıcı):** "Cuma günü aynı saatte aynı yerde Şube 1'den birkaç
+ISG 1801 dersi var." Ölçüm: yayında ISG 1801 Şube 1 için Cuma 1. slotta
+**iki özdeş satır**; motorun W5 kuralı bunu görüyor ama **WARNING** olarak
+bildiriyor (K-03/K-05'in "uyar, engelleme" çizgisi).
+
+- **Palet artık ŞUBE değil DERS taşır.** Servis derslerinin 7-8 şubesi listeyi
+  şişiriyor ve "hangi şubeyi sürüklüyorum" kararı, daha yeri seçilmeden
+  verilmek zorunda kalıyordu. Şube **bırakma anında** sorulur; tek şubeli
+  derste hiç sorulmaz. Palet kartında `N şube` rozeti + ders düzeyinde
+  tamamlanma işareti (tüm şubeleri bitmişse). Izgara vurgusu da şubeden
+  derse geçti.
+- **Ama asıl düzeltme bu DEĞİL.** Palet değişikliği mükerrer kaydı engellemez;
+  onu `_ensure_not_duplicate` engeller: aynı şube + aynı gün + aynı başlangıç
+  slotu + aynı oturum türü ikinci kez girilemez (409). Ekleme ve TAŞIMA
+  yollarının ikisinde de.
+- **Kapsam bilerek dar:** yalnız TAM özdeş yerleşim bloklanır. Üst üste binen
+  ama özdeş olmayan yerleşimler W5 uyarısı olarak kalır — "uyar ama engelleme"
+  kararı değiştirilmedi.
+- **Mevcut veri temizlenmedi:** yayındaki iki özdeş ISG satırı duruyor; bunlar
+  import/seed'den gelmiş, silinmesi kullanıcının kararı.
+
 **Açık uçlar (bu fazda değil):**
 - **Sınavlar.** K-16 gereği sınav ders düzeyindedir, cohort'a bağlanmaz; ortak
   dersin sınavı birçok cohort'a aittir. "Cohort taslağı" kavramı sınavda

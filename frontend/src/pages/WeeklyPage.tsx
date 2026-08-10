@@ -409,6 +409,46 @@ export default function WeeklyPage() {
   };
   useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter, draft?.id, draft?.status]);
 
+  /** Taslak açma TEK yer (K-59): hem çubuktaki "Taslak Aç" düğmesi hem de
+   *  ızgarada yayındaki bir karta dokunulduğunda çıkan "taslağa geçilsin mi?"
+   *  sorusu buraya iner. Açılan taslak o anki yayının kopyasıdır. */
+  const createDraft = async (): Promise<ScheduleDraft | null> => {
+    if (!dep || year === COMMON_YEAR) return null;
+    try {
+      const d = await api.post<ScheduleDraft>("/schedule-drafts", {
+        department_id: Number(dep), year: Number(year), semester: sem,
+      });
+      setDraft(d);
+      notifications.show({
+        color: "green",
+        message: `Taslak açıldı — yayındaki programın kopyası (${d.entry_count} yerleşim). `
+          + "Değişiklikleriniz yalnız size görünür, onaylanınca yayına geçer.",
+      });
+      return d;
+    } catch (e) {
+      notifications.show({
+        color: "red", message: e instanceof ApiError ? e.message : "Taslak açılamadı",
+      });
+      return null;
+    }
+  };
+
+  /** Yayın modunda bir karta dokunulduğunda sorulur (kullanıcı isteği):
+   *  "bu program yayında, taslağa geçilsin mi?" — evet derse taslak açılır ve
+   *  kullanıcı düzenlemeye kaldığı yerden devam eder. */
+  const askSwitchToDraft = () => {
+    if (!dep || year === COMMON_YEAR) return;
+    if (!window.confirm(
+      [
+        "Bu program YAYINDA ve doğrudan değiştirilemez.",
+        "",
+        "Yayındaki programın bir kopyasıyla taslak açılsın mı?",
+        "Değişiklikleriniz yalnız size görünür; onaylandığında yayına geçer.",
+      ].join("\n"),
+    )) return;
+    void createDraft();
+  };
+
   /** Taslak sayaçlarını (change_count) tazeler: ızgarada bir şey değiştiğinde
    *  çubuktaki "N değişiklik" yazısı da güncellenmeli. */
   const refreshDraft = () => {
@@ -445,6 +485,7 @@ export default function WeeklyPage() {
     const res = await popUndo();
     if (!res) return;
     reload();
+    refreshDraft();
     notifications.show({
       color: res.ok ? "gray" : "red",
       message: res.ok ? `Geri alındı: ${res.label}` : `${res.label} — ${res.message}`,
@@ -533,15 +574,14 @@ export default function WeeklyPage() {
       ...bolumler,
     ])).filter(Boolean);
     return window.confirm(
-      `${entry.section.course.code} ORTAK bir derstir.
-
-`
-      + `Bu dersi ${fiil}, onu alan diğer bölümlerin programını da etkiler:
-`
-      + `${hepsi.join(", ")}
-
-`
-      + "Devam edilsin mi? (Değişiklik onaylanana kadar yayına geçmez.)",
+      [
+        `${entry.section.course.code} ORTAK bir derstir.`,
+        "",
+        `Bu dersi ${fiil}, onu alan diğer bölümlerin programını da etkiler:`,
+        hepsi.join(", "),
+        "",
+        "Devam edilsin mi? (Değişiklik onaylanana kadar yayına geçmez.)",
+      ].join("\n"),
     );
   };
 
@@ -783,6 +823,7 @@ export default function WeeklyPage() {
           draft={draft}
           canSubmit={canSubmitDraft}
           onSelect={(d) => setDraft(d)}
+          onCreate={async () => { await createDraft(); }}
           onChanged={() => { reload(); refreshDraft(); }}
         />
       )}
@@ -811,7 +852,16 @@ export default function WeeklyPage() {
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
                                borderColor: BORDER, background: PAGE_SURFACE } }}
             placeholder="Ders ara" />
-          {!canWrite && <Text size="10px" c="dimmed" mb={6}>Yazma yetkiniz yok</Text>}
+          {/* K-59: artık yetki değil MOD meselesi — yayındaki programa kimse
+              doğrudan yazamaz, taslak açmaksa yetki istemez. Eski "Yazma
+              yetkiniz yok" metni yanlış sebep gösteriyordu. */}
+          {!canWrite && (
+            <Text size="10px" c="dimmed" mb={6}>
+              {view === "cohort"
+                ? "Yayındaki program salt-okunur — düzenlemek için taslak açın"
+                : "Bu mercek salt-okunur — düzenleme sınıf bakışında yapılır"}
+            </Text>
+          )}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
           <Stack gap={6}>
@@ -1007,6 +1057,7 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
+                        onRequestDraft={askSwitchToDraft}
                         onWarningClick={() => {
                           // Bu kartın girişlerini işaretle; aşağıda yalnız bu
                           // girişleri etkileyen çakışma satırları yanacak.
@@ -1152,7 +1203,7 @@ export default function WeeklyPage() {
             });
             return res;
           }}
-          onDone={(conflicts) => { setPlacing(null); reload(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
+          onDone={(conflicts) => { setPlacing(null); reload(); refreshDraft(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
         />
       )}
 
@@ -1194,7 +1245,7 @@ export default function WeeklyPage() {
             });
             return res;
           }}
-          onDone={(conflicts) => { setEditing(null); reload(); showConflicts(conflicts, "Giriş güncellendi"); }}
+          onDone={(conflicts) => { setEditing(null); reload(); refreshDraft(); showConflicts(conflicts, "Giriş güncellendi"); }}
         />
       )}
     </Stack>
@@ -1339,13 +1390,15 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onOpenGroup }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onOpenGroup, onRequestDraft }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
   lecturerName?: string; onWarningClick?: () => void;
   view: ViewMode; highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onOpenGroup: () => void;
+  /** Yayın modunda düzenlemeye kalkışılınca: "taslağa geçilsin mi?" */
+  onRequestDraft: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
@@ -1408,13 +1461,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
       onDragStart={(ev) => {
         if (!editable) {
           ev.preventDefault();
-          if (view === "cohort") {
-            notifications.show({
-              color: "orange",
-              title: "Yayındaki program salt-okunur",
-              message: "Değişiklik yapmak için yukarıdan bir taslak açın (K-59).",
-            });
-          }
+          if (view === "cohort") onRequestDraft();
           return;
         }
         ev.dataTransfer.effectAllowed = "move";
@@ -1430,11 +1477,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         } else if (editable) {
           onEdit(e);
         } else if (view === "cohort") {
-          notifications.show({
-            color: "orange",
-            title: "Yayındaki program salt-okunur",
-            message: "Değişiklik yapmak için yukarıdan bir taslak açın (K-59).",
-          });
+          onRequestDraft();
         }
       }}
       title={many

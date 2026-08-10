@@ -17,7 +17,9 @@ import type {
   ScheduleDraft, SemesterType,
 } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
-import { BORDER, CONTROL_H, SHADOW } from "../utils/scheduleTheme";
+import {
+  BORDER, CONTROL_H, DRAFT_BORDER, DRAFT_SURFACE, SHADOW,
+} from "../utils/scheduleTheme";
 
 /** Yerleşimin okunur konumu: "Çar 5 · A Blok 101". Fark tablosu bunu iki
  *  sütunda yan yana gösterir; boş taraf (ekleme/kaldırma) "—" olur. */
@@ -37,6 +39,9 @@ export type DraftBarProps = {
   draft: ScheduleDraft | null;
   /** Taslağı seç / yayına dön. */
   onSelect: (draft: ScheduleDraft | null) => void;
+  /** Taslak açma TEK yerde durur (WeeklyPage): ızgaradaki "yayında, taslağa
+   *  geçilsin mi?" sorusu da aynı işlevi çağırır. */
+  onCreate: () => Promise<void>;
   /** Taslak listesi + ızgara yeniden yüklensin. */
   onChanged: () => void;
   /** K-25: onaya göndermek `can_manage_weekly` + bölüm üyeliği ister.
@@ -45,7 +50,7 @@ export type DraftBarProps = {
 };
 
 export default function DraftBar({
-  departmentId, year, semester, draft, onSelect, onChanged, canSubmit,
+  departmentId, year, semester, draft, onSelect, onCreate, onChanged, canSubmit,
 }: DraftBarProps) {
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
@@ -63,21 +68,7 @@ export default function DraftBar({
   const acTaslak = async () => {
     if (!cohortHazir) return;
     setBusy(true);
-    try {
-      const d = await api.post<ScheduleDraft>("/schedule-drafts", {
-        department_id: departmentId, year, semester,
-      });
-      onSelect(d);
-      notifications.show({
-        color: "green",
-        message: `Taslak açıldı — yayındaki programın kopyası (${d.entry_count} yerleşim). `
-          + "Değişiklikler yalnız size görünür.",
-      });
-    } catch (e) {
-      hata(e, "Taslak açılamadı");
-    } finally {
-      setBusy(false);
-    }
+    try { await onCreate(); } finally { setBusy(false); }
   };
 
   const temizle = async (ortaklarDahil: boolean) => {
@@ -150,10 +141,12 @@ export default function DraftBar({
     <>
       <Paper radius="md" px="md" py={8}
         style={{
-          border: `1px solid ${BORDER}`, boxShadow: SHADOW,
           // Taslaktayken çubuk RENKLENİR: kullanıcının "şu an yayına mı
-          // yazıyorum" sorusunu hiç sormaması gerekir.
-          background: draft ? "#FFFBEB" : undefined,
+          // yazıyorum" sorusunu hiç sormaması gerekir. Ton iki temada ayrı
+          // (scheduleTheme) — koyu temada açık sarı ekranı yırtıyordu.
+          border: `1px solid ${draft ? DRAFT_BORDER : BORDER}`,
+          boxShadow: SHADOW,
+          background: draft ? DRAFT_SURFACE : undefined,
         }}>
         <Group justify="space-between" wrap="wrap" gap="sm">
           <Group gap={10} wrap="nowrap">

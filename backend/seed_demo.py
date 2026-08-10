@@ -323,6 +323,13 @@ def seed():
               can_manage_courses=True, can_manage_weekly=True,
               can_manage_exams=True, can_manage_classrooms=False)
 
+    # K-59: ONAY YETKILISI. Oz-onay YASAK (admin dahil), yani yukaridaki iki
+    # sorumlu kendi taslaklarini yayina alamaz -- akisin bastan sona
+    # denenebilmesi icin AYRI bir onaylayici sart. Yetkisi yalniz onay:
+    # "gozetim" rolu, yazma rolu degil.
+    alt_hesap("Onay Yetkilisi", "onay@muh.example.edu.tr", [ceng, eee],
+              can_approve_schedule=True)
+
     # Davet akışı demosu: aktifleşmemiş kullanıcı. Şifresi yok, giremez.
     bekleyen = User(id=next_id(User), workgroup_id=wg.id, name="Yeni Öğretim Üyesi",
                     email="pending@muh.example.edu.tr",
@@ -501,6 +508,7 @@ def main():
 │  DEMO HAZIR                                                   │
 │  Admin:       admin@muh.example.edu.tr  /  admin1234          │
 │  Alt hesap:   ceng@ ve eee@ (.../althesap123)                 │
+│  Onaylayan:   onay@   (.../althesap123)  — K-59 oz-onay yasak │
 │  Bekleyen:    pending@  — davet akisi demosu icin             │
 │                                                               │
 │  Haftalik program (2025-26 Bahar, 2. sinif):                  │

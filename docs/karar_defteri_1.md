@@ -1646,7 +1646,17 @@ YERLEŞTİREMİYOR.
      üzerinden etkilenen bölümler (`affected_departments`). Okundu/okunmadı
      yok — bu bir akış, bildirim merkezi değil. Ana sayfada ve haftalık
      ekranın YAYIN modunda görünür (taslaktayken gürültü olurdu).
-8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).
+8. Seed/test hesapları: ikinci onay yetkilisi. ✅
+   Öz-onay yasağı (admin dahil) tek hesapla akışın denenmesini imkânsız kılıyor;
+   seed artık **hazırlayan ve onaylayan**ı ayrı ayrı kuruyor.
+   - `seed_engineering.py`: tek `SUB_ACCOUNT` sabiti yerine `TEST_ACCOUNTS`
+     listesi — `althesap@` (kısıtlı, değişmedi), `program@`
+     (`can_manage_weekly`, tüm bölümlere üye → hazırlar ve onaya gönderir),
+     `onay@` (`can_approve_schedule`, tüm bölümlere üye → yayına alır).
+     Üyelik şart: K-25'in ikinci boyutu hem gönderimde hem onayda aranıyor.
+   - `seed_demo.py`: `onay@` eklendi (ceng + eee üyeliğiyle); demo bandosunda
+     görünüyor.
+   - Hepsi e-postaya göre idempotent; şifreler değişmedi.
 9. **Temizlik + eski uçların kapatılması.** ✅ (`e6b2d95c31af`)
    - **Eski YAZMA uçları kaldırıldı** (`POST/PATCH/DELETE /weekly-entries`,
      `/submit`, `/revert-to-draft`). Duran her kopyası onay adımını atlamanın

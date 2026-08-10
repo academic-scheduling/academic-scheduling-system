@@ -1,10 +1,10 @@
 from datetime import date, datetime, time
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
 from app.models import EntryStatus, ExamType, DeliveryMode, SessionType, RoomType
-from app.models import DraftStatus
+from app.models import DraftKind, DraftStatus
 
 class LoginRequest(BaseModel):
     email: str
@@ -536,6 +536,9 @@ class DraftCreate(BaseModel):
     department_id: int
     year: int = Field(ge=1, le=6)
     semester: SemesterType
+    # K-60: haftalık program mı sınav takvimi mi. Varsayılan WEEKLY —
+    # K-60 öncesi yazılmış istemciler alanı hiç göndermeden çalışmaya devam eder.
+    kind: DraftKind = DraftKind.WEEKLY
     name: str | None = None          # boş bırakılırsa sunucu üretir
 
 class DraftRename(BaseModel):
@@ -560,9 +563,10 @@ class DraftOut(BaseModel):
     department_name: str
     year: int
     semester: SemesterType
+    kind: DraftKind                               # K-60: WEEKLY | EXAM
     name: str
     status: DraftStatus
-    entry_count: int                              # taslaktaki yerleşim sayısı
+    entry_count: int                              # taslaktaki yerleşim/sınav sayısı
     change_count: int                             # yayına göre kaç fark var
     owner: DraftUserRef
     created_at: datetime
@@ -588,8 +592,24 @@ class DraftAffectedDepartmentOut(BaseModel):
     id: int
     name: str
 
+class DraftExamPlacementOut(BaseModel):
+    """Sınavın yerleşimi (K-60) — haftalığın gün/slot'unun karşılığı.
+
+    `notes` bilerek burada: öğrenciye basılan bir içerik, dolayısıyla yalnız
+    notu değişen bir sınav da onaydan geçmesi gereken bir değişikliktir.
+    """
+    exam_date: date
+    start_time: time
+    duration_minutes: int
+    lecturer_id: int
+    lecturer_name: str | None = None
+    classroom_ids: list[int] = []
+    classroom_label: str | None = None
+    notes: str | None = None
+
 class DraftDiffItemOut(BaseModel):
-    """Tek bir değişiklik satırı — inceleme ekranının okuduğu birim."""
+    """Tek bir haftalık değişiklik satırı — inceleme ekranının okuduğu birim."""
+    entity: Literal["weekly"] = "weekly"
     kind: Literal["ADDED", "REMOVED", "MOVED"]
     section_id: int
     course_code: str
@@ -601,9 +621,36 @@ class DraftDiffItemOut(BaseModel):
     before: DraftPlacementOut | None = None
     after: DraftPlacementOut | None = None
 
+class ExamDraftDiffItemOut(BaseModel):
+    """Tek bir sınav değişikliği (K-60).
+
+    Haftalık satırla AYNI kabuğu taşır (kind, ders, ortak ders uyarısı,
+    before/after) ama kimliği şube değil `(ders, tip, sıra)` üçlüsüdür ve
+    yerleşimi gün/slot değil tarih/saattir. İkisini tek modele sıkıştırmak,
+    iki farklı yerleşim şeklini aynı alanlara zorlamak olurdu.
+    """
+    entity: Literal["exam"] = "exam"
+    kind: Literal["ADDED", "REMOVED", "MOVED"]
+    course_id: int
+    course_code: str
+    course_name: str
+    exam_type: ExamType
+    exam_index: int                               # K-46: kaçıncı vize
+    is_shared: bool
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+    before: DraftExamPlacementOut | None = None
+    after: DraftExamPlacementOut | None = None
+
+# `entity` ayırt edici alan: istemci tek bir listede iki şekli birbirinden
+# ayırabilsin, Pydantic de doğru modeli seçebilsin diye.
+DraftDiffItem = Annotated[
+    Union[DraftDiffItemOut, ExamDraftDiffItemOut], Field(discriminator="entity")
+]
+
 class DraftDiffOut(BaseModel):
     draft_id: int
-    items: list[DraftDiffItemOut] = []
+    kind: DraftKind                               # K-60: hangi tür taslağın farkı
+    items: list[DraftDiffItem] = []
 
 class DraftSubmitResponse(BaseModel):
     draft: DraftOut
@@ -633,8 +680,9 @@ class DraftReviewOut(BaseModel):
     ÖNERİLEN taraf + fark + çakışma + bayatlık işareti durur.
     """
     draft: DraftOut
-    items: list[DraftDiffItemOut] = []
-    entries: list[WeeklyEntryOut] = []            # önerilen ızgara
+    items: list[DraftDiffItem] = []
+    entries: list[WeeklyEntryOut] = []            # önerilen ızgara (WEEKLY)
+    exams: list[ExamOut] = []                     # önerilen sınav takvimi (EXAM, K-60)
     conflicts: ConflictScanOut
     staleness: DraftStalenessOut
 
@@ -660,7 +708,7 @@ class ScheduleChangeOut(BaseModel):
 
 class DraftApproveResponse(BaseModel):
     draft: DraftOut
-    applied: list[DraftDiffItemOut] = []          # yayına ne geçti
+    applied: list[DraftDiffItem] = []             # yayına ne geçti
     warnings: list[ConflictResultOut] = []
 
 class DraftClearResponse(BaseModel):

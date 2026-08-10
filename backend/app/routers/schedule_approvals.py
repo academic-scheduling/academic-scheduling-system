@@ -25,14 +25,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import log_action
 from app.conflict_service import scan_draft
+from app.draft_dispatch import service_for as _svc
 from app.draft_service import (
-    apply_draft, build_applied_summary, compute_diff,
     diff_affected_department_ids, publications_since_opened,
 )
 from app.deps import get_db, get_current_user, require_schedule_approver
 from app.models import (
-    Department, DraftStatus, ScheduleDraft, User, UserRole, WeeklyScheduleEntry,
+    Department, DraftKind, DraftStatus, Exam, ScheduleDraft, User, UserRole,
+    WeeklyScheduleEntry,
 )
+from app.routers.exams import _eager_exam_query
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
     DraftApproveResponse, DraftOut, DraftRejectRequest, DraftReviewOut,
@@ -95,13 +97,11 @@ def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
         "department_name": draft.department.name,
         "year": draft.year,
         "semester": draft.semester,
+        "kind": draft.kind,
         "name": draft.name,
         "status": draft.status,
-        "entry_count": (
-            db.query(WeeklyScheduleEntry)
-            .filter(WeeklyScheduleEntry.draft_id == draft.id).count()
-        ),
-        "change_count": len(compute_diff(db, draft)) if live else 0,
+        "entry_count": _svc(draft).draft_row_count(db, draft),
+        "change_count": len(_svc(draft).compute_diff(db, draft)) if live else 0,
         "owner": draft.owner,
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
@@ -142,19 +142,34 @@ def review_draft(
     Fark O ANKI yayina karsi hesaplanir (K-59). Talep gonderildikten sonra
     program degistiyse onaylayici guncel gercege bakar — geri alinacak bir
     degisiklik varsa fark listesinde GORUNUR.
+
+    K-60: onerilen taraf taslagin turune gore `entries` YA DA `exams` dolar;
+    oteki bos kalir. Tek bir "satirlar" alaninda birlestirmek, iki farkli
+    yerlesim seklini ayni kaba sikistirmak olurdu.
     """
     draft = _get_reviewable(db, user, draft_id)
-    entries = (
-        _eager_entry_query(db, published_only=False)
-        .filter(WeeklyScheduleEntry.draft_id == draft.id)
-        .order_by(WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot)
-        .all()
-    )
+    entries: list[WeeklyScheduleEntry] = []
+    exams: list[Exam] = []
+    if draft.kind is DraftKind.EXAM:
+        exams = (
+            _eager_exam_query(db, published_only=False)
+            .filter(Exam.draft_id == draft.id)
+            .order_by(Exam.exam_date, Exam.start_time)
+            .all()
+        )
+    else:
+        entries = (
+            _eager_entry_query(db, published_only=False)
+            .filter(WeeklyScheduleEntry.draft_id == draft.id)
+            .order_by(WeeklyScheduleEntry.day_of_week, WeeklyScheduleEntry.start_slot)
+            .all()
+        )
     sonraki_yayinlar = publications_since_opened(db, draft)
     return {
         "draft": _to_out(db, draft),
-        "items": compute_diff(db, draft),
+        "items": _svc(draft).compute_diff(db, draft),
         "entries": entries,
+        "exams": exams,
         "conflicts": scan_draft(db, draft),
         "staleness": {
             "opened_at": draft.created_at,
@@ -193,12 +208,13 @@ def approve_draft(
                      "conflicts": tablo["hard"]},
         )
 
-    uygulanan = apply_draft(db, draft)
+    svc = _svc(draft)
+    uygulanan = svc.apply_draft(db, draft)
 
     draft.status = DraftStatus.APPROVED
     draft.reviewed_by = user.id
     draft.reviewed_at = datetime.now(timezone.utc)
-    draft.applied_summary = build_applied_summary(uygulanan)
+    draft.applied_summary = svc.build_applied_summary(uygulanan)
     # Ortak ders tasindiysa etkilenen bolumler burada donar; degisiklik akisi
     # ("bolumunuzu etkileyen son degisiklikler") bu satirlari okur.
     etkilenen = diff_affected_department_ids(uygulanan, draft)

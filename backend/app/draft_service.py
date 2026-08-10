@@ -70,6 +70,16 @@ def draft_entries(db: Session, draft: ScheduleDraft) -> list[WeeklyScheduleEntry
     ).all()
 
 
+def draft_row_count(db: Session, draft: ScheduleDraft) -> int:
+    """`_to_out`'un sayaci. Sinav servisindeki esiyle ayni ada sahip ki router
+    tek bir dagiticiyla iki kolu da cagirabilsin (K-60)."""
+    return (
+        db.query(WeeklyScheduleEntry)
+        .filter(WeeklyScheduleEntry.draft_id == draft.id)
+        .count()
+    )
+
+
 # ==================================================================
 # Kopyalama ve temizleme
 # ==================================================================
@@ -175,6 +185,9 @@ def _affected_departments(draft: ScheduleDraft, course: Course) -> list[dict]:
 def _describe(draft: ScheduleDraft, e: WeeklyScheduleEntry) -> dict:
     course = e.section.course
     return {
+        # K-60: fark listesi artik iki sekil tasiyabiliyor (haftalik yerlesim /
+        # sinav). Istemci hangisine baktigini bu ayirt edici alandan bilir.
+        "entity": "weekly",
         "section_id": e.section_id,
         "course_code": course.code,
         "course_name": course.name,
@@ -358,6 +371,12 @@ def publications_since_opened(db: Session, draft: ScheduleDraft) -> list[Schedul
       - ayni cohort'un onaylanmis taslaklari,
       - baska bir cohort'un onayi ORTAK DERS uzerinden bu bolumu etkilediyse
         (`affected_departments`, K-48).
+
+    K-60: `kind` de aranir. Bir sinav taslagi icin bayatlik olcusu, o cohort'un
+    SINAV takviminde olan onaylardir; haftalik program onaylari sinav taslaginin
+    kopyaladigi hicbir satiri degistirmez ve sayilirsa yanlis alarm uretir.
+    Bu fonksiyon kind-agnostik durur (iki kol da cagirir), suzgec taslagin
+    kendi turunden gelir.
     """
     return (
         db.query(ScheduleDraft)
@@ -365,6 +384,7 @@ def publications_since_opened(db: Session, draft: ScheduleDraft) -> list[Schedul
         .filter(
             ScheduleDraft.workgroup_id == draft.workgroup_id,
             ScheduleDraft.status == DraftStatus.APPROVED,
+            ScheduleDraft.kind == draft.kind,
             ScheduleDraft.reviewed_at > draft.created_at,
             ScheduleDraft.id != draft.id,
             or_(

@@ -1821,7 +1821,12 @@ yetkisiz — özel taslak kimseyi etkilemez.
 
 **Karar — fark eşleştirmesi:** anahtar `(course_id, exam_type, exam_index)`,
 yerleşim `(exam_date, start_time, duration_minutes, lecturer_id,
-classroom_ids)`.
+classroom_ids, notes)`.
+- **`notes` karşılaştırmaya DAHİL** [uygulama sırasında eklendi]. İlk liste onu
+  dışarıda bırakıyordu, çünkü not "yerleşim" değil. Ama not öğrenciye basılan
+  bir içerik: dışarıda kalsaydı yalnızca notu değiştiren bir düzenleme ne farkta
+  görünür ne de onayla yayına geçerdi — kullanıcı, yaptığı düzenlemenin sessizce
+  kaybolduğunu görürdü. Test: `test_note_only_change_is_a_change`.
 - Haftalıktan **daha basit**: bu üçlü veritabanında zaten tekil olduğu için
   grup içi çoklu eşleştirme, sıralı `zip`'leme ve "bir şubenin aynı tipte iki
   oturumu olabilir" karmaşası **yok**. Her anahtarda en fazla bir yayın + bir
@@ -1907,10 +1912,36 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
      dersinde `theory_online` değişikliği → 409, 11 sınav yerinde.
      (Silme bloğu bu değişiklikten sonra ispatlanabilir biçimde ölü kaldığı
      için haftalıktaki eşiyle birlikte kaldırıldı.)
-3. ○ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /
-   fark / gönder / geri çek. Kapsam denetimi `cohort_course_filter` ile.
-4. ○ Onay API'si: kuyruğa kind süzgeci, sınav farkının uygulanması,
-   `applied_summary`'nin sınav metinleştiricisi.
+3. ✅ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /
+   fark / gönder / geri çek. 18 test (`test_k60_exam_draft_api.py`),
+   toplam 561 yeşil.
+   - `app/exam_draft_service.py` (kopyalama + temizleme + canlı fark + onayın
+     uygulaması) ve `schedule_drafts.py`'ye dört sınav ucu.
+   - **Dağıtıcı ayrı bir modülde:** `app/draft_dispatch.py → service_for(draft)`.
+     İki servis modülü bilerek AYNI adları taşıyor
+     (`copy_published_into_draft`, `clear_draft`, `compute_diff`, `apply_draft`,
+     `build_applied_summary`, `draft_row_count`) → ortak uçlar tek satırla doğru
+     kola gidiyor. Ayrı modül olmasının tek sebebi çevrimsel import:
+     `exam_draft_service` zaten `draft_service`'ten kind-agnostik yardımcıları
+     alıyor, dağıtıcı ikisinin üstünde durmalı.
+   - **Fark kontratı ayrık:** `entity: "weekly" | "exam"` ayırt edici alanıyla
+     Pydantic union. Tek modele sıkıştırmak iki yerleşim şeklini aynı alanlara
+     zorlamak olurdu; ayrı uçlara bölmek ise onay ekranını ikiye ayırırdı.
+   - **Kapsam denetimi ders düzeyine indi:** `_ensure_course_in_cohort`.
+     Haftalık yol şubeden derse inip aynı fonksiyona geliyor — sınırı çizen
+     filtre tek.
+   - `publications_since_opened`'a `kind` süzgeci eklendi: sınav taslağının
+     bayatlık ölçüsü SINAV onaylarıdır, haftalık onaylar onun kopyaladığı
+     hiçbir satırı değiştirmez ve sayılırsa yanlış alarm üretir.
+   - **Onay router'ının dağıtıcıya bağlanması bu adımda yapıldı** (adım 4'e
+     bırakılmadı): adım 3'ten itibaren sınav taslağı onaya gönderilebiliyor,
+     kuyruk ve inceleme uçları o taslağı görüyor. Sonraki adıma bırakmak ağacı
+     "gönderilebilen ama incelenince 500 veren" bir arada durumda bırakırdı.
+   - Gerçek veriyle ölçüm: CE/4/Güz sınav taslağı açıldı → 5 sınav çok-derslikli
+     M2M'iyle kopyalandı, bir sınav taşındı → fark tek MOVED satırı, çakışma
+     tablosu 0 engel/5 uyarı, yayındaki 11 sınav değişmedi, taslak silindi.
+4. ○ Onay API'si: sınav onayının uçtan uca testi (fark uygulama, öz-onay,
+   bayatlık, ortak ders etkisi) + `applied_summary`'nin sınav metni.
 5. ○ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
    satır bazlı durum rozetlerinin kaldırılması.
 6. ○ `ApprovalsPage`: kind sekmesi/rozeti + `DiffTable`'ın metinleştiricisi.

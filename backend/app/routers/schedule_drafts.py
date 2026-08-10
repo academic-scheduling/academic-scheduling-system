@@ -1,18 +1,26 @@
-"""Program taslagi uclari (K-59) — ozel cohort taslagi + onaya gonderme.
+"""Program taslagi uclari (K-59 haftalik, K-60 sinav) — ozel cohort taslagi.
 
 Yasam dongusu: OPEN -> PENDING -> APPROVED | REJECTED.
-Onaylama/reddetme bu dosyada DEGIL (adim 4); burada taslagin sahibinin yaptigi
-her sey var: ac, duzenle, temizle, farki gor, onaya gonder, geri cek.
+Onaylama/reddetme bu dosyada DEGIL; burada taslagin sahibinin yaptigi her sey
+var: ac, duzenle, temizle, farki gor, onaya gonder, geri cek.
 
 Uc kural bu dosyanin tamamini belirler:
 
 1. **Taslak ozeldir.** Sahibinden BASKASI goremez — ADMIN dahil. Onay yetkisi
-   bekleyen (PENDING) taslaklara erisim verir, o da adim 4'un isi.
+   bekleyen (PENDING) taslaklara erisim verir, o ayri bir dosyanin isi.
 2. **Bekleyen taslak donar.** PENDING'ken duzenlenemez; onaylayici hareketli
    hedef incelemesin. Sahibi "geri cek" derse OPEN'a doner.
 3. **Taslak acmak serbesttir, onaya gondermek degildir.** Ozel taslak kimseyi
-   etkilemez, o yuzden kum havuzu herkese acik; yayina dokunma niyeti
-   `can_manage_weekly` + bolum uyeligi ister (K-25 iki boyut aynen).
+   etkilemez, o yuzden kum havuzu herkese acik; yayina dokunma niyeti yetki
+   + bolum uyeligi ister (K-25 iki boyut aynen).
+
+**K-60 — iki kol, tek yasam dongusu.** Taslak `kind` ile haftalik programi ya
+da sinav takvimini kapsar. Yasam dongusu, gizlilik, donma, kapsam denetimi ve
+onaya gonderme kapisi IKISI ICIN DE AYNI; ayrisan tek sey satirlarin sekli.
+Bu yuzden dosyada iki ayri router yok, `_svc(draft)` dagiticisi var: ortak
+uclar (ac / temizle / fark / gonder) dogru servisi secer, satir uclari ise
+turune gore ayrilir (`/entries` haftalik, `/exams` sinav) — cunku govdeleri
+ve dogrulama kurallari gercekten farkli.
 """
 
 from datetime import datetime, timezone
@@ -23,14 +31,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import build_change_summary, log_action
 from app.cohort import cohort_course_filter
-from app.conflict_service import check_weekly_save, scan_draft
-from app.draft_service import (
-    clear_draft, compute_diff, copy_published_into_draft, draft_entries,
-)
+from app.conflict_service import check_exams_save, check_weekly_save, scan_draft
+from app.draft_dispatch import service_for as _svc
 from app.deps import get_db, get_current_user
 from app.models import (
-    Course, CourseSection, Department, DraftStatus, ScheduleDraft, User, UserRole,
-    WeeklyScheduleEntry,
+    Course, CourseSection, Department, DraftKind, DraftStatus, Exam,
+    ScheduleDraft, User, UserRole, WeeklyScheduleEntry,
+)
+from app.routers.exams import (
+    _e2_message, _eager_exam_query, _ensure_weekday, _get_owned_course,
+    _load_classrooms, _normalize_exam_index, _validate_exam_refs,
 )
 from app.routers.weekly_entries import (
     _ensure_online_has_no_classroom, _ensure_slot_window, _get_owned_section,
@@ -39,6 +49,7 @@ from app.routers.weekly_entries import (
 from app.schemas import (
     DraftClearRequest, DraftClearResponse, DraftCreate, DraftDiffOut, DraftOut,
     DraftRename, DraftSubmitRequest, DraftSubmitResponse, ConflictScanOut,
+    ExamCreate, ExamOut, ExamSaveResponse, ExamUpdate,
     WeeklyEntryCreate, WeeklyEntryOut, WeeklyEntrySaveResponse, WeeklyEntryUpdate,
 )
 
@@ -85,13 +96,35 @@ def _ensure_editable(draft: ScheduleDraft) -> None:
 
 
 def _ensure_can_submit(user: User, draft: ScheduleDraft) -> None:
-    """Onaya gondermek yayina dokunma niyetidir: K-25'in iki boyutu aranir."""
+    """Onaya gondermek yayina dokunma niyetidir: K-25'in iki boyutu aranir.
+
+    K-60: yetenek bayragi taslagin TURUNE gore secilir — haftalik programa
+    dokunma niyeti `can_manage_weekly`, sinav takvimine dokunma niyeti
+    `can_manage_exams` ister. ONAYLAMAK ise tek bayrak (`can_approve_schedule`,
+    K-59): hazirlamak alan uzmanligi, onaylamak gozetim rolu.
+    """
     if user.role == UserRole.ADMIN:
         return
-    if not user.can_manage_weekly:
+    if draft.kind is DraftKind.EXAM:
+        if not user.can_manage_exams:
+            raise HTTPException(status_code=403, detail="Sınav yönetim yetkisi gerekli")
+    elif not user.can_manage_weekly:
         raise HTTPException(status_code=403, detail="Haftalık program yönetim yetkisi gerekli")
     if draft.department_id not in {m.department_id for m in user.memberships}:
         raise HTTPException(status_code=403, detail="Bu bölümde yetkiniz yok")
+
+
+def _ensure_kind(draft: ScheduleDraft, expected: DraftKind) -> None:
+    """Satir ucu ile taslagin turu uyusuyor mu? (K-60)
+
+    Sinav taslagina haftalik yerlesim (ya da tersi) yazilamaz: taslak bir
+    cohort'un TAM programidir, karisik bir taslagin farki ve onayi tanimsizdir.
+    """
+    if draft.kind is not expected:
+        ad = "sınav takvimi" if draft.kind is DraftKind.EXAM else "haftalık program"
+        raise HTTPException(
+            status_code=409, detail=f"Bu taslak bir {ad} taslağı — bu uç ona uygun değil"
+        )
 
 
 def _ensure_section_in_cohort(
@@ -114,9 +147,18 @@ def _ensure_section_in_cohort(
     Ortak ders (K-48) bu filtreye ek cohort'undan takilir; yani tuketen bolum
     ortak dersi kendi taslaginda YERLESTIREBILIR — K-49'un ruhuyla uyumlu.
     """
+    _ensure_course_in_cohort(db, draft, section.course_id)
+
+
+def _ensure_course_in_cohort(db: Session, draft: ScheduleDraft, course_id: int) -> None:
+    """Kapsam denetiminin ders duzeyindeki hali — sinav bunu dogrudan kullanir.
+
+    Sinav ders duzeyindedir (K-16), subesi yoktur; ama kapsam sorusu ayni ve
+    cevabi ayni filtre verir. Haftalik yol subeden derse inip buraya gelir.
+    """
     kapsamda = (
         db.query(Course.id)
-        .filter(Course.id == section.course_id,
+        .filter(Course.id == course_id,
                 cohort_course_filter(draft.department_id, draft.year, draft.semester))
         .first()
     )
@@ -174,12 +216,13 @@ def _get_draft_entry(db: Session, draft: ScheduleDraft, entry_id: int) -> Weekly
 def _default_name(db: Session, payload: DraftCreate) -> str:
     dep = db.get(Department, payload.department_id)
     donem = {"FALL": "Güz", "SPRING": "Bahar", "SUMMER": "Yaz"}[payload.semester.value]
-    return f"{dep.code} · {payload.year}. sınıf · {donem}"
+    tur = "Sınav" if payload.kind is DraftKind.EXAM else "Program"
+    return f"{dep.code} · {payload.year}. sınıf · {donem} · {tur}"
 
 
 def _to_out(db: Session, draft: ScheduleDraft) -> dict:
     """DraftOut govdesi: sayaclar taslagin O ANKI haline gore hesaplanir."""
-    entries = draft_entries(db, draft)
+    svc = _svc(draft)
     # Onaylanan taslagin satirlari yayina gecip silinir; canli fark hesabi o
     # noktada anlamsizdir (bos taslak "her sey kaldirildi" gibi gorunurdu).
     canli = draft.status != DraftStatus.APPROVED
@@ -189,10 +232,11 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "department_name": draft.department.name,
         "year": draft.year,
         "semester": draft.semester,
+        "kind": draft.kind,
         "name": draft.name,
         "status": draft.status,
-        "entry_count": len(entries),
-        "change_count": len(compute_diff(db, draft)) if canli else 0,
+        "entry_count": svc.draft_row_count(db, draft),
+        "change_count": len(svc.compute_diff(db, draft)) if canli else 0,
         "owner": draft.owner,
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
@@ -253,15 +297,19 @@ def create_draft(
                 ScheduleDraft.department_id == payload.department_id,
                 ScheduleDraft.year == payload.year,
                 ScheduleDraft.semester == payload.semester,
+                # K-60: tekillik kind'i da iceriyor — ayni cohort icin haftalik
+                # ve sinav taslagi ayni anda acilabilir.
+                ScheduleDraft.kind == payload.kind,
                 ScheduleDraft.status != DraftStatus.APPROVED)
         .first()
     )
     if mevcut is not None:
         # Kismi UNIQUE index zaten engellerdi; temiz mesaj + taslagin id'si
         # verilsin diye once burada yakaliyoruz (K-59: sahip basina tek aktif).
+        tur = "sınav" if payload.kind is DraftKind.EXAM else "program"
         raise HTTPException(
             status_code=409,
-            detail=f"Bu cohort için zaten açık taslağınız var (#{mevcut.id})",
+            detail=f"Bu cohort için zaten açık {tur} taslağınız var (#{mevcut.id})",
         )
 
     draft = ScheduleDraft(
@@ -269,12 +317,13 @@ def create_draft(
         department_id=payload.department_id,
         year=payload.year,
         semester=payload.semester,
+        kind=payload.kind,
         name=payload.name or _default_name(db, payload),
         created_by=user.id,
     )
     db.add(draft)
     db.flush()
-    copy_published_into_draft(db, draft)
+    _svc(draft).copy_published_into_draft(db, draft)
     log_action(db, user, "CREATE", "schedule_draft", draft.id, draft)
     db.commit()
     db.refresh(draft)
@@ -337,9 +386,10 @@ def clear_draft_entries(
     """Taslagi bosaltir — sifirdan dizmek icin. Yayina dokunmaz."""
     draft = _get_own_draft(db, user, draft_id)
     _ensure_editable(draft)
-    silinen, korunan = clear_draft(db, draft, payload.include_shared)
+    silinen, korunan = _svc(draft).clear_draft(db, draft, payload.include_shared)
+    birim = "sınav" if draft.kind is DraftKind.EXAM else "yerleşim"
     log_action(db, user, "UPDATE", "schedule_draft", draft.id, draft,
-               f"Taslak temizlendi: {silinen} yerleşim silindi"
+               f"Taslak temizlendi: {silinen} {birim} silindi"
                + (f", {korunan} ortak ders korundu" if korunan else ""))
     db.commit()
     return {"deleted": silinen, "preserved_shared": korunan}
@@ -357,7 +407,11 @@ def get_draft_diff(
 ):
     """Taslak ile O ANKI yayin arasindaki fark (K-59: canli hesaplanir)."""
     draft = _get_own_draft(db, user, draft_id)
-    return {"draft_id": draft.id, "items": compute_diff(db, draft)}
+    return {
+        "draft_id": draft.id,
+        "kind": draft.kind,
+        "items": _svc(draft).compute_diff(db, draft),
+    }
 
 
 @router.get("/schedule-drafts/{draft_id}/conflicts", response_model=ConflictScanOut)
@@ -382,6 +436,7 @@ def list_draft_entries(
     user: User = Depends(get_current_user),
 ):
     draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.WEEKLY)
     return (
         _eager_entry_query(db, published_only=False)
         .filter(WeeklyScheduleEntry.draft_id == draft.id)
@@ -401,6 +456,7 @@ def create_draft_entry(
 ):
     """Taslaga yerlesim ekler. Cakisma BILGILENDIRIR, engellemez (K-03)."""
     draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.WEEKLY)
     _ensure_editable(draft)
     section = _get_owned_section(db, user, payload.section_id)  # capraz-FK izolasyonu
     _ensure_section_in_cohort(db, draft, section)               # kapsam (K-59)
@@ -433,6 +489,7 @@ def update_draft_entry(
     user: User = Depends(get_current_user),
 ):
     draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.WEEKLY)
     _ensure_editable(draft)
     entry = _get_draft_entry(db, draft, entry_id)
 
@@ -479,11 +536,171 @@ def delete_draft_entry(
     """Taslaktan yerlesim cikarir. Yayindaki satir yerinde kalir; kaldirma
     ancak onay ile gerceklesir (K-59)."""
     draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.WEEKLY)
     _ensure_editable(draft)
     entry = _get_draft_entry(db, draft, entry_id)
     log_action(db, user, "DELETE", "weekly_entry", entry.id, entry,
                f"Taslak #{draft.id}")
     db.delete(entry)
+    db.commit()
+
+
+# ------------------------------------------------------------------
+# Taslak icindeki sinavlar (K-60)
+# ------------------------------------------------------------------
+
+def _get_draft_exam(db: Session, draft: ScheduleDraft, exam_id: int) -> Exam:
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == exam_id, Exam.draft_id == draft.id)
+        .first()
+    )
+    if exam is None:
+        raise HTTPException(status_code=404, detail="Taslakta böyle bir sınav yok")
+    return exam
+
+
+def _ensure_no_duplicate_exam(
+    db: Session, draft: ScheduleDraft, course_id: int, exam_type, exam_index: int,
+    exclude_id: int | None = None,
+) -> None:
+    """E2 on-kontrolu — taslagin KENDI icinde (K-46/K-60).
+
+    Kismi UNIQUE indeks zaten engellerdi; buradaki amac ham DB hatasi yerine
+    "bu dersin 2. vizesi zaten tanimli" diyebilmek. Kapsam taslakla sinirli:
+    yayindaki ayni sinav bir CAKISMA degil, taslagin degistirdigi satirin ta
+    kendisidir.
+    """
+    q = db.query(Exam).filter(
+        Exam.draft_id == draft.id,
+        Exam.course_id == course_id,
+        Exam.exam_type == exam_type,
+        Exam.exam_index == exam_index,
+    )
+    if exclude_id is not None:
+        q = q.filter(Exam.id != exclude_id)
+    if q.first() is not None:
+        raise HTTPException(status_code=409, detail=_e2_message(exam_type, exam_index))
+
+
+@router.get("/schedule-drafts/{draft_id}/exams", response_model=list[ExamOut])
+def list_draft_exams(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.EXAM)
+    return (
+        _eager_exam_query(db, published_only=False)
+        .filter(Exam.draft_id == draft.id)
+        .order_by(Exam.exam_date, Exam.start_time)
+        .all()
+    )
+
+
+@router.post("/schedule-drafts/{draft_id}/exams", response_model=ExamSaveResponse,
+             status_code=status.HTTP_201_CREATED)
+def create_draft_exam(
+    draft_id: int,
+    payload: ExamCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Taslaga sinav ekler. Cakisma BILGILENDIRIR, engellemez (K-03).
+
+    Dogrulama kurallari (E2 on-kontrolu, hafta ici zorunlulugu, K-46 sira
+    normalizasyonu, capraz-FK izolasyonu) eski `/exams` ucundan AYNEN gelir —
+    kural degismedi, yalnizca kapi degisti (K-60).
+    """
+    draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.EXAM)
+    _ensure_editable(draft)
+
+    course = _get_owned_course(db, user, payload.course_id)   # capraz-FK izolasyonu
+    _ensure_course_in_cohort(db, draft, course.id)            # kapsam (K-59/K-60)
+
+    data = payload.model_dump()
+    _validate_exam_refs(db, user, data)
+    _ensure_weekday(payload.exam_date)
+    data["exam_index"] = _normalize_exam_index(
+        payload.exam_type, payload.exam_index, course)
+    _ensure_no_duplicate_exam(
+        db, draft, course.id, payload.exam_type, data["exam_index"])
+
+    classroom_ids = data.pop("classroom_ids")
+    exam = Exam(draft_id=draft.id, created_by=user.id, **data)
+    exam.classrooms = _load_classrooms(db, classroom_ids)
+    db.add(exam)
+    db.flush()
+    log_action(db, user, "CREATE", "exam", exam.id, exam, f"Taslak #{draft.id}")
+    db.commit()
+
+    exam = (_eager_exam_query(db, published_only=False)
+            .filter(Exam.id == exam.id).first())
+    return {"exam": exam, "conflicts": check_exams_save(db, exam, draft)}
+
+
+@router.patch("/schedule-drafts/{draft_id}/exams/{exam_id}",
+              response_model=ExamSaveResponse)
+def update_draft_exam(
+    draft_id: int,
+    exam_id: int,
+    payload: ExamUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.EXAM)
+    _ensure_editable(draft)
+    exam = _get_draft_exam(db, draft, exam_id)
+
+    data = payload.model_dump(exclude_unset=True)
+    _validate_exam_refs(db, user, data)
+    if "exam_date" in data:
+        _ensure_weekday(data["exam_date"])
+
+    new_type = data.get("exam_type", exam.exam_type)
+    new_index = _normalize_exam_index(
+        new_type, data.get("exam_index", exam.exam_index), exam.course)
+    # Sira degistiyse (or. final'e cevrilince 1'e sabitlendi) data'ya yaz ki
+    # asagidaki setattr dongusu kalici kilsin.
+    if new_index != exam.exam_index:
+        data["exam_index"] = new_index
+    if (new_type, new_index) != (exam.exam_type, exam.exam_index):
+        _ensure_no_duplicate_exam(
+            db, draft, exam.course_id, new_type, new_index, exclude_id=exam.id)
+
+    classroom_ids = data.pop("classroom_ids", None)
+    if classroom_ids is not None:      # verilirse liste TAM degisir (K-22)
+        exam.classrooms = _load_classrooms(db, classroom_ids)
+    ozet = build_change_summary(exam, data)
+    for field, value in data.items():
+        setattr(exam, field, value)
+    log_action(db, user, "UPDATE", "exam", exam.id, exam, ozet)
+    db.commit()
+
+    exam = (_eager_exam_query(db, published_only=False)
+            .filter(Exam.id == exam.id).first())
+    return {"exam": exam, "conflicts": check_exams_save(db, exam, draft)}
+
+
+@router.delete("/schedule-drafts/{draft_id}/exams/{exam_id}",
+               status_code=status.HTTP_204_NO_CONTENT)
+def delete_draft_exam(
+    draft_id: int,
+    exam_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Taslaktan sinav cikarir. Yayindaki sinav yerinde kalir; kaldirma ancak
+    onay ile gerceklesir (K-60)."""
+    draft = _get_own_draft(db, user, draft_id)
+    _ensure_kind(draft, DraftKind.EXAM)
+    _ensure_editable(draft)
+    exam = _get_draft_exam(db, draft, exam_id)
+    log_action(db, user, "DELETE", "exam", exam.id, exam, f"Taslak #{draft.id}")
+    db.delete(exam)
     db.commit()
 
 
@@ -511,7 +728,7 @@ def submit_draft(
     _ensure_editable(draft)
     _ensure_can_submit(user, draft)
 
-    if not compute_diff(db, draft):
+    if not _svc(draft).compute_diff(db, draft):
         raise HTTPException(
             status_code=409,
             detail="Taslak yayındaki programla aynı — onaya gönderilecek değişiklik yok",

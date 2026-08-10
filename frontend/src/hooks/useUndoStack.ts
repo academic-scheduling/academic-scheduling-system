@@ -21,7 +21,8 @@ import { api, ApiError } from "../api/client";
 export type UndoEntity =
   | "weekly-entries"
   | "exams"
-  | `schedule-drafts/${number}/entries`;
+  | `schedule-drafts/${number}/entries`
+  | `schedule-drafts/${number}/exams`;      // K-60: sınav taslağının satırları
 
 export type UndoAction =
   | { type: "patch"; id: number; body: Record<string, unknown> }

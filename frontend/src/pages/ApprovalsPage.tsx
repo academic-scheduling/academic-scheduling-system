@@ -364,6 +364,9 @@ function ProposedGrid({ entries, changed }: {
   const vurgu = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of changed) {
+      // K-60: fark listesi artık iki şekil taşıyor; haftalık ızgara yalnız
+      // kendi satırlarını vurgular (sınav farkı ayrı ekranda çizilir).
+      if (c.entity !== "weekly") continue;
       if (!c.after) continue;                       // KALDIRILDI: ızgarada yok
       m.set(`${c.section_id}-${c.after.day_of_week}-${c.after.start_slot}`, c.kind);
     }

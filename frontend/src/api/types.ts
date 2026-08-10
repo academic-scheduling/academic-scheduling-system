@@ -470,12 +470,26 @@ export const DRAFT_STATUS_COLORS: Record<DraftStatus, string> = {
 
 export type DraftUserRef = { id: number; name: string };
 
+/** K-60: taslak neyi kapsıyor. Yaşam döngüsü, öz-onay yasağı, kuyruk ve
+ *  inceleme ikisi için de AYNI; ayrışan tek şey satırların şekli. */
+export type DraftKind = "WEEKLY" | "EXAM";
+
+export const DRAFT_KIND_LABELS: Record<DraftKind, string> = {
+  WEEKLY: "haftalık program", EXAM: "sınav takvimi",
+};
+
+/** Taslaktaki satırın adı — çubuk ve temizleme mesajları bunu kullanır. */
+export const DRAFT_ROW_LABELS: Record<DraftKind, string> = {
+  WEEKLY: "yerleşim", EXAM: "sınav",
+};
+
 export type ScheduleDraft = {
   id: number;
   department_id: number;
   department_name: string;
   year: number;
   semester: SemesterType;
+  kind: DraftKind;
   name: string;
   status: DraftStatus;
   entry_count: number;
@@ -501,30 +515,65 @@ export type DraftPlacement = {
   delivery_mode: DeliveryMode;
 };
 
-export type DraftDiffItem = {
-  kind: "ADDED" | "REMOVED" | "MOVED";
-  section_id: number;
+/** K-60: sınavın yerleşimi. Haftalığın gün/slot'unun karşılığı; `notes` de
+ *  burada, çünkü öğrenciye basılan bir içeriktir ve değişikliği onaydan geçer. */
+export type DraftExamPlacement = {
+  exam_date: string;
+  start_time: string;
+  duration_minutes: number;
+  lecturer_id: number;
+  lecturer_name: string | null;
+  classroom_ids: number[];
+  classroom_label: string | null;
+  notes: string | null;
+};
+
+export type DiffKind = "ADDED" | "REMOVED" | "MOVED";
+
+/** Ortak kabuk: iki tür de aynı rozeti, ders sütununu ve ortak ders uyarısını
+ *  taşır. Ayrışan tek şey KİMLİK (şube / sınav) ve YERLEŞİM (gün-slot / tarih-saat). */
+type DiffItemBase = {
+  kind: DiffKind;
   course_code: string;
   course_name: string;
-  section_no: number;
-  session_type: SessionType;
-  /** K-48: ders başka cohort'lar tarafından da alınıyor. Taşımadan/silmeden
-   *  önce uyarı gösterilir — konumu onların programını da etkiler. */
   is_shared: boolean;
   affected_departments: { id: number; name: string }[];
+};
+
+export type WeeklyDiffItem = DiffItemBase & {
+  entity: "weekly";
+  section_id: number;
+  section_no: number;
+  session_type: SessionType;
   before: DraftPlacement | null;
   after: DraftPlacement | null;
 };
 
-export const DIFF_KIND_LABELS: Record<DraftDiffItem["kind"], string> = {
+export type ExamDiffItem = DiffItemBase & {
+  entity: "exam";
+  course_id: number;
+  exam_type: ExamType;
+  exam_index: number;
+  before: DraftExamPlacement | null;
+  after: DraftExamPlacement | null;
+};
+
+/** Ayırt edici alan `entity` (K-60): tek listede iki şekil taşınabilsin diye. */
+export type DraftDiffItem = WeeklyDiffItem | ExamDiffItem;
+
+export const DIFF_KIND_LABELS: Record<DiffKind, string> = {
   ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı",
 };
 
-export const DIFF_KIND_COLORS: Record<DraftDiffItem["kind"], string> = {
+export const DIFF_KIND_COLORS: Record<DiffKind, string> = {
   ADDED: "green", REMOVED: "red", MOVED: "blue",
 };
 
-export type DraftDiff = { draft_id: number; items: DraftDiffItem[] };
+export type DraftDiff = {
+  draft_id: number;
+  kind: DraftKind;
+  items: DraftDiffItem[];
+};
 
 export type DraftClearResponse = { deleted: number; preserved_shared: number };
 
@@ -541,7 +590,9 @@ export type DraftStaleness = {
 export type DraftReview = {
   draft: ScheduleDraft;
   items: DraftDiffItem[];
+  /** Önerilen taraf: taslağın türüne göre BİRİ dolar, öteki boş kalır (K-60). */
   entries: WeeklyEntry[];
+  exams: Exam[];
   conflicts: ConflictScan;
   staleness: DraftStaleness;
 };

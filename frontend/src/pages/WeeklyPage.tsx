@@ -827,6 +827,7 @@ export default function WeeklyPage() {
           departmentId={dep ? Number(dep) : null}
           year={year === COMMON_YEAR ? null : Number(year)}
           semester={sem}
+          kind="WEEKLY"
           draft={draft}
           canSubmit={canSubmitDraft}
           onSelect={(d) => setDraft(d)}

@@ -56,11 +56,21 @@ def _get_owned_course(db: Session, user: User, course_id: int) -> Course:
 
 
 def _get_owned_exam(db: Session, user: User, exam_id: int) -> Exam:
-    """Sınav bizim workgroup'ta mı? Değilse/yoksa 404 (varlık sızdırmama)."""
+    """Sınav bizim workgroup'ta ve YAYINDA mı? Değilse/yoksa 404.
+
+    K-60: `draft_id IS NULL` şartı zorunlu. Olmasaydı bu eski uçlar BAŞKASININ
+    ÖZEL taslak kopyasını bulur ve düzenleyebilirdi — taslağın gizliliği yalnız
+    okuma yollarında değil yazma yollarında da korunmalı. (Tarayıcıda ortaya
+    çıktı: taslak satırının id'siyle gelen PATCH satırı buluyor, sonra yayın
+    süzgeçli yeniden okuma boş dönüp 500 üretiyordu.)
+
+    Bu uçlar adım 7'de tamamen kalkacak; o güne kadar da delik açık kalmamalı.
+    """
     exam = (
         db.query(Exam)
         .join(Course).join(Department)
         .filter(Exam.id == exam_id,
+                Exam.draft_id.is_(None),
                 Department.workgroup_id == user.workgroup_id)
         .first()
     )

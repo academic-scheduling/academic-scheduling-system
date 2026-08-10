@@ -1956,8 +1956,34 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
      değişiklik → onaya gönder → kuyrukta `kind=EXAM` → inceleme
      (`entries: 0, exams: 5`, bayatlık 0, fark tek MOVED satırı notuyla,
      0 engel/5 uyarı) → geri çek → sil. Yayındaki 11 sınav ve saatleri aynı.
-5. ○ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
-   satır bazlı durum rozetlerinin kaldırılması.
+5. ✅ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
+   satır bazlı durum rozetlerinin kaldırılması. `tsc --noEmit` + `vite build`
+   temiz, 571 backend testi yeşil.
+   - `DraftBar` ve `DiffTable` **ortak kaldı, kopyalanmadı**: çubuk bir `kind`
+     alıyor (metinler ve gönderme yetkisinin adı ondan geliyor), tablo ise
+     `entity`ye bakan iki küçük metinleştiriciyle iki şekli de çiziyor
+     ("Çar 5 · A Blok 101" / "15 Eyl 09:00 (90 dk) · B Blok 202"). İkişer
+     bileşen yazmak, K-59'da bilerek kaçınılan ayrışmayı geri getirirdi.
+   - **Yazma yetkisi yer değiştirdi** (haftalıktaki devrin aynısı): `canWrite`
+     artık "düzenlenebilir bir taslağın içindeyim" demek; `can_manage_exams` +
+     üyelik onaya gönderme kapısına taşındı. Palet ve ders seçici yetki
+     süzgeçlerini bıraktı — kapsamı sunucu (`_ensure_course_in_cohort`) çiziyor.
+   - **Eski "Yayınla" düğmesi, `SubmitModal`, "taslağa çevir" ve kart başına
+     durum rozeti/kilit KALKTI.** Durum artık satırın değil MODUN özelliği.
+   - **Tarayıcı iki kusur yakaladı, ikisi de testlerle görünmezdi:**
+     1. `ExamModal` hâlâ eski `/exams` ucuna yazıyordu → taslaktaki bir sınavı
+        düzenlemek HTTP 500 veriyordu. Yazma kökü artık sayfadan geçiriliyor;
+        modalın "hangi moddayım"ı kendi başına bilmesi, iki yerde ayrı ayrı
+        doğru tutulması gereken bir gerçek olurdu.
+     2. Asıl sorun bunun ALTINDAYDI: `_get_owned_exam` taslak satırlarını da
+        buluyordu, yani eski yazma uçları **başkasının özel taslak kopyasını
+        düzenleyebiliyordu**. Taslağın gizliliği yalnız okuma yollarında
+        korunuyormuş. `draft_id IS NULL` şartı eklendi — uçlar adım 7'de zaten
+        kalkacak ama o güne kadar delik açık kalmamalı.
+   - Tarayıcıda uçtan uca: taslak aç (1 sınav kopyalandı) → saat değiştir →
+     "1 değişiklik" → Farkı Gör tablosunda TAŞINDI satırı, ortak ders uyarısı
+     ve "8 Eyl 08:30 → 8 Eyl 14:30" → taslak silindi, yayındaki 11 sınav ve
+     saatleri değişmedi.
 6. ○ `ApprovalsPage`: kind sekmesi/rozeti + `DiffTable`'ın metinleştiricisi.
 7. ○ Temizlik: `/exams/submit` ve `/exams/{id}/revert-to-draft` kaldırılır;
    `Exam.status`, `submitted_at`, CHECK ve `idx_exams_status` düşürülür;

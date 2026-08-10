@@ -8,10 +8,12 @@ import {
   IconPencil, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
-import { DRAFT_STATUS_COLORS, DRAFT_STATUS_LABELS } from "../api/types";
+import {
+  DRAFT_KIND_LABELS, DRAFT_ROW_LABELS, DRAFT_STATUS_COLORS, DRAFT_STATUS_LABELS,
+} from "../api/types";
 import DiffTable from "./DiffTable";
 import type {
-  ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem,
+  ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem, DraftKind,
   ScheduleDraft, SemesterType,
 } from "../api/types";
 import {
@@ -23,22 +25,27 @@ export type DraftBarProps = {
   departmentId: number | null;
   year: number | null;
   semester: SemesterType;
+  /** K-60: bu çubuk hangi tür programı yönetiyor. Yaşam döngüsü ve kapılar
+   *  aynı; yalnız metinler ve gönderme yetkisinin adı türden gelir. */
+  kind: DraftKind;
   /** Bu cohort için BENİM açık taslağım (yoksa null → yayın modundayız). */
   draft: ScheduleDraft | null;
   /** Taslağı seç / yayına dön. */
   onSelect: (draft: ScheduleDraft | null) => void;
-  /** Taslak açma TEK yerde durur (WeeklyPage): ızgaradaki "yayında, taslağa
+  /** Taslak açma TEK yerde durur (sayfada): ızgaradaki "yayında, taslağa
    *  geçilsin mi?" sorusu da aynı işlevi çağırır. */
   onCreate: () => Promise<void>;
   /** Taslak listesi + ızgara yeniden yüklensin. */
   onChanged: () => void;
-  /** K-25: onaya göndermek `can_manage_weekly` + bölüm üyeliği ister.
+  /** K-25: onaya göndermek türe göre yetki + bölüm üyeliği ister
+   *  (`can_manage_weekly` / `can_manage_exams`, K-60).
    *  Taslak AÇMAK istemez — özel taslak kimseyi etkilemez (K-59). */
   canSubmit: boolean;
 };
 
 export default function DraftBar({
-  departmentId, year, semester, draft, onSelect, onCreate, onChanged, canSubmit,
+  departmentId, year, semester, kind, draft, onSelect, onCreate, onChanged,
+  canSubmit,
 }: DraftBarProps) {
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
@@ -47,6 +54,8 @@ export default function DraftBar({
   const cohortHazir = departmentId !== null && year !== null;
   const duzenlenebilir = draft !== null
     && (draft.status === "OPEN" || draft.status === "REJECTED");
+  const turAdi = DRAFT_KIND_LABELS[kind];      // "haftalık program" / "sınav takvimi"
+  const satirAdi = DRAFT_ROW_LABELS[kind];     // "yerleşim" / "sınav"
 
   const hata = (e: unknown, varsayilan: string) =>
     notifications.show({
@@ -69,7 +78,7 @@ export default function DraftBar({
       onChanged();
       notifications.show({
         color: "gray",
-        message: `${r.deleted} yerleşim silindi`
+        message: `${r.deleted} ${satirAdi} silindi`
           + (r.preserved_shared
             ? ` · ${r.preserved_shared} ortak ders korundu (silmek için "ortaklar dahil")`
             : ""),
@@ -111,7 +120,7 @@ export default function DraftBar({
   const sil = async () => {
     if (!draft) return;
     if (!window.confirm(
-      `"${draft.name}" taslağı silinsin mi? Yayındaki programa hiçbir etkisi olmaz.`
+      `"${draft.name}" taslağı silinsin mi? Yayındaki ${turAdi} etkilenmez.`
     )) return;
     setBusy(true);
     try {
@@ -147,13 +156,15 @@ export default function DraftBar({
                 <Text size="sm" c="dimmed">
                   {draft.change_count
                     ? `${draft.change_count} değişiklik`
-                    : "yayındaki programla aynı"}
+                    : `yayındaki ${turAdi} ile aynı`}
                 </Text>
               </>
             ) : (
               <>
                 <IconLock size={15} style={{ opacity: 0.55 }} />
-                <Text size="sm" fw={600}>Yayındaki program</Text>
+                <Text size="sm" fw={600}>
+                  Yayındaki {kind === "EXAM" ? "sınav takvimi" : "program"}
+                </Text>
                 <Text size="sm" c="dimmed">
                   salt-okunur — değişiklik için taslak açın
                 </Text>
@@ -165,7 +176,7 @@ export default function DraftBar({
             {!draft && (
               <Tooltip
                 label={cohortHazir
-                  ? "Yayındaki programın kopyasıyla açılır; yalnız siz görürsünüz"
+                  ? `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`
                   : "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"}>
                 <Button size="xs" radius="md" loading={busy} disabled={!cohortHazir}
                   leftSection={<IconPlus size={15} />} style={{ height: CONTROL_H }}
@@ -194,7 +205,8 @@ export default function DraftBar({
                     </Tooltip>
                     <Tooltip label={canSubmit
                       ? "Onay yetkilisi inceleyip yayına alacak"
-                      : "Onaya göndermek için haftalık program yetkisi ve bu bölümde üyelik gerekir"}>
+                      : `Onaya göndermek için ${kind === "EXAM" ? "sınav" : "haftalık program"}`
+                        + " yetkisi ve bu bölümde üyelik gerekir"}>
                       <Button size="xs" radius="md" loading={busy}
                         disabled={!canSubmit || draft.change_count === 0}
                         leftSection={<IconSend size={15} />} style={{ height: CONTROL_H }}
@@ -243,10 +255,11 @@ export default function DraftBar({
         )}
       </Paper>
 
-      <DiffModal items={diff} onClose={() => setDiff(null)} />
+      <DiffModal items={diff} turAdi={turAdi} onClose={() => setDiff(null)} />
       {submitOpen && draft && (
         <SubmitModal
           draft={draft}
+          turAdi={turAdi}
           onClose={() => setSubmitOpen(false)}
           onDone={(d) => { setSubmitOpen(false); onSelect(d); }}
         />
@@ -258,13 +271,14 @@ export default function DraftBar({
 
 /** Taslak sahibinin "Farkı Gör" penceresi. Tablo onaylayıcının inceleme
  *  ekranıyla ORTAK (DiffTable) — ikisi ayrı çizilseydi zamanla ayrışırdı. */
-function DiffModal({ items, onClose }: {
+function DiffModal({ items, turAdi, onClose }: {
   items: DraftDiffItem[] | null;
+  turAdi: string;
   onClose: () => void;
 }) {
   return (
     <Modal opened={items !== null} onClose={onClose} size="lg" radius="md"
-      title="Yayındaki programa göre fark">
+      title={`Yayındaki ${turAdi} ile fark`}>
       {items && <DiffTable items={items} />}
     </Modal>
   );
@@ -273,8 +287,9 @@ function DiffModal({ items, onClose }: {
 
 /** Onaya gönderme kapısı (K-59). HARD çakışma varsa sunucu 409 döner ve talep
  *  HİÇ oluşmaz — onay kuyruğu baştan bozuk taleplerle dolmasın (K-03 aynen). */
-function SubmitModal({ draft, onClose, onDone }: {
+function SubmitModal({ draft, turAdi, onClose, onDone }: {
   draft: ScheduleDraft;
+  turAdi: string;
   onClose: () => void;
   onDone: (d: ScheduleDraft) => void;
 }) {
@@ -318,7 +333,7 @@ function SubmitModal({ draft, onClose, onDone }: {
       <Stack gap="sm">
         <Text size="sm">
           <b>{draft.change_count}</b> değişiklik onaya gönderilecek. Onaylanana
-          kadar yayındaki program değişmez; taslak inceleme boyunca kilitlenir.
+          kadar yayındaki {turAdi} değişmez; taslak inceleme boyunca kilitlenir.
         </Text>
         <Textarea
           label="Not (isteğe bağlı)"

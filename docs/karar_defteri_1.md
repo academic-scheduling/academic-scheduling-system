@@ -1628,10 +1628,35 @@ YERLEŞTİREMİYOR.
      "taşındı" gibi gösteriyordu (tarayıcıda yakalandı).
    - Bayatlık bandı, hard çakışmada onay düğmesinin kapanması, öz-onayda
      ikisinin de kapanması ve gerekçe zorunlu ret ekranı burada.
-7. Ortak ders yerleştirme yetkisi (`_ensure_course_access`) + değişiklik akışı.
+7. Taslak kapsamı + değişiklik akışı. ✅
+   - **Kapsam açığı kapandı.** Taslağa yerleşim eklerken yalnız workgroup
+     izolasyonu aranıyordu; CE'nin sorumlusu MATH'in dersini kendi taslağına
+     koyup onaylatabiliyordu (gönderim yetkisi yalnız CE üyeliğine bakıyor).
+     `_ensure_section_in_cohort` sınırı `cohort_course_filter` ile çizer —
+     taslağın neyi kopyaladığını ve çakışma evreninin neyi dışladığını
+     belirleyen filtrenin AYNISI. İkinci fayda: kapsam dışı satırın yayında
+     karşılığı olmadığı için farkta sonsuza dek "EKLENDİ" görünürdü.
+   - **K-49 tutarsızlığı kendiliğinden çözüldü.** Ortak ders, tüketen bölümün
+     cohort'undan filtreye takılır → tüketen bölüm onu KENDİ taslağında
+     yerleştirebilir. Eski `_ensure_department_access` (birincil bölüm) engeli
+     yeni akışta yok; `course_sections.department_id` eklemeye gerek kalmadı.
+   - **Değişiklik akışı** (`GET /schedule-changes` + `ChangeFeed`): ayrı
+     bildirim tablosu YOK, onaylanmış taslak kaydının kendisi değişiklik
+     kaydıdır. "Beni ilgilendiren" = kendi bölümümün cohort'u VEYA ortak ders
+     üzerinden etkilenen bölümler (`affected_departments`). Okundu/okunmadı
+     yok — bu bir akış, bildirim merkezi değil. Ana sayfada ve haftalık
+     ekranın YAYIN modunda görünür (taslaktayken gürültü olurdu).
 8. Seed/test hesapları: ikinci onay yetkilisi (öz-onay yasağının gereği).
 9. **Temizlik migration'ı:** kalan `DRAFT` satırlarını sil, `status` +
    `submitted_at` + tutarlılık CHECK'i + `idx_wse_status` düşür.
+   **Ayrıca ZORUNLU — eski yazma uçlarını kapat.** `POST/PATCH/DELETE
+   /weekly-entries`, `/weekly-entries/submit` ve `/weekly-entries/{id}/
+   revert-to-draft` hâlâ ayakta ve `can_manage_weekly` yetkisi olan biri
+   onları çağırarak **onay adımını tümden atlayıp doğrudan yayına
+   yazabilir**. Arayüz onları kullanmıyor ama API açık; bu, K-59'un bütün
+   amacını boşa çıkaran bir bypass'tır. Adım 9 bitmeden sistem "onaylı" değil.
+   (Kasıtlı olarak ertelendi: bu uçları şimdi kaldırmak `test_wp3_weekly.py`'yi
+   toptan yeniden yazmayı gerektiriyor ve ağacı fazlar boyunca kırık bırakırdı.)
 
 **Açık uçlar (bu fazda değil):**
 - **Sınavlar.** K-16 gereği sınav ders düzeyindedir, cohort'a bağlanmaz; ortak

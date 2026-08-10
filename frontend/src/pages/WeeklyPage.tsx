@@ -13,6 +13,7 @@ import {
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import DraftBar from "../components/DraftBar";
+import ChangeFeed from "../components/ChangeFeed";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
   courseCommonForDept, courseInCohort, lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS,
@@ -827,6 +828,10 @@ export default function WeeklyPage() {
           onChanged={() => { reload(); refreshDraft(); }}
         />
       )}
+
+      {/* Yalnız YAYIN modunda: taslaktayken kullanıcı kendi işine bakıyor,
+          arka plandaki yayın hareketleri o an gürültü olur. */}
+      {view === "cohort" && !draft && <ChangeFeed limit={3} />}
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
       {view !== "cohort" && !activeQuery() && (

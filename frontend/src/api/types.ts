@@ -549,3 +549,21 @@ export type DraftApproveResponse = {
   applied: DraftDiffItem[];
   warnings: ConflictResult[];
 };
+
+/** Değişiklik akışının bir satırı (K-59).
+ *
+ *  Kaynağı onaylanmış taslak kaydının kendisidir — ayrı bildirim tablosu yok.
+ *  `summary` onay anında dondurulmuştur: taslağın satırları yayına geçip
+ *  silindiği için fark geriye dönük yeniden hesaplanamaz. */
+export type ScheduleChange = {
+  id: number;
+  department_id: number;
+  department_name: string;
+  year: number;
+  semester: SemesterType;
+  summary: string | null;
+  published_at: string | null;
+  published_by: string;
+  approved_by: string | null;
+  affected_departments: { id: number; name: string }[];
+};

@@ -646,6 +646,26 @@ class DraftReviewOut(BaseModel):
     conflicts: ConflictScanOut
     staleness: DraftStalenessOut
 
+class ScheduleChangeOut(BaseModel):
+    """Değişiklik akışının bir satırı (K-59).
+
+    Kaynağı onaylanmış taslak kaydının kendisidir — ayrı bildirim tablosu yok.
+    `summary` onay anında dondurulmuştur: taslağın satırları yayına geçip
+    silindiği için fark geriye dönük yeniden hesaplanamaz (K-36 deseni).
+    """
+    id: int
+    department_id: int
+    department_name: str
+    year: int
+    semester: SemesterType
+    summary: str | None                       # "1 taşındı, 1 kaldırıldı · ..."
+    published_at: datetime | None
+    published_by: str                         # değişikliği yapan (taslak sahibi)
+    approved_by: str | None                   # yayına alan onay yetkilisi
+    # K-48: ortak ders taşındıysa dolu — bu değişiklik onların programına da düştü.
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+
+
 class DraftApproveResponse(BaseModel):
     draft: DraftOut
     applied: list[DraftDiffItemOut] = []          # yayına ne geçti

@@ -39,6 +39,9 @@ app.include_router(schedule_drafts_router)
 from app.routers.schedule_approvals import router as schedule_approvals_router
 app.include_router(schedule_approvals_router)
 
+from app.routers.schedule_changes import router as schedule_changes_router
+app.include_router(schedule_changes_router)
+
 from app.routers.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 

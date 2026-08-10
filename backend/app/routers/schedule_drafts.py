@@ -22,13 +22,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, selectinload
 
 from app.audit import build_change_summary, log_action
+from app.cohort import cohort_course_filter
 from app.conflict_service import check_weekly_save, scan_draft
 from app.draft_service import (
     clear_draft, compute_diff, copy_published_into_draft, draft_entries,
 )
 from app.deps import get_db, get_current_user
 from app.models import (
-    Department, DraftStatus, ScheduleDraft, User, UserRole, WeeklyScheduleEntry,
+    Course, CourseSection, Department, DraftStatus, ScheduleDraft, User, UserRole,
+    WeeklyScheduleEntry,
 )
 from app.routers.weekly_entries import (
     _ensure_online_has_no_classroom, _ensure_slot_window, _get_owned_section,
@@ -90,6 +92,39 @@ def _ensure_can_submit(user: User, draft: ScheduleDraft) -> None:
         raise HTTPException(status_code=403, detail="Haftalık program yönetim yetkisi gerekli")
     if draft.department_id not in {m.department_id for m in user.memberships}:
         raise HTTPException(status_code=403, detail="Bu bölümde yetkiniz yok")
+
+
+def _ensure_section_in_cohort(
+    db: Session, draft: ScheduleDraft, section: CourseSection
+) -> None:
+    """Sube, taslagin COHORT'una giren bir dersin subesi mi? (K-59)
+
+    Taslagin kapsami bir cohort'tur; kapsam disi bir ders eklenirse iki sey
+    birden bozulur:
+      1. **Yetki:** taslak CE/1/Guz'a ait ve gonderim yetkisi CE uyeligine
+         bakiyor. Kapsam denetimi olmasa CE'nin sorumlusu MATH'in dersini
+         taslagina koyup onaylatabilir — hic yetkisi olmayan bir bolume
+         yerlesim yazmis olur.
+      2. **Fark:** `compute_diff` yayin tarafini cohort filtresiyle okur.
+         Kapsam disi satirin yayinda karsiligi HIC olmaz, sonsuza dek
+         "EKLENDI" gorunur ve onaylandiktan sonra bile fark kapanmaz.
+
+    Sinir `cohort_course_filter` ile cizilir — taslagin ACILIRKEN neyi
+    kopyaladigini belirleyen ve cakisma evreninin disladigi filtrenin AYNISI.
+    Ortak ders (K-48) bu filtreye ek cohort'undan takilir; yani tuketen bolum
+    ortak dersi kendi taslaginda YERLESTIREBILIR — K-49'un ruhuyla uyumlu.
+    """
+    kapsamda = (
+        db.query(Course.id)
+        .filter(Course.id == section.course_id,
+                cohort_course_filter(draft.department_id, draft.year, draft.semester))
+        .first()
+    )
+    if kapsamda is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu ders taslağın kapsamında değil (bölüm + sınıf + dönem)",
+        )
 
 
 def _get_draft_entry(db: Session, draft: ScheduleDraft, entry_id: int) -> WeeklyScheduleEntry:
@@ -335,7 +370,8 @@ def create_draft_entry(
     """Taslaga yerlesim ekler. Cakisma BILGILENDIRIR, engellemez (K-03)."""
     draft = _get_own_draft(db, user, draft_id)
     _ensure_editable(draft)
-    _get_owned_section(db, user, payload.section_id)   # capraz-FK izolasyonu
+    section = _get_owned_section(db, user, payload.section_id)  # capraz-FK izolasyonu
+    _ensure_section_in_cohort(db, draft, section)               # kapsam (K-59)
     _validate_classroom(db, user, payload.classroom_id)
     _ensure_slot_window(payload.start_slot, payload.slot_count)
     _ensure_online_has_no_classroom(payload.delivery_mode, payload.classroom_id)

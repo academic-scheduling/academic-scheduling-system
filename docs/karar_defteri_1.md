@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 5 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-58: hızlı işlemler yetkiye göre kilitli)
+**Son güncelleme:** 10 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-60: sınav onay akışı tasarlandı, uygulanmadı)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -1715,10 +1715,13 @@ bildiriyor (K-03/K-05'in "uyar, engelleme" çizgisi).
   import/seed'den gelmiş, silinmesi kullanıcının kararı.
 
 **Açık uçlar (bu fazda değil):**
-- **Sınavlar.** K-16 gereği sınav ders düzeyindedir, cohort'a bağlanmaz; ortak
-  dersin sınavı birçok cohort'a aittir. "Cohort taslağı" kavramı sınavda
-  karşılıksız — sınav fazının taslak birimi ayrıca kararlaştırılacak
-  (muhtemelen bölüm + sınav dönemi).
+- **Sınavlar.** → **K-60'ta ele alındı.** Bu maddenin ilk hali "K-16 gereği
+  sınav ders düzeyindedir, cohort'a bağlanmaz; cohort taslağı kavramı sınavda
+  karşılıksız, birim muhtemelen bölüm + sınav dönemi olur" diyordu. **Bu
+  gerekçe yanlıştı** ve düzeltildi: sınav derse, ders de `(department_id, year,
+  semester)` + `extra_cohorts`'a bağlı olduğu için bir cohort'un sınavları
+  `cohort_course_filter` ile — haftalıkta kullanılan filtrenin AYNISIYLA — tam
+  seçilebiliyor. Ayrıntı ve düzeltmenin gerekçesi K-60'ta.
 - **Bildirim merkezi.** Kişi başına okundu/okunmadı durumu + zil ikonu; uygulama
   içi akışın üstüne sonradan eklenebilir.
 - **Cohort dışı düzenleme.** Taslaklar yalnız cohort modunda olduğu için derslik/
@@ -1727,3 +1730,166 @@ bildiriyor (K-03/K-05'in "uyar, engelleme" çizgisi).
   bilerek kabul edildi.
 - **Export.** "Resmî program" kavramı ancak bu fazla anlam kazanıyor; export'un
   varsayılan olarak yalnız yayını basması ayrıca ele alınacak.
+
+---
+
+## K-60 · Sınav onay akışı: `kind` ayracıyla aynı taslak mekanizması [E] — K-59'un ikinci yarısı
+**Belirti:** K-59 haftalık programı onay kapısının arkasına aldı, sınav tarafına
+dokunmadı. Sistem şu an **yarım**: ders programı onaylı, sınav takvimi değil.
+Aynı kurumda iki farklı yönetişim kuralı işliyor.
+
+**Mevcut durumun tespiti (tasarım öncesi okuma — kodda ölçüldü):**
+- `POST /exams/submit` (`routers/exams.py:286`) ve
+  `POST /exams/{id}/revert-to-draft` (`:324`) **ayakta**. `can_manage_exams`
+  yetkisi olan biri ikinci bir göz olmadan sınav takvimini yayına alıyor **ve**
+  yayından indiriyor. Bu, K-59 adım 9'da haftalıkta kapatılan bypass'ın
+  birebir aynısı — orada "adım 9 bitmeden sistem onaylı değil" demiştik;
+  sınav için henüz o adım hiç atılmadı.
+- `Exam.status` + `submitted_at` + `ck_exams_status_submitted_consistency`
+  duruyor. `entry_status` enum TİPİ K-59'da tam olarak bunun için bırakılmıştı.
+- `_exam_universe(db, workgroup_id)` (`conflict_service.py:207`) evreni
+  **"DRAFT + SUBMITTED hepsi"**. Yani sınavda, haftalıkta sadeleştirdiğimiz
+  "yarım işler herkesin çakışma evreninde" durumu aynen sürüyor.
+- Sınavı okuyan **altı** yol var: `routers/exams.py`, `dashboard.py`,
+  `export.py`, `courses.py`, `lecturers.py` ve `conflict_service.py`.
+  Hepsi bugün her satırı görüyor.
+
+**Karar — taslak birimi: cohort, K-59'daki gibi.** K-59'un açık uçlar
+maddesinde "sınav ders düzeyindedir, cohort taslağı kavramı sınavda
+karşılıksız; birim muhtemelen bölüm + sınav dönemi" yazıyordu. **Bu gerekçe
+yanlıştı, iptal edildi.**
+- `Exam.course_id → Course`, `Course` ise `(department_id, year, semester)`
+  taşıyor ve ortak dersi `extra_cohorts` üzerinden veriyor. Yani bir cohort'un
+  sınav kümesi `cohort_course_filter` ile **tam** seçilebiliyor — haftalık
+  taslağın kapsamını, kopyalayacağı satırları ve çakışma evrenini belirleyen
+  filtrenin AYNISI. Sınav "ders düzeyinde" olmak yüzünden cohort'suz değil;
+  cohort'a dersin üzerinden bağlı.
+- Ortak dersin sınavının birkaç bölümü aynı anda etkilemesi **yeni bir sorun
+  değil**: haftalıkta aynı durum paylaşımlı yerleştirme + "etkilenen bölümler"
+  uyarısı + tek onay ile çözüldü (K-59 / K-48-49). Sınavda tekrar çözülecek
+  bir şey yok, aynı çözüm devralınıyor.
+- **"Bölüm + sınav dönemi" birimi REDDEDİLDİ.** Dönem zaten cohort kimliğinin
+  içinde (`semester`). Yeni bir kapsam kavramı icat etmek ikinci bir filtre,
+  ikinci bir kapsam denetimi ve ikinci bir kuyruk mantığı demek olurdu —
+  hiçbirinin karşılığı yok.
+
+**Karar — ayrı mekanizma değil, `schedule_drafts.kind: WEEKLY | EXAM`.**
+Yaşam döngüsü (`OPEN → PENDING → APPROVED | REJECTED`), donma, geri çekme,
+öz-onay yasağı (ADMIN dahil), ortak ve atamasız kuyruk, inceleme ekranı,
+bayatlık bandı, `applied_summary` dondurma ve değişiklik akışı **olduğu gibi
+yeniden kullanılır**. K-59 bu ayrımı zaten öngörmüştü: `can_approve_schedule`
+oraya "haftalık + sınav ortak" gerekçesiyle tek bayrak olarak konmuştu.
+- **Haftalık ve sınav AYRI onaylanır**, tek talepte birleşmez. Sınav dönemi
+  planlaması ders programından bağımsız yürüyor; birleştirmek "vize takvimini
+  onaylatmak için ders programını da onaylatmak" demeye gelirdi.
+
+**Karar — yetki:** onaylamak tek bayrak (`can_approve_schedule`, kind'a
+bakmaz — gözetim rolü bölünmez, K-59). **Onaya göndermek kind'a göre**
+ayrışır: `WEEKLY → can_manage_weekly`, `EXAM → can_manage_exams`. Bölüm
+üyeliği (K-25'in ikinci boyutu) her iki kapıda da aranır. Taslak açmak yine
+yetkisiz — özel taslak kimseyi etkilemez.
+
+**Karar — şema:**
+- `schedule_drafts.kind` (`DraftKind` enum, `server_default 'WEEKLY'` →
+  mevcut satırlar doğru değeri kendiliğinden alır).
+- **`uq_schedule_drafts_active_per_owner` indeksine `kind` EKLENİR.** Yoksa
+  bir kullanıcı aynı cohort için haftalık ve sınav taslağını aynı anda
+  açamaz — bu iki iş birbirinden bağımsız yürüdüğü için kabul edilemez.
+- `exams.draft_id` (nullable FK). **`draft_id IS NULL` = yayında**, haftalıkla
+  aynı tek-gerçek kuralı.
+- **`uq_exams_course_type_index` PARÇALANIR — bu, sınava özgü ve zorunlu.**
+  Bugün `(course_id, exam_type, exam_index)` üzerinde koşulsuz UNIQUE (K-46).
+  Taslak yayının kopyasını taşıyacağı için **kopyalama anında** bu kısıt
+  ihlal edilir. İki KISMİ indekse bölünür:
+  - `(course_id, exam_type, exam_index) WHERE draft_id IS NULL`
+    → yayında tekillik korunur; K-46'nın asıl amacı budur.
+  - `(course_id, exam_type, exam_index, draft_id) WHERE draft_id IS NOT NULL`
+    → her taslağın kendi içinde tekillik.
+
+  Tek bir dört kolonlu UNIQUE **yetmez**: Postgres'te NULL'lar birbirine eşit
+  sayılmaz, o indeks altında yayında aynı sınavın iki kopyası geçerdi.
+  (Haftalıkta bu iş çıkmadı, çünkü `weekly_schedule_entries`'te böyle bir
+  tekillik kısıtı yok.)
+- Sınav kopyalanırken **`exam_classrooms` M2M satırları da kopyalanır**;
+  derslik listesi sınavın yerleşiminin parçası (K-17).
+- `Exam.status`, `submitted_at`, tutarlılık CHECK'i ve `idx_exams_status`
+  **düşer — ama ilk migration'da değil.** K-59'un dersi aynen geçerli: ilk
+  migration tamamen eklemelidir, mevcut akış bozulmadan çalışmaya devam eder;
+  düşürme son temizlik migration'ına kalır. Böylece her commit'te ağaç yeşil.
+- `entry_status` TİPİ: haftalık onu K-59'da bıraktı, sınav bu fazın sonunda
+  bırakacak. Son adımda **kullananı kalmadığı ölçülüp** tip de düşürülür.
+
+**Karar — fark eşleştirmesi:** anahtar `(course_id, exam_type, exam_index)`,
+yerleşim `(exam_date, start_time, duration_minutes, lecturer_id,
+classroom_ids)`.
+- Haftalıktan **daha basit**: bu üçlü veritabanında zaten tekil olduğu için
+  grup içi çoklu eşleştirme, sıralı `zip`'leme ve "bir şubenin aynı tipte iki
+  oturumu olabilir" karmaşası **yok**. Her anahtarda en fazla bir yayın + bir
+  taslak satırı: ikisi de varsa ve yerleşim aynıysa elenir, farklıysa MOVED;
+  yalnız yayında REMOVED; yalnız taslakta ADDED.
+- **Derslik karşılaştırması KÜMEdir** (M2M, sıra anlamsız).
+- **Gözetmen farka girer.** Haftalıkta hoca şubeden türüyordu; sınavda
+  `lecturer_id` satırın kendi alanı, dolayısıyla gözetmen değişikliği de
+  onaylayıcının gördüğü farkta ayrı bir satırdır.
+
+**Karar — `pair_changes` GENELLEŞTİRİLMEZ, sınav için ayrı yazılır.**
+Ortak bir "entity + anahtar fonksiyonu + yerleşim fonksiyonu" soyutlaması
+kurmak, haftalığın grup-içi eşleştirme mantığını sınava da taşırdı — oysa
+sınavda o mantığın karşılığı yok. Bedeli iki tarafı da okunmaz yapmak olurdu.
+Paylaşılan şey **hesap değil şekil**: `Change` üçlüsü, fark kontratı ve
+`DiffTable`. Tablo "yer" sütununu bir **metinleştirici** üzerinden çizer
+(haftalık `"Sal 3"`, sınav `"12 Oca 09:00 (90 dk)"`); kind rozeti, ders
+sütunu ve ortak ders uyarısı aynen paylaşılır. Onaylayıcının GÖRDÜĞÜ fark ile
+onayın UYGULADIĞI farkın tek hesaptan çıkması kuralı (K-59 adım 4) sınav
+kolunda da geçerli.
+
+**Karar — çakışma motoru:** motora yine DOKUNULMAZ, tek değişiklik dikişte:
+`_exam_universe(db, wg, draft=None)`.
+- `draft` yok → yalnız `draft_id IS NULL`.
+- `draft` var → taslağın kendi sınavları + yayının, taslağın cohort kapsamı
+  DIŞINDA kalan sınavları (`cohort_course_filter`'ın tersi — haftalıkla
+  birebir aynı desen).
+- `scan_draft` **kind'a göre hangi tarafı taslak evrenine alacağını seçer**:
+  WEEKLY taslağında haftalık taslaktan + sınav yayından, EXAM taslağında sınav
+  taslaktan + haftalık yayından. K-06'nın X kuralları (sınav-ders çakışması)
+  böylece taslak içinde de doğru koşar.
+- Kontrol hem gönderimde hem onayda koşar; onay anında hard çakışma çıkarsa
+  onay engellenir (K-59 ile aynı).
+
+**Karar — sızıntı baştan kapatılır.** `_eager_exam_query(db,
+published_only=True)` **güvenli varsayılan** olarak kurulur ve yukarıdaki altı
+okuma yolu daha ilk adımda ona bağlanır. Haftalıkta bu sızıntı adım 1'den adım
+9'a kadar taşındı ve kullanıcı "aynı saatte 4 tane ISG 1801" diye şikâyet
+edene kadar görülmedi (testler görmüyordu). Aynı hatayı bile bile ikinci kez
+yapmanın anlamı yok.
+
+**Karar — doğrulama kuralları:** E1/E2/E6 ve `_validate_exam_refs`,
+`_ensure_weekday`, `_normalize_exam_index` **aynen kalır, yalnız kapı
+değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
+`test_wp3_weekly.py` dönüşümünün aynısı: kural aynı, uç farklı).
+
+**Uygulama sırası:**
+1. ○ Şema + migration — **eklemeli** (`schedule_drafts.kind`, indekse `kind`,
+   `exams.draft_id`, `uq_exams_course_type_index`'in iki kısmi indekse
+   bölünmesi). Hiçbir kolon düşmez. up/down/up elle doğrulanır (testler
+   `create_all` ile kurulduğu için migration'ları çalıştırmıyor).
+2. ○ Motor dikişi: `_exam_universe(..., draft=None)` + `scan_draft`'in kind'a
+   göre evren seçimi + altı okuma yolunun `published_only=True`'ya bağlanması.
+3. ○ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /
+   fark / gönder / geri çek. Kapsam denetimi `cohort_course_filter` ile.
+4. ○ Onay API'si: kuyruğa kind süzgeci, sınav farkının uygulanması,
+   `applied_summary`'nin sınav metinleştiricisi.
+5. ○ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
+   satır bazlı durum rozetlerinin kaldırılması.
+6. ○ `ApprovalsPage`: kind sekmesi/rozeti + `DiffTable`'ın metinleştiricisi.
+7. ○ Temizlik: `/exams/submit` ve `/exams/{id}/revert-to-draft` kaldırılır;
+   `Exam.status`, `submitted_at`, CHECK ve `idx_exams_status` düşürülür;
+   kullananı kalmadıysa `entry_status` tipi de düşer.
+
+**Açık uçlar (bu fazda değil):**
+- **Bildirim merkezi** ve **export'un yalnız yayını basması** — K-59'dan
+  devrolan iki madde, sınav fazı bunları da kapsamıyor.
+- **Sınav dönemi takvimi.** "Vize haftası 12-23 Ocak" gibi bir dönem tanımı
+  yok; sınavlar serbest tarihe konuyor. Taslak birimi cohort olduğu için bu
+  faz onu gerektirmiyor, ama ileride gelirse taslağa değil **workgroup
+  ayarına** bağlanmalı.

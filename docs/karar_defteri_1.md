@@ -2058,3 +2058,83 @@ değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
   yok; sınavlar serbest tarihe konuyor. Taslak birimi cohort olduğu için bu
   faz onu gerektirmiyor, ama ileride gelirse taslağa değil **workgroup
   ayarına** bağlanmalı.
+
+---
+
+## K-61 · Taslağa dönüş yolu + iki adımlı yerleştirme [E] — K-59/K-60 kullanım düzeltmeleri
+**Belirti (kullanıcı, üç madde):** (1) paletten şube kaldırılıp "bırakma anında
+sorulacak" denmişti, sorulmuyor; (2) modal "Ders / şube" diye tek soru soruyor,
+önce ders sonra şube sorulmalı; (3) taslak açıp "Yayına Dön" dedikten sonra o
+taslağa geri dönülemiyor — "Bu cohort için zaten açık program taslağınız var
+(#16)" deyip çıkmaza sokuyor.
+
+**Tespit — (1) bir hata DEĞİL, veri durumu.** Kod K-59 ekinde kararlaştırıldığı
+gibi çalışıyor: tek şubeli derste şube sorulmuyor, çok şubelide soruluyor.
+Geliştirme veritabanında ölçüldü: **313 ders 0 aktif şubeli, 24 ders 1 şubeli,
+2+ şubeli ders YOK.** Yani sorulacak bir seçim hiç oluşmamış. Şubesiz dersler
+paletten zaten sürüklenemiyor ("şube yok" rozeti + "önce şube ekleyin" uyarısı),
+orada çıkmaz yok.
+- Yine de kullanıcının istediği akış farklı ve daha iyi: **her durumda önce ders,
+  sonra şube.** Tek şubelide şube seçtirilmez ama GÖSTERİLİR — kullanıcı neyi
+  yerleştirdiğini görür, akış her durumda aynı okunur ve çok şubeli veri
+  geldiğinde davranış değişmez.
+
+**Karar — yerleştirme modalı iki adım.** Birleşik `CENG 1801-1 — IT FOR
+ENGINEERS` listesi kalkar; yerine "Ders" ve "Şube" iki ayrı seçici gelir.
+- Sürükleyerek gelindiğinde ders zaten bellidir → salt-okunur gösterilir,
+  yalnız şube sorulur. Boş slota tıklanarak gelindiyse ikisi de sorulur.
+- **Tek şubede seçici DEVRE DIŞI ama görünür.** Gizlemek "şube diye bir şey
+  yok" izlenimi verirdi; asıl bilgi "bu dersin tek şubesi var" ve bunu
+  söylemenin yeri burası.
+- Ders değişince şube seçimi sıfırlanır — başka dersin şubesi taşınırsa sunucu
+  400 verir, ama kullanıcı sebebini anlamaz.
+
+**Karar — açık taslağa dönüş İKİ yüzeyden (kullanıcı kararı: "ikisi de").**
+Asıl kusur şu: çubuktaki "Taslak Aç" her seferinde POST atıyor, mevcut taslağı
+SEÇME yolu yok. Taslağı hatırlayan efekt yalnız cohort değişince koşuyor, o
+yüzden "Yayına Dön" → "Taslak Aç" 409'a çarpıyor.
+- **Çubukta:** düğme, o cohort için açık taslağım varsa "Taslağı Aç (#N)"
+  olur ve POST atmaz. 409 bir daha hiç görünmemeli — çünkü kullanıcı hatası
+  değil, arayüzün mevcut durumu bilmemesiydi.
+- **Menüde "Taslaklarım" sayfası:** haftalık + sınav bütün açık taslaklarım tek
+  listede (cohort, tür, kaç değişiklik, durum) ve "Aç" düğmesi ilgili ekrana o
+  taslak seçili olarak götürür. **Onay Bekleyenler'in eşi** — o onaylayan
+  tarafın kuyruğu, bu hazırlayan tarafın. Yalnız çubukla yetinmek, bulunduğunuz
+  cohort dışındaki taslakları görünmez bırakırdı; "bir yerlerde açık taslağım
+  var mı" sorusunun cevabı hiçbir yerde olmazdı.
+- Sayfa herkese açık: taslak açmak yetki istemiyor, dolayısıyla "kendi
+  taslaklarım" listesi de istemez. Sunucu zaten yalnız kendi taslaklarını döner.
+
+**Karar — değişiklik akışının başlığı netleşir.** Kullanıcı "bu panel neyi
+gösteriyor, ortak dersleri mi çakışmaları mı?" diye sordu; soru sorulmuşsa
+başlık kendini anlatmıyor demektir. Panel ONAYLANIP YAYINA GEÇMİŞ değişiklikleri
+gösterir (çakışmayla ilgisi yok) ve bir kayıt iki yoldan düşer: değişiklik kendi
+bölümümün cohort'unda yapıldı, ya da başka bölümün onayı ortak ders üzerinden
+beni etkiledi. Bu ikinci cümle panele alt başlık olarak yazılır.
+
+**Uygulama sırası:**
+1. ✅ `EntryModal` iki adıma bölündü (ders → şube). Sürükleyerek gelindiğinde
+   ders seçicisi DOLU ve kilitli; tek şubede şube kendiliğinden seçiliyor ve
+   seçici "Bu dersin tek şubesi var" açıklamasıyla kilitli görünüyor.
+   - **Yol üstünde bulunan kusur:** modalın ders listesi `paletteItems`'tan
+     türetiliyordu, yani **palet arama kutusuna bağlıydı**. "MATH" aratıp boş
+     bir hücreye tıklayan kullanıcı modalda yalnız MATH derslerini görürdü.
+     Arama bir gezinme yardımıdır, kapsam değil — liste `courses`'tan (cohort'un
+     şubesi olan dersleri) türetiliyor artık.
+2. ✅ `DraftBar` yayın modundayken o cohort'un açık taslağını arar; varsa düğme
+   "Taslağa Dön (#N)" olur ve POST atmaz. **409 bir daha görünmemeli** — o bir
+   kullanıcı hatası değil, arayüzün mevcut durumu bilmemesiydi.
+3. ✅ `Taslaklarım` sayfası (`/drafts`) + menü girişi. "Aç", cohort'u sorgu
+   parametreleriyle vererek ilgili ekrana götürüyor; ekran cohort'u seçince mod
+   çubuğu taslağı kendiliğinden buluyor. Reddedilen taslağın gerekçesi listede
+   de görünüyor — kullanıcı neyi düzelteceğini öğrenmek için taslağı açmak
+   zorunda kalmasın.
+4. ✅ Değişiklik akışına alt başlık eklendi.
+
+**Doğrulama (tarayıcı):** Taslaklarım 4 taslağı listeliyor → "Aç" (#16) doğru
+cohort'a taslak seçili olarak gitti → "Yayına Dön" → düğme "Taslağa Dön (#16)"
+oldu → tıklayınca 409 almadan taslağa döndü. Boş hücre modalı ders/şube ayrı
+soruyor; palet "CE 1002"ye filtreliyken bile modal cohort'un tamamını sunuyor.
+- **Sürükleyip bırakma yolu tarayıcıda TIKLANAMADI:** sentetik fare olayları
+  HTML5 sürükle-bırak API'sini tetiklemiyor. Bu yolun tek farkı `fixedCourseId`
+  propunun dolu gelmesi; tip denetimi geçiyor ama gerçek bırakma denenmedi.

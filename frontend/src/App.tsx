@@ -17,6 +17,7 @@ import ClassroomsPage from "./pages/ClassroomsPage";
 import CoursesPage from "./pages/CoursesPage";
 import ConflictsPage from "./pages/ConflictsPage";
 import ApprovalsPage from "./pages/ApprovalsPage";
+import DraftsPage from "./pages/DraftsPage";
 
 export default function App() {
   return (
@@ -38,6 +39,8 @@ export default function App() {
           <Route path="/weekly" element={<WeeklyPage />} />
           <Route path="/exams" element={<ExamsPage />} />
           <Route path="/conflicts" element={<ConflictsPage />} />
+          {/* K-61: hazırlayan tarafın kuyruğu; yetki istemez (taslak açmak da istemiyor). */}
+          <Route path="/drafts" element={<DraftsPage />} />
           {/* K-59: sunucu zaten yetkisize 403 döner; menü de gizler. */}
           <Route path="/approvals" element={<ApprovalsPage />} />
 

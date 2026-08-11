@@ -264,8 +264,17 @@ export default function ExamsPage() {
     const depParam = searchParams.get("department_id");
     if (!depParam) return;
     setDep(depParam);
+    // K-61: "Taslaklarım"dan gelindiğinde cohort'un tamamı verilir; mod çubuğu
+    // o cohort'un açık sınav taslağını bulup kendiliğinden seçer.
+    const yearParam = searchParams.get("year");
+    const semParam = searchParams.get("semester");
+    if (yearParam) setYear(yearParam);
+    if (semParam) setSem(semParam as SemesterType);
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
+    next.delete("year");
+    next.delete("semester");
+    next.delete("draft_id");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

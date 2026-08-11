@@ -319,8 +319,19 @@ export default function WeeklyPage() {
     if (!depParam) return;
     setDep(depParam);
     setView("cohort");
+    // K-61: "Taslaklarım" sayfasından gelindiğinde cohort'un tamamı verilir —
+    // yıl/dönem de ayarlanır ki mod çubuğu o cohort'un açık taslağını bulup
+    // kendiliğinden seçsin. Bölümler genel-bakışından gelindiğinde bu iki
+    // parametre yoktur ve seçim kullanıcıya bırakılır (eski davranış).
+    const yearParam = searchParams.get("year");
+    const semParam = searchParams.get("semester");
+    if (yearParam) setYear(yearParam);
+    if (semParam) setSem(semParam as SemesterType);
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
+    next.delete("year");
+    next.delete("semester");
+    next.delete("draft_id");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1196,28 +1207,22 @@ export default function WeeklyPage() {
       </Paper>
 
       {placing && (() => {
-        // Bırakılan ders belliyse şubeleri ONUN şubeleridir; tek şubeliyse hiç
-        // sorulmaz. Boş slota tıklanarak gelindiyse tüm cohort'un şubeleri.
+        // K-61: modal HER ZAMAN önce dersi, sonra şubeyi sorar. Sürükleyerek
+        // gelindiyse ders bellidir → salt-okunur gösterilir, yalnız şube
+        // sorulur. Boş slota tıklanarak gelindiyse ikisi de sorulur.
         const yeni = placing.drag?.kind === "new" ? placing.drag : undefined;
         const birakilan = yeni
           ? courses.find((c) => c.id === yeni.courseId)
           : undefined;
-        const adaylar = birakilan
-          ? birakilan.sections.filter((s) => s.active)
-          : null;
-        const tekSube = adaylar && adaylar.length === 1 ? adaylar[0].id : undefined;
-        const secenekler = adaylar
-          ? (tekSube ? undefined : adaylar.map((s) => ({
-              value: String(s.id),
-              label: `Şube ${s.section_no} — ${lecturerLabel(s.lecturer)}`
-                     + ` · ${s.expected_students} öğrenci`,
-            })))
-          : paletteItems.flatMap((r) => r.kind === "course"
-              ? r.sections.map((s) => ({
-                  value: String(s.id),
-                  label: `${r.course.code}-${s.section_no} — ${r.course.name}`,
-                }))
-              : []);
+        // Seçilebilir dersler: cohort'un ŞUBESİ OLAN dersleri. Şubesiz ders
+        // buraya girmez — yerleştirilecek şubesi yok (palette de sürüklenmiyor).
+        //
+        // Kaynak `paletteItems` DEĞİL `courses`: palet arama kutusu bir gezinme
+        // yardımıdır, kapsam değil. Oradan türetseydik kullanıcı "MATH" aratıp
+        // boş bir hücreye tıkladığında modalda yalnız MATH dersleri çıkardı.
+        const dersler = courses
+          .filter((c) => c.sections.some((s) => s.active))
+          .map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` }));
         return (
         <EntryModal
           title={birakilan
@@ -1225,15 +1230,20 @@ export default function WeeklyPage() {
             : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
-          // Tek şubeli derste şube bellidir (modal yalnız online bileşenini
-          // bilmek için alır); çok şubelide modal ŞUBEYİ sorar.
-          fixedSectionId={tekSube}
-          sections={secenekler}
+          courses={dersler}
+          fixedCourseId={birakilan?.id}
+          sectionsOf={(courseId) => {
+            const c = courses.find((x) => x.id === courseId);
+            return (c?.sections ?? []).filter((s) => s.active).map((s) => ({
+              value: String(s.id),
+              label: `Şube ${s.section_no} — ${lecturerLabel(s.lecturer)}`
+                     + ` · ${s.expected_students} öğrenci`,
+            }));
+          }}
           onClose={() => setPlacing(null)}
           onSubmit={async (body) => {
             const res = await api.post<{ entry: WeeklyEntry; conflicts: ConflictResult[] }>(
               `/${writeBase}`, {
-                section_id: tekSube ?? body.section_id,
                 day_of_week: placing.day, start_slot: placing.slot, ...body,
               });
             // Geri al = eklenen girişi sil.
@@ -1655,15 +1665,26 @@ type EntryBody = {
   section_id?: number;
 };
 
-/** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür. */
-function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
+/** Yerleştirme ve düzenleme aynı alanları sorar — tek bileşen iki işi görür.
+ *
+ *  K-61: yerleştirmede sıra HER ZAMAN ders → şube. Eskiden tek bir
+ *  "Ders / şube" listesi vardı (`CENG 1801-1 — IT FOR ENGINEERS` gibi birleşik
+ *  satırlar) ve sürükleyerek gelindiğinde tek şubeli derste hiçbir şey
+ *  sorulmuyordu. İkisi de kullanıcıyı "neyi yerleştiriyorum" sorusuyla baş başa
+ *  bırakıyordu; şimdi ders her durumda GÖRÜNÜR, şube her durumda ayrı satır.
+ */
+function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCourseId, sectionsOf, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
-  /** Verilirse modal önce DERSİ sorar (boş slota tıklayarak ekleme). */
-  sections?: { value: string; label: string }[];
-  /** Ders zaten belliyse (sürükleme/düzenleme) online bileşenini bilmek için. */
+  /** Verilirse modal ders + şube sorar (yerleştirme). Düzenlemede verilmez. */
+  courses?: { value: string; label: string }[];
+  /** Sürükleyerek gelindiyse ders bellidir: seçici DOLU ve kilitli gelir. */
+  fixedCourseId?: number;
+  /** Seçili dersin aktif şubeleri. */
+  sectionsOf?: (courseId: number) => { value: string; label: string }[];
+  /** Düzenleme: şube satırın KİMLİĞİDİR, sorulmaz — yalnız online'lık için alınır. */
   fixedSectionId?: number;
   /** K-45: şube id → bileşen bazında online'lık. */
   onlineBySection: Map<number, Record<SessionType, boolean>>;
@@ -1671,6 +1692,8 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSect
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
 }) {
+  const [courseId, setCourseId] = useState<string | null>(
+    fixedCourseId != null ? String(fixedCourseId) : null);
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [classroomId, setClassroomId] = useState<string | null>(initial?.classroomId ?? null);
   const [sessionType, setSessionType] = useState<SessionType>(initial?.sessionType ?? "THEORY");
@@ -1679,7 +1702,24 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSect
   const [busy, setBusy] = useState(false);
 
   const maxSlots = 9 - startSlot + 1;
-  const dersEksik = sections != null && !sectionId;
+  const subeler = courseId && sectionsOf ? sectionsOf(Number(courseId)) : [];
+  const tekSube = subeler.length === 1 ? subeler[0].value : null;
+
+  // Tek şubeli derste seçim yapılacak bir şey yok: otomatik seçilir. Seçici
+  // yine de ÇİZİLİR (kilitli) — gizlemek "şube diye bir şey yok" izlenimi
+  // verirdi, oysa asıl bilgi "bu dersin tek şubesi var" (K-61).
+  useEffect(() => {
+    setSectionId((mevcut) => {
+      if (tekSube) return tekSube;
+      // Ders değişti ve eski şube artık bu derse ait değil → sıfırla. Yoksa
+      // başka dersin şubesi gönderilir ve sunucu 400 verir (kullanıcı sebebini
+      // anlamaz).
+      return subeler.some((s) => s.value === mevcut) ? mevcut : null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, tekSube, subeler.length]);
+
+  const dersEksik = courses != null && (!courseId || !sectionId);
 
   // K-45: online'lık ders bileşeninin özelliğidir, serbest seçim DEĞİL. Seçili
   // şube + oturum türüne bakılır; bileşen online ise giriş online olur ve yalnız
@@ -1717,9 +1757,20 @@ function EntryModal({ title, classrooms, startSlot, initial, sections, fixedSect
   return (
     <Modal opened onClose={onClose} title={title} size="sm">
       <Stack gap="sm">
-        {sections && (
-          <Select label="Ders / şube" value={sectionId} onChange={setSectionId}
-            data={sections} searchable placeholder="Ders seç" nothingFoundMessage="Ders yok" />
+        {courses && (
+          <>
+            {/* Ders sürükleyerek geldiyse kilitli ama GÖRÜNÜR: kullanıcı neyi
+                yerleştirdiğini modalda da okuyabilmeli. */}
+            <Select label="Ders" value={courseId} onChange={setCourseId}
+              data={courses} searchable disabled={fixedCourseId != null}
+              placeholder="Ders seç" nothingFoundMessage="Ders yok" />
+            <Select label="Şube" value={sectionId} onChange={setSectionId}
+              data={subeler} searchable
+              disabled={!courseId || tekSube != null}
+              placeholder={courseId ? "Şube seç" : "Önce ders seçin"}
+              description={tekSube != null ? "Bu dersin tek şubesi var" : undefined}
+              nothingFoundMessage="Şube yok" />
+          </>
         )}
         {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
         <Select label="Oturum türü (T/U/L)" value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}

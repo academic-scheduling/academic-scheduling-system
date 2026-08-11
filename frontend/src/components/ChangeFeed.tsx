@@ -35,10 +35,18 @@ export default function ChangeFeed({ limit = 5 }: { limit?: number }) {
   return (
     <Paper radius="md" p="md"
       style={{ border: `1px solid ${BORDER}`, background: PAGE_SURFACE }}>
-      <Group gap={8} mb="sm">
+      <Group gap={8} mb={4}>
         <IconHistory size={17} style={{ opacity: 0.6 }} />
         <Text fw={600} fz={15}>Bölümünüzü etkileyen son değişiklikler</Text>
       </Group>
+      {/* K-61: kullanıcı "bu panel neyi gösteriyor, çakışmaları mı?" diye
+          sordu — soru sorulmuşsa başlık kendini anlatmıyor demektir. Panelin
+          konusu ÇAKIŞMA DEĞİL, yayına geçmiş onaylardır; ve listeye iki
+          yoldan girilir. İkinci yol (ortak ders) hiç aşikâr değil. */}
+      <Text size="xs" c={TEXT_MUTED} mb="sm">
+        Onaylanıp yayına geçen değişiklikler. Ya kendi bölümünüzün programında
+        yapıldılar ya da <b>ortak bir ders</b> üzerinden sizi etkilediler.
+      </Text>
       <Stack gap="sm">
         {items.map((c) => (
           <Stack key={c.id} gap={2}>

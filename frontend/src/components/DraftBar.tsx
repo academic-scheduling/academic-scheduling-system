@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert, Badge, Button, Group, Modal, Paper, Stack, Text, Textarea, Tooltip,
 } from "@mantine/core";
@@ -50,12 +50,31 @@ export default function DraftBar({
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
+  /** K-61: bu cohort için AÇIK taslağım (seçili olmasa da). Yayın moduna
+   *  dönüldüğünde de bilinmesi gerekir — yoksa "Taslak Aç" yeniden POST atıp
+   *  409'a çarpar ve kullanıcı kendi taslağına dönemez. */
+  const [mevcut, setMevcut] = useState<ScheduleDraft | null>(null);
 
   const cohortHazir = departmentId !== null && year !== null;
   const duzenlenebilir = draft !== null
     && (draft.status === "OPEN" || draft.status === "REJECTED");
   const turAdi = DRAFT_KIND_LABELS[kind];      // "haftalık program" / "sınav takvimi"
   const satirAdi = DRAFT_ROW_LABELS[kind];     // "yerleşim" / "sınav"
+
+  // Yalnız YAYIN modunda ara: taslaktayken zaten hangisinde olduğumuz belli.
+  useEffect(() => {
+    if (draft || !cohortHazir) { setMevcut(null); return; }
+    let iptal = false;
+    api.get<ScheduleDraft[]>("/schedule-drafts")
+      .then((liste) => {
+        if (iptal) return;
+        setMevcut(liste.find((d) => d.kind === kind
+          && d.department_id === departmentId
+          && d.year === year && d.semester === semester) ?? null);
+      })
+      .catch(() => { /* akış ikincil; bulunamazsa "yeni aç" davranışı kalır */ });
+    return () => { iptal = true; };
+  }, [draft, cohortHazir, departmentId, year, semester, kind]);
 
   const hata = (e: unknown, varsayilan: string) =>
     notifications.show({
@@ -64,6 +83,9 @@ export default function DraftBar({
 
   const acTaslak = async () => {
     if (!cohortHazir) return;
+    // Açık taslak varsa YENİSİNİ AÇMA, ona dön. 409 bir kullanıcı hatası
+    // değildi — arayüzün mevcut durumu bilmemesiydi (K-61).
+    if (mevcut) { onSelect(mevcut); return; }
     setBusy(true);
     try { await onCreate(); } finally { setBusy(false); }
   };
@@ -175,13 +197,17 @@ export default function DraftBar({
           <Group gap={6} wrap="nowrap">
             {!draft && (
               <Tooltip
-                label={cohortHazir
-                  ? `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`
-                  : "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"}>
+                label={!cohortHazir
+                  ? "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"
+                  : mevcut
+                  ? `Bu cohort için açık taslağınıza döner (${mevcut.change_count} değişiklik)`
+                  : `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`}>
                 <Button size="xs" radius="md" loading={busy} disabled={!cohortHazir}
-                  leftSection={<IconPlus size={15} />} style={{ height: CONTROL_H }}
+                  variant={mevcut ? "light" : "filled"}
+                  leftSection={mevcut ? <IconPencil size={15} /> : <IconPlus size={15} />}
+                  style={{ height: CONTROL_H }}
                   onClick={acTaslak}>
-                  Taslak Aç
+                  {mevcut ? `Taslağa Dön (#${mevcut.id})` : "Taslak Aç"}
                 </Button>
               </Tooltip>
             )}

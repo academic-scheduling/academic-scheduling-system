@@ -32,6 +32,7 @@ import {
   IconUsers,
   type IconProps,
   IconChecklist,
+  IconFileStack,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
 import { useAuth } from "../auth/AuthContext";
@@ -56,6 +57,10 @@ const MENU: MenuItem[] = [
   { label: "Öğretim Üyeleri", path: "/lecturers", icon: IconUsers },
   { label: "Haftalık Program", path: "/weekly", icon: IconCalendarWeek },
   { label: "Sınavlar", path: "/exams", icon: IconPencil },
+  // K-61: hazırlayan tarafın kuyruğu — "Onay Bekleyenler"in eşi. Yetki
+  // istemez: taslak açmak da istemiyor (K-59), liste yalnız kendi
+  // taslaklarını gösterir.
+  { label: "Taslaklarım", path: "/drafts", icon: IconFileStack },
   { label: "Onay Bekleyenler", path: "/approvals", icon: IconChecklist, approverOnly: true },
   { label: "Çakışma Raporu", path: "/conflicts", icon: IconAlertTriangle },
 ];

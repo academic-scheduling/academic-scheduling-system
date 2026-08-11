@@ -206,6 +206,9 @@ export default function ExamsPage() {
   // K-60: NULL = yayındaki sınav takvimi (salt-okunur). Dolu = kendi özel
   // taslağım; takvim, çakışma ve bütün yazma işlemleri onun içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır
+   *  (çakışma vurgusu yayındaki bir sınava götürdüğünde). */
+  const taslakSecimiAtla = useRef(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -289,6 +292,12 @@ export default function ExamsPage() {
           const firstTarget = targets[0];
           const fullCourse = courses.find((c) => c.id === firstTarget.course.id);
           if (fullCourse) {
+            // K-62: hedef YAYINDA (`/exams` yalnız yayını döner), o yüzden
+            // yayın moduna geçilir. Yoksa gidilen cohort'ta açık sınav
+            // taslağım varsa ekran ona geçer ve aranan sınav orada olmadığı
+            // için boş bir takvime bakılır (haftalıktaki kusurun ikizi).
+            taslakSecimiAtla.current = true;
+            setDraft(null);
             setDep(String(fullCourse.department_id));
             setYear(String(fullCourse.year));
             setSem(fullCourse.semester);
@@ -300,7 +309,7 @@ export default function ExamsPage() {
               id: `exam-highlight-${highlightIds.join("-")}`,
               color: "blue",
               title: `Çakışan Sınavlar Vurgulandı (${ruleParam})`,
-              message: `${courseCodes} sınavları takvim üzerinde gösteriliyor.`,
+              message: `${courseCodes} — YAYINDAKİ sınav takviminde gösteriliyor.`,
             });
           }
           setDeepHighlightIds(targets.map((t) => t.id));
@@ -553,6 +562,9 @@ export default function ExamsPage() {
    *  yenilense de kaybolmasın). Yalnız kendi taslaklarım döner. */
   useEffect(() => {
     if (!dep || year === COMMON_YEAR) return;
+    // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
+    // aranan sınavı ekrandan kaçırır. Bayrak tek seferliktir.
+    if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         const eslesen = liste.find((d) => d.kind === "EXAM"
@@ -957,11 +969,20 @@ export default function ExamsPage() {
                         <Button key={idx} size="compact-xs" variant="light"
                           color={a.type === "exam" ? "violet" : "blue"}
                           onClick={() => {
-                            if (a.type === "exam") {
-                              setSearchParams({ highlight: String(a.id), rule: c.rule_id });
-                            } else {
+                            if (a.type !== "exam") {
                               navigate(`/weekly?highlight=${a.id}&rule=${c.rule_id}`);
+                              return;
                             }
+                            // K-62: çakışmanın iki tarafı iki AYRI evrenden
+                            // gelebilir — biri taslağımın sınavı, öteki başka
+                            // cohort'un YAYINDAKİ sınavı. Önce "ekranda mı".
+                            const ekranda = exams.find((e) => e.id === a.id);
+                            if (ekranda) {
+                              setDeepHighlightIds([a.id]);
+                              setHighlightInfo({ rule: c.rule_id, exams: [ekranda] });
+                              return;       // zaten buradayız, gidilecek yer yok
+                            }
+                            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
                           }}>
                           {a.course_code ?? `#${a.id}`}
                         </Button>

@@ -230,6 +230,10 @@ export default function WeeklyPage() {
   // ızgara, çakışma ve bütün yazma işlemleri o taslağın içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
   const [paletteSearch, setPaletteSearch] = useState("");
+  /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır.
+   *  Çakışma vurgusuyla gelindiğinde hedef yayındadır; taslağa geçmek aranan
+   *  satırı ekrandan kaçırır. */
+  const taslakSecimiAtla = useRef(false);
 
   // Palet yüksekliği GRID'e bağlanır, kendi içeriğine değil: ders sayısı arttıkça
   // uzamasın, kaydırsın. Ölçüyoruz çünkü sabit sayı yazmak grid'in iç yapısı
@@ -341,6 +345,9 @@ export default function WeeklyPage() {
     if (!highlightIds.length || !allCourses.length) return;
     let cancelled = false;
 
+    // K-62: buraya YALNIZCA ekranda olmayan satırlar gelir ve onlar tanım gereği
+    // YAYINDAKİ satırlardır (taslağımın satırları çubukta zaten görünür, tıklama
+    // onları yerinde vurgular). Bu yüzden yayın listesinde aranır.
     api.get<WeeklyEntry[]>("/weekly-entries")
       .then((allEntries) => {
         if (cancelled) return;
@@ -349,6 +356,12 @@ export default function WeeklyPage() {
           const firstTarget = targets[0];
           const fullCourse = allCourses.find((c) => c.id === firstTarget.section.course.id);
           if (fullCourse) {
+            // Hedef YAYINDA olduğu için YAYIN moduna geçilir. Yoksa gidilen
+            // cohort'ta açık taslağım varsa ekran ona geçer ve aranan satır
+            // orada OLMADIĞI için kullanıcı boş bir ızgaraya bakar — bildirilen
+            // kusur tam olarak buydu.
+            taslakSecimiAtla.current = true;
+            setDraft(null);
             setView("cohort");
             setDep(String(fullCourse.department_id));
             setYear(String(fullCourse.year));
@@ -360,7 +373,8 @@ export default function WeeklyPage() {
               id: `highlight-${highlightIds.join("-")}`,
               color: "blue",
               title: `Çakışan Dersler Vurgulandı (${ruleParam})`,
-              message: `${courseCodes} derslerinin kayıtları takvim üzerinde gösteriliyor.`,
+              message: `${courseCodes} — YAYINDAKİ programda, `
+                + `${fullCourse ? `${fullCourse.year}. sınıf` : "ilgili cohort"} görünümüne geçildi.`,
             });
           }
           setDeepHighlightIds(targets.map((t) => t.id));
@@ -491,9 +505,17 @@ export default function WeeklyPage() {
    *  hiçbir koşulda listelemez (K-59). */
   useEffect(() => {
     if (view !== "cohort" || !dep || year === COMMON_YEAR) return;
+    // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
+    // aranan satırı ekrandan kaçırır. Bayrak tek seferliktir.
+    if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
-        const eslesen = liste.find((d) => String(d.department_id) === dep
+        // K-62: `kind` süzgeci ZORUNLU. K-60'ta sınav taslakları eklendiğinde
+        // bu arayış güncellenmemişti; aynı cohort'un SINAV taslağı haftalık
+        // ekranda seçilebiliyor ve ekran "bu uç ona uygun değil" hatasına
+        // düşüyordu. (Sınav ekranındaki eşi K-60'ta doğru yazılmıştı.)
+        const eslesen = liste.find((d) => d.kind === "WEEKLY"
+          && String(d.department_id) === dep
           && String(d.year) === year && d.semester === sem);
         if (eslesen) setDraft(eslesen);
       })
@@ -1133,7 +1155,7 @@ export default function WeeklyPage() {
             100% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
           }
         `}</style>
-        <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 0}>
+        <Group justify="space-between" mb={4}>
           <Text fw={500} size="sm">Çakışmalar</Text>
           <Group gap={6}>
             <Badge size="sm" color="red" variant="light">
@@ -1144,6 +1166,16 @@ export default function WeeklyPage() {
             </Badge>
           </Group>
         </Group>
+        {/* K-62: kapsam sorulmuştu ("bu cohort mu, tüm sistem mi?"). Taslakta
+            liste TASLAĞIMIN satırlarına dokunanlarla sınırlıdır ama karşı taraf
+            başka cohort'un YAYINDAKİ satırı olabilir — bunu söylememek, listeyi
+            "neden burada başka sınıfın dersi var" sorusuna açık bırakıyordu. */}
+        <Text size="xs" c="dimmed" mb={weeklyConflicts.length ? "sm" : 0}>
+          {draft
+            ? "Taslağınızın satırlarına dokunan çakışmalar — karşı taraf başka bir "
+              + "sınıfın yayındaki dersi olabilir."
+            : "Yayındaki programın çakışmaları."}
+        </Text>
         {weeklyConflicts.length === 0 ? (
           <Text size="sm" c="dimmed">Haftalık programda çakışma yok.</Text>
         ) : (
@@ -1188,11 +1220,21 @@ export default function WeeklyPage() {
                         <Button key={idx} size="compact-xs" variant="light"
                           color={a.type === "weekly_entry" ? "blue" : "violet"}
                           onClick={() => {
-                            if (a.type === "weekly_entry") {
-                              setSearchParams({ highlight: String(a.id), rule: c.rule_id });
-                            } else {
+                            if (a.type !== "weekly_entry") {
                               navigate(`/exams?highlight=${a.id}&rule=${c.rule_id}`);
+                              return;
                             }
+                            // K-62: çakışmanın iki tarafı iki AYRI evrenden
+                            // gelebilir — biri taslağımın satırı, öteki başka
+                            // cohort'un YAYINDAKİ satırı. Karıştırmamak için
+                            // önce "bu satır şu an ekranda mı" diye bakılır.
+                            const ekranda = entries.find((e) => e.id === a.id);
+                            if (ekranda) {
+                              setDeepHighlightIds([a.id]);
+                              setHighlightInfo({ rule: c.rule_id, entries: [ekranda] });
+                              return;         // zaten buradayız, gidilecek yer yok
+                            }
+                            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
                           }}>
                           {a.course_code ?? `#${a.id}`}
                         </Button>

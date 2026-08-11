@@ -2138,3 +2138,54 @@ soruyor; palet "CE 1002"ye filtreliyken bile modal cohort'un tamamını sunuyor.
 - **Sürükleyip bırakma yolu tarayıcıda TIKLANAMADI:** sentetik fare olayları
   HTML5 sürükle-bırak API'sini tetiklemiyor. Bu yolun tek farkı `fixedCourseId`
   propunun dolu gelmesi; tip denetimi geçiyor ama gerçek bırakma denenmedi.
+
+---
+
+## K-62 · Çakışma listesi taslak/yayın ayrımını kaybetmişti [E] — K-59/K-60 kalıntısı
+**Belirti (kullanıcı):** bir taslakta çalışırken çakışma listesindeki iki çipin
+ikisi de yanlış davranıyor. "DENEME-1" → *"Vurgulanacak kayıt bulunamadı"*;
+"CE 1003-1" → dersin cohort'una gidiyor ama oradaki AÇIK TASLAĞA düşüyor ve
+aranan ders orada olmadığı için boş ızgara görünüyor. Kullanıcının teşhisi:
+"çakışma listesi taslak ve yayın arasında karışmış görünüyor."
+
+**Tespit — liste DOĞRU, tıklama bozuk.** Ölçülen veri:
+`CE 1003-1` (#121) YAYINDA, cohort 5/1/**Güz**; `DENEME-1` (#180) TASLAK #16'da,
+cohort 5/1/**Bahar**. İkisi de aynı hocada (id 9) ve Çarşamba 1-2. slotta →
+W2 gerçek bir çakışma. Taslak evreni tanım gereği böyle kurulur (K-59): taslağın
+kendi satırları + yayının, taslağın cohort'u DIŞINDA kalan kısmı. Yani çakışmanın
+**iki tarafı iki ayrı evrenden** gelir ve bu, mekanizmanın hatası değil amacıdır.
+
+**Kök sebep:** vurgulama/yönlendirme kodu taslaklardan ÖNCE yazılmıştı ve her
+satırın yayında olduğunu varsayıyordu — `GET /weekly-entries` çağırıyor, o da
+K-59'dan beri yalnız yayını döndürüyor. Taslak satırı orada yok → "bulunamadı".
+Yayın satırı bulunuyor ama gidilen cohort'ta açık taslak varsa ekran ona geçiyor
+ve aranan satır görünmüyor.
+
+**Karar — tıklama önce "bu satır ekranda mı" diye sorar.**
+- Satır o an gösterilen kümedeyse (taslaktaysam taslağımın satırı) → YERİNDE
+  vurgulanır, hiçbir yere gidilmez. Zaten oradayız.
+- Değilse tanım gereği YAYINDAKİ bir satırdır → cohort'una gidilir **ve yayın
+  moduna geçilir**. Taslağı kendiliğinden seçen efekt tek seferlik bir bayrakla
+  atlatılır; yoksa hedef yine ekrandan kaçar. Bildirim de nereye gidildiğini
+  ("YAYINDAKİ programda, N. sınıf görünümüne geçildi") açıkça söyler.
+- Aynı düzeltme sınav ekranına da uygulandı — orada `GET /exams` ile birebir
+  aynı kusur vardı.
+
+**Karar — panelin kapsamı yazıyla söylenir.** Kullanıcı "bu cohortu mu yoksa tüm
+sistemi mi gösteriyor" diye sordu. Taslakta liste **taslağımın satırlarına
+dokunanlarla** sınırlıdır (sunucu `scan_draft`'ta öyle süzer) ama karşı taraf
+başka cohort'un yayındaki dersi olabilir. Bunu söylememek listeyi "neden burada
+başka sınıfın dersi var" sorusuna açık bırakıyordu; panele alt başlık kondu.
+
+**Bulunan ikinci kusur (tarayıcı yakaladı):** haftalık ekranın "bu cohort için
+açık taslağımı seç" arayışı **`kind` süzmüyordu**. K-60'ta sınav taslakları
+eklendiğinde bu arayış güncellenmemiş; aynı cohort'un SINAV taslağı haftalık
+ekranda seçilebiliyor ve ekran *"Bu taslak bir sınav takvimi taslağı — bu uç ona
+uygun değil"* hatasına düşüyordu. Sınav ekranındaki eşi K-60'ta doğru yazılmıştı,
+haftalıktaki geride kalmış. Süzgeç eklendi.
+
+**Doğrulama (tarayıcı, kullanıcının senaryosu birebir):** Taslaklarım → #16
+"Aç" → doğru taslak (Program, sınav değil) açıldı → çakışma listesinde
+"DENEME-1" yerinde vurgulandı (taslaktan çıkmadan) → "CE 1003-1" CE/1/Güz'e
+**yayın modunda** götürdü, satır vurgulu göründü, çubuk "Taslağa Dön (#3)"
+seçeneğini sundu ama zorlamadı.

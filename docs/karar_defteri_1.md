@@ -2189,3 +2189,35 @@ haftalıktaki geride kalmış. Süzgeç eklendi.
 "DENEME-1" yerinde vurgulandı (taslaktan çıkmadan) → "CE 1003-1" CE/1/Güz'e
 **yayın modunda** götürdü, satır vurgulu göründü, çubuk "Taslağa Dön (#3)"
 seçeneğini sundu ama zorlamadı.
+
+---
+
+## K-63 · Program sıfırlama betiği [E]
+**Bağlam (kullanıcı):** "örnek ve test verilerini sil; bölümler, hesaplar,
+öğretim üyeleri, derslikler ve dersler kalsın ama program ve sınavlar boş olsun
+— gerçek programları kendim tek tek ekleyip denemek istiyorum."
+
+**Karar — sınır İKİ KATMAN arasından geçer.** Seed betikleri veri ÜRETİR;
+bu betik yalnız **program katmanını** siler, **kimlik ve katalog katmanına**
+dokunmaz:
+- **Silinir:** `weekly_schedule_entries`, `exams` (+`exam_classrooms` CASCADE),
+  `schedule_drafts` (+`draft_affected_departments`), `audit_logs`.
+- **Kalır:** workgroup, kullanıcı, üyelik, bölüm, öğretim üyesi, bina, derslik,
+  ders, şube, ek cohort, slot.
+
+**Onaylanmış taslaklar da silinir** (kullanıcı kararı): onaylanan taslak kaydı
+K-59 gereği aynı zamanda "son değişiklikler" akışının kaynağıdır — bırakılsaydı
+artık var olmayan satırların geçmişi akışta durmaya devam ederdi.
+
+`backend/reset_schedule.py`. Onay bayrağı olmadan **yalnız ölçer**
+(`--evet-sil` verilmeden hiçbir şey silmez) — yanlışlıkla çalıştırılan bir
+sıfırlama betiği, geri alınamayan bir zarardır. `--dersi-sil KOD` ile tek tek
+ders de düşürülebilir (test dersleri için).
+
+**Uygulandı (11 Ağustos 2026, geliştirme veritabanı):** 41 haftalık yerleşim,
+12 sınav, 13 sınav-derslik bağı, 9 taslak, 1043 denetim kaydı ve `DENEME` test
+dersi (1 şube + 3 ek cohort) silindi. 7 bölüm, 7 kullanıcı, 93 öğretim üyesi,
+23 derslik, 336 ders, 23 şube, 52 ek cohort duruyor.
+- Boş durum tarayıcıda doğrulandı: haftalık, sınav, çakışma raporu ve
+  Taslaklarım ekranları boş veriyle sorunsuz çiziliyor; boş programda taslak
+  açma (0 satır kopyalanır, fark boş, çakışma boş) çalışıyor.

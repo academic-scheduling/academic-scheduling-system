@@ -2221,3 +2221,195 @@ dersi (1 şube + 3 ek cohort) silindi. 7 bölüm, 7 kullanıcı, 93 öğretim ü
 - Boş durum tarayıcıda doğrulandı: haftalık, sınav, çakışma raporu ve
   Taslaklarım ekranları boş veriyle sorunsuz çiziliyor; boş programda taslak
   açma (0 satır kopyalanır, fark boş, çakışma boş) çalışıyor.
+
+---
+
+## K-64 · Bologna'dan hoca eşleştirmeli şube import'u [E]
+**Bağlam (kullanıcı):** "Ders aktarmada dersleri şubesiz ekliyoruz. Ders
+detayında ( 'i' simgesi) 'Dersi Verenler' yazıyor, bazen birden fazla. Şube
+oluşturmayı bunu baz alarak yap — orada yazan öğretmene direkt şube atanmış
+gelsin. Kontenjan görünmüyor, varsayılan 80 olsun." Bu, K-14'te ertelenen
+"şube sonra elle eklenir" kararının otomatik hâli; K-08 hoca listesini kimlik
+anahtarı olarak kullanır.
+
+**Kaynağın anatomisi (tarayıcı + httpx ile kanıtlandı).** `progCourses.aspx`
+(WP7'de kazınan liste sayfası) hoca içermez. Hoca yalnız ders DETAY sayfasında:
+`progCourseDetails.aspx?curCourse=<ID>&lang=tr`. Ama `curCourse` ID'si liste
+sayfasında **gömülü değildir** — her satırdaki "i" bağlantısı bir ASP.NET
+postback'idir (`__doPostBack('grdBolognaDersler$ctlNN$btnDersAyrinti','')`) ve
+ID sunucuda viewstate'ten çözülür. Zincir: liste GET → gizli alanları
+(`__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION`, `curYear`) al →
+her ders için `__EVENTTARGET`'i o satırın bağlantısından oku → aynı viewstate
+ile POST → 302 → detay sayfasına in → parse. **Tek GET'in viewstate'i tüm
+dersler için yeniden kullanılabilir** (ölçüldü: 22 ders tek viewstate ile
+çekildi). Detay ~160 KB; ders başına bir postback+redirect. K-50'deki
+`fetch_details_bulk` deseniyle (8 worker, istek başına taze bağlantı) paralel
+çekilir — kaynağı bombalamadan beklemeleri üst üste bindirir.
+
+**"Dersi Verenler" biçimi.** `span#dlDers_DERS_VERENLabel_0` içinde, çoklu hoca
+`<br>` ile ayrılır. Her giriş `<Unvan> <Ad>` (ör. `Dr.Öğr.Üyesi BARIŞ İŞÇİ
+PEMBECİ`, noktalar bitişik). `normalize.split_title` noktayı boşluğa çevirip
+baştaki unvan token'larını greedy tüketir → (kanonik unvan, ad).
+`normalize_lecturer_name` unvanı atıp Türkçe-küçük harfe indirir → eşleştirme
+anahtarı. Tek kaynak; yeni normalizasyon yazılmadı.
+
+**Eşleştirme KISMİDİR — tasarımın kalbi budur.** Gerçek CENG verisinde ölçüldü:
+kendi bölüm hocaları eşleşir (`BARIŞ İŞÇİ PEMBECİ`→`barış işçi pembeci`), ama üç
+sınıf eşleşmez ve eşleşmemesi doğaldır:
+1. **Servis dersleri** — MATH/PHYS/CHEM/ENG hocaları başka fakültededir, K-50
+   listesi (yalnız Mühendislik kadrosu, 93 kişi) onları içermez.
+2. **Diakritiksiz yazım** — `Tugba Suzek` (Bologna) ≠ `tuğba süzek` (liste);
+   aynı kişi, farklı harfler.
+3. **Ad varyantı** — `Zeynep Filiz EREN DOĞU` (ek soyad) ≠ `zeynep filiz eren`.
+
+Şube `lecturer_id` NOT NULL/RESTRICT olduğundan eşleşmeyen otomatik bağlanamaz.
+
+**Karar — eşleşmeyen için ELLE EŞLE, oto-açma YOK (kullanıcı kararı).**
+Önizlemede eşleşmeyen hocanın ham Bologna adı gösterilir + bir hoca seçici;
+kullanıcı mevcut bir hocaya eşler ya da boş bırakır (o hoca için şube açılmaz).
+Yeni hoca **otomatik açılmaz**: `Tugba Suzek`i ayrı bir Lecturer yapmak, zaten
+var olan `Tuğba Süzek`in mükerreri olur ve W2/E3 hoca çakışma matematiğini
+böler (K-08'in tam tersi). Mükerrer üretmektense şubesiz bırakmak güvenlidir.
+
+**Karar — çoklu hoca → çoklu şube (kullanıcı kararı).** N hoca → N şube
+(Şube 1, Şube 2…), her biri o hocaya atanmış, hepsi `expected_students = 80`
+(kaynakta kontenjan yok). "Orada yazan öğretmene direkt şube atanır" isteğinin
+birebir karşılığı.
+
+**Karar — vize sayısı da otomatik dolar (kullanıcı kararı).** Detay sayfasını
+zaten çekiyoruz; `grd_degerlendirme` tablosunda ilk hücresi **tam olarak** "Ara
+Sınav" olan (çoğul "Ara Sınavlar" iş-yükü satırı ve hafta-konusu satırları
+HARİÇ), üç hücreli, ikinci hücresi sayı olan satırdan `courses.midterm_count`
+(K-46, 1–3'e kırpılır) yazılır. Bulunamazsa varsayılan 1 kalır.
+
+**Karar — kapsam: mevcut şubesiz derslere de (kullanıcı kararı).** 336 ders
+zaten aktarılmış, 313'ü şubesiz. Şube açmayı yalnız YENİ derse bağlamak mevcut
+veriye faydasız olurdu (kullanıcı 336 dersi silip yeniden aktarmalıydı). Bu
+yüzden önizleme, Bologna'da bulunan bir ders zaten kayıtlı **ama şubesizse**
+onu da şube adayı sayar: ders açılmaz, yalnız şubeleri eklenir. Zaten şubesi
+olan ders dokunulmaz (mükerrer önlenir). Böylece re-import ile 313 şubesiz ders
+şube kazanır.
+
+**Veri temizliği (kullanıcı kararı):** Var olan 23 şube deneme amaçlıydı;
+silindi (bağımlı haftalık giriş yok — K-63 sıfırlaması sonrası program boştu).
+Böylece 336 dersin tamamı şubesiz zemine indi ve Bologna şube-import'u hepsini
+tekdüze işler.
+
+**Sınır:** İş yine iki adımlı (K-61) — önizleme yazmaz, yalnız commit yazar.
+Detay çekme önizlemeyi yavaşlatır (ders başına bir postback); tek seferlik
+kurulum işi olduğu için kabul edildi. Bir dersin detayı çekilemezse o ders
+hocasız/şubesiz döner, tüm import düşmez (K-50'deki "tek sayfa patlarsa kişi
+detaysız kalır" toleransının aynısı).
+
+**Doğrulama (tarayıcı, gerçek Bologna, 11 Ağustos 2026):** program@ hesabıyla
+CENG (curSunit=253) önizlendi — 71 ders + detaylar canlı backend'den çekildi
+(POST /import/courses/preview → 200). Eşleşenler ön-dolu geldi (CENG 1007 →
+Barış İşçi Pembeci, ISG 1801 → İbrahim Ferid Öge), servis dersleri kırmızı
+"eşleşmedi" ile: ENG 1803 iki okutmanı da, MATH 1851 (Mehmet Ali Balcı) —
+listede olmayanlar. 71 dersin tamamı "kayıtlı · şubesiz" (313 şubesiz ders
+kararının somut hali). Tek ders (CENG 1007) commit edildi → "0 yeni ders · 1
+şube eklendi": DB'de Şube 1, Barış İŞÇİ PEMBECİ, 80 kontenjan. Doğrulama şubesi
+sonra silindi (kullanıcı programı kendi kuracak). 587 backend testi yeşil
+(17 yeni K-64), tsc + vite build temiz.
+
+**Veri notu:** Var olan 23 deneme şubesi bu iş kapsamında silindi; 336 dersin
+tamamı şubesiz. Hoca listesi 93 kişi (yalnız Mühendislik kadrosu) — servis
+dersi hocaları eşleşmez, elle eşlenir ya da şubesiz kalır.
+
+## K-65 · Dersler ekranı: tek sıralanabilir tablo + sağ Drawer + TÜR segmenti [E] — K-56 revizyonu
+**Bağlam (kullanıcı):** Claude Design'da (`claude.ai/design`, proje
+`a0c09d60…`, dosya `Dersler Yeni.dc.html`) Dersler sayfasının yeni arayüzü
+tasarlandı; "bu dersler sayfasının arayüzünü mevcut arayüze implement edelim".
+Mockup ham `<div>`+DC-runtime; Mantine v7'ye çevrildi. K-56'nın iki-tablo +
+satır-içi akordeon düzenini geri alır.
+
+**Karar — iki tablo TEK tabloya birleşti.** K-56'daki ayrı "Ortak Dersler" /
+"Bölüm Dersleri" tabloları kalktı; hepsi **tek sıralanabilir tabloda**
+(Kod · Ad · Tür · AKTS · T+U+L · Sınıf · Dönem · Şube). Ortak ders satırda
+kalır: TÜR rozeti "Ortak", Sınıf/Dönem "—" (tek değere sığmaz), cohort'ların
+tamamı Drawer'daki "Aldığı gruplar"da. Neden [E]: yeni tasarımın çözümü bu —
+TÜR sütunu + segment ortak dersi tek listede ayırt edilebilir kılıyor, iki ayrı
+tabloya gerek kalmıyor.
+
+**Karar — TÜR segmenti, "Ortak dersler" sözde-yılının yerini aldı.** Üstte
+`SegmentedControl` (Tümü/Zorunlu/Seçmeli/Ortak) — istemci tarafı süzgeç. K-48'de
+Sınıf filtresine konan `COMMON` sözde-değeri kaldırıldı; Sınıf artık sade 1–4.
+"Ortak" segmenti `is_common`'ı süzer.
+
+**Karar — satır-içi akordeon → sağdan Drawer.** Satıra tıklayınca detay **sağ
+Drawer'da** (Mantine `Drawer`, 560px): künye (kod+tür+ad) · istatistik ızgarası
+(AKTS/T+U+L/Sınıf-Dönem/Vize) · online bileşen · ortak dersse aldığı gruplar ·
+şubeler **kart** olarak · sabit alt çubuk (Dersi düzenle · Haftalık programda gör
+· Sil). Tüm şube CRUD'ı + K-48/K-49 yetki mantığı Drawer içinde korundu. K-56'nın
+"panel yalnız açıkken mount" gerekçesi Drawer'da doğal: gövde yalnız seçili ders
+varken render edilir.
+
+**Karar — sıralanabilir sütunlar (istemci).** Başlığa tıkla → o sütuna göre
+sırala, tekrar tıkla → yön çevir. Varsayılan gizli sıra `donem` (K-56'nın
+dönem-artan düzenini korur). Tür sırası Ortak<Seçmeli<Zorunlu; yıl/dönemde ortak
+ders dibe (99); eşitlikte koda göre.
+
+**Karar — süzgeç `Popover`'a toplandı + aktif çipler.** Bölüm/Hoca/Sınıf/Dönem
+selectleri düz satırdan `Popover`'a taşındı ("Pasif dersleri gizle" onayıyla);
+aktif filtreler çip olarak çubukta, "Temizle" ile toptan silinir. Filtre
+düğmesinde aktif sayısı rozeti.
+
+**Sunucu-taraf DEĞİŞMEDİ.** `load()` yine dep/yıl/dönem/arama'yı sunucuya sorar
+(kontrat §6); segment + sort + pasif süzgeci istemcide katman. K-48/K-57 backend
+semantiği aynen korundu. Şube slotları yine **yalnız yayındaki** yeşil rozet
+(GET /weekly-entries taslak görmez — mockup'taki DRAFT/SUBMITTED renkleri
+uydurulmadı). "Haftalık programda gör" → `/weekly?department_id&year&semester`
+(cohort görünümüne geçer).
+
+**Not:** Yalnız frontend (`CoursesPage.tsx`); API/şema değişmedi. `dataviz`/tema
+uyumu: kenarlıklar `--mantine-color-default-border` (koyu temada `gray-2` fazla
+açıktı); tablo dar ekranda `Table.ScrollContainer` ile yatay kayar.
+
+**Doğrulama (tarayıcı, gerçek veri, 12 Ağustos 2026):** 336 ders tek tabloda
+render; "Ortak" segmenti 51 derse indirdi; CENG bölüm filtresi 19 derse (çip +
+rozet "1") — sunucu reload'u ile. Normal ders Drawer'ı (CENG 1007: stat ızgarası,
+şube kartı, şube-ekle formu) ve ortak ders Drawer'ı (MATH 1851: "çok gruplu" +
+5 grubun teal rozeti) çalışıyor. AKTS başlığıyla sıralama doğrulandı. tsc + vite
+build temiz; temiz yenilemede konsol/ağ hatası yok.
+
+## K-66 · Öğretim Üyeleri + Derslikler ekranları K-65 arayüzüne geçti [E]
+**Bağlam (kullanıcı):** "Aynı arayüz değişikliklerini derslikler ve öğretim
+üyeleri sayfasına da yapalım." Claude Design mockup'ları (`Öğretim Üyeleri.dc.html`,
+`Derslikler.dc.html`) K-65'in kabuğunu (tek sıralanabilir tablo + sağ Drawer +
+TÜR segmenti + filtre popover + zebra + memo satır) bu iki ekrana taşıdı. Yalnız
+frontend (`LecturersPage.tsx`, `ClassroomsPage.tsx`); API/şema değişmedi.
+
+**İlke — mockup'ın backend'de KARŞILIĞI olmayan alanları UYDURULMADI.** İki
+mockup da gerçek veri modelinin ötesinde alanlar içeriyordu; K-64/K-65'teki
+"olmayan veriyi çizme" ilkesi (ör. DRAFT/SUBMITTED renkleri) burada da geçerli.
+Kabuk birebir alındı, veri panelleri gerçeğe göre budandı:
+
+- **Öğretim Üyeleri — düşürülenler:** ders yükü %'si / `maxHours` / "yükü aşan"
+  (hocada üst sınır alanı yok), KISITLAR (kısıt tablosu yok), HAFTALIK MÜSAİTLİK
+  ızgarası (kısıt verisi yok), Kadrolu/Yarı-zamanlı `type` (yok — en yakını
+  `is_external` 40/a). **Gerçek karşılıklar:** segment Tümü/Kadrolu/Dış görevli/
+  Ders vermeyen; stat ızgarası Ders·Şube·**Haftalık saat** (verdiği şubelerin
+  T+U+L toplamı — sınırsız, sadece "N sa")·Öğrenci; unvan rozeti renkli (prefix'e
+  göre); avatar baş harfleri; "Verdiği dersler" kartlarında gerçek yayın slotları
+  (`/weekly-entries`). Footer'da "Haftalık programda gör" KALDI (hocanın kendi
+  takvim görünümü `view=lecturer` — mevcut, çalışan özellik).
+- **Derslikler — düşürülenler:** Blok/Kat (yalnız `building.name`, kat yok),
+  Donanım (alan yok), Sorumlu bölüm (derslik paylaşımlı, K-25), haftalık kullanım
+  ızgarası, İçe Aktar (derslik import'u yok — mevcut Export + Binaları Yönet
+  korundu). **Gerçek karşılıklar:** segment Sınıf/Laboratuvar/Amfi (`room_type`);
+  tabloda **Sınav Kont.** (K-21) korundu + **Haftalık Doluluk** çubuğu (dolu slot
+  ÷ 45 = 5 gün × 9 slot, slots.ts'ten türetilir); Drawer'da "Yerleştirilen
+  dersler" gerçek yayın slotları + hoca + öğrenci + **kapasite aşımı** kontrolü
+  (`expected_students > capacity`). Booking'lerde hoca/öğrenci için `/courses` da
+  yükleniyor (WeeklyEntry.section bunları taşımaz).
+
+**Ortak desen (K-65 ile aynı):** sunucu yüklemesi değişmedi; segment+sort+pasif
+istemci katmanı. Satırlar `memo`, `onSelect` `useCallback` ile sabit; başlık
+`<SortTh/>` değil `sortTh()` fonksiyonu (gereksiz remount yok). Kenarlıklar
+`--mantine-color-default-border`; dar ekranda `Table.ScrollContainer`.
+
+**Doğrulama (tarayıcı, gerçek veri, 14 Ağustos 2026):** Öğretim Üyeleri 121 kişi,
+renkli unvan rozetleri + 40/A + avatar; drawer (Ali Ekber IRMAK: Ders 1·Şube 1·
+Haftalık saat 5 sa·Öğrenci 30, PHYS 1852 iki yayın slotu). Derslikler 29 derslik,
+doluluk çubukları; drawer (B3B08: %47 · 21/45 slot, 5 gerçek yerleştirilen ders,
+hoca+öğrenci). Her iki sayfada tsc + vite build temiz, konsol hatası yok.

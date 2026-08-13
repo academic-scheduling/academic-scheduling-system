@@ -8,8 +8,9 @@ import {
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api/client";
-import { SEMESTER_LABELS } from "../api/types";
-import type { Department, SemesterType } from "../api/types";
+import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
+import { turkishOptionsFilter } from "../utils/selectSearch";
+import type { Department, Lecturer, SemesterType } from "../api/types";
 
 /** Bir dersin import edilebilir alanlari — parse ciktisi = commit girisi. */
 type CourseFields = {
@@ -21,17 +22,36 @@ type CourseFields = {
   hours_practice: number;
   hours_lab: number;
   ects: number | null;                  // K-55: AKTS (Bologna'dan; opsiyonel)
+  midterm_count: number | null;         // K-64: Bologna "Ara Sınav" sayısı (1-3)
   is_elective: boolean;
   is_common: boolean;                   // K-48: ortak (servis) ders mi
 };
 
-type PreviewCourse = CourseFields & { exists: boolean };
+/** K-64: detaydaki "Dersi Verenler" satırı + mevcut hocayla eşleşmesi. */
+type InstructorMatch = {
+  raw: string;                          // ham metin ("Dr.Öğr.Üyesi ...")
+  name: string;
+  title: string | null;
+  lecturer_id: number | null;           // eşleşen mevcut hoca; null = elle eşlenecek
+};
+
+type PreviewCourse = CourseFields & {
+  exists: boolean;
+  has_sections: boolean;                // K-64: mevcut ders zaten şubeli mi
+  instructors: InstructorMatch[];       // K-64: Bologna'daki hoca(lar) + eşleşme
+};
+
+/** K-64: derse açılacak tek şube isteği. */
+type SectionSpec = { lecturer_id: number };
+
+type CommitCourse = CourseFields & { sections: SectionSpec[] };
 
 type ImportResult = {
   total_parsed: number;
   added_count: number;
   merged_count: number;                 // K-54: mevcut ortak derse cohort eklendi
   skipped_count: number;
+  sections_created: number;             // K-64: açılan toplam şube
 };
 
 type Props = {
@@ -62,9 +82,10 @@ function duplicateNameSet(list: { name: string }[]): Set<string> {
   return new Set([...count].filter(([, n]) => n > 1).map(([k]) => k));
 }
 
-/** Bologna bilgi paketinden bir bölümün derslerini içe aktarma modalı.
- *  İki adım: (1) önizleme — çek ve listele, (2) seç/düzenle → seçilenleri ekle.
- *  Zaten kayıtlı dersler işaretli gelir ve seçilemez (sunucu da atlar). */
+/** Bologna bilgi paketinden bir bölümün derslerini içe aktarma modalı (K-64).
+ *  İki adım: (1) önizleme — çek + hocaları eşle, (2) seç/eşle → seçilenleri ekle.
+ *  Zaten şubeli dersler soluk ve seçilemez; şubesiz (yeni ya da kayıtlı) dersler
+ *  Bologna'daki hocalardan şube alır. */
 export default function ImportCoursesModal({
   opened, onClose, departments, defaultDepartmentId, onImported,
 }: Props) {
@@ -77,8 +98,13 @@ export default function ImportCoursesModal({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<number | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // K-64: eşleştirme için mevcut hoca listesi (Select seçenekleri).
+  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
+  // K-64: her dersin her hocası için seçilen lecturer_id (null = şube açma).
+  // Anahtar: satır index → hoca index dizisi. Eşleşenler ön-dolu gelir.
+  const [picks, setPicks] = useState<Record<number, (number | null)[]>>({});
 
-  // Modal her açılışta baştan başlasın.
+  // Modal her açılışta baştan başlasın + hoca listesini çek.
   useEffect(() => {
     if (opened) {
       setDepId(defaultDepartmentId);
@@ -88,30 +114,37 @@ export default function ImportCoursesModal({
       setSelected(new Set());
       setEditing(null);
       setResult(null);
+      setPicks({});
+      api.get<Lecturer[]>("/lecturers")
+        .then(setLecturers)
+        .catch(() => setLecturers([]));
     }
   }, [opened, defaultDepartmentId]);
 
+  const lecturerOptions = useMemo(
+    () => lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) })),
+    [lecturers],
+  );
+
   // Aynı adlı dersleri (kodu farklı) ana listeden AYIR: en altta özel bir
-  // bölümde, dikkat notu ile ve varsayılan seçilmemiş listelenirler — hangisini
-  // (Türkçe/İngilizce sürüm / kategori kaydı) aktaracağına kullanıcı karar verir.
+  // bölümde, dikkat notu ile ve varsayılan seçilmemiş listelenirler.
   const { mainIdx, dupIdx } = useMemo(() => {
     const list = rows ?? [];
     const dup = duplicateNameSet(list);
     const main: number[] = [];
     const dupI: number[] = [];
     list.forEach((c, i) => (dup.has(normName(c.name)) ? dupI : main).push(i));
-    // Aynı adlılar yan yana gelsin diye ada göre sırala.
     dupI.sort((a, b) => normName(list[a].name).localeCompare(normName(list[b].name), "tr"));
     return { mainIdx: main, dupIdx: dupI };
   }, [rows]);
 
-  // "Tümünü seç" yalnız ANA listedeki (benzersiz adlı) yeni dersleri kapsar;
-  // aynı adlılar bilinçli seçilsin diye dışarıda. Sayaç tüm yeni dersleri sayar.
+  // K-64: seçilebilir = ZATEN ŞUBESİ OLMAYAN (yeni ya da kayıtlı-şubesiz) dersler.
+  // Şubeli dersler dokunulmaz. "Tümünü seç" yalnız ana listeyi kapsar.
   const selectableIdx = useMemo(
-    () => mainIdx.filter((i) => !(rows ?? [])[i].exists),
+    () => mainIdx.filter((i) => !(rows ?? [])[i].has_sections),
     [mainIdx, rows],
   );
-  const newCount = (rows ?? []).filter((c) => !c.exists).length;
+  const candidateCount = (rows ?? []).filter((c) => !c.has_sections).length;
   const allSelected = selectableIdx.length > 0 && selectableIdx.every((i) => selected.has(i));
   const someSelected = selectableIdx.some((i) => selected.has(i));
 
@@ -125,12 +158,17 @@ export default function ImportCoursesModal({
         { department_id: Number(depId), url: url.trim() },
       );
       setRows(res.courses);
-      // Varsayılan: kayıtlı olmayan + BENZERSİZ adlı dersler seçili gelsin.
-      // Aynı adlılar (kod farkı) seçilmeden gelir — kullanıcı bilinçle seçsin.
+      // Şube seçimlerini eşleşen hocalarla ön-doldur.
+      const initialPicks: Record<number, (number | null)[]> = {};
+      res.courses.forEach((c, i) => {
+        initialPicks[i] = c.instructors.map((ins) => ins.lecturer_id);
+      });
+      setPicks(initialPicks);
+      // Varsayılan: şubesiz + BENZERSİZ adlı dersler seçili gelsin.
       const dup = duplicateNameSet(res.courses);
       setSelected(new Set(
         res.courses
-          .map((c, i) => (c.exists || dup.has(normName(c.name)) ? -1 : i))
+          .map((c, i) => (c.has_sections || dup.has(normName(c.name)) ? -1 : i))
           .filter((i) => i >= 0),
       ));
     } catch (e) {
@@ -146,21 +184,27 @@ export default function ImportCoursesModal({
   // --- Faz 2: seçilenleri ekle ---
   const commit = async () => {
     if (!depId || !rows) return;
-    const picked = rows.filter((_, i) => selected.has(i));
+    const picked = [...selected].sort((a, b) => a - b);
     if (picked.length === 0) return;
+    const courses: CommitCourse[] = picked.map((i) => {
+      const { exists: _e, has_sections: _h, instructors: _ins, ...fields } = rows[i];
+      // Şubeler: bu ders için seçili (null olmayan) hocalar. Aynı hocayı iki kez
+      // seçmeyi de ele: tekrarlı lecturer_id tek şubeye iner (mükerrer şube olmaz).
+      const chosen = (picks[i] ?? []).filter((id): id is number => id != null);
+      const uniq = [...new Set(chosen)];
+      return { ...fields, sections: uniq.map((lecturer_id) => ({ lecturer_id })) };
+    });
     setBusy(true);
     try {
       const res = await api.post<ImportResult>("/import/courses", {
         department_id: Number(depId),
-        courses: picked.map(({ exists: _exists, ...fields }) => fields),
+        courses,
       });
       setResult(res);
       onImported();
       notifications.show({
         color: "green",
-        message: `${res.added_count} ders eklendi`
-          + (res.merged_count ? `, ${res.merged_count} ortak derse eklendi` : "")
-          + `, ${res.skipped_count} zaten vardı`,
+        message: `${res.added_count} ders eklendi, ${res.sections_created} şube açıldı`,
       });
     } catch (e) {
       notifications.show({
@@ -185,6 +229,13 @@ export default function ImportCoursesModal({
   const patchRow = (i: number, patch: Partial<CourseFields>) =>
     setRows((prev) => prev && prev.map((c, j) => (j === i ? { ...c, ...patch } : c)));
 
+  const setPick = (i: number, j: number, lecturerId: number | null) =>
+    setPicks((prev) => {
+      const arr = [...(prev[i] ?? [])];
+      arr[j] = lecturerId;
+      return { ...prev, [i]: arr };
+    });
+
   const modalTitle = result
     ? "İçe Aktarma Tamamlandı"
     : rows
@@ -197,33 +248,33 @@ export default function ImportCoursesModal({
       onClose={onClose}
       title={modalTitle}
       centered
-      // Seç/düzenle adımı 8 sütunlu tablo taşır → geniş ama büyük ekranda tavanlı.
-      size={rows && !result ? "min(1150px, 92vw)" : "md"}
+      // Seç/eşle adımı geniş tablo taşır → geniş ama büyük ekranda tavanlı.
+      size={rows && !result ? "min(1250px, 94vw)" : "md"}
     >
       {/* ---- Faz 3: sonuç ---- */}
       {result ? (
         <Stack>
           <Alert color="green" icon={<IconCircleCheck size={18} />}>
-            <Text fw={600}>{result.added_count} yeni ders eklendi.</Text>
+            <Text fw={600}>
+              {result.added_count} yeni ders · {result.sections_created} şube eklendi.
+            </Text>
             <Text size="sm" c="dimmed">
-              {/* K-54: mevcut ortak derse cohort olarak eklenenler (başka bölüm
-                  zaten açmıştı) — çift kayıt yerine tek ders altında toplandı. */}
               {result.merged_count > 0 &&
                 `${result.merged_count} ders mevcut ortak derse eklendi · `}
-              {result.skipped_count} ders zaten kayıtlıydı (atlandı) · toplam{" "}
+              {result.skipped_count} ders zaten kayıtlıydı · toplam{" "}
               {result.total_parsed} ders işlendi.
             </Text>
           </Alert>
           <Button onClick={onClose}>Kapat</Button>
         </Stack>
       ) : rows ? (
-        /* ---- Faz 2: seç / düzenle ---- */
+        /* ---- Faz 2: seç / eşle ---- */
         <Stack>
           <Group justify="space-between">
             <Text size="sm" c="dimmed">
-              {newCount} yeni ders bulundu
-              {rows.length - newCount > 0 &&
-                ` · ${rows.length - newCount} tanesi zaten kayıtlı`}
+              {candidateCount} şubesiz ders
+              {rows.length - candidateCount > 0 &&
+                ` · ${rows.length - candidateCount} tanesi zaten şubeli`}
               {dupIdx.length > 0 && ` · ${dupIdx.length} aynı adlı (aşağıda)`}
             </Text>
             <Button
@@ -236,7 +287,7 @@ export default function ImportCoursesModal({
             </Button>
           </Group>
 
-          <ScrollArea.Autosize mah={420}>
+          <ScrollArea.Autosize mah={460}>
             <Table stickyHeader verticalSpacing="xs" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
@@ -251,11 +302,11 @@ export default function ImportCoursesModal({
                   <Table.Th w={40} />
                   <Table.Th>Kod</Table.Th>
                   <Table.Th>Ad</Table.Th>
-                  <Table.Th w={70}>Sınıf</Table.Th>
-                  <Table.Th w={90}>Dönem</Table.Th>
-                  <Table.Th w={80}>T+U+L</Table.Th>
-                  <Table.Th w={60}>AKTS</Table.Th>
-                  <Table.Th w={170}>Tür</Table.Th>
+                  <Table.Th w={64}>Sınıf</Table.Th>
+                  <Table.Th w={84}>Dönem</Table.Th>
+                  <Table.Th w={72}>T+U+L</Table.Th>
+                  <Table.Th w={150}>Tür</Table.Th>
+                  <Table.Th w={280}>Hoca / Şube</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -265,13 +316,15 @@ export default function ImportCoursesModal({
                     c={rows[i]}
                     selected={selected.has(i)}
                     isEditing={editing === i}
+                    picks={picks[i] ?? []}
+                    lecturerOptions={lecturerOptions}
                     onToggle={() => toggle(i)}
                     onEdit={() => setEditing(editing === i ? null : i)}
                     onPatch={(p) => patchRow(i, p)}
+                    onPick={(j, id) => setPick(i, j, id)}
                   />
                 ))}
 
-                {/* Aynı ada sahip (kodu farklı) dersler — ayrı bölüm + dikkat notu */}
                 {dupIdx.length > 0 && (
                   <Table.Tr>
                     <Table.Td colSpan={9} bg="var(--mantine-color-default-hover)">
@@ -291,16 +344,23 @@ export default function ImportCoursesModal({
                     c={rows[i]}
                     selected={selected.has(i)}
                     isEditing={editing === i}
+                    picks={picks[i] ?? []}
+                    lecturerOptions={lecturerOptions}
                     onToggle={() => toggle(i)}
                     onEdit={() => setEditing(editing === i ? null : i)}
                     onPatch={(p) => patchRow(i, p)}
+                    onPick={(j, id) => setPick(i, j, id)}
                   />
                 ))}
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
 
-          <Group justify="flex-end">
+          <Group justify="space-between">
+            <Text size="xs" c="dimmed">
+              Eşleşmeyen hoca (servis dersleri, farklı yazım) için listeden elle
+              seçin ya da boş bırakın — boş bırakılan hoca için şube açılmaz.
+            </Text>
             <Button
               leftSection={<IconDownload size={16} />}
               onClick={commit}
@@ -333,6 +393,10 @@ export default function ImportCoursesModal({
             onChange={(e) => setUrl(e.currentTarget.value)}
             required
           />
+          <Text size="xs" c="dimmed">
+            Her dersin "Dersi Verenler" bilgisi de çekilir ve hocalar mevcut listeyle
+            eşlenir; bu yüzden getirme birkaç saniye sürebilir.
+          </Text>
           <Button
             leftSection={<IconDownload size={16} />}
             onClick={fetchPreview}
@@ -347,26 +411,30 @@ export default function ImportCoursesModal({
   );
 }
 
-/** Tek satır — okuma görünümü + tıklayınca açılan satır-içi düzenleme paneli.
- *  Zaten kayıtlı ders soluk ve seçilemez; motor da onu sunucuda atlar. */
+/** Tek satır — okuma görünümü + düzenleme paneli + hoca/şube eşleme hücresi.
+ *  Zaten şubeli ders soluk ve seçilemez (motor da onu sunucuda atlar). */
 function RowView({
-  c, selected, isEditing, onToggle, onEdit, onPatch,
+  c, selected, isEditing, picks, lecturerOptions,
+  onToggle, onEdit, onPatch, onPick,
 }: {
   c: PreviewCourse;
   selected: boolean;
   isEditing: boolean;
+  picks: (number | null)[];
+  lecturerOptions: { value: string; label: string }[];
   onToggle: () => void;
   onEdit: () => void;
   onPatch: (patch: Partial<CourseFields>) => void;
+  onPick: (instructorIdx: number, lecturerId: number | null) => void;
 }) {
   return (
     <>
-      <Table.Tr opacity={c.exists ? 0.5 : 1}>
+      <Table.Tr opacity={c.has_sections ? 0.5 : 1}>
         <Table.Td>
           <Checkbox
             checked={selected}
             onChange={onToggle}
-            disabled={c.exists}
+            disabled={c.has_sections}
             aria-label={`${c.code} seç`}
           />
         </Table.Td>
@@ -375,7 +443,7 @@ function RowView({
             variant="subtle"
             color="gray"
             onClick={onEdit}
-            disabled={c.exists}
+            disabled={c.has_sections}
             aria-label={`${c.code} düzenle`}
           >
             <IconPencil size={16} />
@@ -386,11 +454,12 @@ function RowView({
         <Table.Td>{c.year}. sınıf</Table.Td>
         <Table.Td>{SEMESTER_LABELS[c.semester]}</Table.Td>
         <Table.Td>{c.hours_theory}+{c.hours_practice}+{c.hours_lab}</Table.Td>
-        <Table.Td>{c.ects ?? "—"}</Table.Td>
         <Table.Td>
           <Group gap={4} wrap="nowrap">
-            {c.exists ? (
-              <Badge color="gray" variant="light">kayıtlı</Badge>
+            {c.has_sections ? (
+              <Badge color="gray" variant="light">şubeli</Badge>
+            ) : c.exists ? (
+              <Badge color="gray" variant="outline">kayıtlı · şubesiz</Badge>
             ) : c.is_elective ? (
               <Badge color="grape" variant="light">Seçmeli</Badge>
             ) : (
@@ -400,6 +469,18 @@ function RowView({
               <Badge color="teal" variant="light">Ortak</Badge>
             )}
           </Group>
+        </Table.Td>
+        <Table.Td>
+          {c.has_sections ? (
+            <Text size="xs" c="dimmed">zaten şubeli</Text>
+          ) : (
+            <InstructorCell
+              instructors={c.instructors}
+              picks={picks}
+              lecturerOptions={lecturerOptions}
+              onPick={onPick}
+            />
+          )}
         </Table.Td>
       </Table.Tr>
       <Table.Tr>
@@ -449,6 +530,12 @@ function RowView({
                 value={c.ects ?? ""}
                 onChange={(v) => onPatch({ ects: v === "" ? null : Number(v) })}
               />
+              {/* K-64: Bologna'dan gelen vize sayısı; 1-3, düzeltilebilir. */}
+              <NumberInput
+                label="Vize" size="xs" w={64} min={1} max={3}
+                value={c.midterm_count ?? ""}
+                onChange={(v) => onPatch({ midterm_count: v === "" ? null : Number(v) })}
+              />
               <Switch
                 label="Seçmeli" size="sm" mb={6}
                 checked={c.is_elective}
@@ -464,5 +551,48 @@ function RowView({
         </Table.Td>
       </Table.Tr>
     </>
+  );
+}
+
+/** K-64: bir dersin hocaları — her biri için Bologna ham adı + eşleme Select'i.
+ *  Eşleşen hoca ön-dolu gelir; eşleşmeyen boş + "eşleşmedi" uyarısıyla gelir.
+ *  Boş bırakılan hoca için şube açılmaz. */
+function InstructorCell({
+  instructors, picks, lecturerOptions, onPick,
+}: {
+  instructors: InstructorMatch[];
+  picks: (number | null)[];
+  lecturerOptions: { value: string; label: string }[];
+  onPick: (instructorIdx: number, lecturerId: number | null) => void;
+}) {
+  if (instructors.length === 0) {
+    return <Text size="xs" c="dimmed">hoca bulunamadı</Text>;
+  }
+  return (
+    <Stack gap={6}>
+      {instructors.map((ins, j) => {
+        const picked = picks[j] ?? null;
+        const unmatched = picked == null;
+        return (
+          <div key={j}>
+            <Text size="10px" c="dimmed" lineClamp={1} title={ins.raw}>
+              {ins.raw}
+            </Text>
+            <Select
+              size="xs"
+              searchable
+              clearable
+              filter={turkishOptionsFilter}
+              placeholder={unmatched ? "eşleşmedi — hoca seç" : undefined}
+              data={lecturerOptions}
+              value={picked == null ? null : String(picked)}
+              onChange={(v) => onPick(j, v == null ? null : Number(v))}
+              error={unmatched ? true : undefined}
+              comboboxProps={{ withinPortal: true }}
+            />
+          </div>
+        );
+      })}
+    </Stack>
   );
 }

@@ -87,10 +87,20 @@ IMPORT_URL = "https://obs.mu.edu.tr/oibs/bologna/index.aspx?lang=tr&curSunit=253
 
 @pytest.fixture
 def mock_fetch(monkeypatch):
-    """Agi devre disi birak: fetch fixture HTML'i dondursun (deterministik test)."""
+    """Agi devre disi birak: liste fixture HTML'i dondursun (deterministik test).
+
+    K-64: preview artik her ders icin detay (hoca/vize) postback'i atar. Bu
+    testler ders/ortak-ders akisina odakli — detay cekmeyi de bosa cikar
+    (fetch_details_bulk -> {}) ki ag kullanilmasin. Hoca/sube ozgu testler
+    ayri dosyada (test_k64_bologna_sections) detayi kendi stub'lar.
+    """
     monkeypatch.setattr(
         "app.routers.import_courses.fetch_bologna_html",
         lambda cur_sunit: FIXTURE_HTML,
+    )
+    monkeypatch.setattr(
+        "app.routers.import_courses.fetch_details_bulk",
+        lambda *a, **k: {},
     )
 
 

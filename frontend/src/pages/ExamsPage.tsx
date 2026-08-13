@@ -22,6 +22,7 @@ import type { UndoEntity } from "../hooks/useUndoStack";
 import ChangeFeed from "../components/ChangeFeed";
 import DraftBar from "../components/DraftBar";
 import ExportMenu from "../components/ExportMenu";
+import { CourseInfoButton, type CourseInfoExam } from "../components/CourseInfoButton";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   EXAM_HOUR_H, GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -206,6 +207,8 @@ export default function ExamsPage() {
   // K-60: NULL = yayındaki sınav takvimi (salt-okunur). Dolu = kendi özel
   // taslağım; takvim, çakışma ve bütün yazma işlemleri onun içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  // Ders bilgi "i" pop-up'ı: aynı anda tek pop-up açık kalsın diye paylaşılan state.
+  const [openInfoId, setOpenInfoId] = useState<number | null>(null);
   /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır
    *  (çakışma vurgusu yayındaki bir sınava götürdüğünde). */
   const taslakSecimiAtla = useRef(false);
@@ -219,8 +222,11 @@ export default function ExamsPage() {
 
   // Geri Al: taslak sınavlara yapılan taşıma/düzenleme/ekleme/silmeyi geri alır.
   // Kalıcı (localStorage) ve çok adımlı — sayfa yenilense de yığın durur.
+  // Geri al yığını TASLAK BAZLIDIR (haftalıkla aynı, K-64 sonrası): her sınav
+  // taslağının kendi anahtarı; global tek yığın onaylanmış taslakların adımlarını
+  // da tutuyordu. Taslak yokken yazma kapalı → sabit boş anahtar.
   const { record: recordUndo, undo: popUndo, count: undoCount, busy: undoBusy } =
-    useUndoStack("exams-undo");
+    useUndoStack(draft ? `exams-undo-${draft.id}` : "exams-undo-none");
 
   const load = () => {
     setLoading(true);
@@ -359,6 +365,21 @@ export default function ExamsPage() {
     for (const c of scan.warnings) for (const a of c.affected) if (a.type === "exam") w.add(a.id);
     return { hardIds: h, warnIds: w };
   }, [scan]);
+
+  // Her ders için o an gösterilen (taslak/yayın) sınavların özeti — bilgi
+  // pop-up'ı şube yerine bunu gösterir (kullanıcı isteği). Tarih/saate göre sıralı.
+  const examsByCourse = useMemo(() => {
+    const fmtDate = (iso: string) =>
+      new Date(`${iso}T00:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+    const m = new Map<number, CourseInfoExam[]>();
+    for (const e of [...exams].sort((a, b) =>
+      a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time))) {
+      const arr = m.get(e.course.id) ?? [];
+      arr.push({ label: examTypeLabel(e), date: fmtDate(e.exam_date), time: e.start_time.slice(0, 5) });
+      m.set(e.course.id, arr);
+    }
+    return m;
+  }, [exams]);
 
   /** Sol panel: cohort'un dersleri + her birinde HANGİ sınav türü tanımlı.
    *  Üç türü de tanımlanmış ders "bitmiş" sayılır: soluk ve listenin altında
@@ -719,6 +740,10 @@ export default function ExamsPage() {
               {paletDersler.map(({ course: c, done }) => (
                 <PaletteItem key={c.id} course={c} done={done}
                   draggable={canWrite}
+                  infoOpen={openInfoId === c.id}
+                  examInfo={examsByCourse.get(c.id) ?? []}
+                  onInfoOpenChange={(o) => setOpenInfoId(o ? c.id : null)}
+                  onOpenCourses={() => navigate(`/courses?search=${encodeURIComponent(c.code)}`)}
                   onHover={setHoverCourse}
                   onDragStart={() => setDrag({ kind: "new", courseId: c.id, label: c.code })}
                   onDragEnd={() => setDrag(null)}
@@ -1128,8 +1153,10 @@ function Legend({ label, color }: { label: string; color: string }) {
  *  Hover durumu bileşen içinde tutulur: listedeki her satır kendi durumunu
  *  bilir, üst bileşenin "hangi satırın üstündeyim" diye state taşımasına
  *  gerek kalmaz (liste uzadıkça o yaklaşım gereksiz render üretirdi). */
-function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragEnd, onPick }: {
+function PaletteItem({ course: c, done, draggable, infoOpen, examInfo, onInfoOpenChange, onOpenCourses, onHover, onDragStart, onDragEnd, onPick }: {
   course: Course; done: boolean; draggable: boolean;
+  infoOpen: boolean; examInfo: CourseInfoExam[];
+  onInfoOpenChange: (opened: boolean) => void; onOpenCourses: () => void;
   onHover: (courseId: number | null) => void;
   onDragStart: () => void; onDragEnd: () => void; onPick: () => void;
 }) {
@@ -1161,11 +1188,18 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
             Seçmeli
           </Badge>
         )}
-        {/* Üç sınav türü de tanımlıysa satır "bitmiş" sayılır. */}
-        {done && (
-          <IconCheck size={13} stroke={2.4} color="#16A34A"
-            style={{ marginLeft: "auto", flexShrink: 0 }} />
-        )}
+        {/* Sağ blok: bitmiş onayı + ders bilgisi "i" pop-up'ı. */}
+        <Group gap={4} wrap="nowrap" style={{ marginLeft: "auto", flexShrink: 0 }}>
+          {/* Üç sınav türü de tanımlıysa satır "bitmiş" sayılır. */}
+          {done && <IconCheck size={13} stroke={2.4} color="#16A34A" />}
+          <CourseInfoButton
+            course={c}
+            opened={infoOpen}
+            exams={examInfo}
+            onOpenChange={onInfoOpenChange}
+            onOpenCourses={onOpenCourses}
+          />
+        </Group>
       </Group>
       <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
     </div>

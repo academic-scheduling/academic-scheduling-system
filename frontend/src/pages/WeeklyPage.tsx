@@ -22,6 +22,8 @@ import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
+import { turkishOptionsFilter } from "../utils/selectSearch";
+import { CourseInfoButton } from "../components/CourseInfoButton";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -230,6 +232,9 @@ export default function WeeklyPage() {
   // ızgara, çakışma ve bütün yazma işlemleri o taslağın içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
   const [paletteSearch, setPaletteSearch] = useState("");
+  // Ders bilgi "i" pop-up'ı: aynı anda yalnız BİRİ açık kalsın diye tek paylaşılan
+  // state; başka bir "i"ye tıklanınca öncekinin `opened`'ı kendiliğinden false olur.
+  const [openInfoId, setOpenInfoId] = useState<number | null>(null);
   /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır.
    *  Çakışma vurgusuyla gelindiğinde hedef yayındadır; taslağa geçmek aranan
    *  satırı ekrandan kaçırır. */
@@ -246,8 +251,12 @@ export default function WeeklyPage() {
 
   // Geri Al: taslak girişlere yapılan taşıma/düzenleme/ekleme/silmeyi geri alır.
   // Kalıcı (localStorage) ve çok adımlı — sayfa yenilense de yığın durur.
+  // Geri al yığını TASLAK BAZLIDIR: her taslağın kendi anahtarı. Global tek yığın
+  // tüm taslakların (onaylanmışlar dahil) adımlarını üst üste tutuyordu; artık bir
+  // taslağın adımları yalnız o taslak açıkken görünür. Taslak yokken (yayın modu)
+  // yazma zaten kapalı → sabit boş anahtar.
   const { record: recordUndo, undo: popUndo, count: undoCount, busy: undoBusy } =
-    useUndoStack("weekly-undo");
+    useUndoStack(draft ? `weekly-undo-${draft.id}` : "weekly-undo-none");
   // Yakılacak satırlar KURALA göre değil, TIKLANAN kartın girişlerine göre
   // seçilir: aynı kuralın (ör. W2) başka derslere ait satırları yanmasın,
   // yalnız o kartın çakışmaları yansın.
@@ -296,7 +305,11 @@ export default function WeeklyPage() {
     ])
       .then(([d, c, l, co]) => {
         setDepartments(d);
-        setClassrooms(c);
+        // Derslikleri bina + oda koduna göre sırala (numeric: "A2" < "A10").
+        // Böylece hem derslik merceği hem yerleştirme modalı sıralı gelir.
+        setClassrooms([...c].sort((a, b) =>
+          a.building.name.localeCompare(b.building.name, "tr", { numeric: true })
+          || a.room_code.localeCompare(b.room_code, "tr", { numeric: true })));
         setLecturers(l);
         setAllCourses(co);
         // Kayıtlı bölüm hâlâ geçerliyse ona dokunma; yoksa ilkine düş.
@@ -819,6 +832,7 @@ export default function WeeklyPage() {
             )}
             {view === "classroom" && (
               <Select size="xs" w={280} radius="md" searchable clearable
+                filter={turkishOptionsFilter}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
                 placeholder="Derslik seç" value={roomFilter} onChange={setRoomFilter}
                 data={classrooms.map((c) => ({
@@ -826,6 +840,7 @@ export default function WeeklyPage() {
             )}
             {view === "lecturer" && (
               <Select size="xs" w={280} radius="md" searchable clearable
+                filter={turkishOptionsFilter}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
                 placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
                 data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />
@@ -924,10 +939,21 @@ export default function WeeklyPage() {
                 style={{ ...paletteItemStyle(false), cursor: "pointer", flexShrink: 0, opacity: 0.7 }}>
                 <Group gap={6} wrap="nowrap" align="center">
                   <Text fz={12} fw={600} style={{ color: TEXT_STRONG }}>{r.course.code}</Text>
-                  <Badge size="xs" variant="light" color="yellow" radius="sm"
-                    style={{ textTransform: "none", paddingInline: 5, marginLeft: "auto" }}>
-                    şube yok
-                  </Badge>
+                  <Group gap={4} wrap="nowrap" style={{ marginLeft: "auto", flexShrink: 0 }}>
+                    <Badge size="xs" variant="light" color="yellow" radius="sm"
+                      style={{ textTransform: "none", paddingInline: 5 }}>
+                      şube yok
+                    </Badge>
+                    {/* Şubesiz derste de bilgi "i"si — Paper onClick'i tetiklemesin
+                        diye CourseInfoButton kendi tıklamasını durdurur. */}
+                    <CourseInfoButton
+                      course={r.course}
+                      opened={openInfoId === r.course.id}
+                      onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
+                      onOpenCourses={() =>
+                        navigate(`/courses?search=${encodeURIComponent(r.course.code)}`)}
+                    />
+                  </Group>
                 </Group>
                 <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
               </Paper>
@@ -967,11 +993,21 @@ export default function WeeklyPage() {
                       Seçmeli
                     </Badge>
                   )}
-                  {/* T+U+L yerleşimi tamamlanmış şube yeşil onayla işaretlenir. */}
-                  {r.done && (
-                    <IconCheck size={13} stroke={2.4} color="#16A34A"
-                      style={{ marginLeft: "auto", flexShrink: 0 }} />
-                  )}
+                  {/* Sağ blok: tamamlanma onayı + ders bilgisi "i" pop-up'ı. */}
+                  <Group gap={4} wrap="nowrap"
+                    style={{ marginLeft: "auto", flexShrink: 0 }}>
+                    {/* T+U+L yerleşimi tamamlanmış şube yeşil onayla işaretlenir. */}
+                    {r.done && (
+                      <IconCheck size={13} stroke={2.4} color="#16A34A" />
+                    )}
+                    <CourseInfoButton
+                      course={r.course}
+                      opened={openInfoId === r.course.id}
+                      onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
+                      onOpenCourses={() =>
+                        navigate(`/courses?search=${encodeURIComponent(r.course.code)}`)}
+                    />
+                  </Group>
                 </Group>
                 <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{r.course.name}</Text>
               </Paper>
@@ -1276,7 +1312,9 @@ export default function WeeklyPage() {
           fixedCourseId={birakilan?.id}
           sectionsOf={(courseId) => {
             const c = courses.find((x) => x.id === courseId);
-            return (c?.sections ?? []).filter((s) => s.active).map((s) => ({
+            return (c?.sections ?? []).filter((s) => s.active)
+              .sort((a, b) => a.section_no - b.section_no)     // şube no sırası
+              .map((s) => ({
               value: String(s.id),
               label: `Şube ${s.section_no} — ${lecturerLabel(s.lecturer)}`
                      + ` · ${s.expected_students} öğrenci`,
@@ -1804,10 +1842,11 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
             {/* Ders sürükleyerek geldiyse kilitli ama GÖRÜNÜR: kullanıcı neyi
                 yerleştirdiğini modalda da okuyabilmeli. */}
             <Select label="Ders" value={courseId} onChange={setCourseId}
-              data={courses} searchable disabled={fixedCourseId != null}
+              data={courses} searchable filter={turkishOptionsFilter}
+              disabled={fixedCourseId != null}
               placeholder="Ders seç" nothingFoundMessage="Ders yok" />
             <Select label="Şube" value={sectionId} onChange={setSectionId}
-              data={subeler} searchable
+              data={subeler} searchable filter={turkishOptionsFilter}
               disabled={!courseId || tekSube != null}
               placeholder={courseId ? "Şube seç" : "Önce ders seçin"}
               description={tekSube != null ? "Bu dersin tek şubesi var" : undefined}
@@ -1827,7 +1866,8 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
             ]} />
         ) : (
           <Select label="Derslik" value={classroomId} onChange={setClassroomId}
-            placeholder="Derslik seç" clearable searchable nothingFoundMessage="Derslik yok"
+            placeholder="Derslik seç" clearable searchable filter={turkishOptionsFilter}
+            nothingFoundMessage="Derslik yok"
             data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
         )}
         <NumberInput label="Slot sayısı" value={slotCount} onChange={(v) => setSlotCount(Number(v) || 1)}

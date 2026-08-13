@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 
 // Taslak öğelere (haftalık giriş / sınav) yapılan değişiklikleri geri alan
@@ -68,6 +68,15 @@ export function useUndoStack(storageKey: string) {
   const ref = useRef<UndoOp[]>(loadStack(storageKey));
   const [count, setCount] = useState(ref.current.length);
   const [busy, setBusy] = useState(false);
+
+  // storageKey artık taslak bazlıdır (`weekly-undo-<draftId>`) — çağıran taslak
+  // değiştirince anahtar değişir. Yığın MOUNT'ta bir kez okunduğu için, anahtar
+  // değişince o taslağın KENDİ yığınını yeniden yükle. Böylece bir taslağın geri
+  // al adımları başka taslağa (ya da onaylanmış eski taslağa) sızmaz.
+  useEffect(() => {
+    ref.current = loadStack(storageKey);
+    setCount(ref.current.length);
+  }, [storageKey]);
 
   const save = useCallback(() => {
     setCount(ref.current.length);

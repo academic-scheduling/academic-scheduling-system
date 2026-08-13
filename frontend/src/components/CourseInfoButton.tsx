@@ -1,0 +1,116 @@
+import { ActionIcon, Anchor, Badge, Group, Popover, Stack, Text } from "@mantine/core";
+import { IconInfoCircle } from "@tabler/icons-react";
+import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
+import type { Course } from "../api/types";
+
+/** Programdaki (haftalık/sınav) ders listelerinde dersin sağındaki "i" — tıklayınca
+ *  dersin özetini + ŞUBE bilgisini pop-up'ta gösterir; ayrıntı için Dersler
+ *  sekmesine yönlendirir.
+ *
+ *  Açık durum DIŞARIDAN yönetilir (`opened` + `onOpenChange`): tek bir paylaşılan
+ *  "açık ders" state'i ile aynı anda YALNIZCA BİR pop-up açık kalır (üst üste
+ *  binme yok). Palet kartları sürüklenebilir / tıklanabilir olduğu için mousedown
+ *  yayılımı durdurulur (tıklama sürükleme/seçme tetiklemesin). */
+/** Sınav sayfası pop-up'ında gösterilecek tek sınav satırı. */
+export type CourseInfoExam = { label: string; date: string; time: string };
+
+export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, exams }: {
+  course: Course;
+  opened: boolean;
+  onOpenChange: (opened: boolean) => void;
+  onOpenCourses: () => void;
+  /** Verilirse (Sınavlar sayfası) şube YERİNE sınav bilgisi gösterilir. Undefined
+   *  ise (Haftalık) şube listesi gösterilir. */
+  exams?: CourseInfoExam[];
+}) {
+  const sections = [...course.sections]
+    .filter((s) => s.active)
+    .sort((a, b) => a.section_no - b.section_no);
+
+  return (
+    <Popover width={280} position="right-start" withArrow shadow="md" withinPortal
+      opened={opened} onChange={onOpenChange}>
+      <Popover.Target>
+        <ActionIcon
+          size="sm" variant="subtle" color="gray" radius="sm"
+          aria-label={`${course.code} bilgisi`}
+          draggable={false}
+          onMouseDown={(e) => e.stopPropagation()}
+          onDragStart={(e) => e.preventDefault()}
+          // Kontrollü modda Popover.Target kendiliğinden açılmaz; toggle'ı biz
+          // yaparız. stopPropagation da kartın kendi tıklama/sürükleme davranışını
+          // engeller.
+          onClick={(e) => { e.stopPropagation(); onOpenChange(!opened); }}
+        >
+          <IconInfoCircle size={15} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown onMouseDown={(e) => e.stopPropagation()}>
+        <Stack gap={6}>
+          <div>
+            <Text fw={600} fz="sm">{course.code}</Text>
+            <Text fz="xs" c="dimmed">{course.name}</Text>
+          </div>
+          <Text fz="xs">
+            {course.is_common
+              ? `Ortak ders · T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`
+              : `${course.year}. sınıf · ${SEMESTER_LABELS[course.semester]} · `
+                + `T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`}
+            {course.ects != null ? ` · ${course.ects} AKTS` : ""}
+          </Text>
+          <Group gap={4}>
+            <Badge size="xs" variant="light" color={course.is_elective ? "grape" : "blue"}>
+              {course.is_elective ? "Seçmeli" : "Zorunlu"}
+            </Badge>
+            {course.is_common && (
+              <Badge size="xs" variant="light" color="teal">Ortak</Badge>
+            )}
+          </Group>
+
+          {/* Sınavlar sayfasında SINAV bilgisi, haftalıkta ŞUBE bilgisi. Küçük
+              başlık + kompakt satırlar — ders kod/adından baskın görünmesin. */}
+          {exams !== undefined ? (
+            <div>
+              <Text fz={10} fw={700} c="dimmed" tt="uppercase" mb={2}>Sınavlar</Text>
+              {exams.length === 0 ? (
+                <Text fz={11} c="dimmed">Sınav eklenmedi.</Text>
+              ) : (
+                <Stack gap={1}>
+                  {exams.map((ex, i) => (
+                    <Text key={i} fz={11} lh={1.25}>
+                      <Text span fw={600}>{ex.label}</Text>
+                      <Text span c="dimmed"> · {ex.date} {ex.time}</Text>
+                    </Text>
+                  ))}
+                </Stack>
+              )}
+            </div>
+          ) : (
+            <div>
+              <Text fz={10} fw={700} c="dimmed" tt="uppercase" mb={2}>
+                Şubeler ({sections.length})
+              </Text>
+              {sections.length === 0 ? (
+                <Text fz={11} c="dimmed">Şube yok — Dersler'den ekleyin.</Text>
+              ) : (
+                <Stack gap={1}>
+                  {sections.map((s) => (
+                    <Text key={s.id} fz={11} lh={1.25} truncate>
+                      <Text span fw={600}>Şube {s.section_no}</Text>{" "}
+                      {lecturerLabel(s.lecturer)}
+                    </Text>
+                  ))}
+                </Stack>
+              )}
+            </div>
+          )}
+
+          <Anchor component="button" type="button" fz="xs"
+            onClick={() => { onOpenChange(false); onOpenCourses(); }}>
+            Ayrıntılar için Dersler'de aç →
+          </Anchor>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}

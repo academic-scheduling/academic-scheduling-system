@@ -2487,3 +2487,29 @@ segmenti kaldırıldı. Pasife-al simgesi GÖZ oldu.
 (ortak yok); Derslikler drawer'ı Konum "B Blok · 2. kat", ızgarada her slotta
 isim, göz simgesi; Öğretim Üyeleri drawer'ı görev birimi + CENG 4012 slotları
 üst üste. tsc + vite build temiz; 587 backend testi yeşil.
+
+## K-69 · Başlık sayaçları sadeleşti + Dersler performans (istemci segment, statik-bir-kez) [E]
+Kullanıcı: başlık yanındaki çok parçalı sayaçlardan yalnız ana belirteç kalsın;
+"sayfalar biraz kasıyor". Yalnız frontend.
+
+**Sayaç etiketleri.** Üç sayfada da tek ana sayaç: Dersler "N ders" (eski
+"· şube · ortak" düştü), Derslikler "N derslik" (eski "· kişilik · ders ·
+kapalı"), Öğretim Üyeleri "N kişi" (eski "· ders veren"). Bunları besleyen
+`sectionTotal`/`commonCount`/`totalCap`/`closedCount`/`lessonCount`/`teachingCount`
+useMemo'ları da kaldırıldı (render başına iş azaldı).
+
+**Performans — Dersler.**
+- **Sınıf segmenti İSTEMCİYE alındı.** Eskiden 1-4. sınıf seçimi sunucuya
+  `year=N` gönderip TAM yeniden yükleme yapıyordu (ağ turu + 336 satır yeniden
+  render). Artık `seg` filtre `useEffect` bağımlılığında değil; yıl istemcide
+  süzülür (`c.year === N && !is_common`). Segment geçişi anlık — ders nesneleri
+  aynı ref kaldığı için memo'lu satırlar yeniden render bile olmaz, yalnız DOM
+  süzülür. (Derslikler/Öğretim Üyeleri zaten tümünü bir kez yükleyip istemcide
+  süzüyordu; Dersler tek sunucu-taraflı sayfaydı.)
+- **Statik listeler yalnız BİR kez.** Bölüm/hoca/derslik/haftalık filtreyle
+  değişmez; her dep/dönem/arama değişiminde dördünü birden çekmek gereksizdi.
+  `useRef` bayrağıyla ilk `load`'da hepsi (paralel), sonraki yüklemelerde yalnız
+  `/courses` çekilir. Tüm `load()` çağrı yerleri değişmedi (tek fonksiyon).
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Üç başlık tek sayaç; Dersler "1. sınıf"
+segmenti spinner'sız anında 18 derse indi (ağ isteği yok). tsc + vite build temiz.

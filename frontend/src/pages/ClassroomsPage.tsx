@@ -200,15 +200,7 @@ export default function ClassroomsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classrooms, query, seg, buildingFilter, minCap, onlyActive, sortBy, sortDir, usageByRoom]);
 
-  const totalCap = useMemo(() => rows.reduce((n, c) => n + c.capacity, 0), [rows]);
-  const closedCount = useMemo(() => rows.filter((c) => !c.active).length, [rows]);
-  // K-68: özet etikete ders sayısı — bu dersliklere yerleşmiş FARKLI ders sayısı.
-  const lessonCount = useMemo(() => {
-    const ids = new Set<number>();
-    for (const c of rows) for (const cid of usageByRoom[c.id]?.courses ?? []) ids.add(cid);
-    return ids.size;
-  }, [rows, usageByRoom]);
-  const countLabel = `${rows.length} derslik · ${totalCap} kişilik · ${lessonCount} ders · ${closedCount} kapalı`;
+  const countLabel = `${rows.length} derslik`;
 
   const selected = useMemo(
     () => classrooms.find((c) => c.id === selId) ?? null, [classrooms, selId]);

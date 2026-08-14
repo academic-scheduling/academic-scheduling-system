@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Box, Button, Checkbox, Divider, Drawer, Group, Loader, Modal,
@@ -204,29 +204,39 @@ export default function CoursesPage() {
     },
   });
 
+  // K-69: statik listeler (bölüm/hoca/derslik/haftalık) filtreyle DEĞİŞMEZ; her
+  // dep/dönem/arama değişiminde bir daha çekmek gereksiz ağ + iş. Yalnız İLK
+  // load'da çekilir; sonraki yüklemeler yalnız dersleri tazeler.
+  const staticLoaded = useRef(false);
+
   async function load() {
     setLoading(true);
     setLoadError(null);
     const params = new URLSearchParams();
     if (depFilter) params.set("department_id", depFilter);
-    // K-68: sınıf segmenti (1-4) yıl süzgecini sunucuya taşır; Tümü/Ortak'ta yok.
-    if (seg === "1" || seg === "2" || seg === "3" || seg === "4") params.set("year", seg);
+    // K-69: sınıf segmenti artık İSTEMCİDE süzülür (sunucuya year gönderilmez) —
+    // segment geçişinde ağ turu/yeniden yükleme olmasın, anlık olsun.
     if (semFilter) params.set("semester", semFilter);
     if (search.trim()) params.set("search", search.trim());
     const qs = params.toString();
     try {
-      const [crs, deps, lecs, rooms, wk] = await Promise.all([
-        api.get<Course[]>(`/courses${qs ? `?${qs}` : ""}`),
-        api.get<Department[]>("/departments"),
-        api.get<Lecturer[]>("/lecturers"),
-        api.get<Classroom[]>("/classrooms"),
-        api.get<WeeklyEntry[]>("/weekly-entries"),   // şubenin gün/saati için
-      ]);
-      setCourses(crs);
-      setDepartments(deps);
-      setLecturers(lecs);
-      setClassrooms(rooms);
-      setWeekly(wk);
+      if (!staticLoaded.current) {
+        const [crs, deps, lecs, rooms, wk] = await Promise.all([
+          api.get<Course[]>(`/courses${qs ? `?${qs}` : ""}`),
+          api.get<Department[]>("/departments"),
+          api.get<Lecturer[]>("/lecturers"),
+          api.get<Classroom[]>("/classrooms"),
+          api.get<WeeklyEntry[]>("/weekly-entries"),   // şubenin gün/saati için
+        ]);
+        setCourses(crs);
+        setDepartments(deps);
+        setLecturers(lecs);
+        setClassrooms(rooms);
+        setWeekly(wk);
+        staticLoaded.current = true;
+      } else {
+        setCourses(await api.get<Course[]>(`/courses${qs ? `?${qs}` : ""}`));
+      }
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
     } finally {
@@ -238,7 +248,7 @@ export default function CoursesPage() {
     const t = setTimeout(load, search ? 300 : 0);   // aramada her tuşta istek atma
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depFilter, seg, semFilter, search]);
+  }, [depFilter, semFilter, search]);
 
   // Deep-link parametrelerini bir kez tüket: state'e alındı, artık URL'de durmasın.
   // ?add=1 → ekleme formunu açık getir (bölüm önceden seçili). Bölüm süzgeci
@@ -288,7 +298,7 @@ export default function CoursesPage() {
     // ortak-OLMAYAN derslerini (ortak dersler yalnız "Ortak" kategorisinde,
     // yıl sütunları "—"). Yıl zaten sunucuda süzülür; burada ortak dışlanır.
     if (seg === "common") list = list.filter((c) => c.is_common);
-    else if (seg !== "all") list = list.filter((c) => !c.is_common);
+    else if (seg !== "all") list = list.filter((c) => !c.is_common && c.year === Number(seg));
     // K-68: ders türü (popover) — ortak/normal fark etmeksizin is_elective.
     if (typeFilter === "required") list = list.filter((c) => !c.is_elective);
     else if (typeFilter === "elective") list = list.filter((c) => c.is_elective);
@@ -304,10 +314,7 @@ export default function CoursesPage() {
     });
   }, [visible, seg, typeFilter, onlyActive, sortKey, sortDir]);
 
-  const sectionTotal = useMemo(
-    () => rows.reduce((n, c) => n + c.sections.length, 0), [rows]);
-  const commonCount = useMemo(() => rows.filter((c) => c.is_common).length, [rows]);
-  const countLabel = `${rows.length} ders · ${sectionTotal} şube · ${commonCount} ortak`;
+  const countLabel = `${rows.length} ders`;
 
   // Drawer içeriği: tam listeden okunur (süzgeç değişse de açık ders kaybolmasın).
   const selected = useMemo(

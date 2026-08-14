@@ -272,10 +272,7 @@ export default function LecturersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lecturers, query, deptFilter, titleFilter, seg, onlyActive, sortBy, sortDir, statsByLecturer, depById]);
 
-  const teachingCount = useMemo(
-    () => rows.filter((l) => (statsByLecturer[l.id]?.courseIds.size ?? 0) > 0).length,
-    [rows, statsByLecturer]);
-  const countLabel = `${rows.length} kişi · ${teachingCount} ders veren`;
+  const countLabel = `${rows.length} kişi`;
 
   const selected = useMemo(
     () => lecturers.find((l) => l.id === selId) ?? null, [lecturers, selId]);

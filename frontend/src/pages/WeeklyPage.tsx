@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title, Tooltip,
+  Paper, ScrollArea, Select, Stack, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -16,7 +16,7 @@ import DraftBar from "../components/DraftBar";
 import ChangeFeed from "../components/ChangeFeed";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
-  courseCommonForDept, courseInCohort, lecturerLabel, ROOM_TYPE_LABELS, SEMESTER_LABELS,
+  courseCommonForDept, courseInCohort, lecturerLabel, SEMESTER_LABELS,
 } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
@@ -33,7 +33,7 @@ import {
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
-  Lecturer, ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
+  ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 
 const DAYS = [1, 2, 3, 4, 5];
@@ -74,12 +74,6 @@ type Cluster = {
 type Drag =
   | { kind: "new"; courseId: number; label: string }
   | { kind: "move"; entry: WeeklyEntry };
-
-type ViewMode = "cohort" | "classroom" | "lecturer";
-
-const VIEW_LABELS: Record<ViewMode, string> = {
-  cohort: "Sınıf", classroom: "Derslik", lecturer: "Öğretim üyesi",
-};
 
 // K-48: Sınıf seçicisinde "Ortak dersler" sözde-yıl değeri. Seçilince cohort
 // bakışı ortak (servis) derslere döner — xlsx'teki "Common Courses" sayfasının
@@ -155,24 +149,8 @@ export default function WeeklyPage() {
     return highlightParam.split(",").map(Number).filter((n) => !isNaN(n) && n > 0);
   }, [highlightParam]);
   const ruleParam = searchParams.get("rule");
-  const classroomParam = searchParams.get("classroom_id");
-  const lecturerParam = searchParams.get("lecturer_id");
-  const viewParam = searchParams.get("view");
 
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
-
-  // Üç MERCEK, tek grid: aynı veriye kimin gözünden bakıldığı.
-  //  cohort   → öğrencinin haftası  (yazılabilir: palet, sürükle, yayınla)
-  //  classroom→ odanın doluluğu     } salt-okunur "kontrol" bakışları; hangi
-  //  lecturer → hocanın yükü        } cohort'a yazılacağı belirsiz olduğu için
-  //                                   buralarda düzenleme kapalı
-  const [view, setView] = useLocalStorage<ViewMode>({
-    key: "weekly-view", defaultValue: "cohort", getInitialValueInEffect: false });
-  const [roomFilter, setRoomFilter] = useLocalStorage<string | null>({
-    key: "weekly-room", defaultValue: null, getInitialValueInEffect: false });
-  const [lecFilter, setLecFilter] = useLocalStorage<string | null>({
-    key: "weekly-lec", defaultValue: null, getInitialValueInEffect: false });
 
   // Cohort seçimi localStorage'da: başka sayfaya gidip dönünce kullanıcı
   // kaldığı yerden devam etsin, her seferinde varsayılana düşmesin.
@@ -182,21 +160,6 @@ export default function WeeklyPage() {
     key: "weekly-year", defaultValue: "1", getInitialValueInEffect: false });
   const [sem, setSem] = useLocalStorage<SemesterType>({
     key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
-
-  // Derslik listesinden gelen bağlantı, doğru merceği ve dersliği açar.
-  // URL kaynak kabul edilir: paylaşım, yenileme ve tarayıcı geri/ileri akışı
-  // localStorage'daki son tercihten bağımsız olarak aynı programı gösterir.
-  useEffect(() => {
-    if (viewParam !== "classroom" || !classroomParam) return;
-    setView("classroom");
-    setRoomFilter(classroomParam);
-  }, [viewParam, classroomParam, setView, setRoomFilter]);
-
-  useEffect(() => {
-    if (viewParam !== "lecturer" || !lecturerParam) return;
-    setView("lecturer");
-    setLecFilter(lecturerParam);
-  }, [viewParam, lecturerParam, setView, setLecFilter]);
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   // Workgroup'un TÜM dersleri bir kez çekilir. Üç iş birden görür: paletin
@@ -285,7 +248,7 @@ export default function WeeklyPage() {
   //
   // Cohort bakışı şartı duruyor: derslik/hoca mercekleri farklı cohort'ların
   // derslerini bir arada gösterir, "bunu nereye yazıyorum" belirsizleşir.
-  const canWrite = view === "cohort" && draft !== null
+  const canWrite = draft !== null
     && (draft.status === "OPEN" || draft.status === "REJECTED");
 
   const canSubmitDraft = canWriteIn(user, "can_manage_weekly", dep ? Number(dep) : undefined);
@@ -300,17 +263,15 @@ export default function WeeklyPage() {
     Promise.all([
       api.get<Department[]>("/departments"),
       api.get<Classroom[]>("/classrooms"),
-      api.get<Lecturer[]>("/lecturers?search="),
       api.get<Course[]>("/courses"),
     ])
-      .then(([d, c, l, co]) => {
+      .then(([d, c, co]) => {
         setDepartments(d);
         // Derslikleri bina + oda koduna göre sırala (numeric: "A2" < "A10").
         // Böylece hem derslik merceği hem yerleştirme modalı sıralı gelir.
         setClassrooms([...c].sort((a, b) =>
           a.building.name.localeCompare(b.building.name, "tr", { numeric: true })
           || a.room_code.localeCompare(b.room_code, "tr", { numeric: true })));
-        setLecturers(l);
         setAllCourses(co);
         // Kayıtlı bölüm hâlâ geçerliyse ona dokunma; yoksa ilkine düş.
         setDep((mevcut) =>
@@ -335,7 +296,6 @@ export default function WeeklyPage() {
     const depParam = searchParams.get("department_id");
     if (!depParam) return;
     setDep(depParam);
-    setView("cohort");
     // K-61: "Taslaklarım" sayfasından gelindiğinde cohort'un tamamı verilir —
     // yıl/dönem de ayarlanır ki mod çubuğu o cohort'un açık taslağını bulup
     // kendiliğinden seçsin. Bölümler genel-bakışından gelindiğinde bu iki
@@ -375,7 +335,6 @@ export default function WeeklyPage() {
             // kusur tam olarak buydu.
             taslakSecimiAtla.current = true;
             setDraft(null);
-            setView("cohort");
             setDep(String(fullCourse.department_id));
             setYear(String(fullCourse.year));
             setSem(fullCourse.semester);
@@ -408,25 +367,19 @@ export default function WeeklyPage() {
     };
   }, [highlightIds, ruleParam, allCourses, setSearchParams]);
 
-  /** Aktif merceğin sunucu sorgusu (kontrat §7 üç filtreyi de sunuyor). */
+  /** Cohort'un sunucu sorgusu (kontrat §7). */
   const activeQuery = (): string | null => {
-    if (view === "cohort") {
-      if (!dep) return null;
-      // K-48: "Ortak dersler" seçiliyse yıl yerine is_common ile süz.
-      return year === COMMON_YEAR
-        ? `department_id=${dep}&semester=${sem}&is_common=true`
-        : `department_id=${dep}&year=${year}&semester=${sem}`;
-    }
-    if (view === "classroom") return roomFilter ? `classroom_id=${roomFilter}` : null;
-    return lecFilter ? `lecturer_id=${lecFilter}` : null;
+    if (!dep) return null;
+    // K-48: "Ortak dersler" seçiliyse yıl yerine is_common ile süz.
+    return year === COMMON_YEAR
+      ? `department_id=${dep}&semester=${sem}&is_common=true`
+      : `department_id=${dep}&year=${year}&semester=${sem}`;
   };
 
-  /** Dışa aktarma yolu: gördüğün mercek neyse onu indirir. Derslik merceği,
-   *  ders listesi yerine derslik ızgarasını (build_classrooms_xlsx) verir. */
-  const exportPath = (format: "xlsx" | "csv"): string => {
-    if (view === "classroom") return `/export/classrooms?classroom_id=${roomFilter}&format=${format}`;
-    return `/export/weekly?${activeQuery()}&format=${format}`;
-  };
+  /** Dönem programının resmi çizelge export'u (build_weekly_grid_xlsx). Derslik
+   *  ve öğretim üyesi programları artık kendi sayfalarındaki drawer'dan aktarılır. */
+  const exportPath = (format: "xlsx" | "csv"): string =>
+    `/export/weekly?${activeQuery()}&format=${format}`;
 
   const reload = () => {
     setLoading(true);
@@ -453,7 +406,7 @@ export default function WeeklyPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : "Program yüklenemedi"))
       .finally(() => setLoading(false));
   };
-  useEffect(reload, [view, dep, year, sem, roomFilter, lecFilter, draft?.id, draft?.status]);
+  useEffect(reload, [dep, year, sem, draft?.id, draft?.status]);
 
   /** Taslak açma TEK yer (K-59): hem çubuktaki "Taslak Aç" düğmesi hem de
    *  ızgarada yayındaki bir karta dokunulduğunda çıkan "taslağa geçilsin mi?"
@@ -517,7 +470,7 @@ export default function WeeklyPage() {
    *  de kaybolmasın). Yalnız kendi taslaklarım döner — sunucu başkasınınkini
    *  hiçbir koşulda listelemez (K-59). */
   useEffect(() => {
-    if (view !== "cohort" || !dep || year === COMMON_YEAR) return;
+    if (!dep || year === COMMON_YEAR) return;
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan satırı ekrandan kaçırır. Bayrak tek seferliktir.
     if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
@@ -533,7 +486,7 @@ export default function WeeklyPage() {
         if (eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
-  }, [view, dep, year, sem]);
+  }, [dep, year, sem]);
 
   const handleUndo = async () => {
     const res = await popUndo();
@@ -804,47 +757,22 @@ export default function WeeklyPage() {
             <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
               Haftalık Program
             </Title>
-            <SegmentedControl size="xs" radius="md" value={view}
-              onChange={(v) => setView(v as ViewMode)}
-              styles={{ root: { height: CONTROL_H }, label: { paddingBlock: 4 } }}
-              data={(Object.keys(VIEW_LABELS) as ViewMode[]).map((k) => ({
-                value: k, label: VIEW_LABELS[k] }))} />
           </Group>
 
-          {/* Sabit genişlik: mercek değişince süzgeç sayısı değişiyor, alan
-              sabit kalmazsa çubuğun tamamı her geçişte yeniden diziliyor. */}
+          {/* Cohort seçimi: bölüm · sınıf · dönem. */}
           <Group gap={8} align="center" wrap="wrap" justify="center"
             style={{ minWidth: 424 }}>
-            {view === "cohort" && (
-              <>
-                <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
-                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                  data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-                <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
-                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                  data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
-                    ...YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
-                <Select size="xs" w={104} radius="md" value={sem}
-                  onChange={(v) => v && setSem(v as SemesterType)}
-                  styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                  data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
-              </>
-            )}
-            {view === "classroom" && (
-              <Select size="xs" w={280} radius="md" searchable clearable
-                filter={turkishOptionsFilter}
-                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                placeholder="Derslik seç" value={roomFilter} onChange={setRoomFilter}
-                data={classrooms.map((c) => ({
-                  value: String(c.id), label: `${c.building.name} · ${c.room_code}` }))} />
-            )}
-            {view === "lecturer" && (
-              <Select size="xs" w={280} radius="md" searchable clearable
-                filter={turkishOptionsFilter}
-                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                placeholder="Öğretim üyesi seç" value={lecFilter} onChange={setLecFilter}
-                data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />
-            )}
+            <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
+              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+              data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+            <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
+              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+              data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
+                ...YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
+            <Select size="xs" w={104} radius="md" value={sem}
+              onChange={(v) => v && setSem(v as SemesterType)}
+              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+              data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
           </Group>
 
           <Group gap={6} align="center" wrap="nowrap">
@@ -870,37 +798,28 @@ export default function WeeklyPage() {
 
       {/* K-59: yayın mı taslak mı — kullanıcının bunu hiç merak etmemesi
           gerekir, o yüzden ızgaranın hemen üstünde ve taslaktayken renkli. */}
-      {view === "cohort" && (
-        <DraftBar
-          departmentId={dep ? Number(dep) : null}
-          year={year === COMMON_YEAR ? null : Number(year)}
-          semester={sem}
-          kind="WEEKLY"
-          draft={draft}
-          canSubmit={canSubmitDraft}
-          onSelect={(d) => setDraft(d)}
-          onCreate={async () => { await createDraft(); }}
-          onChanged={() => { reload(); refreshDraft(); }}
-        />
-      )}
+      <DraftBar
+        departmentId={dep ? Number(dep) : null}
+        year={year === COMMON_YEAR ? null : Number(year)}
+        semester={sem}
+        kind="WEEKLY"
+        draft={draft}
+        canSubmit={canSubmitDraft}
+        onSelect={(d) => setDraft(d)}
+        onCreate={async () => { await createDraft(); }}
+        onChanged={() => { reload(); refreshDraft(); }}
+      />
 
       {/* Yalnız YAYIN modunda: taslaktayken kullanıcı kendi işine bakıyor,
           arka plandaki yayın hareketleri o an gürültü olur. */}
-      {view === "cohort" && !draft && <ChangeFeed limit={3} />}
+      {!draft && <ChangeFeed limit={3} />}
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
-      {view !== "cohort" && !activeQuery() && (
-        <Text size="sm" c="dimmed">
-          {view === "classroom" ? "Doluluğunu görmek için bir derslik seçin."
-            : "Haftalık yükünü görmek için bir öğretim üyesi seçin."}
-        </Text>
-      )}
 
       <Group align="flex-start" gap="lg" wrap="nowrap">
-        {/* Palet yalnız cohort bakışında: diğer mercekler salt-okunur.
+        {/* Sol sütun: sürüklenecek derslerin paleti.
             Panel zemini hafif gri: takvim beyaz, panel de beyaz olunca ikisi
             tek bir yüzeye yapışıyor ve gözün dinlendiği bir sınır kalmıyordu. */}
-        {view === "cohort" && (
         <Paper p="sm" radius="md" w={SIDE_W}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
                    height: gridH, background: SIDEBAR_BG,
@@ -917,9 +836,7 @@ export default function WeeklyPage() {
               yetkiniz yok" metni yanlış sebep gösteriyordu. */}
           {!canWrite && (
             <Text size="10px" c="dimmed" mb={6}>
-              {view === "cohort"
-                ? "Yayındaki program salt-okunur — düzenlemek için taslak açın"
-                : "Bu mercek salt-okunur — düzenleme sınıf bakışında yapılır"}
+              Yayındaki program salt-okunur — düzenlemek için taslak açın
             </Text>
           )}
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz */}
@@ -1015,14 +932,6 @@ export default function WeeklyPage() {
           </Stack>
           </ScrollArea>
         </Paper>
-        )}
-
-        {(view === "classroom" || view === "lecturer") && (
-          <InfoPanel view={view} height={gridH}
-            room={classrooms.find((c) => String(c.id) === roomFilter) ?? null}
-            lecturer={lecturers.find((l) => String(l.id) === lecFilter) ?? null}
-            entries={entries} courses={allCourses} departments={departments} />
-        )}
 
         <Paper ref={gridRef} p="md" radius="md"
           style={{ flex: 1, minWidth: 0, overflowX: "auto",
@@ -1140,7 +1049,7 @@ export default function WeeklyPage() {
                       </div>
                     ))}
                     {dayClusters.map((c) => (
-                      <ClusterCard key={c.id} c={c} canWrite={canWrite} view={view}
+                      <ClusterCard key={c.id} c={c} canWrite={canWrite}
                         elective={electiveOf.get(c.entries[0].section.course.id) ?? false}
                         highlight={hoverCourse != null && c.entries.some((x) => x.section.course.id === hoverCourse)}
                         deepHighlight={deepHighlightIds.some((id) => c.entries.some((x) => x.id === id))}
@@ -1384,135 +1293,6 @@ export default function WeeklyPage() {
   );
 }
 
-/** Sol paneldeki tek bilgi satırı (etiket · değer). */
-function Satir({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <Group justify="space-between" gap="xs" wrap="nowrap">
-      <Text size="xs" c="dimmed">{k}</Text>
-      <Text size="xs" fw={500} style={{ textAlign: "right" }}>{v}</Text>
-    </Group>
-  );
-}
-
-/** Derslik / öğretim üyesi merceklerinin sol paneli.
- *
- *  Sınıf bakışında sol panel PALETTİR (sürüklenecek dersler). Diğer iki bakış
- *  salt-okunur olduğu için orada palet anlamsız — yerine seçilenin kimliğini ve
- *  haftalık kullanımını koyuyoruz, böylece sol sütun boş kalmıyor ve grid'in
- *  cevaplayamadığı sorular ("kapasite ne?", "kaç ders veriyor?") burada duruyor. */
-function InfoPanel({ view, room, lecturer, entries, courses, departments, height }: {
-  view: ViewMode;
-  room: Classroom | null;
-  lecturer: Lecturer | null;
-  entries: WeeklyEntry[];
-  courses: Course[];
-  departments: Department[];
-  height?: number;
-}) {
-  // Haftalık kullanım: her mercekte aynı hesap (kaç giriş, kaç gün, kaç slot).
-  const slotToplam = entries.reduce((t, e) => t + e.slot_count, 0);
-  const gunSayisi = new Set(entries.map((e) => e.day_of_week)).size;
-  const doluluk = Math.round((slotToplam / (9 * 5)) * 100);
-
-  // Hocanın dersleri: şubelerinden geriye yürüyerek ders/şube sayısı çıkarılır.
-  // Bölüm ise yalnız hocanın ASLİ bölümü (department_id) — ders verdiği tüm
-  // bölümler değil (kullanıcı: sadece kendi bölümü yazsın).
-  const hocaOzet = useMemo(() => {
-    if (!lecturer) return null;
-    const dersler = courses.filter((c) =>
-      c.sections.some((s) => s.lecturer.id === lecturer.id));
-    const subeSayisi = dersler.reduce(
-      (t, c) => t + c.sections.filter((s) => s.lecturer.id === lecturer.id).length, 0);
-    const homeDept = lecturer.department_id != null
-      ? (departments.find((d) => d.id === lecturer.department_id)?.code ?? null)
-      : null;
-    return { dersler, subeSayisi, homeDept };
-  }, [lecturer, courses, departments]);
-
-  const secili = view === "classroom" ? room : lecturer;
-
-  return (
-    // Cohort görünümündeki ders paneliyle BİREBİR aynı kabuk: aynı genişlik
-    // (SIDE_W), aynı köşe (md), aynı gri zemin, aynı çerçeve + gölge. Önceden
-    // farklıydı (w=200, radius lg, gray-0, çerçevesiz) ve mercek değişince sol
-    // sütun görünüş değiştiriyordu.
-    <Paper p="sm" radius="md" w={SIDE_W}
-      style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-               height, background: SIDEBAR_BG,
-               border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
-      {!secili ? (
-        <Text size="xs" c="dimmed">
-          {view === "classroom" ? "Bir derslik seçin." : "Bir öğretim üyesi seçin."}
-        </Text>
-      ) : (
-        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
-          <Stack gap="md">
-            {view === "classroom" && room && (
-              <>
-                <div>
-                  <Text size="xs" c="dimmed">{room.building.name}</Text>
-                  <Text size="lg" fw={500}>{room.room_code}</Text>
-                </div>
-                <Stack gap={6}>
-                  <Satir k="Tür" v={ROOM_TYPE_LABELS[room.room_type]} />
-                  <Satir k="Kapasite" v={`${room.capacity} kişi`} />
-                  <Satir k="Sınav kontenjanı"
-                    v={room.exam_capacity != null ? `${room.exam_capacity} kişi` : "girilmemiş"} />
-                  {!room.active && <Badge size="xs" color="gray">pasif</Badge>}
-                </Stack>
-              </>
-            )}
-
-            {view === "lecturer" && lecturer && hocaOzet && (
-              <>
-                <div>
-                  <Text size="sm" fw={500} style={{ lineHeight: 1.3 }}>{lecturerLabel(lecturer)}</Text>
-                  <Group gap={4} mt={4}>
-                    {lecturer.is_external && (
-                      <Badge size="xs" variant="light" color="grape">fakülte dışı</Badge>
-                    )}
-                    {!lecturer.active && <Badge size="xs" color="gray">pasif</Badge>}
-                  </Group>
-                </div>
-                <Stack gap={6}>
-                  <Satir k="Bölüm" v={hocaOzet.homeDept ?? "—"} />
-                  <Satir k="Ders" v={hocaOzet.dersler.length} />
-                  <Satir k="Şube" v={hocaOzet.subeSayisi} />
-                </Stack>
-                {hocaOzet.dersler.length > 0 && (
-                  <div>
-                    <Text size="xs" c="dimmed" mb={6}>Verdiği dersler</Text>
-                    <Stack gap={6}>
-                      {/* Paletteki ders satırıyla aynı çerçeveli kart standardı
-                          (paletteItemStyle) — tıklanamaz olduğu için hover yok. */}
-                      {hocaOzet.dersler.map((c) => (
-                        <div key={c.id} style={paletteItemStyle(false)}>
-                          <Text fz={12} fw={600} style={{ color: TEXT_STRONG }}>{c.code}</Text>
-                          <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
-                        </div>
-                      ))}
-                    </Stack>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div>
-              <Text size="xs" c="dimmed" mb={6}>Bu hafta</Text>
-              <Stack gap={6}>
-                <Satir k="Yerleşim" v={entries.length} />
-                <Satir k="Gün" v={`${gunSayisi} / 5`} />
-                <Satir k="Ders saati" v={`${slotToplam} slot`} />
-                {view === "classroom" && <Satir k="Doluluk" v={`%${doluluk}`} />}
-              </Stack>
-            </div>
-          </Stack>
-        </ScrollArea>
-      )}
-    </Paper>
-  );
-}
-
 function Legend({ color, label }: { color: string; label: string }) {
   return (
     <Group gap={5} wrap="nowrap">
@@ -1522,10 +1302,10 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onOpenGroup, onRequestDraft }: {
+function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, highlight, deepHighlight, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onOpenGroup, onRequestDraft }: {
   c: Cluster; elective: boolean; hard: boolean; warn: boolean; canWrite: boolean;
   lecturerName?: string; onWarningClick?: () => void;
-  view: ViewMode; highlight: boolean; deepHighlight?: boolean;
+  highlight: boolean; deepHighlight?: boolean;
   onDragStart: (e: WeeklyEntry) => void; onDragEnd: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onOpenGroup: () => void;
@@ -1575,12 +1355,9 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
   const widthPct = 100 / c.lanes;
   // Toplu kartta tek derslik yazılamaz; kaç farklı derslik kullanıldığını söyler.
   const rooms = new Set(c.entries.map((x) => x.classroom?.room_code).filter(Boolean));
-  // Alt satır MERCEĞE göre değişir: derslik bakışında oda zaten filtreyle sabit,
-  // tekrarlamak yerine şube numarasını yazmak bilgi taşır.
+  // Tek kartın alt satırı: derslik (online ise "online").
   const altSatir = many
     ? `${c.entries.length} şube${rooms.size > 1 ? ` · ${rooms.size} derslik` : rooms.size === 1 ? ` · ${[...rooms][0]}` : ""}`
-    : view === "classroom"
-    ? `Şube ${e.section.section_no}`
     : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
 
   const canDrag = canWrite && !many;
@@ -1593,7 +1370,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
       onDragStart={(ev) => {
         if (!editable) {
           ev.preventDefault();
-          if (view === "cohort") onRequestDraft();
+          onRequestDraft();
           return;
         }
         ev.dataTransfer.effectAllowed = "move";
@@ -1608,7 +1385,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
           onOpenGroup();
         } else if (editable) {
           onEdit(e);
-        } else if (view === "cohort") {
+        } else {
           onRequestDraft();
         }
       }}
@@ -1616,9 +1393,7 @@ function ClusterCard({ c, elective, hard, warn, lecturerName, canWrite, view, hi
         ? `${c.entries.length} paralel şube — listelemek için tıkla`
         : editable
         ? "Düzenlemek için tıkla, taşımak için sürükle"
-        : view === "cohort"
-        ? `${e.section.course.code} · Yayındaki program salt-okunur — değiştirmek için taslak açın`
-        : undefined}
+        : `${e.section.course.code} · Yayındaki program salt-okunur — değiştirmek için taslak açın`}
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
         left: `calc(${c.lane * widthPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,

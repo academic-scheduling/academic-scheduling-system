@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Anchor, Avatar, Badge, Box, Button, Checkbox, Divider, Drawer,
   Group, Loader, Modal, Paper, Popover, ScrollArea, SegmentedControl, Select,
@@ -8,11 +8,13 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconCalendarWeek, IconChevronRight, IconCircleCheck, IconCircleOff, IconCloudDownload,
+  IconChevronRight, IconCircleCheck, IconCircleOff, IconCloudDownload,
   IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
   IconSortDescending, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
+import ExportMenu from "../components/ExportMenu";
+import MiniWeekGrid, { MiniWeekGridLegend, type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { formatSlotRange } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
@@ -83,7 +85,6 @@ type CourseFormValues = {
 
 export default function LecturersPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   // Workgroup geneli paylaşımlı kaynak: bölüm boyutu YOK (K-25).
   const canWrite = canWriteIn(user, "can_manage_lecturers");
 
@@ -611,7 +612,6 @@ export default function LecturersPage() {
             onToggleActive={toggleActive}
             onDelete={setDeleting}
             onClose={() => setSelId(null)}
-            onViewWeekly={(l) => navigate(`/weekly?view=lecturer&lecturer_id=${l.id}`)}
           />
         )}
       </Drawer>
@@ -840,7 +840,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  ızgarası + kısıtlar backend'de veri olmadığı için YOK (uydurulmadı). */
 function LecturerDrawerBody({
   lecturer: l, depLabel, stats, entriesBySection, canWrite,
-  onEdit, onToggleActive, onDelete, onClose, onViewWeekly,
+  onEdit, onToggleActive, onDelete, onClose,
 }: {
   lecturer: Lecturer;
   depLabel: string;
@@ -851,13 +851,23 @@ function LecturerDrawerBody({
   onToggleActive: (l: Lecturer) => void;
   onDelete: (l: Lecturer) => void;
   onClose: () => void;
-  onViewWeekly: (l: Lecturer) => void;
 }) {
   const items = stats?.items ?? [];
   const courseCount = stats?.courseIds.size ?? 0;
   const sectionCount = items.length;
   const students = stats?.students ?? 0;
   const hours = stats?.hours ?? 0;
+
+  // Haftalık ızgara: verdiği şubelerin yayındaki yerleşimleri (gün-slot).
+  const placements: WeekPlacement[] = [];
+  for (const { course, section } of items) {
+    for (const e of entriesBySection[section.id] ?? []) {
+      placements.push({
+        day: e.day_of_week, startSlot: e.start_slot, slotCount: e.slot_count,
+        label: course.code, title: `${course.code} · Şube ${section.section_no}`,
+      });
+    }
+  }
 
   return (
     <Stack gap={0} h="100%">
@@ -898,6 +908,14 @@ function LecturerDrawerBody({
             <Stat label="Haftalık saat" value={`${hours} sa`} />
             <Stat label="Öğrenci" value={String(students)} />
           </SimpleGrid>
+
+          <div>
+            <Group justify="space-between" mb={8}>
+              <Text size="xs" fw={600} c="dimmed">HAFTALIK PROGRAM</Text>
+              <MiniWeekGridLegend />
+            </Group>
+            <MiniWeekGrid placements={placements} emptyLabel="Bu dönem programda ders yok." />
+          </div>
 
           <div>
             <Text size="xs" fw={600} c="dimmed" mb={8}>VERDİĞİ DERSLER</Text>
@@ -948,10 +966,12 @@ function LecturerDrawerBody({
             Bilgileri düzenle
           </Button>
         )}
-        <Button size="sm" variant="default" leftSection={<IconCalendarWeek size={15} />}
-          onClick={() => onViewWeekly(l)}>
-          Haftalık programda gör
-        </Button>
+        {/* K-67: hocanın haftalık programı burada; export'u da burada
+            (/export/weekly lecturer_id filtresini kabul eder). */}
+        <ExportMenu label="Programı Aktar" items={[
+          { label: "Excel (.xlsx)", path: `/export/weekly?lecturer_id=${l.id}&format=xlsx` },
+          { label: "CSV (.csv)", path: `/export/weekly?lecturer_id=${l.id}&format=csv` },
+        ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
           <Tooltip label={l.active ? "Pasife al" : "Aktifleştir"}>

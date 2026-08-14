@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Box, Button, Checkbox, Drawer, Group, Loader, Modal,
   NumberInput, Paper, Popover, Progress, SegmentedControl, Select, SimpleGrid, Stack,
@@ -8,12 +7,13 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconBuilding, IconCalendarWeek, IconChevronRight, IconCircleCheck, IconCircleOff,
+  IconBuilding, IconChevronRight, IconCircleCheck, IconCircleOff,
   IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
   IconSortDescending, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
+import MiniWeekGrid, { MiniWeekGridLegend, type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { formatSlotRange, SLOT_TIMES, DAY_SHORT } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
@@ -44,7 +44,6 @@ function useColor(pct: number): string {
 
 export default function ClassroomsPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   // Derslik/bina workgroup geneli paylaşımlı kaynak: bölüm boyutu yok (K-25).
   const canWrite = canWriteIn(user, "can_manage_classrooms");
 
@@ -510,7 +509,6 @@ export default function ClassroomsPage() {
             onToggleActive={toggleRoomActive}
             onDelete={setDeletingRoom}
             onClose={() => setSelId(null)}
-            onViewWeekly={(c) => navigate(`/weekly?view=classroom&classroom_id=${c.id}`)}
           />
         )}
       </Drawer>
@@ -653,7 +651,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  olmadığı için YOK (uydurulmadı). */
 function ClassroomDrawerBody({
   room: c, usage, usePct, sectionById, canWrite,
-  onEdit, onToggleActive, onDelete, onClose, onViewWeekly,
+  onEdit, onToggleActive, onDelete, onClose,
 }: {
   room: Classroom;
   usage?: { courses: Set<number>; slots: number; entries: WeeklyEntry[] };
@@ -664,11 +662,16 @@ function ClassroomDrawerBody({
   onToggleActive: (c: Classroom) => void;
   onDelete: (c: Classroom) => void;
   onClose: () => void;
-  onViewWeekly: (c: Classroom) => void;
 }) {
   const entries = usage?.entries ?? [];
   const courseCount = usage?.courses.size ?? 0;
   const slots = usage?.slots ?? 0;
+
+  // Haftalık ızgara: bu dersliğe düşen yayın yerleşimleri (gün-slot).
+  const placements: WeekPlacement[] = entries.map((e) => ({
+    day: e.day_of_week, startSlot: e.start_slot, slotCount: e.slot_count,
+    label: e.section.course.code, title: `${e.section.course.code} · Şube ${e.section.section_no}`,
+  }));
 
   return (
     <Stack gap={0} h="100%">
@@ -708,6 +711,15 @@ function ClassroomDrawerBody({
               </Text>
             </Group>
             <Progress value={usePct} color={useColor(usePct)} size="md" radius="xl" />
+          </div>
+
+          {/* Haftalık program ızgarası */}
+          <div>
+            <Group justify="space-between" mb={8}>
+              <Text size="xs" fw={600} c="dimmed">HAFTALIK PROGRAM</Text>
+              <MiniWeekGridLegend />
+            </Group>
+            <MiniWeekGrid placements={placements} emptyLabel="Bu derslikte planlanmış ders yok." />
           </div>
 
           {/* Yerleştirilen dersler */}
@@ -760,10 +772,12 @@ function ClassroomDrawerBody({
             Dersliği düzenle
           </Button>
         )}
-        <Button size="sm" variant="default" leftSection={<IconCalendarWeek size={15} />}
-          onClick={() => onViewWeekly(c)}>
-          Haftalık programda gör
-        </Button>
+        {/* K-67: dersliğin haftalık programı burada; export'u da burada
+            (/export/classrooms classroom_id ile tek dersliğe daralır). */}
+        <ExportMenu label="Programı Aktar" items={[
+          { label: "Excel (.xlsx)", path: `/export/classrooms?classroom_id=${c.id}&format=xlsx` },
+          { label: "CSV (.csv)", path: `/export/classrooms?classroom_id=${c.id}&format=csv` },
+        ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
           <Tooltip label={c.active ? "Pasife al" : "Aktifleştir"}>

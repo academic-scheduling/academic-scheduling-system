@@ -2413,3 +2413,41 @@ renkli unvan rozetleri + 40/A + avatar; drawer (Ali Ekber IRMAK: Ders 1·Şube 1
 Haftalık saat 5 sa·Öğrenci 30, PHYS 1852 iki yayın slotu). Derslikler 29 derslik,
 doluluk çubukları; drawer (B3B08: %47 · 21/45 slot, 5 gerçek yerleştirilen ders,
 hoca+öğrenci). Her iki sayfada tsc + vite build temiz, konsol hatası yok.
+
+## K-67 · Haftalık Program yalnız cohort; derslik/hoca programları kendi drawer'larında [E]
+**Bağlam (kullanıcı):** "Haftalık programdaki derslik ve öğretim üyeleri
+programlarını kaldıralım; tasarım dosyalarındaki gibi programları derslikler ve
+öğretim üyeleri sayfalarındaki açılan sayfalara (drawer) ekleyelim; görünümleri
+demo'daki gibi basit olsun. Ayrıca dışarı aktarma kısımlarını da haftalık
+programdan kaldırıp kendi kısımlarına ekleyelim." Yalnız frontend.
+
+**Karar — Haftalık Program tek MERCEK: cohort.** WeeklyPage üç mercekliydi
+(cohort / derslik / hoca; sonuncu ikisi salt-okunur "kontrol" bakışıydı). Mercek
+seçici (SegmentedControl), derslik/hoca süzgeç Select'leri, `InfoPanel` (sol
+bilgi paneli), `roomFilter`/`lecFilter`/`view` state'i, iki `viewParam` deep-link
+efekti ve `lecturers` fetch'i tümüyle KALDIRILDI. `ClusterCard`'ın `view` prop'u
+ve dala bağlı metinleri sadeleşti. Cohort düzenleyici (palet, sürükle-bırak,
+taslak barı, değişiklik akışı, çakışmalar) aynen korundu.
+
+**Karar — programlar drawer'a `MiniWeekGrid` ile.** Yeni ortak bileşen
+`components/MiniWeekGrid.tsx`: 5 gün × 9 slot sade ızgara (mockup'ların HAFTALIK
+KULLANIM / MÜSAİTLİK'inin sade karşılığı). Salt-okunur, YALNIZ yayın yerleşimleri;
+çok-slotlu blok tüm slotlarını doldurur, etiket başta yazılır. Öğretim Üyeleri
+drawer'ında "HAFTALIK PROGRAM" (verdiği şubelerin gün-slot'u), Derslikler
+drawer'ında (odaya düşen yerleşimler). **Not:** K-66'da "düşürülen" ızgara
+KISIT-tabanlı müsaitlikti (veri yok); bu ise gerçek YERLEŞİM ızgarası — uydurma
+değil. "Haftalık programda gör" düğmeleri kalktı (program artık içeride).
+
+**Karar — export ilgili sayfaya taşındı (yeni backend ucu GEREKMEDİ).** Öğretim
+Üyeleri drawer'ında `/export/weekly?lecturer_id=X`, Derslikler drawer'ında
+`/export/classrooms?classroom_id=X` (ikisi de zaten vardı). Haftalık Program'daki
+export DÖNEM (cohort) programının resmi çizelgesiyle sınırlandı; **kullanıcı
+kararı: dönem export'u Haftalık Program'da KALSIN** (resmi çizelgenin başka evi
+yok). Derslik/hoca export dalları WeeklyPage'den çıktı.
+
+**Doğrulama (tarayıcı, gerçek veri, 14 Ağustos 2026):** Öğretim Üyeleri drawer'ı
+Ali Ekber IRMAK → HAFTALIK PROGRAM ızgarasında PHYS 1852 (Pzt 3 slot + Sal 2 slot
+= 5 sa) + "Programı Aktar". Derslikler drawer'ı B3B08 → 5 dersin gün-slot'u
+ızgarada + "Programı Aktar". Haftalık Program artık mercek seçicisiz, yalnız
+cohort; palet/grid/taslak/çakışma çalışıyor, `/lecturers` çekilmiyor, tüm API
+200. tsc + vite build temiz.

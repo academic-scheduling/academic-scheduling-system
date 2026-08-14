@@ -8,13 +8,13 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconChevronRight, IconCircleCheck, IconCircleOff, IconCloudDownload,
+  IconChevronRight, IconCloudDownload, IconEye, IconEyeOff,
   IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
   IconSortDescending, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
-import MiniWeekGrid, { MiniWeekGridLegend, type WeekPlacement } from "../components/MiniWeekGrid";
+import MiniWeekGrid, { type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { formatSlotRange } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
@@ -26,10 +26,9 @@ import {
 
 const ALL = "__all__";
 
-/** K-65 deseni: TÜR segmenti — hepsi backend'de gerçek eksen. "Kadrolu/Dış
- *  görevli" `is_external`; "Ders vermeyen" hiç şubesi olmayan. (Mockup'taki
- *  Kadrolu/Yarı-zamanlı/Yükü-aşan backend'de yok; en yakın gerçek karşılık bu.) */
-type Seg = "all" | "staff" | "external" | "noload";
+/** TÜR segmenti — `is_external` ekseni: Kadrolu (kendi kadrosu) / Dış görevli
+ *  (40/a). (K-68: "Ders vermeyen" segmenti kaldırıldı.) */
+type Seg = "all" | "staff" | "external";
 
 type SortKey = "name" | "title" | "dep" | "courses";
 
@@ -133,7 +132,7 @@ export default function LecturersPage() {
     },
     validate: {
       full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz"),
-      department_id: (v, values) => (values.is_external || v ? null : "Bölüm seçin"),
+      department_id: (v, values) => (values.is_external || v ? null : "Kadro birimi seçin"),
       email: (v) => (!v.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim())
         ? null : "Geçerli bir e-posta girin"),
     },
@@ -209,11 +208,25 @@ export default function LecturersPage() {
     return acc;
   }, [courses]);
 
-  /** Hocanın BÖLÜM sütununda görünecek etiket: asli bölüm adı, yoksa görev
-   *  birimi, o da yoksa "—". */
+  /** Kadro birimi etiketi: asli bölüm adı (department_id), yoksa import'tan gelen
+   *  kadro/görev birimi metni, o da yoksa "—". */
   function depLabelOf(l: Lecturer): string {
     if (l.department_id != null) return depById[l.department_id]?.name ?? "—";
-    return l.duty_unit || "—";
+    return l.cadre_unit || l.duty_unit || "—";
+  }
+
+  /** K-68: görev birimi = hocanın verdiği ORTAK OLMAYAN derslerin bölümleri
+   *  (türetilir). Ortak dersler çok bölümlü olduğu için görev birimi belirtmez. */
+  function dutyUnitsOf(l: Lecturer): string[] {
+    const stats = statsByLecturer[l.id];
+    if (!stats) return [];
+    const names = new Set<string>();
+    for (const { course } of stats.items) {
+      if (course.is_common) continue;
+      const d = depById[course.department_id];
+      if (d) names.add(d.name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, "tr"));
   }
 
   function sortValue(l: Lecturer, key: SortKey): string | number {
@@ -239,10 +252,8 @@ export default function LecturersPage() {
         const hay = `${lecturerLabel(l)} ${l.email ?? ""}`.toLocaleLowerCase("tr");
         if (!hay.includes(q)) return false;
       }
-      const count = statsByLecturer[l.id]?.courseIds.size ?? 0;
       if (seg === "staff" && l.is_external) return false;
       if (seg === "external" && !l.is_external) return false;
-      if (seg === "noload" && count > 0) return false;
       if (depId !== null && l.department_id !== depId) return false;
       if (titleFilter && l.title !== titleFilter) return false;
       if (onlyActive && !l.active) return false;
@@ -487,7 +498,6 @@ export default function LecturersPage() {
               { label: "Tümü", value: "all" },
               { label: "Kadrolu", value: "staff" },
               { label: "Dış görevli", value: "external" },
-              { label: "Ders vermeyen", value: "noload" },
             ]}
             size="sm"
             style={{ flex: "none" }}
@@ -569,7 +579,7 @@ export default function LecturersPage() {
               <Table.Tr>
                 {sortTh("Ad Soyad", "name")}
                 {sortTh("Unvan", "title", 150)}
-                {sortTh("Bölüm", "dep", 190)}
+                {sortTh("Kadro birimi", "dep", 200)}
                 <Table.Th w={200}>E-posta</Table.Th>
                 {sortTh("Ders", "courses", 96, "center")}
                 <Table.Th w={34} />
@@ -605,6 +615,7 @@ export default function LecturersPage() {
           <LecturerDrawerBody
             lecturer={selected}
             depLabel={depLabelOf(selected)}
+            dutyUnits={dutyUnitsOf(selected)}
             stats={statsByLecturer[selected.id]}
             entriesBySection={entriesBySection}
             canWrite={canWrite}
@@ -629,8 +640,9 @@ export default function LecturersPage() {
             <TextInput label="Ad Soyad" placeholder="Ayşe Kaya" {...form.getInputProps("full_name")} />
             <TextInput label="E-posta" placeholder="ayse.kaya@mu.edu.tr (opsiyonel)" {...form.getInputProps("email")} />
             <Select
-              label="Bölüm"
-              placeholder="Bölüm seçin"
+              label="Kadro birimi"
+              description="Hocanın resmi kadrosunun bulunduğu bölüm. (Görev birimi — fiilen ders verdiği bölüm — verdiği derslerden türetilir.)"
+              placeholder="Kadro birimini seçin"
               data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
               searchable clearable filter={turkishOptionsFilter}
               {...form.getInputProps("department_id")}
@@ -839,11 +851,13 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  dersler (gerçek yayın slotlarıyla) ve alt eylem çubuğu. Mockup'taki müsaitlik
  *  ızgarası + kısıtlar backend'de veri olmadığı için YOK (uydurulmadı). */
 function LecturerDrawerBody({
-  lecturer: l, depLabel, stats, entriesBySection, canWrite,
+  lecturer: l, depLabel, dutyUnits, stats, entriesBySection, canWrite,
   onEdit, onToggleActive, onDelete, onClose,
 }: {
   lecturer: Lecturer;
   depLabel: string;
+  /** K-68: görev birimi/birimleri — verdiği (ortak olmayan) derslerin bölümleri. */
+  dutyUnits: string[];
   stats?: LStats;
   entriesBySection: Record<number, WeeklyEntry[]>;
   canWrite: boolean;
@@ -909,11 +923,21 @@ function LecturerDrawerBody({
             <Stat label="Öğrenci" value={String(students)} />
           </SimpleGrid>
 
+          {/* K-68: görev birimi = verdiği (ortak olmayan) derslerin bölümleri.
+              Kadro birimi künyede (depLabel); bu türetilmiş. */}
+          {dutyUnits.length > 0 && (
+            <div>
+              <Text size="xs" fw={600} c="dimmed" mb={8}>GÖREV BİRİMİ</Text>
+              <Group gap={6}>
+                {dutyUnits.map((u) => (
+                  <Badge key={u} variant="light" color="blue" style={{ textTransform: "none" }}>{u}</Badge>
+                ))}
+              </Group>
+            </div>
+          )}
+
           <div>
-            <Group justify="space-between" mb={8}>
-              <Text size="xs" fw={600} c="dimmed">HAFTALIK PROGRAM</Text>
-              <MiniWeekGridLegend />
-            </Group>
+            <Text size="xs" fw={600} c="dimmed" mb={8}>HAFTALIK PROGRAM</Text>
             <MiniWeekGrid placements={placements} emptyLabel="Bu dönem programda ders yok." />
           </div>
 
@@ -937,13 +961,15 @@ function LecturerDrawerBody({
                       {entries.length === 0 ? (
                         <Text size="xs" c="orange.7" style={{ flex: "none" }}>programda değil</Text>
                       ) : (
-                        <Group gap={4} justify="flex-end" style={{ flex: "none" }}>
+                        // K-68: slotlar üst üste — çok günlü ders yan yana sıralanınca
+                        // tüm satırı kaplayıp çirkin duruyordu.
+                        <Stack gap={4} align="flex-end" style={{ flex: "none" }}>
                           {entries.map((e) => (
                             <Badge key={e.id} variant="light" size="sm" color="green">
                               {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
                             </Badge>
                           ))}
-                        </Group>
+                        </Stack>
                       )}
                     </Group>
                   </Paper>
@@ -977,7 +1003,7 @@ function LecturerDrawerBody({
           <Tooltip label={l.active ? "Pasife al" : "Aktifleştir"}>
             <ActionIcon variant="subtle" size="lg" color={l.active ? "orange" : "green"}
               onClick={() => onToggleActive(l)} aria-label={l.active ? "Pasife al" : "Aktifleştir"}>
-              {l.active ? <IconCircleOff size={18} /> : <IconCircleCheck size={18} />}
+              {l.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>
         )}

@@ -34,9 +34,13 @@ function donemNo(year: number, semester: SemesterType): number {
   return (year - 1) * 2 + (semester === "FALL" ? 1 : 2);
 }
 
-/** K-65: TÜR segmenti — Ortak/Seçmeli/Zorunlu artık istemci tarafı bir süzgeç
- *  (eski "Ortak dersler" sözde-yılının yerini alır). Tümü hepsini gösterir. */
-type Seg = "all" | "required" | "elective" | "common";
+/** K-68: KATEGORİ segmenti — Tümü / Ortak / 1-4. sınıf. Sınıf seçimi yıl
+ *  süzgecini (sunucu) sürer; "Ortak" is_common'ı süzer (istemci). Eski TÜR
+ *  segmenti (Zorunlu/Seçmeli) filtre popover'ına taşındı. */
+type Seg = "all" | "common" | "1" | "2" | "3" | "4";
+
+/** K-68: ders türü süzgeci (filtre popover'ında). */
+type TypeFilter = "all" | "required" | "elective";
 
 /** K-65: sıralanabilir sütun anahtarı. "donem" varsayılan gizli sıralamadır
  *  (mevcut dönem-artan düzeni korur); kullanıcı DÖNEM başlığına basınca "sem"e
@@ -162,7 +166,6 @@ export default function CoursesPage() {
     searchParams.get("department_id"),
   );
   const [importOpen, setImportOpen] = useState(false);
-  const [yearFilter, setYearFilter] = useState<string | null>(null);
   const [semFilter, setSemFilter] = useState<string | null>(null);
   // Haftalık programdaki ders "i" pop-up'ı `?search=<kod>` ile buraya yönlendirir.
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
@@ -172,7 +175,8 @@ export default function CoursesPage() {
 
   // K-65: yeni arayüz süzgeçleri — hepsi İSTEMCİ tarafı (sunucu yüklemesini
   // tetiklemez, yalnız görünümü şekillendirir).
-  const [seg, setSeg] = useState<Seg>("all");              // TÜR segmenti
+  const [seg, setSeg] = useState<Seg>("all");              // KATEGORİ: Tümü/Ortak/1-4
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");  // ders türü (popover)
   const [onlyActive, setOnlyActive] = useState(false);     // "Pasif dersleri gizle"
   const [filtersOpen, setFiltersOpen] = useState(false);   // Filtre popover'ı
   const [sortKey, setSortKey] = useState<SortKey>("donem"); // sıralama sütunu
@@ -205,7 +209,8 @@ export default function CoursesPage() {
     setLoadError(null);
     const params = new URLSearchParams();
     if (depFilter) params.set("department_id", depFilter);
-    if (yearFilter) params.set("year", yearFilter);
+    // K-68: sınıf segmenti (1-4) yıl süzgecini sunucuya taşır; Tümü/Ortak'ta yok.
+    if (seg === "1" || seg === "2" || seg === "3" || seg === "4") params.set("year", seg);
     if (semFilter) params.set("semester", semFilter);
     if (search.trim()) params.set("search", search.trim());
     const qs = params.toString();
@@ -233,7 +238,7 @@ export default function CoursesPage() {
     const t = setTimeout(load, search ? 300 : 0);   // aramada her tuşta istek atma
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depFilter, yearFilter, semFilter, search]);
+  }, [depFilter, seg, semFilter, search]);
 
   // Deep-link parametrelerini bir kez tüket: state'e alındı, artık URL'de durmasın.
   // ?add=1 → ekleme formunu açık getir (bölüm önceden seçili). Bölüm süzgeci
@@ -279,9 +284,14 @@ export default function CoursesPage() {
   // görünürler (K-56/K-57 iki-tablo ayrımının yerini alan yeni tasarım).
   const rows = useMemo(() => {
     let list = visible;
-    if (seg === "required") list = list.filter((c) => !c.is_elective && !c.is_common);
-    else if (seg === "elective") list = list.filter((c) => c.is_elective);
-    else if (seg === "common") list = list.filter((c) => c.is_common);
+    // K-68: KATEGORİ segmenti. "Ortak" is_common'ı; "1-4" ise o sınıfın
+    // ortak-OLMAYAN derslerini (ortak dersler yalnız "Ortak" kategorisinde,
+    // yıl sütunları "—"). Yıl zaten sunucuda süzülür; burada ortak dışlanır.
+    if (seg === "common") list = list.filter((c) => c.is_common);
+    else if (seg !== "all") list = list.filter((c) => !c.is_common);
+    // K-68: ders türü (popover) — ortak/normal fark etmeksizin is_elective.
+    if (typeFilter === "required") list = list.filter((c) => !c.is_elective);
+    else if (typeFilter === "elective") list = list.filter((c) => c.is_elective);
     if (onlyActive) list = list.filter((c) => c.active);
     const dir = sortDir === "desc" ? -1 : 1;
     return [...list].sort((a, b) => {
@@ -292,7 +302,7 @@ export default function CoursesPage() {
       if (cmp === 0) cmp = a.code.localeCompare(b.code, "tr");  // eşitlikte kod
       return cmp * dir;
     });
-  }, [visible, seg, onlyActive, sortKey, sortDir]);
+  }, [visible, seg, typeFilter, onlyActive, sortKey, sortDir]);
 
   const sectionTotal = useMemo(
     () => rows.reduce((n, c) => n + c.sections.length, 0), [rows]);
@@ -329,18 +339,19 @@ export default function CoursesPage() {
       out.push({ key: "lec", label: l ? lecturerLabel(l) : "Öğretim üyesi",
         clear: () => setLecFilter(null) });
     }
-    if (yearFilter) out.push({ key: "year", label: `${yearFilter}. sınıf`,
-      clear: () => setYearFilter(null) });
+    if (typeFilter !== "all") out.push({ key: "type",
+      label: typeFilter === "required" ? "Zorunlu" : "Seçmeli",
+      clear: () => setTypeFilter("all") });
     if (semFilter) out.push({ key: "sem", label: SEMESTER_LABELS[semFilter as SemesterType],
       clear: () => setSemFilter(null) });
     if (onlyActive) out.push({ key: "active", label: "Pasifler gizli",
       clear: () => setOnlyActive(false) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depFilter, lecFilter, yearFilter, semFilter, onlyActive, depById, lecturers]);
+  }, [depFilter, lecFilter, typeFilter, semFilter, onlyActive, depById, lecturers]);
 
   function clearAllFilters() {
-    setDepFilter(null); setLecFilter(null); setYearFilter(null);
+    setDepFilter(null); setLecFilter(null); setTypeFilter("all");
     setSemFilter(null); setOnlyActive(false);
   }
 
@@ -576,9 +587,11 @@ export default function CoursesPage() {
             onChange={(v) => setSeg(v as Seg)}
             data={[
               { label: "Tümü", value: "all" },
-              { label: "Zorunlu", value: "required" },
-              { label: "Seçmeli", value: "elective" },
               { label: "Ortak", value: "common" },
+              { label: "1. sınıf", value: "1" },
+              { label: "2. sınıf", value: "2" },
+              { label: "3. sınıf", value: "3" },
+              { label: "4. sınıf", value: "4" },
             ]}
             size="sm"
             style={{ flex: "none" }}
@@ -628,11 +641,14 @@ export default function CoursesPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="Sınıf"
-                  data={[{ value: ALL, label: "Tüm sınıflar" },
-                    ...YEARS.map((y) => ({ value: String(y), label: `${y}. sınıf` }))]}
-                  value={yearFilter ?? ALL}
-                  onChange={(v) => setYearFilter(v === ALL || v === null ? null : v)}
+                  label="Ders türü"
+                  data={[
+                    { value: "all", label: "Tüm türler" },
+                    { value: "required", label: "Zorunlu" },
+                    { value: "elective", label: "Seçmeli" },
+                  ]}
+                  value={typeFilter}
+                  onChange={(v) => setTypeFilter((v ?? "all") as TypeFilter)}
                   allowDeselect={false}
                 />
                 <Select

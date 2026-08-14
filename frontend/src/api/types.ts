@@ -138,6 +138,8 @@ export type Classroom = {
   id: number;
   building: BuildingRef;
   room_code: string;
+  /** K-68: kat (opsiyonel). null = girilmemiş. */
+  floor: number | null;
   room_type: RoomType;
   capacity: number;
   /** K-21: opsiyonel — boşsa sınav yerleşiminde uyarı üretir */

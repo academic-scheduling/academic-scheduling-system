@@ -264,6 +264,7 @@ class BuildingRef(BaseModel):
 class ClassroomCreate(BaseModel):
     building_id: int
     room_code: str
+    floor: int | None = None              # K-68: kat, opsiyonel
     room_type: RoomType = RoomType.CLASSROOM   # K-31: amfi / lab / derslik
     capacity: int = Field(gt=0)           # K-07: zorunlu ve pozitif
     exam_capacity: int | None = Field(None, gt=0)   # K-21: opsiyonel
@@ -271,6 +272,7 @@ class ClassroomCreate(BaseModel):
 class ClassroomUpdate(BaseModel):
     building_id: int | None = None
     room_code: str | None = None
+    floor: int | None = None              # K-68: kat, opsiyonel
     room_type: RoomType | None = None          # K-31
     capacity: int | None = Field(None, gt=0)
     exam_capacity: int | None = Field(None, gt=0)
@@ -280,6 +282,7 @@ class ClassroomOut(BaseModel):
     id: int
     building: BuildingRef                 # iç içe nesne — kontrat şekli
     room_code: str
+    floor: int | None                     # K-68: kat
     room_type: RoomType                   # K-31
     capacity: int
     exam_capacity: int | None

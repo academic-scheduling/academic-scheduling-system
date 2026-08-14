@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Box, Group, Text } from "@mantine/core";
+import { Box, Text } from "@mantine/core";
 import { DAY_SHORT, SLOT_TIMES } from "../utils/slots";
 
 /** Izgaraya yerleştirilecek tek blok. day: 1-5 (Pzt-Cum), startSlot: 1-9. */
@@ -32,11 +32,12 @@ export default function MiniWeekGrid({
     return <Text size="sm" c="dimmed">{emptyLabel}</Text>;
   }
 
-  // `${gün}-${slot}` → o hücrenin etiketi + başlangıç mı (etiket yalnız başta).
-  const cells: Record<string, { label: string; start: boolean; title?: string }> = {};
+  // `${gün}-${slot}` → o hücrenin etiketi. Etiket kapladığı HER slotta yazılır
+  // (kullanıcı: ardışık slotlar isimsiz boyanınca ne olduğu belirsiz kalıyordu).
+  const cells: Record<string, { label: string; title?: string }> = {};
   for (const p of placements) {
     for (let i = 0; i < p.slotCount; i++) {
-      cells[`${p.day}-${p.startSlot + i}`] = { label: p.label, start: i === 0, title: p.title };
+      cells[`${p.day}-${p.startSlot + i}`] = { label: p.label, title: p.title };
     }
   }
 
@@ -71,28 +72,12 @@ export default function MiniWeekGrid({
                   border: c ? "none" : "1px solid var(--mantine-color-default-border)",
                 }}
               >
-                {c?.start ? c.label : ""}
+                {c?.label ?? ""}
               </Box>
             );
           })}
         </Fragment>
       ))}
     </Box>
-  );
-}
-
-/** İsterse legend için basit bir açıklama satırı (drawer başlığının yanında). */
-export function MiniWeekGridLegend() {
-  return (
-    <Group gap={12} fz={11} c="dimmed">
-      <Group gap={5} wrap="nowrap">
-        <Box w={10} h={10} style={{ borderRadius: 2, background: "var(--mantine-color-blue-light)" }} />
-        <span>ders</span>
-      </Group>
-      <Group gap={5} wrap="nowrap">
-        <Box w={10} h={10} style={{ borderRadius: 2, border: "1px solid var(--mantine-color-default-border)" }} />
-        <span>boş</span>
-      </Group>
-    </Group>
   );
 }

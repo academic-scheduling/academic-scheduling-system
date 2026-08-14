@@ -2451,3 +2451,39 @@ Ali Ekber IRMAK → HAFTALIK PROGRAM ızgarasında PHYS 1852 (Pzt 3 slot + Sal 2
 ızgarada + "Programı Aktar". Haftalık Program artık mercek seçicisiz, yalnız
 cohort; palet/grid/taslak/çakışma çalışıyor, `/lecturers` çekilmiyor, tüm API
 200. tsc + vite build temiz.
+
+## K-68 · Dersler/Derslikler/Öğretim Üyeleri arayüz düzeltmeleri + derslik `floor` [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri (K-65/66/67 üstüne). Çoğu frontend;
+biri backend şema (kat).
+
+**Dersler.** Segment TÜR (Zorunlu/Seçmeli/Ortak) yerine KATEGORİ:
+Tümü/Ortak/1-4. sınıf. Sınıf segmenti yıl süzgecini SUNUCUYA taşır (`year=N`);
+"Ortak" is_common (istemci); 1-4 sınıfta ortak dersler dışlanır. Ders türü
+(Zorunlu/Seçmeli) filtre popover'ına indi; popover'daki "Sınıf" kalktı. Çip
+"yıl" yerine "tür".
+
+**MiniWeekGrid (ortak).** Çok-slotlu blokta etiket artık HER slotta yazılır
+(eskiden yalnız başta, ardışık slotlar isimsiz boyanıyordu — kullanıcı "ne
+olduğu belirsiz" dedi). "ders/boş" legend'i kaldırıldı (isim yazınca gereksiz).
+
+**Derslikler.** Tabloda "Haftalık Doluluk" → "Haftalık Kullanım". Bina sütunu +
+drawer stat'ı bina+kat gösterir ("B Blok · 2. kat"). Drawer stat'ta "Haftalık
+saat" → "Konum". Künyeden bina+kapasite alt satırı kaldırıldı (ikisi de stat'ta).
+Özet etikete "N ders" (bu dersliklere yerleşmiş farklı ders) eklendi. Pasife-al
+simgesi daire yerine GÖZ (IconEye/EyeOff).
+- **Backend `floor` (K-68) [S]:** `classrooms.floor int NULL` — model + schema
+  (Create/Update/Out) + alembic migration `b8e4f1a09c2d`. Motor okumaz, opsiyonel
+  bilgi. Form'da "Kat" (opsiyonel, 0=zemin). Uçtan uca doğrulandı (B3B08 → 2. kat
+  kaydedildi, Konum'da göründü). 587 backend testi yeşil.
+
+**Öğretim Üyeleri.** "Bölüm" → "Kadro birimi" (sütun + form; kadro = asli bölüm,
+department_id). Drawer'a "GÖREV BİRİMİ" = verdiği ORTAK OLMAYAN derslerin
+bölümleri (türetilir; ortak ders çok bölümlü olduğu için görev birimi belirtmez).
+"Verdiği dersler" kartında slot rozetleri yan yana yerine ÜST ÜSTE (çok-günlü
+ders — CENG 4012, 5 slot — satırı kaplayıp çirkin duruyordu). "Ders vermeyen"
+segmenti kaldırıldı. Pasife-al simgesi GÖZ oldu.
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Dersler segmenti 1. sınıf → 18 ders
+(ortak yok); Derslikler drawer'ı Konum "B Blok · 2. kat", ızgarada her slotta
+isim, göz simgesi; Öğretim Üyeleri drawer'ı görev birimi + CENG 4012 slotları
+üst üste. tsc + vite build temiz; 587 backend testi yeşil.

@@ -7,13 +7,13 @@ import {
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconBuilding, IconChevronRight, IconCircleCheck, IconCircleOff,
+  IconBuilding, IconChevronRight, IconEye, IconEyeOff,
   IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
   IconSortDescending, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
-import MiniWeekGrid, { MiniWeekGridLegend, type WeekPlacement } from "../components/MiniWeekGrid";
+import MiniWeekGrid, { type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { formatSlotRange, SLOT_TIMES, DAY_SHORT } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
@@ -34,6 +34,18 @@ const WEEK_SLOTS = Object.keys(SLOT_TIMES).length * Object.keys(DAY_SHORT).lengt
 /** Tür rozetinin rengi (K-31). Amfi indigo, Lab teal, Sınıf gri. */
 function typeColor(t: RoomType): string {
   return t === "AMPHI" ? "indigo" : t === "LAB" ? "teal" : "gray";
+}
+
+/** K-68: kat metni. 0 = zemin. null = girilmemiş → boş. */
+function floorText(floor: number | null): string {
+  if (floor == null) return "";
+  return floor === 0 ? "Zemin kat" : `${floor}. kat`;
+}
+
+/** Konum: bina + (varsa) kat. Tabloda ve drawer stat'ında ortak. */
+function locationLabel(c: Classroom): string {
+  const f = floorText(c.floor);
+  return f ? `${c.building.name} · ${f}` : c.building.name;
 }
 
 /** Doluluk çubuğunun rengi — mockup'la aynı eşikler: çok dolu kırmızı, orta sarı,
@@ -77,7 +89,8 @@ export default function ClassroomsPage() {
 
   const roomForm = useForm({
     initialValues: {
-      building_id: "", room_code: "", room_type: "CLASSROOM" as RoomType,
+      building_id: "", room_code: "", floor: null as number | null,
+      room_type: "CLASSROOM" as RoomType,
       capacity: 30, exam_capacity: null as number | null,
     },
     validate: {
@@ -189,7 +202,13 @@ export default function ClassroomsPage() {
 
   const totalCap = useMemo(() => rows.reduce((n, c) => n + c.capacity, 0), [rows]);
   const closedCount = useMemo(() => rows.filter((c) => !c.active).length, [rows]);
-  const countLabel = `${rows.length} derslik · ${totalCap} kişilik · ${closedCount} kapalı`;
+  // K-68: özet etikete ders sayısı — bu dersliklere yerleşmiş FARKLI ders sayısı.
+  const lessonCount = useMemo(() => {
+    const ids = new Set<number>();
+    for (const c of rows) for (const cid of usageByRoom[c.id]?.courses ?? []) ids.add(cid);
+    return ids.size;
+  }, [rows, usageByRoom]);
+  const countLabel = `${rows.length} derslik · ${totalCap} kişilik · ${lessonCount} ders · ${closedCount} kapalı`;
 
   const selected = useMemo(
     () => classrooms.find((c) => c.id === selId) ?? null, [classrooms, selId]);
@@ -224,7 +243,7 @@ export default function ClassroomsPage() {
     setEditingRoom(null);
     roomForm.setValues({
       building_id: buildings.length === 1 ? String(buildings[0].id) : "",
-      room_code: "", room_type: "CLASSROOM" as RoomType, capacity: 30, exam_capacity: null,
+      room_code: "", floor: null, room_type: "CLASSROOM" as RoomType, capacity: 30, exam_capacity: null,
     });
     setRoomModal(true);
   }
@@ -232,7 +251,7 @@ export default function ClassroomsPage() {
   function openEditRoom(c: Classroom) {
     setEditingRoom(c);
     roomForm.setValues({
-      building_id: String(c.building.id), room_code: c.room_code,
+      building_id: String(c.building.id), room_code: c.room_code, floor: c.floor,
       room_type: c.room_type, capacity: c.capacity, exam_capacity: c.exam_capacity,
     });
     setRoomModal(true);
@@ -242,6 +261,7 @@ export default function ClassroomsPage() {
     setSubmitting(true);
     const payload = {
       building_id: Number(values.building_id), room_code: values.room_code,
+      floor: values.floor,
       room_type: values.room_type, capacity: values.capacity, exam_capacity: values.exam_capacity,
     };
     try {
@@ -469,7 +489,7 @@ export default function ClassroomsPage() {
                 {sortTh("Bina", "building")}
                 {sortTh("Kapasite", "capacity", 92, "center")}
                 {sortTh("Sınav Kont.", "exam", 104, "center")}
-                {sortTh("Haftalık Doluluk", "use", 160, "left")}
+                {sortTh("Haftalık Kullanım", "use", 160, "left")}
                 <Table.Th w={34} />
               </Table.Tr>
             </Table.Thead>
@@ -533,7 +553,15 @@ export default function ClassroomsPage() {
               }))}
               {...roomForm.getInputProps("building_id")}
             />
-            <TextInput label="Derslik" placeholder="B-201" {...roomForm.getInputProps("room_code")} />
+            <Group grow align="flex-start">
+              <TextInput label="Derslik" placeholder="B-201" {...roomForm.getInputProps("room_code")} />
+              <NumberInput
+                label="Kat"
+                description="Opsiyonel (0 = zemin)."
+                placeholder="—"
+                {...roomForm.getInputProps("floor")}
+              />
+            </Group>
             <Select
               label="Tür"
               data={[
@@ -610,7 +638,7 @@ const ClassroomRow = memo(function ClassroomRow({
       </Table.Td>
       <Table.Td>
         <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-          <Text size="sm" c="dimmed" truncate>{c.building.name}</Text>
+          <Text size="sm" c="dimmed" truncate>{locationLabel(c)}</Text>
           {c.building.is_external && (
             <Badge variant="light" color="grape" size="xs" style={{ flex: "none" }}>fakülte dışı</Badge>
           )}
@@ -685,7 +713,8 @@ function ClassroomDrawerBody({
             {c.building.is_external && <Badge variant="light" color="grape" size="sm">fakülte dışı</Badge>}
             {!c.active && <Badge color="gray" size="sm">Kapalı</Badge>}
           </Group>
-          <Text size="sm" c="dimmed" mt={2}>{c.building.name} · {c.capacity} kişi</Text>
+          {/* K-68: bina + kapasite alt satırı kaldırıldı — ikisi de aşağıdaki
+              stat ızgarasında (Konum / Kapasite) zaten var. */}
         </div>
         <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
           <IconX size={18} />
@@ -699,13 +728,13 @@ function ClassroomDrawerBody({
             <Stat label="Kapasite" value={String(c.capacity)} />
             <Stat label="Sınav kont." value={c.exam_capacity == null ? "—" : String(c.exam_capacity)} />
             <Stat label="Haftalık ders" value={String(courseCount)} />
-            <Stat label="Haftalık saat" value={`${slots} sa`} />
+            <Stat label="Konum" value={locationLabel(c)} />
           </SimpleGrid>
 
           {/* Doluluk çubuğu — tablodakiyle aynı, drawer'da geniş */}
           <div>
             <Group justify="space-between" mb={6}>
-              <Text size="xs" fw={600} c="dimmed">HAFTALIK DOLULUK</Text>
+              <Text size="xs" fw={600} c="dimmed">HAFTALIK KULLANIM</Text>
               <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
                 %{usePct} · {slots}/{WEEK_SLOTS} slot
               </Text>
@@ -715,10 +744,7 @@ function ClassroomDrawerBody({
 
           {/* Haftalık program ızgarası */}
           <div>
-            <Group justify="space-between" mb={8}>
-              <Text size="xs" fw={600} c="dimmed">HAFTALIK PROGRAM</Text>
-              <MiniWeekGridLegend />
-            </Group>
+            <Text size="xs" fw={600} c="dimmed" mb={8}>HAFTALIK PROGRAM</Text>
             <MiniWeekGrid placements={placements} emptyLabel="Bu derslikte planlanmış ders yok." />
           </div>
 
@@ -783,7 +809,7 @@ function ClassroomDrawerBody({
           <Tooltip label={c.active ? "Pasife al" : "Aktifleştir"}>
             <ActionIcon variant="subtle" size="lg" color={c.active ? "orange" : "green"}
               onClick={() => onToggleActive(c)} aria-label={c.active ? "Pasife al" : "Aktifleştir"}>
-              {c.active ? <IconCircleOff size={18} /> : <IconCircleCheck size={18} />}
+              {c.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>
         )}

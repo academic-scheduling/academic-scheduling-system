@@ -492,6 +492,8 @@ class Classroom(Base):
         BigInteger, ForeignKey("buildings.id", ondelete="RESTRICT")
     )
     room_code: Mapped[str] = mapped_column(String(30))
+    # Kat — opsiyonel konum bilgisi (K-68). NULL = girilmemis. Motor okumaz.
+    floor: Mapped[int | None] = mapped_column(Integer)
     # K-31: fiziksel tur. Bilgi/filtre amacli; motor okumaz.
     room_type: Mapped[RoomType] = mapped_column(
         Enum(RoomType, name="room_type"), server_default=text("'CLASSROOM'")

@@ -433,6 +433,10 @@ class Lecturer(Base):
     # Elle eklenen kayitta NULL kalir. department_id, gorev_birimi'nden eslenir.
     duty_unit: Mapped[str | None] = mapped_column(String(200))
     cadre_unit: Mapped[str | None] = mapped_column(String(200))
+    # K-71 · Akademik personel sayfasi (detay) URL'si. Web import'ta kisinin
+    # detay sayfasindan (detail_url) alinir; elle eklerken opsiyonel girilir.
+    # Yalniz GORUNTU (drawer'daki "Akademik sayfa" linki). NULL = girilmemis.
+    detail_url: Mapped[str | None] = mapped_column(String(500))
 
     workgroup: Mapped["Workgroup"] = relationship(back_populates="lecturers")
     department: Mapped["Department | None"] = relationship()

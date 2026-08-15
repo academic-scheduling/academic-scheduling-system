@@ -182,6 +182,7 @@ class LecturerCreate(BaseModel):
     # Asli bölüm. API'de opsiyonel (import ve eski akışlar bölümsüz kayıt
     # üretebilir); ekleme formu zorunlu tutar.
     department_id: int | None = None
+    detail_url: str | None = None             # K-71: akademik personel sayfası (opsiyonel)
 
 class LecturerUpdate(BaseModel):
     full_name: str | None = None
@@ -190,6 +191,7 @@ class LecturerUpdate(BaseModel):
     is_external: bool | None = None
     active: bool | None = None
     department_id: int | None = None
+    detail_url: str | None = None             # K-71
 
 class LecturerOut(BaseModel):
     id: int
@@ -202,6 +204,7 @@ class LecturerOut(BaseModel):
     department_id: int | None = None          # asli bölüm (frontend ad'a kendi eşler)
     duty_unit: str | None = None              # K-50: Görev Birimi (web import)
     cadre_unit: str | None = None             # K-50: Kadro Birimi (web import)
+    detail_url: str | None = None             # K-71: akademik personel sayfası linki
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -215,23 +218,41 @@ class ImportRow(BaseModel):
     duty_unit: str | None = None
     cadre_unit: str | None = None
     email: str | None = None
-    department_id: int | None = None          # görev biriminden eşlenen bölüm
+    department_id: int | None = None          # K-72: KADRO biriminden eşlenen bölüm
     department_label: str | None = None        # "CENG — Bilgisayar Müh." veya None
     detail_url: str
+    # K-72: kadro birimi bir bölüme eşleşmezse kullanıcı satırı elle çözer —
+    # ya bir bölüm seçer (department_id doldurulur) ya da 40/a işaretler
+    # (is_external=True, bölümsüz dış görevli). Bölümsüz VE 40/a değilse eklenmez.
+    is_external: bool = False
+
+class ImportUpdateRow(BaseModel):
+    """K-72: sistemde ZATEN olan ama eksik bilgisi (detay sayfası / e-posta)
+    siteden doldurulabilen kayıt. Önizleme üretir, commit uygular — yalnız NULL
+    alanları doldurur, var olanı ezmez."""
+    id: int
+    full_name: str
+    normalized_name: str
+    detail_url: str | None = None              # doldurulacak yeni detay linki (varsa)
+    email: str | None = None                   # doldurulacak yeni e-posta (varsa)
+    missing: list[str] = []                    # ["detay sayfası", "e-posta"] — UI etiketi
 
 class ImportPreviewOut(BaseModel):
     """`POST /lecturers/import/preview` cevabı — hiçbir şey yazılmaz."""
     new: list[ImportRow]                       # sistemde olmayan, eklenebilecek kişiler
+    updates: list[ImportUpdateRow]             # K-72: mevcut ama eksik bilgili kayıtlar
     already_present: int                       # ada göre zaten kayıtlı olanların sayısı
     list_total: int                            # liste sayfasında bulunan toplam kişi
 
 class ImportCommitIn(BaseModel):
     """Kullanıcının önizlemeden seçip onayladığı satırlar."""
-    rows: list[ImportRow]
+    rows: list[ImportRow] = []
+    updates: list[ImportUpdateRow] = []        # K-72: doldurulacak mevcut kayıtlar
 
 class ImportCommitOut(BaseModel):
     created: list[LecturerOut]
-    skipped: list[str]                         # bu arada eklenmiş/çakışan adlar (TOCTOU)
+    updated: list[LecturerOut] = []            # K-72: eksik bilgisi doldurulanlar
+    skipped: list[str]                         # çakışan/bölümsüz-40a-değil adlar
 
 # --- Binalar (WP2, K-18) ---
 

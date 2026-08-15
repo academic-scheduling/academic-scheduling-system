@@ -60,7 +60,7 @@ _TOKEN_ALIAS: dict[str, str] = {
     "doc": "doç", "docent": "doçent",
     "ogr": "öğr", "ogretim": "öğretim",
     "gor": "gör", "gorevlisi": "görevlisi",
-    "ars": "arş", "arastirma": "araştırma",
+    "ars": "arş", "araş": "arş", "arastirma": "araştırma",
     "uyesi": "üyesi", "profesor": "profesör",
 }
 

@@ -192,7 +192,14 @@ def test_commit_writes_import_and_is_idempotent(fake_faculty):
     _make_department(headers, "Bilgisayar Mühendisliği", "CENG")
 
     preview = client.post("/lecturers/import/preview", headers=headers).json()
-    r = client.post("/lecturers/import/commit", json={"rows": preview["new"]}, headers=headers)
+    # K-72: bölümsüz satırlar (Web Demir/Arslan — kadro eşleşmedi) 40/a olarak
+    # işaretlenmeden eklenmez. Web Kaya CENG'e eşleşti; diğer ikisini 40/a yap ki
+    # üçü de eklensin (idempotentlik ölçülecek).
+    rows = preview["new"]
+    for row in rows:
+        if row["department_id"] is None:
+            row["is_external"] = True
+    r = client.post("/lecturers/import/commit", json={"rows": rows}, headers=headers)
     assert r.status_code == 200, r.text
     created = r.json()["created"]
     assert len(created) == 3
@@ -217,7 +224,8 @@ def test_commit_writes_import_and_is_idempotent(fake_faculty):
 
 
 def test_commit_ignores_foreign_department(fake_faculty):
-    """İstemci başka workgroup'un bölüm id'sini gönderse bile bölüm boş geçilir."""
+    """İstemci başka workgroup'un bölüm id'sini gönderse bile bölüm boş geçilir.
+    K-72: bölümsüz kalan kayıt yalnız 40/a işaretliyse eklenir — burada öyle."""
     headers = admin_headers()
     row = {
         "full_name": "Yeni Biri", "title": "Prof. Dr.",
@@ -225,11 +233,13 @@ def test_commit_ignores_foreign_department(fake_faculty):
         "duty_unit": None, "cadre_unit": None, "email": None,
         "department_id": 999999, "department_label": None,   # olmayan/yabancı bölüm
         "detail_url": "https://www.mu.edu.tr/tr/personel/yenibiri",
+        "is_external": True,                                  # 40/a → bölümsüz eklenebilir
     }
     r = client.post("/lecturers/import/commit", json={"rows": [row]}, headers=headers)
     assert r.status_code == 200, r.text
     assert len(r.json()["created"]) == 1
     assert r.json()["created"][0]["department_id"] is None
+    assert r.json()["created"][0]["is_external"] is True
 
 
 def test_department_match_ignores_hyphen(monkeypatch):
@@ -248,8 +258,9 @@ def test_department_match_ignores_hyphen(monkeypatch):
     assert body["new"][0]["department_label"].startswith("EEE")
 
 
-def test_department_falls_back_to_cadre(monkeypatch):
-    """Görev Birimi bölüm değilse (ör. "Rektörlük") Kadro Birimi'ne düşülür."""
+def test_department_matched_from_cadre_only(monkeypatch):
+    """K-72: bölüm YALNIZ Kadro Birimi'nden eşlenir. Görev idari olsa da (Rektörlük)
+    Kadro bölümse eşleşir; Görev yine de saklanır (görüntü)."""
     headers = admin_headers()
     _make_department(headers, "İnşaat Mühendisliği", "CE")
     monkeypatch.setattr(mu_akademik, "fetch_list", lambda url: [
@@ -261,6 +272,116 @@ def test_department_falls_back_to_cadre(monkeypatch):
     row = client.post("/lecturers/import/preview", headers=headers).json()["new"][0]
     assert row["department_label"].startswith("CE")   # Kadro'dan eşleşti
     assert row["duty_unit"] == "Rektörlük"            # ama Görev de saklanır
+
+
+def test_department_ignores_duty_unit(monkeypatch):
+    """K-72: Görev Birimi bir bölüm OLSA BİLE dikkate alınmaz — yalnız Kadro.
+    Görev=Bilgisayar (sistemde var) ama Kadro=Makine (sistemde yok) → eşleşme YOK."""
+    headers = admin_headers()
+    _make_department(headers, "Bilgisayar Mühendisliği", "CENG")
+    monkeypatch.setattr(mu_akademik, "fetch_list", lambda url: [
+        PersonRef("Görevli Biri", "https://www.mu.edu.tr/tr/personel/gorevli", "Doç. Dr."),
+    ])
+    monkeypatch.setattr(mu_akademik, "fetch_detail", lambda url: PersonDetail(
+        "Bilgisayar Mühendisliği", "Makine Mühendisliği", None,   # Görev CENG, Kadro yok
+    ))
+    row = client.post("/lecturers/import/preview", headers=headers).json()["new"][0]
+    assert row["department_id"] is None               # Görev CENG olsa da eşleşmez
+    assert row["cadre_unit"] == "Makine Mühendisliği"
+
+
+def test_commit_skips_departmentless_non_external(monkeypatch):
+    """K-72: kadro eşleşmeyen ve 40/a işaretlenmeyen satır EKLENMEZ."""
+    headers = admin_headers()
+    # Kadrosu sistemde OLMAYAN bir bölüme işaret eden tek kişi (izole).
+    monkeypatch.setattr(mu_akademik, "fetch_list", lambda url: [
+        PersonRef("Bölümsüz Biri", "https://www.mu.edu.tr/tr/personel/bolumsuz", "Doç. Dr."),
+    ])
+    monkeypatch.setattr(mu_akademik, "fetch_detail", lambda url: PersonDetail(
+        None, "Var Olmayan Bölüm XYZ", None,
+    ))
+    preview = client.post("/lecturers/import/preview", headers=headers).json()
+    assert preview["new"][0]["department_id"] is None
+    r = client.post("/lecturers/import/commit", json={"rows": preview["new"]}, headers=headers)
+    body = r.json()
+    assert body["created"] == []
+    assert len(body["skipped"]) == 1
+    assert "bölümsüz" in body["skipped"][0]
+
+
+def test_commit_manual_department_resolves(fake_faculty):
+    """K-72: kadro eşleşmese de kullanıcı elle bölüm seçerse (department_id)
+    kayıt normal (dış görevli değil) eklenir."""
+    headers = admin_headers()
+    dep_id = _make_department(headers, "Elle Seçilen Bölüm", "MAN")
+    preview = client.post("/lecturers/import/preview", headers=headers).json()
+    row = next(r for r in preview["new"] if r["full_name"] == "Web Arslan")
+    row["department_id"] = dep_id                      # kullanıcı elle bölüm seçti
+    r = client.post("/lecturers/import/commit", json={"rows": [row]}, headers=headers)
+    created = r.json()["created"]
+    assert len(created) == 1
+    assert created[0]["department_id"] == dep_id
+    assert created[0]["is_external"] is False
+
+
+def test_preview_offers_update_for_missing_info(monkeypatch):
+    """K-72: sistemde OLAN ama detay sayfası/e-postası eksik kayda güncelleme
+    önerilir; var olan alan ezilmez."""
+    headers = admin_headers()
+    # detay+eposta EKSİK bir hoca elle ekle
+    client.post("/lecturers", json={
+        "full_name": "Eksikli Hoca", "title": "Doç. Dr.", "is_external": True,
+    }, headers=headers)
+    monkeypatch.setattr(mu_akademik, "fetch_list", lambda url: [
+        PersonRef("Eksikli Hoca", "https://www.mu.edu.tr/tr/personel/eksikli", "Doç. Dr."),
+    ])
+    monkeypatch.setattr(mu_akademik, "fetch_detail", lambda url: PersonDetail(
+        None, None, "eksikli@mu.edu.tr",
+    ))
+    preview = client.post("/lecturers/import/preview", headers=headers).json()
+    assert preview["new"] == []                        # zaten kayıtlı → new değil
+    assert len(preview["updates"]) == 1
+    upd = preview["updates"][0]
+    assert upd["detail_url"] == "https://www.mu.edu.tr/tr/personel/eksikli"
+    assert upd["email"] == "eksikli@mu.edu.tr"
+    assert set(upd["missing"]) == {"detay sayfası", "e-posta"}
+
+    # commit uygula → alanlar dolar
+    r = client.post("/lecturers/import/commit", json={"updates": [upd]}, headers=headers)
+    body = r.json()
+    assert len(body["updated"]) == 1
+    assert body["updated"][0]["detail_url"] == upd["detail_url"]
+    assert body["updated"][0]["email"] == "eksikli@mu.edu.tr"
+
+
+def test_update_does_not_overwrite_existing(monkeypatch):
+    """K-72: e-postası ZATEN olan kayda güncelleme e-postayı ezmez; yalnız
+    boş olan detay linki dolar."""
+    headers = admin_headers()
+    client.post("/lecturers", json={
+        "full_name": "Epostali Hoca", "title": "Prof. Dr.", "is_external": True,
+        "email": "mevcut@mu.edu.tr",
+    }, headers=headers)
+    monkeypatch.setattr(mu_akademik, "fetch_list", lambda url: [
+        PersonRef("Epostali Hoca", "https://www.mu.edu.tr/tr/personel/epostali", "Prof. Dr."),
+    ])
+    # e-posta zaten dolu → detay çekmeye gerek yok; yine de site farklı e-posta verse de ezilmez
+    monkeypatch.setattr(mu_akademik, "fetch_detail", lambda url: PersonDetail(
+        None, None, "yeni@mu.edu.tr",
+    ))
+    preview = client.post("/lecturers/import/preview", headers=headers).json()
+    assert len(preview["updates"]) == 1
+    upd = preview["updates"][0]
+    assert upd["missing"] == ["detay sayfası"]         # yalnız detay eksik
+    assert upd["email"] is None                        # e-posta doldurulacak değil
+    client.post("/lecturers/import/commit", json={"updates": [upd]}, headers=headers)
+    db = SessionLocal()
+    lec = db.query(Lecturer).filter(
+        Lecturer.normalized_name == normalize_lecturer_name("Epostali Hoca")
+    ).first()
+    assert lec.email == "mevcut@mu.edu.tr"             # ezilmedi
+    assert lec.detail_url == "https://www.mu.edu.tr/tr/personel/epostali"
+    db.close()
 
 
 def test_import_requires_lecturer_manager(fake_faculty):

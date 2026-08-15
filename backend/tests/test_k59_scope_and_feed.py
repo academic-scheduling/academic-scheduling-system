@@ -123,6 +123,20 @@ def test_feed_shows_approved_changes_of_my_department():
     assert satir["approved_by"] == "Onay Testi"      # yayına alan (başka hesap)
     assert satir["published_at"] is not None
 
+    # K-73: tür + cohort süzgeci. WEEKLY süzgeci bu satırı tutar; EXAM eler.
+    weekly_only = client.get("/schedule-changes?kind=WEEKLY", headers=sahip).json()
+    assert draft["id"] in [x["id"] for x in weekly_only]
+    exam_only = client.get("/schedule-changes?kind=EXAM", headers=sahip).json()
+    assert draft["id"] not in [x["id"] for x in exam_only]
+    # Cohort süzgeci (DraftBar pop-up'ı): doğru cohort tutar, başka bölüm eler.
+    ayni = client.get(
+        f"/schedule-changes?kind=WEEKLY&department_id={dep['id']}"
+        f"&year={satir['year']}&semester={satir['semester']}", headers=sahip).json()
+    assert draft["id"] in [x["id"] for x in ayni]
+    baska = client.get(
+        f"/schedule-changes?department_id={dep['id'] + 99999}", headers=sahip).json()
+    assert baska == []
+
 
 def test_feed_hides_other_departments_changes():
     """Üyesi olmadığım bölümün değişikliği akışıma düşmez."""

@@ -20,7 +20,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import get_current_user, get_db
-from app.models import Department, DraftStatus, ScheduleDraft, User, UserRole
+from app.models import (
+    Department, DraftKind, DraftStatus, ScheduleDraft, SemesterType, User, UserRole,
+)
 from app.schemas import ScheduleChangeOut
 
 router = APIRouter(tags=["schedule-changes"])
@@ -29,6 +31,14 @@ router = APIRouter(tags=["schedule-changes"])
 @router.get("/schedule-changes", response_model=list[ScheduleChangeOut])
 def list_recent_changes(
     limit: int = Query(10, ge=1, le=50),
+    # K-73: akis artik sayfa basina bolunur (haftalik degisiklikler Haftalik
+    # ekranda, sinav degisiklikleri Sinav ekranda) ve DraftBar'in "yayin bilgisi"
+    # pop-up'i tek cohort'un son onayini ister. Hepsi opsiyonel; verilmezse
+    # eski davranis (tur ve cohort suzgeci yok).
+    kind: DraftKind | None = Query(None),
+    department_id: int | None = Query(None),
+    year: int | None = Query(None),
+    semester: SemesterType | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -50,6 +60,17 @@ def list_recent_changes(
         .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
                 ScheduleDraft.status == DraftStatus.APPROVED)
     )
+    if kind is not None:
+        q = q.filter(ScheduleDraft.kind == kind)
+    # Cohort suzgeci (DraftBar pop-up'i): degisiklik AKISINDAN farkli olarak
+    # ORTAK DERS etkisini KATMAZ — burada "bu cohort'un yayindaki halini kim
+    # duzenledi/onayladi" sorulur, o cohort'un dogrudan onayi istenir.
+    if department_id is not None:
+        q = q.filter(ScheduleDraft.department_id == department_id)
+    if year is not None:
+        q = q.filter(ScheduleDraft.year == year)
+    if semester is not None:
+        q = q.filter(ScheduleDraft.semester == semester)
     if user.role != UserRole.ADMIN:
         uyelikler = [m.department_id for m in user.memberships]
         if not uyelikler:

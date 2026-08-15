@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Anchor, Avatar, Badge, Box, Button, Checkbox, Divider, Drawer,
@@ -21,10 +21,12 @@ import { turkishOptionsFilter } from "../utils/selectSearch";
 import {
   lecturerLabel,
   type Course, type CourseSection, type Department, type ImportCommit,
-  type ImportPreview, type Lecturer, type WeeklyEntry,
+  type ImportPreview, type ImportRow, type Lecturer, type WeeklyEntry,
 } from "../api/types";
 
 const ALL = "__all__";
+/** K-72: yeni satırın bölüm çözümünde "40/a (dış görevli, bölümsüz)" seçeneği. */
+const EXT = "__ext__";
 
 /** TÜR segmenti — `is_external` ekseni: Kadrolu (kendi kadrosu) / Dış görevli
  *  (40/a). (K-68: "Ders vermeyen" segmenti kaldırıldı.) */
@@ -80,6 +82,7 @@ type CourseFormValues = {
   email: string;
   is_external: boolean;
   department_id: string;
+  detail_url: string;
 };
 
 export default function LecturersPage() {
@@ -123,18 +126,24 @@ export default function LecturersPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  // K-72: her yeni satırın bölüm çözümü. detail_url -> bölüm id ("5") | 40/a (EXT) | "" (çözülmedi).
+  const [rowDept, setRowDept] = useState<Record<string, string>>({});
+  const [selectedUpdates, setSelectedUpdates] = useState<Set<number>>(new Set());
   const [committing, setCommitting] = useState(false);
 
   // K-52: title (unvan) ve email AYRI alanlar — full_name'e gömülmez.
   const form = useForm<CourseFormValues>({
     initialValues: {
       title: "", full_name: "", email: "", is_external: false, department_id: "",
+      detail_url: "",
     },
     validate: {
       full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz"),
       department_id: (v, values) => (values.is_external || v ? null : "Kadro birimi seçin"),
       email: (v) => (!v.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim())
         ? null : "Geçerli bir e-posta girin"),
+      detail_url: (v) => (!v.trim() || /^https?:\/\/\S+$/.test(v.trim())
+        ? null : "Geçerli bir bağlantı girin (http:// ile başlamalı)"),
     },
   });
 
@@ -208,10 +217,14 @@ export default function LecturersPage() {
     return acc;
   }, [courses]);
 
-  /** Kadro birimi etiketi: asli bölüm adı (department_id), yoksa import'tan gelen
-   *  kadro/görev birimi metni, o da yoksa "—". */
+  /** Kadro birimi etiketi: asli bölüm "KOD - Ad" (department_id → "CENG -
+   *  Bilgisayar Mühendisliği"), yoksa import'tan gelen kadro/görev birimi metni,
+   *  o da yoksa "—". */
   function depLabelOf(l: Lecturer): string {
-    if (l.department_id != null) return depById[l.department_id]?.name ?? "—";
+    if (l.department_id != null) {
+      const d = depById[l.department_id];
+      return d ? `${d.code} - ${d.name}` : "—";
+    }
     return l.cadre_unit || l.duty_unit || "—";
   }
 
@@ -307,7 +320,7 @@ export default function LecturersPage() {
     setEditing(null);
     form.setValues({
       title: "", full_name: "", email: "", is_external: false,
-      department_id: departmentId ?? "",
+      department_id: departmentId ?? "", detail_url: "",
     });
     setModalOpen(true);
   }
@@ -320,6 +333,7 @@ export default function LecturersPage() {
       email: lec.email ?? "",
       is_external: lec.is_external,
       department_id: lec.department_id != null ? String(lec.department_id) : "",
+      detail_url: lec.detail_url ?? "",
     });
     setModalOpen(true);
   }
@@ -332,6 +346,7 @@ export default function LecturersPage() {
       email: values.email.trim() || null,
       is_external: values.is_external,
       department_id: values.department_id ? Number(values.department_id) : null,
+      detail_url: values.detail_url.trim() || null,
     };
     try {
       if (editing) {
@@ -397,6 +412,11 @@ export default function LecturersPage() {
       const data = await api.post<ImportPreview>("/lecturers/import/preview");
       setPreview(data);
       setSelectedRows(new Set(data.new.map((r) => r.detail_url)));
+      // K-72: eşleşen satırın bölümü ön-dolu; eşleşmeyen boş (kullanıcı çözecek).
+      const init: Record<string, string> = {};
+      for (const r of data.new) init[r.detail_url] = r.department_id != null ? String(r.department_id) : "";
+      setRowDept(init);
+      setSelectedUpdates(new Set(data.updates.map((u) => u.id)));
     } catch (e) {
       setImportError(e instanceof ApiError ? e.message : "İçe aktarma başarısız");
     } finally {
@@ -406,14 +426,26 @@ export default function LecturersPage() {
 
   async function handleImportCommit() {
     if (!preview) return;
-    const rowsToCommit = preview.new.filter((r) => selectedRows.has(r.detail_url));
-    if (rowsToCommit.length === 0) return;
+    // K-72: yalnız SEÇİLİ ve ÇÖZÜLMÜŞ (bölüm ya da 40/a) yeni satırlar gider.
+    const rowsToCommit: ImportRow[] = [];
+    for (const r of preview.new) {
+      if (!selectedRows.has(r.detail_url)) continue;
+      const res = rowDept[r.detail_url] ?? "";
+      if (res === "") continue;                          // çözülmemiş → atla
+      if (res === EXT) rowsToCommit.push({ ...r, is_external: true, department_id: null });
+      else rowsToCommit.push({ ...r, is_external: false, department_id: Number(res) });
+    }
+    const updatesToCommit = preview.updates.filter((u) => selectedUpdates.has(u.id));
+    if (rowsToCommit.length === 0 && updatesToCommit.length === 0) return;
     setCommitting(true);
     try {
-      const res = await api.post<ImportCommit>("/lecturers/import/commit", { rows: rowsToCommit });
-      const parts = [`${res.created.length} öğretim üyesi eklendi`];
-      if (res.skipped.length) parts.push(`${res.skipped.length} atlandı (zaten kayıtlı)`);
-      notifications.show({ color: "green", message: parts.join(" · ") });
+      const res = await api.post<ImportCommit>("/lecturers/import/commit",
+        { rows: rowsToCommit, updates: updatesToCommit });
+      const parts: string[] = [];
+      if (res.created.length) parts.push(`${res.created.length} eklendi`);
+      if (res.updated.length) parts.push(`${res.updated.length} güncellendi`);
+      if (res.skipped.length) parts.push(`${res.skipped.length} atlandı`);
+      notifications.show({ color: "green", message: parts.join(" · ") || "Değişiklik yok" });
       setImportOpen(false);
       await load();
     } catch (e) {
@@ -421,6 +453,19 @@ export default function LecturersPage() {
     } finally {
       setCommitting(false);
     }
+  }
+
+  function setRowResolution(url: string, value: string) {
+    setRowDept((prev) => ({ ...prev, [url]: value }));
+  }
+
+  function toggleUpdateRow(id: number) {
+    setSelectedUpdates((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function toggleImportRow(url: string) {
@@ -574,12 +619,15 @@ export default function LecturersPage() {
           <Table striped highlightOnHover verticalSpacing="xs" withTableBorder layout="fixed">
             <Table.Thead>
               <Table.Tr>
-                {sortTh("Ad Soyad", "name")}
+                {/* K-71: Ad Soyad'a da genişlik verildi. Eskiden tek genişliksiz
+                    sütun olduğu için tüm boşluğu yutup tablonun yarısını kaplıyordu;
+                    artık boşluk tüm sütunlara oranlı dağılır, diğerleri sıkışmaz. */}
+                {sortTh("Ad Soyad", "name", 280)}
                 {sortTh("Unvan", "title", 150)}
                 {sortTh("Kadro birimi", "dep", 200)}
-                <Table.Th w={200}>E-posta</Table.Th>
-                {sortTh("Ders", "courses", 96, "center")}
-                <Table.Th w={34} />
+                <Table.Th w={220}>E-posta</Table.Th>
+                {sortTh("Ders", "courses", 110, "center")}
+                <Table.Th w={40} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -632,17 +680,26 @@ export default function LecturersPage() {
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
-            <Select label="Unvan" placeholder="Seçin (opsiyonel)" data={TITLES} clearable
+            <Select label="Unvan" placeholder="Seçin (opsiyonel)"
+              // Kanonik listede olmayan bir unvan da (eski/import kaydı) seçili
+              // görünsün — aksi halde Select boş kalırdı.
+              data={form.values.title && !TITLES.includes(form.values.title)
+                ? [form.values.title, ...TITLES] : TITLES}
+              clearable
               searchable filter={turkishOptionsFilter} {...form.getInputProps("title")} />
             <TextInput label="Ad Soyad" placeholder="Ayşe Kaya" {...form.getInputProps("full_name")} />
             <TextInput label="E-posta" placeholder="ayse.kaya@mu.edu.tr (opsiyonel)" {...form.getInputProps("email")} />
             <Select
               label="Kadro birimi"
-              description="Hocanın resmi kadrosunun bulunduğu bölüm. (Görev birimi — fiilen ders verdiği bölüm — verdiği derslerden türetilir.)"
               placeholder="Kadro birimini seçin"
               data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
               searchable clearable filter={turkishOptionsFilter}
               {...form.getInputProps("department_id")}
+            />
+            <TextInput
+              label="Akademik personel sayfası"
+              placeholder="https://…  (opsiyonel)"
+              {...form.getInputProps("detail_url")}
             />
             <Checkbox label="Dış görevli (40/a)" {...form.getInputProps("is_external", { type: "checkbox" })} />
             <Button type="submit" loading={submitting} mt="sm">
@@ -686,95 +743,155 @@ export default function LecturersPage() {
               değişmiş olabilir. Sorun sürerse yöneticinize bildirin.
             </Text>
           </Alert>
-        ) : preview ? (
+        ) : preview ? (() => {
+          const deptOptions = [
+            // K-74: "bölümsüz" YANLIŞTI — 40/a başka fakültede kadrolu kişidir
+            // (Matematik/Fizik gibi servis derslerini verenler); bizim
+            // bölümlerimizden birine ait olmaması onları "bölümsüz" yapmaz.
+            { value: EXT, label: "40/a — dış görevli" },
+            ...departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` })),
+          ];
+          const committableNew = preview.new.filter(
+            (r) => selectedRows.has(r.detail_url) && (rowDept[r.detail_url] ?? "") !== "").length;
+          const unresolvedSel = preview.new.filter(
+            (r) => selectedRows.has(r.detail_url) && (rowDept[r.detail_url] ?? "") === "").length;
+          const totalToCommit = committableNew + selectedUpdates.size;
+          return (
           <Stack>
             <Text size="sm" c="dimmed">
               Listede {preview.list_total} kişi bulundu · {preview.already_present} zaten
-              kayıtlı · <Text span fw={700} c="green">{preview.new.length} yeni</Text>.
+              kayıtlı · <Text span fw={700} c="green">{preview.new.length} yeni</Text>
+              {preview.updates.length > 0 && <> · <Text span fw={700} c="blue">{preview.updates.length} güncellenebilir</Text></>}.
             </Text>
 
-            {preview.new.length === 0 ? (
+            {preview.new.length === 0 && preview.updates.length === 0 ? (
               <Text c="dimmed" py="md">
-                Eklenecek yeni öğretim üyesi yok — liste sistemle güncel.
+                Eklenecek ya da güncellenecek kayıt yok — liste sistemle güncel.
               </Text>
             ) : (
               <>
-                <Divider />
-                <Group justify="space-between">
-                  <Checkbox
-                    label="Tümünü seç"
-                    checked={selectedRows.size === preview.new.length}
-                    indeterminate={selectedRows.size > 0 && selectedRows.size < preview.new.length}
-                    onChange={(e) =>
-                      setSelectedRows(
-                        e.currentTarget.checked
-                          ? new Set(preview.new.map((r) => r.detail_url))
-                          : new Set(),
-                      )
-                    }
-                  />
-                  <Text size="sm" c="dimmed">{selectedRows.size} seçili</Text>
-                </Group>
+                {preview.new.length > 0 && (
+                  <>
+                    <Divider label="Yeni öğretim üyeleri" labelPosition="left" />
+                    <Group justify="space-between">
+                      <Checkbox
+                        label="Tümünü seç"
+                        checked={selectedRows.size === preview.new.length}
+                        indeterminate={selectedRows.size > 0 && selectedRows.size < preview.new.length}
+                        onChange={(e) =>
+                          setSelectedRows(
+                            e.currentTarget.checked
+                              ? new Set(preview.new.map((r) => r.detail_url))
+                              : new Set(),
+                          )
+                        }
+                      />
+                      <Text size="sm" c="dimmed">{selectedRows.size} seçili</Text>
+                    </Group>
 
-                <ScrollArea.Autosize mah={420}>
-                  <Table stickyHeader verticalSpacing="xs">
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th w={36} />
-                        <Table.Th>Unvan</Table.Th>
-                        <Table.Th>Ad Soyad</Table.Th>
-                        <Table.Th>Görev / Kadro Birimi</Table.Th>
-                        <Table.Th>E-posta</Table.Th>
-                        <Table.Th>Eşlenen Bölüm</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {preview.new.map((row) => (
-                        <Table.Tr key={row.detail_url}>
-                          <Table.Td>
-                            <Checkbox
-                              checked={selectedRows.has(row.detail_url)}
-                              onChange={() => toggleImportRow(row.detail_url)}
-                            />
-                          </Table.Td>
-                          <Table.Td><Text size="xs" c="dimmed">{row.title ?? "—"}</Text></Table.Td>
-                          <Table.Td>
-                            <Anchor href={row.detail_url} target="_blank" size="sm">{row.full_name}</Anchor>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs">{row.duty_unit ?? "—"}</Text>
-                            {row.cadre_unit && row.cadre_unit !== row.duty_unit && (
-                              <Text size="xs" c="dimmed">Kadro: {row.cadre_unit}</Text>
-                            )}
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" c={row.email ? undefined : "dimmed"}>{row.email ?? "—"}</Text>
-                          </Table.Td>
-                          <Table.Td>
-                            {row.department_label ? (
-                              <Badge variant="light" color="blue" size="sm">{row.department_label}</Badge>
-                            ) : (
-                              <Tooltip label="Bu bölüm sistemde yok; kayıt bölümsüz eklenir">
-                                <Text size="xs" c="dimmed">eşleşmedi</Text>
-                              </Tooltip>
-                            )}
-                          </Table.Td>
-                        </Table.Tr>
+                    <ScrollArea.Autosize mah={360}>
+                      <Table stickyHeader verticalSpacing="xs">
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th w={36} />
+                            <Table.Th>Unvan</Table.Th>
+                            <Table.Th>Ad Soyad</Table.Th>
+                            <Table.Th>Kadro Birimi</Table.Th>
+                            <Table.Th w={230}>Bölüm</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {preview.new.map((row) => {
+                            const sel = selectedRows.has(row.detail_url);
+                            const res = rowDept[row.detail_url] ?? "";
+                            return (
+                              <Table.Tr key={row.detail_url}>
+                                <Table.Td>
+                                  <Checkbox
+                                    checked={sel}
+                                    onChange={() => toggleImportRow(row.detail_url)}
+                                  />
+                                </Table.Td>
+                                <Table.Td><Text size="xs" c="dimmed">{row.title ?? "—"}</Text></Table.Td>
+                                <Table.Td>
+                                  <Anchor href={row.detail_url} target="_blank" size="sm">{row.full_name}</Anchor>
+                                </Table.Td>
+                                <Table.Td>
+                                  {/* K-71: yalnız kadro birimi (görev birimi derslerden türetilir). */}
+                                  <Text size="xs" c={row.cadre_unit ? undefined : "dimmed"}>
+                                    {row.cadre_unit ?? "—"}
+                                  </Text>
+                                </Table.Td>
+                                <Table.Td>
+                                  {/* K-72: kadrodan eşleşen bölüm ön-dolu; eşleşmeyende
+                                      kullanıcı bölüm seçer ya da 40/a işaretler. */}
+                                  <Select
+                                    size="xs"
+                                    placeholder="Bölüm ya da 40/a"
+                                    data={deptOptions}
+                                    value={res || null}
+                                    onChange={(v) => setRowResolution(row.detail_url, v ?? "")}
+                                    searchable
+                                    filter={turkishOptionsFilter}
+                                    error={sel && res === "" ? true : undefined}
+                                    comboboxProps={{ withinPortal: true }}
+                                  />
+                                </Table.Td>
+                              </Table.Tr>
+                            );
+                          })}
+                        </Table.Tbody>
+                      </Table>
+                    </ScrollArea.Autosize>
+                  </>
+                )}
+
+                {preview.updates.length > 0 && (
+                  <>
+                    <Divider label="Eksik bilgisi tamamlanacaklar" labelPosition="left" mt="sm" />
+                    <Text size="xs" c="dimmed">
+                      Sistemde kayıtlı ama detay sayfası / e-postası eksik olanlar.
+                      Yalnız boş alanlar doldurulur, mevcut bilgi değişmez.
+                    </Text>
+                    <Stack gap={4}>
+                      {preview.updates.map((u) => (
+                        <Checkbox
+                          key={u.id}
+                          checked={selectedUpdates.has(u.id)}
+                          onChange={() => toggleUpdateRow(u.id)}
+                          label={
+                            <Text size="sm">
+                              {u.full_name}{" "}
+                              <Text span size="xs" c="dimmed">— {u.missing.join(" · ")} doldurulacak</Text>
+                            </Text>
+                          }
+                        />
                       ))}
-                    </Table.Tbody>
-                  </Table>
-                </ScrollArea.Autosize>
+                    </Stack>
+                  </>
+                )}
+
+                {unresolvedSel > 0 && (
+                  <Text size="xs" c="orange.7">
+                    {unresolvedSel} seçili kişinin bölümü belirlenmedi — bölüm seçin ya da
+                    40/a işaretleyin, aksi halde eklenmez.
+                  </Text>
+                )}
 
                 <Group justify="flex-end" mt="sm">
                   <Button variant="default" onClick={() => setImportOpen(false)}>Vazgeç</Button>
-                  <Button loading={committing} disabled={selectedRows.size === 0} onClick={handleImportCommit}>
-                    {selectedRows.size} kişiyi ekle
+                  <Button loading={committing} disabled={totalToCommit === 0} onClick={handleImportCommit}>
+                    {committableNew > 0 && `${committableNew} ekle`}
+                    {committableNew > 0 && selectedUpdates.size > 0 && " · "}
+                    {selectedUpdates.size > 0 && `${selectedUpdates.size} güncelle`}
+                    {totalToCommit === 0 && "Uygula"}
                   </Button>
                 </Group>
               </>
             )}
           </Stack>
-        ) : null}
+          );
+        })() : null}
       </Modal>
     </>
   );
@@ -834,12 +951,17 @@ const LecturerRow = memo(function LecturerRow({
   );
 });
 
-/** Drawer içi tek istatistik hücresi. */
-function Stat({ label, value }: { label: string; value: string }) {
+/** Drawer içi tek istatistik hücresi. `value` metin ya da (link gibi) düğüm
+ *  olabilir; metinse tabular-nums ile hizalanır. */
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <Paper withBorder p="xs" radius="sm">
       <Text size="xs" c="dimmed" fw={600}>{label}</Text>
-      <Text size="sm" mt={2} style={{ fontVariantNumeric: "tabular-nums" }}>{value}</Text>
+      {typeof value === "string" || typeof value === "number" ? (
+        <Text size="sm" mt={2} truncate style={{ fontVariantNumeric: "tabular-nums" }}>{value}</Text>
+      ) : (
+        <Box mt={2}>{value}</Box>
+      )}
     </Paper>
   );
 }
@@ -865,8 +987,6 @@ function LecturerDrawerBody({
 }) {
   const items = stats?.items ?? [];
   const courseCount = stats?.courseIds.size ?? 0;
-  const sectionCount = items.length;
-  const students = stats?.students ?? 0;
   const hours = stats?.hours ?? 0;
 
   // Haftalık ızgara: verdiği şubelerin yayındaki yerleşimleri (gün-slot).
@@ -900,9 +1020,11 @@ function LecturerDrawerBody({
               {l.is_external && <Badge variant="light" color="orange" size="sm">40/a</Badge>}
               {!l.active && <Badge color="gray" size="sm">Pasif</Badge>}
             </Group>
-            <Text size="sm" c="dimmed" mt={2} truncate>
-              {depLabel}{l.email ? ` · ${l.email}` : ""}
-            </Text>
+            {/* K-71: bölüm adı burada değil, aşağıdaki "Kadro birimi" stat'ında —
+                iki yerde yazmasın. Alt satırda yalnız e-posta. */}
+            {l.email && (
+              <Text size="sm" c="dimmed" mt={2} truncate>{l.email}</Text>
+            )}
           </div>
         </Group>
         <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
@@ -915,9 +1037,15 @@ function LecturerDrawerBody({
         <Stack gap="lg">
           <SimpleGrid cols={4} spacing="xs">
             <Stat label="Ders" value={String(courseCount)} />
-            <Stat label="Şube" value={String(sectionCount)} />
+            {/* K-71: Şube sayacı yerine kadro birimi (asli bölüm adı). */}
+            <Stat label="Kadro birimi" value={depLabel} />
             <Stat label="Haftalık saat" value={`${hours} sa`} />
-            <Stat label="Öğrenci" value={String(students)} />
+            {/* K-71: Öğrenci sayacı yerine akademik personel sayfası linki. */}
+            <Stat label="Detay sayfası" value={
+              l.detail_url
+                ? <Anchor href={l.detail_url} target="_blank" rel="noopener noreferrer" size="sm">Aç ↗</Anchor>
+                : <Text size="sm" c="dimmed">—</Text>
+            } />
           </SimpleGrid>
 
           {/* K-68: görev birimi = verdiği (ortak olmayan) derslerin bölümleri.
@@ -991,7 +1119,7 @@ function LecturerDrawerBody({
         )}
         {/* K-67: hocanın haftalık programı burada; export'u da burada
             (/export/weekly lecturer_id filtresini kabul eder). */}
-        <ExportMenu label="Programı Aktar" items={[
+        <ExportMenu label="Programı İndir" items={[
           { label: "Excel (.xlsx)", path: `/export/weekly?lecturer_id=${l.id}&format=xlsx` },
           { label: "CSV (.csv)", path: `/export/weekly?lecturer_id=${l.id}&format=csv` },
         ]} />
@@ -1005,10 +1133,12 @@ function LecturerDrawerBody({
           </Tooltip>
         )}
         {canWrite && (
-          <Button size="sm" variant="subtle" color="red" leftSection={<IconTrash size={15} />}
-            onClick={() => onDelete(l)}>
-            Sil
-          </Button>
+          <Tooltip label="Sil">
+            <ActionIcon variant="subtle" size="lg" color="red"
+              onClick={() => onDelete(l)} aria-label="Sil">
+              <IconTrash size={18} />
+            </ActionIcon>
+          </Tooltip>
         )}
       </Group>
     </Stack>

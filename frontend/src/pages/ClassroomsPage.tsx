@@ -251,9 +251,15 @@ export default function ClassroomsPage() {
 
   async function handleRoomSubmit(values: typeof roomForm.values) {
     setSubmitting(true);
+    // K-72: floor boş bırakılabilir. Mantine NumberInput temizlenince değer ""
+    // (boş string) olabiliyordu; ham "" backend'e gidince "valid integer değil"
+    // hatası veriyordu ve kayıt kilitleniyordu. Yalnız gerçek sayıyı gönder,
+    // gerisini (boş string dahil) null'a indirge.
+    const floor = typeof values.floor === "number" && Number.isFinite(values.floor)
+      ? Math.trunc(values.floor) : null;
     const payload = {
       building_id: Number(values.building_id), room_code: values.room_code,
-      floor: values.floor,
+      floor,
       room_type: values.room_type, capacity: values.capacity, exam_capacity: values.exam_capacity,
     };
     try {
@@ -476,13 +482,15 @@ export default function ClassroomsPage() {
           <Table striped highlightOnHover verticalSpacing="xs" withTableBorder layout="fixed">
             <Table.Thead>
               <Table.Tr>
-                {sortTh("Kod", "room", 104)}
-                {sortTh("Tür", "type", 128)}
-                {sortTh("Bina", "building")}
-                {sortTh("Kapasite", "capacity", 92, "center")}
-                {sortTh("Sınav Kont.", "exam", 104, "center")}
-                {sortTh("Haftalık Kullanım", "use", 160, "left")}
-                <Table.Th w={34} />
+                {sortTh("Kod", "room", 120)}
+                {sortTh("Tür", "type", 130)}
+                {/* K-71: Bina'ya da genişlik verildi. Eskiden tek genişliksiz
+                    sütun olduğu için tüm boşluğu yutup orantısız genişliyordu. */}
+                {sortTh("Bina", "building", 240)}
+                {sortTh("Kapasite", "capacity", 100, "center")}
+                {sortTh("Sınav Kont.", "exam", 110, "center")}
+                {sortTh("Haftalık Kullanım", "use", 180, "left")}
+                <Table.Th w={40} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -549,8 +557,8 @@ export default function ClassroomsPage() {
               <TextInput label="Derslik" placeholder="B-201" {...roomForm.getInputProps("room_code")} />
               <NumberInput
                 label="Kat"
-                description="Opsiyonel (0 = zemin)."
                 placeholder="—"
+                allowDecimal={false}
                 {...roomForm.getInputProps("floor")}
               />
             </Group>
@@ -792,7 +800,7 @@ function ClassroomDrawerBody({
         )}
         {/* K-67: dersliğin haftalık programı burada; export'u da burada
             (/export/classrooms classroom_id ile tek dersliğe daralır). */}
-        <ExportMenu label="Programı Aktar" items={[
+        <ExportMenu label="Programı İndir" items={[
           { label: "Excel (.xlsx)", path: `/export/classrooms?classroom_id=${c.id}&format=xlsx` },
           { label: "CSV (.csv)", path: `/export/classrooms?classroom_id=${c.id}&format=csv` },
         ]} />
@@ -806,10 +814,12 @@ function ClassroomDrawerBody({
           </Tooltip>
         )}
         {canWrite && (
-          <Button size="sm" variant="subtle" color="red" leftSection={<IconTrash size={15} />}
-            onClick={() => onDelete(c)}>
-            Sil
-          </Button>
+          <Tooltip label="Sil">
+            <ActionIcon variant="subtle" size="lg" color="red"
+              onClick={() => onDelete(c)} aria-label="Sil">
+              <IconTrash size={18} />
+            </ActionIcon>
+          </Tooltip>
         )}
       </Group>
     </Stack>

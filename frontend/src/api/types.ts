@@ -79,6 +79,9 @@ export type Lecturer = {
    *  eklenen kayıtta null. */
   duty_unit: string | null;
   cadre_unit: string | null;
+  /** K-71: akademik personel sayfası (detay) linki. Web import doldurur ya da
+   *  elle girilir. null = girilmemiş. */
+  detail_url: string | null;
 };
 
 /** K-50 · POST /lecturers/import/preview cevabındaki tek aday satır. */
@@ -93,11 +96,24 @@ export type ImportRow = {
   department_id: number | null;
   department_label: string | null;
   detail_url: string;
+  /** K-72: kadro eşleşmezse kullanıcı 40/a işaretleyip bölümsüz ekleyebilir. */
+  is_external?: boolean;
+};
+
+/** K-72 · sistemde olan ama eksik bilgisi (detay/e-posta) doldurulabilen kayıt. */
+export type ImportUpdateRow = {
+  id: number;
+  full_name: string;
+  normalized_name: string;
+  detail_url: string | null;
+  email: string | null;
+  missing: string[];
 };
 
 /** K-50 · önizleme cevabı — hiçbir şey yazılmadan sistemdeki farkı gösterir. */
 export type ImportPreview = {
   new: ImportRow[];
+  updates: ImportUpdateRow[];               // K-72
   already_present: number;
   list_total: number;
 };
@@ -105,6 +121,7 @@ export type ImportPreview = {
 /** K-50 · commit cevabı. */
 export type ImportCommit = {
   created: Lecturer[];
+  updated: Lecturer[];                       // K-72
   skipped: string[];
 };
 
@@ -329,7 +346,7 @@ export type ConflictAffectedRef = {
 
 export type ConflictResult = {
   severity: ConflictSeverity;
-  rule_id: string;                  // "W1".."W8" | "E1".."E7" | "X1".."X3"
+  rule_id: string;                  // "W1".."W9" | "E1".."E8" | "X1".."X3"
   message: string;
   affected: ConflictAffectedRef[];
 };

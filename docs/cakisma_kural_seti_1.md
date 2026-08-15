@@ -43,6 +43,20 @@ NULL-derslik koşuluyla susar; W2 (hoca) ve W3/W4 (cohort) normal çalışır.
 Genel not [K-14]: haftalık giriş artık **şubeye** (`section_id`) bağlıdır;
 `course` = şubenin dersi (kod düzeyi). Tüm kurallarda asenkron ön-elemesi geçerli.
 
+Genel not [K-70]: **farklı dönemler birbirinden ayrılır — genel kural, dönem
+adına bağlı değil.** İki nesnenin `semester` değeri farklıysa (hangi değerler
+olursa olsun: FALL/SPRING veya ileride eklenecek herhangi biri) orchestrator o
+çifti değerlendirmez. Gerekçe: farklı dönemin **haftalık** dersleri/oturumları
+takvimde farklı haftalarda tekrar eder, asla aynı fiziksel anda olmaz.
+- **Uygulanır:** W1/W2/W5 (haftalık kaynak) ve X1–X3 (sınav×ders — haftalık taraf
+  tekrar eden bir slottur, sınavın somut tarihi başka dönemin dersiyle sahte
+  eşleşir).
+- **Uygulanmaz:** E1–E4 (sınav×sınav). Sınav somut tarih taşır, tekrar etmez;
+  kesişim zaten aynı `exam_date` şartına bağlıdır ve bir takvim günü tek döneme
+  aittir → dönem ayrımı orada gereksizdir.
+- **Etkilenmez:** cohort kuralları (W3/W4/E4/X2) dönemi zaten cohort anahtarında
+  taşır; davranışları birebir aynı kalır.
+
 | ID | Kural | Koşul | Severity | Atlama koşulu |
 |---|---|---|---|---|
 | W1 | Derslik çakışması | Aynı `classroom_id`, aynı gün, kesişen slotlar | **HARD** | Taraflardan birinin `classroom_id` NULL ise [K-10] |
@@ -53,6 +67,7 @@ Genel not [K-14]: haftalık giriş artık **şubeye** (`section_id`) bağlıdır
 | W6 | Pencere dışı slot | Gün 1-5 dışında VEYA `start_slot+slot_count-1 > 9` | **HARD** | Sadece derslere uygulanır; sınavlara ASLA [K-06]. DB CHECK zaten koruyor; motor yine de anlaşılır mesaj üretir |
 | W7 | Kapasite | `section.expected_students > classroom.capacity` | WARNING | `classroom_id` NULL ise |
 | W8 | T+U+L tamlığı [K-20] | Şubenin `session_type` bazında SUM(slot_count) ≠ dersin `hours_theory/practice/lab` değeri (eksik VEYA fazla) | WARNING | **Yalnız submit anında** çalışır; save'de sessiz [K-20]. hours değeri 0 olan bileşen için giriş yoksa kontrol edilmez |
+| W9 | Eksik derslik [K-70] | `delivery_mode=FACE_TO_FACE` VE `classroom_id` NULL | WARNING | Online (SYNC/ASYNC) girişler tasarımca dersliksizdir [K-10/K-23] — onlarda eksiklik değildir, uyarı üretmez |
 
 ### Şube-farkındalıklı cohort çakışması [K-15]
 
@@ -91,6 +106,7 @@ expected_students)`.
 | E5a | Kontenjansız derslik seçimi [K-21] | Seçili dersliklerden birinin `exam_capacity` değeri NULL | WARNING — "sınav kontenjanı girilmemiş, önce derslik kaydına girin" | Derslik kümesi boşsa |
 | E6 | Hafta sonu tarihi | `exam_date` Cmt/Paz | **HARD** [K-06] | — (DB CHECK yedekli) |
 | E7 | Gereksiz kontenjan fazlası [K-17] | EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam `>= total_expected + 10` ise (bariz fazlalık, K-40) | WARNING | Derslik sayısı <= 1 VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
+| E8 | Eksik derslik [K-70] | Sınavın derslik kümesi BOŞ (`rooms=[]`) | WARNING | — (sınavın online kavramı yoktur; dersliksiz her sınav uyarılır. E5/E5a/E7 boş kümede sessizce atlar, E8 tam o boşluğu yakalar) |
 
 Not: Sınavlarda **saat penceresi kuralı yoktur** — 17:30 sonrası serbesttir [K-06].
 Not: E5/E7'de `capacity` DEĞİL `exam_capacity` kullanılır (boşluklu oturma, K-17).

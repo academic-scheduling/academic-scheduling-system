@@ -2513,3 +2513,271 @@ useMemo'ları da kaldırıldı (render başına iş azaldı).
 
 **Doğrulama (tarayıcı, 14 Ağustos 2026):** Üç başlık tek sayaç; Dersler "1. sınıf"
 segmenti spinner'sız anında 18 derse indi (ağ isteği yok). tsc + vite build temiz.
+
+## K-70 · Dönemler-arası çakışma kapatıldı + eksik derslik uyarısı (W9/E8) [E]
+Kullanıcı: (1) sistem güz ile bahar dersleri arasında da çakışma arıyor — güz ve
+bahar farklı zamanlarda olduğundan bu saçma, kaldır. (2) Programa ders veya sınav
+konurken derslik girilmemişse uyarı ver.
+
+**Dönem kapısı (genel — dönem adına bağlı DEĞİL).** `same_semester(a,b)` yalnız
+`semester` eşitliğine bakar; FALL/SPRING (veya ileride bir YAZ) gömülü değildir,
+"farklı dönem = ayrı" kuralı geneldir. Kapıyı motorun saf kural fonksiyonlarına
+DEĞİL — orchestrator'ın ikili döngülerine koydum: yanlışsa `continue`. Neden
+orchestrator: kural fonksiyon imzaları sabit kalsın, birim testleri kırılmasın.
+
+Nerede uygulanır — gerekçesi "farklı dönemin **haftalık** dersi takvimde farklı
+haftalarda TEKRAR eder, asla aynı anda olmaz":
+- **W1/W2/W5 (haftalık kaynak): EVET.** Bir dönemde A101-Pzt-1.slot ↔ başka
+  dönemde aynı derslik/saat → eskiden sahte HARD W1, artık sessiz.
+- **X1–X3 (sınav×ders): EVET.** Haftalık taraf tekrar eden slot; sınavın somut
+  tarihi başka dönemin dersiyle `exam_date.weekday()` üzerinden sahte eşleşir.
+- **E1–E4 (sınav×sınav): HAYIR (kullanıcı düzeltmesi).** Sınav somut tarih taşır,
+  tekrar etmez; kesişim zaten aynı `exam_date` şartına bağlı ve bir takvim günü
+  tek döneme ait → dönem ayrımı gereksiz. Orchestrator'da E döngüsüne kapı KONMAZ.
+- Cohort kuralları (W3/W4/E4/X2) dönemi zaten cohort anahtarında taşır, etkilenmez.
+
+- **Cohort kuralları (W3/W4/E4/X2) dokunulmadı:** dönemi zaten cohort anahtarında
+  (`department_id, year, semester`) taşıyorlar; farklı dönem = farklı cohort =
+  zaten çakışmıyor. Kapı yalnız kaynak-kaynak (derslik/hoca/tarih) sahte
+  eşleşmelerini eler. En belirgin sahte durum: güz'de A101-Pzt-1.slot ile bahar'da
+  aynı derslik/saat → eskiden HARD W1, artık sessiz.
+- **Neden scalar `semester` yeterli:** ortak ders (K-48) birden çok cohort'a
+  yayılsa da tek fiziksel zamanda olur; extra_cohort'lar "kim katılıyor"u belirtir,
+  "ne zaman"ı değil. O yüzden dönem karşılaştırması dersin kendi `semester`'ı
+  üzerinden doğru.
+
+**W9 (haftalık eksik derslik).** Tekil kural (W6/W7 gibi). `delivery_mode=
+FACE_TO_FACE` VE `classroom_id` NULL → WARNING. Online (SYNC/ASYNC) girişler
+tasarımca dersliksizdir (K-10/K-23) — eksiklik değil, uyarı üretmez. W6 tekil
+döngüsüne eklendi (asenkron dahil tüm girişler; online zaten kural içinde susar).
+
+**E8 (sınav eksik derslik).** Tekil kural (E5/E5a/E6 gibi). `rooms` boş → WARNING.
+Sınavın online kavramı yok; dersliksiz her sınav uyarılır. E5/E5a/E7 boş kümede
+sessizce atlıyordu (kontenjan hesaplayacak oda yok); E8 tam o boşluğu yakalayıp
+"derslik ekle" der. `scan_exams` tekil döngüsüne eklendi.
+
+Her ikisi de WARNING (kullanıcı "uyarı" dedi) — yerleştirmeyi engellemez, submit'i
+kilitlemez; yalnız "derslik eklemeyi unuttun" hatırlatması. Mesajlar message.py'de
+(_msg_w9/_msg_e8); frontend değişmedi (kural mesajını sunucudan alıp gösteriyor,
+yalnız types.ts yorumu W9/E8'e güncellendi).
+
+**Doğrulama:** test_overlap 130→+13 test yeşil (W9/E8 motor + orchestrator
+kablolaması; dönemler-arası W1/E1/X1 bastırma + aynı-dönem kontrol testleri).
+
+## K-71 · Öğretim Üyeleri arayüz düzeltmeleri + `detail_url` + unvan normalizasyon bug'ı [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri. Biri backend şema (`detail_url`),
+biri veri düzeltmesi (unvan), gerisi frontend.
+
+**Akademik personel sayfası (`detail_url`).** Hoca modeline nullable `detail_url`
+kolonu (migration c1a2b3d4e5f6). Web import kişinin `detail_url`'ini artık
+SAKLIYOR (eskiden yalnız önizlemede vardı, yazılmıyordu); elle eklerken/düzenlerken
+opsiyonel "Akademik personel sayfası" alanından girilir ("detay" denince
+anlaşılmıyordu — açık ad). Drawer'da Öğrenci sayacı yerine "Akademik sayfa" linki
+(varsa "Aç ↗", yoksa —). NOT: bu kolondan ÖNCE import edilmiş kayıtlarda NULL;
+geri-doldurmak için yeniden scrape gerekir (yapılmadı, yeni import'lar dolu gelir).
+
+**Drawer stat ızgarası yeniden dizildi.** [Ders, Şube, Haftalık saat, Öğrenci] →
+[Ders, **Kadro birimi** (asli bölüm adı), Haftalık saat, **Akademik sayfa** (link)].
+Şube ve Öğrenci sayaçları kalktı. Künyede isim altındaki bölüm adı da kaldırıldı
+(artık Kadro birimi stat'ında; iki yerde yazmasın) — alt satırda yalnız e-posta.
+
+**Unvan normalizasyon bug'ı (aktarma hatası).** `normalize._TOKEN_ALIAS`'ta
+`"araş"→"arş"` yoktu; site "Araş.Gör.Dr." yazınca kanonikleşmeden HAM saklanıyordu
+("Araş.Gör.Dr."), frontend TITLES'ta bu yok → düzenle formunda Unvan Select'i BOŞ
+görünüyordu. Alias eklendi (kök neden, gelecekteki import'lar düzgün). Mevcut 9
+satır tek seferlik `canonical_title` ile yeniden normalize edildi ("Arş. Gör. Dr.").
+Ayrıca form Select'i artık kanonik-dışı bir unvanı da seçenek olarak gösteriyor
+(savunma; herhangi bir bilinmeyen unvanda boş kalmasın).
+
+**Import önizleme.** "Görev / Kadro Birimi" sütunu yalnız **Kadro Birimi**'ne indi.
+Görev birimi verdiği derslerden türetilir (dutyUnitsOf); import'ta göstermeye gerek
+yok. Backend bölüm eşleme (görev→kadro düşüşü) değişmedi — yalnız görüntü.
+
+**Küçük düzeltmeler.** (a) Öğretim Üyeleri + Derslikler drawer'larındaki export
+düğmesi "Programı Aktar" → "Programı İndir". (b) Tablo sütun genişlikleri: her iki
+tabloda tek genişliksiz sütun (Öğretim Üyeleri "Ad Soyad", Derslikler "Bina") tüm
+boşluğu yutup orantısız genişliyordu; hepsine genişlik verilince boşluk oranlı
+dağıldı, odak sütunu baskın ama diğerleri sıkışmıyor.
+
+**Yetki (kullanıcı sorusu).** `canWrite` false olduğunda tüm yazma kontrolleri
+(Ekle/İçe Aktar/Düzenle/Sil/Pasife al) `canWrite && (...)` ile HİÇ render edilmez —
+soluk/disabled değil, tamamen gizli. Salt-okunur drawer + "Programı İndir" herkeste.
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Drawer yeni stat düzeni, Aysu GÖÇÜGENCİ
+düzenle formunda "Arş. Gör. Dr." dolu (bug düzeldi), form açıklaması yok + akademik
+sayfa alanı var, iki tabloda sütunlar dengeli. tsc + vite build temiz; lecturer+
+import backend testleri (48) yeşil.
+
+## K-72 · Import kadro-only eşleştirme + 40/a çözümü + eksik-bilgi güncelleme + UI cila [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri (K-71 üstüne).
+
+**İçe aktarma — bölüm eşleştirme yalnız KADRO birimi.** `_match_department` artık
+görev birimini denemiyor (eskiden görev→kadro düşüşü vardı). Görev birimi fiilen
+ders verdiği yer; o zaten verdiği derslerden türetilir. Bölüm = resmi kadro.
+
+**İçe aktarma — bölümsüz kayıt kuralı.** Kadro bir bölüme eşleşmezse önizlemede o
+satırın "Bölüm" hücresi düzenlenebilir bir Select (bölümler + "40/a — dış görevli
+(bölümsüz)"). Eşleşen satır ön-dolu gelir. Commit kuralı: bölümü olan → normal
+eklenir; bölümsüz + 40/a işaretli → dış görevli (is_external, bölümsüz) eklenir;
+**bölümsüz VE 40/a değil → EKLENMEZ** (skipped "(bölümsüz)"). `ImportRow`'a
+`is_external` eklendi; commit'te sabit `is_external=False` yerine satırdan gelir.
+
+**İçe aktarma — eksik-bilgi güncelleme kolu.** Önce yalnız YENİ kişiler geliyordu;
+K-71'den önce eklenmiş kayıtlarda `detail_url` yok. Artık preview `updates` da
+döndürüyor: sistemde olan ama detay sayfası / e-postası eksik kayıtlar. detay linki
+liste taramasından BEDAVA (PersonRef); e-posta için yalnız eksik olanların detayı
+çekilir (cap'li). Commit `updates` kolu yalnız NULL alanı doldurur, var olanı
+EZMEZ. `ImportUpdateRow` + `ImportCommitOut.updated` eklendi. Canlı doğrulama:
+88 kişi, 85 zaten kayıtlı → 3 yeni + 85 güncellenebilir.
+
+**Öğretim Üyeleri UI.** (a) Kadro birimi artık KOD ("MINE", "CENG") — ad değil;
+hem derli toplu hem sütun sıkışmıyor (`depLabelOf` → `.code`). (b) Drawer stat
+"Akademik sayfa" → "Detay sayfası". (c) Her iki drawer'da "Sil" düğmesi metin
+yerine yalnız çöp-kutusu ikonu (ActionIcon). (d) İki filtre popover'ından
+gereksiz "Kapat" düğmesi kaldırıldı.
+
+**Derslik `floor` bug'ı.** Mantine NumberInput temizlenince değer "" (boş string)
+olup backend'e gidiyor, `int|None` "valid integer değil" 422 veriyordu → kat
+silinemiyordu. Submit'te `typeof === "number"` değilse null'a indirgeniyor;
+`allowDecimal={false}`. Canlı doğrulama: kat girip temizleyip kaydetme artık
+null olarak geçiyor.
+
+**Doğrulama:** 604 backend testi yeşil (5 yeni import testi: kadro-only, görev
+yok sayılır, bölümsüz-40a-değil skip, elle bölüm çözümü, eksik-bilgi güncelleme +
+ezmeme). tsc + vite build temiz. Tarayıcıda import akışı uçtan uca (40/a dropdown,
+kırmızı çözülmedi uyarısı, 85 güncelleme), kadro=kod, Detay sayfası, simge-Sil,
+Kapat yok, floor temizleme — hepsi teyit.
+
+## K-73 · Program sayfaları: değişiklik akışı sadeleşti, mod hafızası, yayın bilgisi pop-up'ı + küçük düzeltmeler [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri.
+
+**Küçük düzeltmeler.** (a) K-72'de kaldırılan filtre "Kapat" düğmeleri GERİ geldi
+(iki sayfa). (b) Hoca "Kadro birimi" artık "KOD - Ad" ("CE - İnşaat Mühendisliği")
+— K-72'de yalnız koddu, kullanıcı adı da istedi. (c) Derslik kat alanının
+"Opsiyonel (0 = zemin)." açıklaması kaldırıldı.
+
+**Değişiklik akışı (ChangeFeed) yeniden tasarlandı.** "Bölümünüzü etkileyen son
+değişiklikler" göz yoruyordu. Artık: (a) açılır-kapanır (varsayılan KAPALI, başlıkta
+sayaç), (b) her satır tek satır — "cohort · tür rozeti · tarih · Göster" (özet
+metni kalktı), (c) "Göster" o cohort'un YAYINDAKİ halini açar. (d) **Tür ayrımı:**
+Haftalık ekranda yalnız WEEKLY, Sınav ekranda yalnız EXAM değişiklikleri (`kind`
+prop + backend süzgeci); ana sayfada ikisi birden (URL ile yönlendirir).
+
+**Backend `/schedule-changes` süzgeçleri.** `kind`, `department_id`, `year`,
+`semester` opsiyonel parametreleri eklendi. Cohort süzgeci ORTAK DERS etkisini
+KATMAZ (DraftBar pop-up'ı "bu cohort'u kim düzenledi" sorar, doğrudan onayı ister).
+
+**Mod hafızası (K-73).** Bug: taslaktan yayına dönüp sayfa değiştirip geri
+gelince ekran hep taslağa atlıyordu. Artık cohort başına son mod localStorage'da
+(`weekly-mode`/`exam-mode` → "pub" | taslak id). Oto-seçim efekti tercihi gözetir:
+"pub" ise taslağa atlamaz; taslak id ise onu seçer; tercih yoksa (ilk ziyaret)
+eski davranış (açık taslağı seç). En optimize yol: zaten atılan taslak sorgusunun
+sonucundan HANGİSİNİ seçeceğimizi belirleyen bir yerel tercih — ek sunucu turu yok.
+
+**DraftBar: kilit + "salt-okunur" → "i" pop-up'ı.** Yayın modunda "Yayındaki
+program" yanındaki kilit simgesi ve "salt-okunur — değişiklik için taslak açın"
+metni kaldırıldı. Yerine bir "i" (HoverCard): bu cohort+tür için son APPROVED
+taslaktan **Düzenleyen (owner) · Onaylayan (reviewer) · Yayınlanma tarihi**. Onaylı
+değişiklik yoksa "henüz onaylı değişiklik yok" der. (Palet içindeki ayrı salt-okunur
+ipucu bırakıldı — o paletin neden sürüklenmediğini anlatır, farklı bir yer.)
+
+**Header hizalama.** Haftalık ve Sınav sayfalarında cohort seçicileri farklı
+konumdaydı (Haftalık'ta ortada justify=center, Sınav'da sağda) ve ortalanmış
+duruyordu. İkisi de başlıkla birlikte SOLA çekildi, hizalar tuttu.
+
+**Doğrulama (tarayıcı):** Header sol hizalı; DraftBar "i" pop-up'ı dolu (Düzenleyen
+Fakülte Yöneticisi · Onaylayan Alt Hesap (Test) · 12 Ağustos 2026) ve boş cohort'ta
+fallback; ChangeFeed açılır-kapanır + yalnız WEEKLY + Göster cohort'u yayında açtı
+(taslak #25 varken bile yayında kaldı); mod hafızası iki yönde (yayında bırak→yayın,
+taslakta bırak→taslak). tsc + vite build temiz; schedule-changes süzgeç testi eklendi.
+
+## K-74 · Mod çubuğu üst bara gömüldü (tek bar) + 40/a etiketi + palet düzeltmeleri [E]
+Kullanıcı: ayrı "mod çubuğu" kalabalık; üst barla birleştirelim. + küçük düzeltmeler.
+
+**DraftBar üçe bölündü, üst bara gömüldü.** Eskiden başlık barı + ayrı DraftBar +
+ChangeFeed üst üste 3 Paper'dı. DraftBar `DraftStatus` / `DraftActions` / `DraftNotes`
+olarak bölündü ve üst barın İÇİNE yerleşti (tek Paper): durum cohort seçicilerin
+SAĞINDA ("Yayındaki program"+i ya da taslak rozeti+"N değişiklik"; cohort adı
+TEKRAR yazılmaz — seçicilerde var), eylemler (Taslak Aç/Dön, Farkı Gör, Temizle,
+Onaya Gönder, Sil, Geri Çek, Yayına Dön) sağ eylem grubunda. PENDING/REJECTED bilgi
+satırı barın altına ince bir `DraftNotes` olarak indi (yalnız o durumlarda görünür).
+Taslaktayken bar hafif renklenir (DRAFT_SURFACE/BORDER) — eski renkli çubuğun işlevi.
+
+- **Dışa Aktar yalnız YAYINDA:** export yayındaki programı indirir, taslakta anlamsız
+  → taslak modunda gizli.
+- **"Taslağa Dön" sayısı kaldırıldı** ("(#25)" gitti; taslakta sayı tutmaya gerek yok).
+
+**40/a etiketi.** Import'ta "40/a — dış görevli (bölümsüz)" → "40/a — dış görevli".
+Kullanıcı: 40/a bölümsüz demek değil; başka fakültede kadrolu (Matematik/Fizik gibi
+servis derslerini verenler), bizim bölümlerimize ait olmaması onları bölümsüz yapmaz.
+
+**Palet.** (a) Haftalık paletindeki "Yayındaki program salt-okunur…" ipucu kaldırıldı.
+(b) `offsetScrollbars` kaldırıldı (iki sayfa) — ders kartları artık "Ders ara"
+kutusuyla aynı genişlikte (eskiden kaydırma payı kadar dardı).
+
+**Doğrulama (tarayıcı):** Haftalık + Sınav'da tek bar; yayın modu (Yayındaki
+program+i · Taslağa Dön · Dışa Aktar) ve taslak modu (renkli · TASLAK+durum ·
+tüm butonlar · export gizli) teyit; palet kartları arama kutusuyla eşit genişlik;
+salt-okunur ipucu yok. tsc + vite build temiz (frontend-only).
+
+**K-74 inceltme (aynı tur, kullanıcı geri bildirimi):** (a) Taslak durumundaki
+"yayındaki … ile aynı" metni kaldırıldı — değişiklik varken yalnız "N değişiklik",
+yokken hiçbir şey (TASLAK rozeti zaten belli ediyor). (b) Farkı Gör ve Temizle
+yalnız SİMGE (yazı yok; Sil zaten çöp simgesiydi). (c) Onaya Gönder birincil eylem
+olarak EN SAĞA alındı: DraftActions barın en sonunda render edilir (Geri Al ve
+Dışa Aktar ondan önce), Onaya Gönder de DraftActions içinde son buton. Yayın
+modunda aynı düzenden Taslak Aç/Dön en sağda kalır.
+
+## K-75 · Program gridi sadeleştirme: legend + grid etiketleri + tıkla-taslak kaldırıldı [E]
+Kullanıcı: grid çok kalabalık; renk açıklaması ve satır-içi etiketler gitsin.
+
+- **Renk açıklaması (legend) kaldırıldı** (Haftalık + Sınav). Yayınlanmış/Taslak/
+  Uyarı/Çakışma/Online swatch'ları ve `Legend` bileşeni silindi. Kart renkleri
+  (mavi/gri kenar, kesikli taslak kenarı, uyarı/çakışma köşesi) kalır — yalnız
+  açıklama satırı gitti.
+- **Online artık gridde özel kategori değil:** legend'deki "Online" swatch'ı kalktı.
+  (Karttaki işlevsel online göstergesi — küre ikonu + "online" oda etiketi —
+  korundu; oda bilgisi kaybolmasın diye. İstenirse o da kaldırılır.)
+- **Grid SEÇMELİ + TASLAK etiketleri kaldırıldı** (Haftalık ClusterCard). Palet/
+  sol-panel "Seçmeli" rozeti KALDI (kullanıcı "gridteki" dedi). Sınav gridinde
+  bu etiketler zaten yoktu.
+- **Yayında gridde tıkla→"taslak açılsın mı?" kaldırıldı.** `askSwitchToDraft`
+  (iki sayfa) ve `ClusterCard.onRequestDraft` silindi; yayın modunda karta/boş
+  hücreye tıklama artık bir şey yapmaz. Taslak YALNIZ üstteki bardan açılır.
+
+Frontend-only; tsc + vite build temiz. Tarayıcıda teyit: legend yok, grid
+kartlarında SEÇMELİ/TASLAK yok, yayında karta tıklama sessiz.
+
+## K-76 · Program barı ince ayarları + Temizle onayı + sınav gridi 1 saat + hover "i" [E]
+Kullanıcı geri bildirim toplu düzeltmeleri (Haftalık + Sınav).
+
+**Bar düzeni.** (a) Dışa Aktar EN SAĞA (DraftActions'tan sonra); yayın modunda
+en sağda, taslakta zaten gizli → Onaya Gönder en sağda kalır. (b) Geri Al yalnız
+SİMGE (ActionIcon; sayı tooltip'e taşındı). (c) Taslakta bar RENK DEĞİŞTİRMEZ —
+DRAFT_SURFACE/DRAFT_BORDER tonu kaldırıldı (TASLAK rozeti zaten belli ediyor).
+(d) Taslağı Sil simgesi çerçeveli (variant outline, kırmızı) + tooltip'ten
+"yayına etkisi yok" çıktı. (e) Yayına Dön çerçeveli (subtle → default).
+
+**Temizle onayı (K-76).** "Temizle" artık doğrudan silmiyor; bir modal açıyor:
+"Ortak dersleri de sil" onay kutusu. İşaretlenirse `include_shared=true` gider ve
+cohort'taki ortak (servis) dersler de silinir; işaretlenmezse korunur. Backend
+`/clear` bunu zaten destekliyordu; eksik olan istemci sorusuydu.
+
+**Değişiklik akışı programlardan kaldırıldı.** ChangeFeed yalnız ana sayfada;
+Haftalık + Sınav sayfalarından çıkarıldı (ana sayfada zaten var, tekrar gürültü).
+
+**Sınav gridi haftalık gibi 1 saat.** Bir saat 63px → `WEEKLY_ROW_H` (91px):
+saat satırı artık haftalık slotla aynı boyda (eskiden "yarım slot" gibi sıkışıktı).
+Grid böylece uzuyor; görünür yükseklik weekly gridiyle eşitlendi
+(`VISIBLE_H = HEAD_H + WEEKLY_ROW_H*9`) ve akşam saatleri dikey scroll ile açılıyor
+(Paper `overflow:auto` + `maxHeight`). Sol panel yüksekliği de VISIBLE_H'ye eşit.
+NOT: basit yaklaşım — scroll'da gün başlıkları da kayıyor (sticky başlık ayrı iş).
+
+**Ders "i" pop-up'ı hover'da da açılır.** CourseInfoButton artık `onMouseEnter`
+ile açılıyor (yalnız tıklama değil). Tıklama SABİTLER (pinned): sabitken fare
+çekilince kapanmaz (içindeki bağlantıya gidilebilir), hover'la açıldıysa çekilince
+kapanır. Başka "i" açılınca sabitleme sıfırlanır.
+
+**Doğrulama (tarayıcı):** Bar (Dışa Aktar sağda, Geri Al simge, ton yok, çerçeveler),
+Temizle modalı (ortak ders onayı), sınav gridi (91px satır + dikey scroll ile 17:00+),
+hover "i" — hepsi teyit. tsc + vite build temiz (frontend-only).

@@ -34,7 +34,7 @@ import {
   IconChecklist,
   IconFileStack,
 } from "@tabler/icons-react";
-import type { ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { useAuth } from "../auth/AuthContext";
 
 type MenuItem = {
@@ -169,6 +169,9 @@ export default function AppLayout() {
         {/* ALT: kullanıcı + rol, tema, çıkış */}
         <AppShell.Section>
           <Divider mb="xs" />
+          {/* GEÇİCİ TANI: oturum boşta-uyarısına kalan süre. Sistem düzgün
+              çalışıyor mu diye bakmak için — sonra kaldırılacak. */}
+          <SessionCountdown collapsed={collapsed} />
           {collapsed ? (
             <Stack gap="xs" align="center">
               <Tooltip label={themeLabel} position="right" withArrow>
@@ -226,5 +229,42 @@ export default function AppLayout() {
         </div>
       </AppShell.Main>
     </AppShell>
+  );
+}
+
+/** GEÇİCİ TANI (kaldırılacak): oturum boşta-uyarısına kaç dk:sn kaldığını gösterir.
+ *  Her saniye AuthContext'teki gerçek sayacı okur; fare/klavye hareketiyle
+ *  lastActivity sıfırlanınca 15:00'e döner (idle mekanizması böyle doğrulanır). */
+function SessionCountdown({ collapsed }: { collapsed: boolean }) {
+  const { user, idleWarningRemainingMs } = useAuth();
+  const [ms, setMs] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    setMs(idleWarningRemainingMs());
+    const id = setInterval(() => setMs(idleWarningRemainingMs()), 1000);
+    return () => clearInterval(id);
+  }, [user, idleWarningRemainingMs]);
+
+  if (!user) return null;
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  const label = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  const warn = sec <= 120;   // son 2 dk'da vurgula
+
+  if (collapsed) {
+    return (
+      <Tooltip label={`Oturum uyarısına ${label}`} position="right" withArrow>
+        <Text ta="center" size="xs" mb="xs" c={warn ? "orange" : "dimmed"}
+          style={{ fontVariantNumeric: "tabular-nums", cursor: "default" }}>
+          {label}
+        </Text>
+      </Tooltip>
+    );
+  }
+  return (
+    <Text ta="center" size="xs" mb="xs" c={warn ? "orange" : "dimmed"}>
+      Oturum uyarısı:{" "}
+      <b style={{ fontVariantNumeric: "tabular-nums" }}>{label}</b>
+    </Text>
   );
 }

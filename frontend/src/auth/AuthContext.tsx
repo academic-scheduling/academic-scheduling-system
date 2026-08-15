@@ -12,6 +12,9 @@ type AuthState = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** GEÇİCİ TANI (kaldırılacak): boşta-uyarı modalına kalan ms. Gerçek
+   *  `lastActivity` ref'inden hesaplanır — sidebar'daki sayaç bunu okur. */
+  idleWarningRemainingMs: () => number;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -126,8 +129,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [promptOpen, grace, logout]);
 
+  // GEÇİCİ TANI: boşta-uyarısına kalan süre (ms). Modal açıkken 0. Sidebar sayacı
+  // her saniye bunu çağırır; hareket olunca lastActivity sıfırlanır → sayaç 15:00'e döner.
+  const idleWarningRemainingMs = useCallback(
+    () => (promptOpen ? 0 : Math.max(0, IDLE_LIMIT_MS - (Date.now() - lastActivity.current))),
+    [promptOpen]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, idleWarningRemainingMs }}>
       {children}
       <Modal
         opened={promptOpen}

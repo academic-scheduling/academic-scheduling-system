@@ -132,7 +132,9 @@ def test_create_exam_returns_conflicts_field():
     r = make_exam(h, course)
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["conflicts"] == []
+    # K-70: sınav dersliksiz kaydedildi (classroom_ids=[]) → E8 uyarısı (engellemez).
+    assert [c["rule_id"] for c in body["conflicts"]] == ["E8"]
+    assert body["conflicts"][0]["severity"] == "WARNING"
     # K-16: türetilen öğrenci sayısı = aktif şubelerin toplamı
     assert body["exam"]["total_expected_students"] == 70
     # K-60: satır bazlı `status` kontrattan kalktı

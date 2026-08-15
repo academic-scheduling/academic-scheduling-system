@@ -1,11 +1,12 @@
 from app.conflicts.engine import (
     w1_classroom_conflict, w2_lecturer_conflict,
     w5_duplicate_session,
-    w6_out_of_window, w7_capacity,
+    w6_out_of_window, w7_capacity, w9_missing_classroom,
     courses_conflict, first_overlapping_sessions, is_async, effective_cohorts,
+    same_semester,
     e1_exam_classroom_conflict, e2_duplicate_exam,
     e3_exam_lecturer_conflict, e4_exam_cohort_conflict,
-    e5_exam_capacity, e5a_missing_exam_capacity,
+    e5_exam_capacity, e5a_missing_exam_capacity, e8_missing_classroom,
     e6_exam_out_of_window, e7_excess_capacity,
     x1_exam_weekly_classroom_conflict, x2_exam_weekly_course_conflict,
     x3_exam_weekly_lecturer_conflict,
@@ -16,11 +17,14 @@ from app.conflicts.message import build_result
 def scan_weekly(entries):
     results = []
 
-    # W6 (pencere): asenkron DAHIL tum girislere uygulanir (K-19 istisnasi)
+    # W6 (pencere) + W9 (eksik derslik): asenkron DAHIL tum girislere uygulanir
+    # (K-19 istisnasi). W9 online girislerde zaten susar (delivery_mode kontrolu
+    # kural fonksiyonunda), asenkronu ayirmaya gerek yok.
     for e in entries:
-        hit = w6_out_of_window(e)
-        if hit:
-            results.append(build_result(hit["rule_id"], hit["severity"], e))
+        for rule in (w6_out_of_window, w9_missing_classroom):
+            hit = rule(e)
+            if hit:
+                results.append(build_result(hit["rule_id"], hit["severity"], e))
 
     # ON-ELEME (K-19): asenkron girisler diger karsilastirmalara girmez
     active = [e for e in entries if not is_async(e)]
@@ -35,6 +39,8 @@ def scan_weekly(entries):
     for i in range(len(active)):
         for j in range(i + 1, len(active)):
             a, b = active[i], active[j]
+            if not same_semester(a, b):      # K-70: donemler-arasi karsilastirma yok
+                continue
             for rule in (w1_classroom_conflict, w2_lecturer_conflict, w5_duplicate_session):
                 hit = rule(a, b)
                 if hit:
@@ -52,12 +58,16 @@ def scan_exams(exams):
     results = []
     # tekil kurallar: her sinav kendi basina
     for e in exams:
-        for rule in (e5_exam_capacity, e5a_missing_exam_capacity,
+        for rule in (e5_exam_capacity, e5a_missing_exam_capacity, e8_missing_classroom,
                      e6_exam_out_of_window, e7_excess_capacity):
             hit = rule(e)
             if hit:
                 results.append(build_result(hit["rule_id"], hit["severity"], e))
     # ciftli kurallar: her benzersiz sinav cifti (i<j)
+    # K-70: sinav-sinav'da DONEM KAPISI YOK. Sinav somut tarih tasir; kesisim
+    # zaten ayni `exam_date` sartina baglidir (exam_sessions_overlap) ve bir
+    # takvim gunu tek doneme aittir -> farkli donemdeki iki sinav zaten ayni
+    # gunde olamaz. Kapiya gerek yok, somut tarih isi cozer.
     for i in range(len(exams)):
         for j in range(i + 1, len(exams)):
             a, b = exams[i], exams[j]
@@ -90,6 +100,11 @@ def scan_cross(exams, weeklies, check_exam_vs_course):
         if exam.get("exam_type") != "MIDTERM":      # K-41
             continue
         for weekly in active_weeklies:
+            # K-70: haftalik ders donem boyunca TEKRAR eder (somut tarih degil).
+            # Sinavin tarihi baska donemdeyse o dersle asla ayni haftada bulusmaz;
+            # kapi olmadan exam_date.weekday() == weekly gunu sahte X uretir.
+            if not same_semester(exam, weekly):
+                continue
             for rule in (x1_exam_weekly_classroom_conflict,
                          x2_exam_weekly_course_conflict,
                          x3_exam_weekly_lecturer_conflict):

@@ -102,7 +102,9 @@ def test_create_entry_draft_with_conflicts_field():
     assert r.status_code == 201, r.text
     body = r.json()
     assert "status" not in body["entry"]        # K-59: satırın kendi durumu yok
-    assert body["conflicts"] == []
+    # K-70: yüz yüze giriş dersliksiz kaydedildi → W9 uyarısı (engellemez).
+    assert [c["rule_id"] for c in body["conflicts"]] == ["W9"]
+    assert body["conflicts"][0]["severity"] == "WARNING"
     # kontrat §7: iç içe section → course şekli
     assert body["entry"]["section"]["id"] == section["id"]
     assert body["entry"]["section"]["course"]["code"] == section["course"]["code"]

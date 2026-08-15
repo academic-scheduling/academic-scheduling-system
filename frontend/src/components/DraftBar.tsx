@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  Alert, Badge, Button, Group, Modal, Paper, Stack, Text, Textarea, Tooltip,
+  ActionIcon, Alert, Badge, Button, Checkbox, Group, HoverCard, Modal, Stack, Text,
+  Textarea, Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
-  IconAlertTriangle, IconArrowBackUp, IconEraser, IconGitCompare, IconLock,
+  IconAlertTriangle, IconArrowBackUp, IconEraser, IconGitCompare, IconInfoCircle,
   IconPencil, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
@@ -14,54 +15,129 @@ import {
 import DiffTable from "./DiffTable";
 import type {
   ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem, DraftKind,
-  ScheduleDraft, SemesterType,
+  ScheduleChange, ScheduleDraft, SemesterType,
 } from "../api/types";
-import {
-  BORDER, CONTROL_H, DRAFT_BORDER, DRAFT_SURFACE, SHADOW,
-} from "../utils/scheduleTheme";
+import { CONTROL_H } from "../utils/scheduleTheme";
 
-export type DraftBarProps = {
-  /** Aktif cohort. `year` null ise (ör. "Ortak dersler" görünümü) taslak açılamaz. */
+/** K-74: Mod çubuğu tek bir "bar" değil artık — parçaları sayfanın en üstteki
+ *  araç çubuğuna gömülür (ayrı ikinci bar kalabalıktı). Üç parça:
+ *    DraftStatus  — cohort seçicilerin SAĞINA: "Yayındaki program" (+i) ya da
+ *                   taslaktaysa durum rozeti + değişiklik sayısı (cohort TEKRAR
+ *                   yazılmaz, seçicilerde zaten var).
+ *    DraftActions — sağdaki eylem grubuna: Taslak Aç/Dön ya da taslak butonları.
+ *    DraftNotes   — çubuğun ALTINA (yalnız PENDING/REJECTED): ince bilgi satırı.
+ */
+
+type CohortProps = {
   departmentId: number | null;
   year: number | null;
   semester: SemesterType;
-  /** K-60: bu çubuk hangi tür programı yönetiyor. Yaşam döngüsü ve kapılar
-   *  aynı; yalnız metinler ve gönderme yetkisinin adı türden gelir. */
   kind: DraftKind;
-  /** Bu cohort için BENİM açık taslağım (yoksa null → yayın modundayız). */
   draft: ScheduleDraft | null;
-  /** Taslağı seç / yayına dön. */
+};
+
+
+/** Cohort seçicilerin sağındaki durum göstergesi. */
+export function DraftStatus({ departmentId, year, semester, kind, draft }: CohortProps) {
+  const turAdi = DRAFT_KIND_LABELS[kind];
+  const cohortHazir = departmentId !== null && year !== null;
+  // K-73: yayın modunda "i" pop-up'ı için son APPROVED taslağın meta verisi.
+  const [pubInfo, setPubInfo] = useState<ScheduleChange | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (draft || !cohortHazir) { setPubInfo(undefined); return; }
+    let iptal = false;
+    setPubInfo(undefined);
+    api.get<ScheduleChange[]>(
+      `/schedule-changes?limit=1&kind=${kind}&department_id=${departmentId}`
+      + `&year=${year}&semester=${semester}`)
+      .then((liste) => { if (!iptal) setPubInfo(liste[0] ?? null); })
+      .catch(() => { if (!iptal) setPubInfo(null); });
+    return () => { iptal = true; };
+  }, [draft, cohortHazir, departmentId, year, semester, kind]);
+
+  if (draft) {
+    // K-74: cohort adını (draft.name) TEKRAR yazma — seçicilerde zaten var.
+    return (
+      <Group gap={8} wrap="nowrap">
+        <Badge color={DRAFT_STATUS_COLORS[draft.status]} variant="filled" size="sm">
+          {DRAFT_STATUS_LABELS[draft.status]}
+        </Badge>
+        {/* K-74: "yayındaki ... ile aynı" metni kaldırıldı — değişiklik varken
+            yalnız sayaç, yokken hiçbir şey (rozet zaten taslağı belli ediyor). */}
+        {draft.change_count > 0 && (
+          <Text size="sm" c="dimmed">{draft.change_count} değişiklik</Text>
+        )}
+      </Group>
+    );
+  }
+
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Text size="sm" fw={600}>
+        Yayındaki {kind === "EXAM" ? "sınav takvimi" : "program"}
+      </Text>
+      {/* K-73: bu yayını kim düzenledi/onayladı, ne zaman yayınlandı. */}
+      <HoverCard width={280} shadow="md" position="bottom-start" withArrow openDelay={100}>
+        <HoverCard.Target>
+          <ActionIcon variant="subtle" color="gray" size="sm" radius="xl" aria-label="Yayın bilgisi">
+            <IconInfoCircle size={16} />
+          </ActionIcon>
+        </HoverCard.Target>
+        <HoverCard.Dropdown>
+          {pubInfo === undefined ? (
+            <Text size="xs" c="dimmed">Yükleniyor…</Text>
+          ) : pubInfo === null ? (
+            <Text size="xs" c="dimmed">
+              Bu {turAdi} için henüz onaylı bir değişiklik yok. Değişiklik için taslak açın.
+            </Text>
+          ) : (
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed">Yayındaki {turAdi}</Text>
+              <Text size="sm"><b>Düzenleyen:</b> {pubInfo.published_by}</Text>
+              <Text size="sm"><b>Onaylayan:</b> {pubInfo.approved_by ?? "—"}</Text>
+              <Text size="sm">
+                <b>Yayınlanma:</b>{" "}
+                {pubInfo.published_at
+                  ? new Date(pubInfo.published_at).toLocaleString("tr-TR", {
+                      day: "2-digit", month: "long", year: "numeric",
+                      hour: "2-digit", minute: "2-digit" })
+                  : "—"}
+              </Text>
+            </Stack>
+          )}
+        </HoverCard.Dropdown>
+      </HoverCard>
+    </Group>
+  );
+}
+
+
+export type DraftActionsProps = CohortProps & {
   onSelect: (draft: ScheduleDraft | null) => void;
-  /** Taslak açma TEK yerde durur (sayfada): ızgaradaki "yayında, taslağa
-   *  geçilsin mi?" sorusu da aynı işlevi çağırır. */
   onCreate: () => Promise<void>;
-  /** Taslak listesi + ızgara yeniden yüklensin. */
   onChanged: () => void;
-  /** K-25: onaya göndermek türe göre yetki + bölüm üyeliği ister
-   *  (`can_manage_weekly` / `can_manage_exams`, K-60).
-   *  Taslak AÇMAK istemez — özel taslak kimseyi etkilemez (K-59). */
   canSubmit: boolean;
 };
 
-export default function DraftBar({
-  departmentId, year, semester, kind, draft, onSelect, onCreate, onChanged,
-  canSubmit,
-}: DraftBarProps) {
+/** Sağdaki eylem grubu: yayın modunda "Taslak Aç/Dön", taslakta taslak butonları. */
+export function DraftActions({
+  departmentId, year, semester, kind, draft, onSelect, onCreate, onChanged, canSubmit,
+}: DraftActionsProps) {
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
-  /** K-61: bu cohort için AÇIK taslağım (seçili olmasa da). Yayın moduna
-   *  dönüldüğünde de bilinmesi gerekir — yoksa "Taslak Aç" yeniden POST atıp
-   *  409'a çarpar ve kullanıcı kendi taslağına dönemez. */
   const [mevcut, setMevcut] = useState<ScheduleDraft | null>(null);
+  // K-76: "Temizle" artık önce sorar — ortak dersler de silinsin mi?
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearShared, setClearShared] = useState(false);
 
   const cohortHazir = departmentId !== null && year !== null;
   const duzenlenebilir = draft !== null
     && (draft.status === "OPEN" || draft.status === "REJECTED");
-  const turAdi = DRAFT_KIND_LABELS[kind];      // "haftalık program" / "sınav takvimi"
-  const satirAdi = DRAFT_ROW_LABELS[kind];     // "yerleşim" / "sınav"
+  const turAdi = DRAFT_KIND_LABELS[kind];
+  const satirAdi = DRAFT_ROW_LABELS[kind];
 
-  // Yalnız YAYIN modunda ara: taslaktayken zaten hangisinde olduğumuz belli.
   useEffect(() => {
     if (draft || !cohortHazir) { setMevcut(null); return; }
     let iptal = false;
@@ -77,15 +153,11 @@ export default function DraftBar({
   }, [draft, cohortHazir, departmentId, year, semester, kind]);
 
   const hata = (e: unknown, varsayilan: string) =>
-    notifications.show({
-      color: "red", message: e instanceof ApiError ? e.message : varsayilan,
-    });
+    notifications.show({ color: "red", message: e instanceof ApiError ? e.message : varsayilan });
 
   const acTaslak = async () => {
     if (!cohortHazir) return;
-    // Açık taslak varsa YENİSİNİ AÇMA, ona dön. 409 bir kullanıcı hatası
-    // değildi — arayüzün mevcut durumu bilmemesiydi (K-61).
-    if (mevcut) { onSelect(mevcut); return; }
+    if (mevcut) { onSelect(mevcut); return; }   // açık taslak varsa ona dön (K-61)
     setBusy(true);
     try { await onCreate(); } finally { setBusy(false); }
   };
@@ -95,21 +167,17 @@ export default function DraftBar({
     setBusy(true);
     try {
       const r = await api.post<DraftClearResponse>(
-        `/schedule-drafts/${draft.id}/clear`, { include_shared: ortaklarDahil },
-      );
+        `/schedule-drafts/${draft.id}/clear`, { include_shared: ortaklarDahil });
       onChanged();
+      setClearOpen(false);
       notifications.show({
         color: "gray",
         message: `${r.deleted} ${satirAdi} silindi`
           + (r.preserved_shared
-            ? ` · ${r.preserved_shared} ortak ders korundu (silmek için "ortaklar dahil")`
+            ? ` · ${r.preserved_shared} ortak ders korundu`
             : ""),
       });
-    } catch (e) {
-      hata(e, "Temizlenemedi");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { hata(e, "Temizlenemedi"); } finally { setBusy(false); }
   };
 
   const farkiGoster = async () => {
@@ -118,11 +186,7 @@ export default function DraftBar({
     try {
       const r = await api.get<DraftDiff>(`/schedule-drafts/${draft.id}/diff`);
       setDiff(r.items);
-    } catch (e) {
-      hata(e, "Fark alınamadı");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { hata(e, "Fark alınamadı"); } finally { setBusy(false); }
   };
 
   const geriCek = async () => {
@@ -132,175 +196,162 @@ export default function DraftBar({
       const d = await api.post<ScheduleDraft>(`/schedule-drafts/${draft.id}/withdraw`);
       onSelect(d);
       notifications.show({ color: "gray", message: "Talep geri çekildi — taslak yeniden düzenlenebilir" });
-    } catch (e) {
-      hata(e, "Geri çekilemedi");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { hata(e, "Geri çekilemedi"); } finally { setBusy(false); }
   };
 
   const sil = async () => {
     if (!draft) return;
     if (!window.confirm(
-      `"${draft.name}" taslağı silinsin mi? Yayındaki ${turAdi} etkilenmez.`
-    )) return;
+      `"${draft.name}" taslağı silinsin mi? Yayındaki ${turAdi} etkilenmez.`)) return;
     setBusy(true);
     try {
       await api.delete(`/schedule-drafts/${draft.id}`);
       onSelect(null);
       notifications.show({ color: "gray", message: "Taslak silindi" });
-    } catch (e) {
-      hata(e, "Silinemedi");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { hata(e, "Silinemedi"); } finally { setBusy(false); }
   };
 
   return (
     <>
-      <Paper radius="md" px="md" py={8}
-        style={{
-          // Taslaktayken çubuk RENKLENİR: kullanıcının "şu an yayına mı
-          // yazıyorum" sorusunu hiç sormaması gerekir. Ton iki temada ayrı
-          // (scheduleTheme) — koyu temada açık sarı ekranı yırtıyordu.
-          border: `1px solid ${draft ? DRAFT_BORDER : BORDER}`,
-          boxShadow: SHADOW,
-          background: draft ? DRAFT_SURFACE : undefined,
-        }}>
-        <Group justify="space-between" wrap="wrap" gap="sm">
-          <Group gap={10} wrap="nowrap">
-            {draft ? (
-              <>
-                <Badge color={DRAFT_STATUS_COLORS[draft.status]} variant="filled" size="sm">
-                  {DRAFT_STATUS_LABELS[draft.status]}
-                </Badge>
-                <Text size="sm" fw={600}>{draft.name}</Text>
-                <Text size="sm" c="dimmed">
-                  {draft.change_count
-                    ? `${draft.change_count} değişiklik`
-                    : `yayındaki ${turAdi} ile aynı`}
-                </Text>
-              </>
-            ) : (
-              <>
-                <IconLock size={15} style={{ opacity: 0.55 }} />
-                <Text size="sm" fw={600}>
-                  Yayındaki {kind === "EXAM" ? "sınav takvimi" : "program"}
-                </Text>
-                <Text size="sm" c="dimmed">
-                  salt-okunur — değişiklik için taslak açın
-                </Text>
-              </>
-            )}
-          </Group>
+      {!draft && (
+        <Tooltip
+          label={!cohortHazir
+            ? "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"
+            : mevcut
+            ? `Bu cohort için açık taslağınıza döner (${mevcut.change_count} değişiklik)`
+            : `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`}>
+          {/* K-74: buton metninden sayı kaldırıldı — taslakta sayı tutmaya gerek yok. */}
+          <Button size="xs" radius="md" loading={busy} disabled={!cohortHazir}
+            variant={mevcut ? "light" : "filled"}
+            leftSection={mevcut ? <IconPencil size={15} /> : <IconPlus size={15} />}
+            style={{ height: CONTROL_H }} onClick={acTaslak}>
+            {mevcut ? "Taslağa Dön" : "Taslak Aç"}
+          </Button>
+        </Tooltip>
+      )}
 
-          <Group gap={6} wrap="nowrap">
-            {!draft && (
-              <Tooltip
-                label={!cohortHazir
-                  ? "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"
-                  : mevcut
-                  ? `Bu cohort için açık taslağınıza döner (${mevcut.change_count} değişiklik)`
-                  : `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`}>
-                <Button size="xs" radius="md" loading={busy} disabled={!cohortHazir}
-                  variant={mevcut ? "light" : "filled"}
-                  leftSection={mevcut ? <IconPencil size={15} /> : <IconPlus size={15} />}
-                  style={{ height: CONTROL_H }}
-                  onClick={acTaslak}>
-                  {mevcut ? `Taslağa Dön (#${mevcut.id})` : "Taslak Aç"}
-                </Button>
-              </Tooltip>
-            )}
+      {draft && (
+        <>
+          {/* K-74: Farkı Gör ve Temizle yalnız simge (yazılar kaldırıldı). */}
+          <Tooltip label="Farkı Gör">
+            <ActionIcon variant="default" radius="md" loading={busy}
+              style={{ width: CONTROL_H, height: CONTROL_H }}
+              onClick={farkiGoster} aria-label="Farkı Gör">
+              <IconGitCompare size={16} />
+            </ActionIcon>
+          </Tooltip>
 
-            {draft && (
-              <>
-                <Button size="xs" radius="md" variant="default" loading={busy}
-                  leftSection={<IconGitCompare size={15} />} style={{ height: CONTROL_H }}
-                  onClick={farkiGoster}>
-                  Farkı Gör
-                </Button>
+          {duzenlenebilir && (
+            <Tooltip label="Taslağı boşalt">
+              <ActionIcon variant="default" radius="md" loading={busy}
+                style={{ width: CONTROL_H, height: CONTROL_H }}
+                onClick={() => { setClearShared(false); setClearOpen(true); }} aria-label="Temizle">
+                <IconEraser size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
 
-                {duzenlenebilir && (
-                  <>
-                    <Tooltip label="Taslağı boşalt — ortak dersler korunur">
-                      <Button size="xs" radius="md" variant="default" loading={busy}
-                        leftSection={<IconEraser size={15} />} style={{ height: CONTROL_H }}
-                        onClick={() => temizle(false)}>
-                        Temizle
-                      </Button>
-                    </Tooltip>
-                    <Tooltip label={canSubmit
-                      ? "Onay yetkilisi inceleyip yayına alacak"
-                      : `Onaya göndermek için ${kind === "EXAM" ? "sınav" : "haftalık program"}`
-                        + " yetkisi ve bu bölümde üyelik gerekir"}>
-                      <Button size="xs" radius="md" loading={busy}
-                        disabled={!canSubmit || draft.change_count === 0}
-                        leftSection={<IconSend size={15} />} style={{ height: CONTROL_H }}
-                        onClick={() => setSubmitOpen(true)}>
-                        Onaya Gönder
-                      </Button>
-                    </Tooltip>
-                    <Tooltip label="Taslağı sil (yayına etkisi yok)">
-                      <Button size="xs" radius="md" variant="subtle" color="red" loading={busy}
-                        style={{ height: CONTROL_H }} onClick={sil}>
-                        <IconTrash size={15} />
-                      </Button>
-                    </Tooltip>
-                  </>
-                )}
+          {duzenlenebilir && (
+            // K-76: çerçeveli (outline) + kırmızı; tooltip'ten "yayına etkisi yok" çıktı.
+            <Tooltip label="Taslağı sil">
+              <ActionIcon variant="outline" color="red" radius="md" loading={busy}
+                style={{ width: CONTROL_H, height: CONTROL_H }}
+                onClick={sil} aria-label="Taslağı sil">
+                <IconTrash size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
 
-                {draft.status === "PENDING" && (
-                  <Button size="xs" radius="md" variant="default" loading={busy}
-                    leftSection={<IconArrowBackUp size={15} />} style={{ height: CONTROL_H }}
-                    onClick={geriCek}>
-                    Geri Çek
-                  </Button>
-                )}
+          {draft.status === "PENDING" && (
+            <Button size="xs" radius="md" variant="default" loading={busy}
+              leftSection={<IconArrowBackUp size={15} />} style={{ height: CONTROL_H }}
+              onClick={geriCek}>
+              Geri Çek
+            </Button>
+          )}
 
-                <Button size="xs" radius="md" variant="subtle" style={{ height: CONTROL_H }}
-                  onClick={() => onSelect(null)}>
-                  Yayına Dön
-                </Button>
-              </>
-            )}
-          </Group>
-        </Group>
+          {/* K-76: çerçeveli (default) — eskiden subtle çerçevesizdi. */}
+          <Button size="xs" radius="md" variant="default" style={{ height: CONTROL_H }}
+            onClick={() => onSelect(null)}>
+            Yayına Dön
+          </Button>
 
-        {draft?.status === "PENDING" && (
-          <Text size="xs" c="dimmed" mt={6}>
-            Onay bekliyor — inceleme sürerken taslak kilitlidir. Düzenlemek için geri çekin.
-          </Text>
-        )}
-        {draft?.status === "REJECTED" && draft.review_note && (
-          <Alert color="red" variant="light" mt={8} py={6} icon={<IconAlertTriangle size={16} />}>
-            <Text size="sm" fw={600}>
-              Reddedildi{draft.reviewer ? ` — ${draft.reviewer.name}` : ""}
-            </Text>
-            <Text size="sm">{draft.review_note}</Text>
-          </Alert>
-        )}
-      </Paper>
+          {/* K-74: Onaya Gönder — birincil eylem, EN SAĞDA. */}
+          {duzenlenebilir && (
+            <Tooltip label={canSubmit
+              ? "Onay yetkilisi inceleyip yayına alacak"
+              : `Onaya göndermek için ${kind === "EXAM" ? "sınav" : "haftalık program"}`
+                + " yetkisi ve bu bölümde üyelik gerekir"}>
+              <Button size="xs" radius="md" loading={busy}
+                disabled={!canSubmit || draft.change_count === 0}
+                leftSection={<IconSend size={15} />} style={{ height: CONTROL_H }}
+                onClick={() => setSubmitOpen(true)}>
+                Onaya Gönder
+              </Button>
+            </Tooltip>
+          )}
+        </>
+      )}
 
       <DiffModal items={diff} turAdi={turAdi} onClose={() => setDiff(null)} />
       {submitOpen && draft && (
-        <SubmitModal
-          draft={draft}
-          turAdi={turAdi}
+        <SubmitModal draft={draft} turAdi={turAdi}
           onClose={() => setSubmitOpen(false)}
-          onDone={(d) => { setSubmitOpen(false); onSelect(d); }}
-        />
+          onDone={(d) => { setSubmitOpen(false); onSelect(d); }} />
       )}
+
+      {/* K-76: Temizle onayı — ortak dersler de silinsin mi? */}
+      <Modal opened={clearOpen} onClose={() => setClearOpen(false)} radius="md"
+        title="Taslağı boşalt">
+        <Stack gap="sm">
+          <Text size="sm">
+            Taslaktaki tüm {satirAdi}lar silinecek. Yayındaki {turAdi} etkilenmez.
+          </Text>
+          <Checkbox
+            checked={clearShared}
+            onChange={(e) => setClearShared(e.currentTarget.checked)}
+            label="Ortak dersleri de sil"
+            description="Bu cohort'taki ortak (servis) dersler de silinsin — onları alan diğer bölümlerin taslağını da etkileyebilir. İşaretlemezseniz ortak dersler korunur."
+          />
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={() => setClearOpen(false)}>Vazgeç</Button>
+            <Button color="red" loading={busy} onClick={() => temizle(clearShared)}>
+              Boşalt
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   );
 }
 
 
-/** Taslak sahibinin "Farkı Gör" penceresi. Tablo onaylayıcının inceleme
- *  ekranıyla ORTAK (DiffTable) — ikisi ayrı çizilseydi zamanla ayrışırdı. */
+/** Çubuğun altındaki ince bilgi satırı — yalnız PENDING/REJECTED'de görünür. */
+export function DraftNotes({ draft }: { draft: ScheduleDraft | null }) {
+  if (draft?.status === "PENDING") {
+    return (
+      <Text size="xs" c="dimmed">
+        Onay bekliyor — inceleme sürerken taslak kilitlidir. Düzenlemek için geri çekin.
+      </Text>
+    );
+  }
+  if (draft?.status === "REJECTED" && draft.review_note) {
+    return (
+      <Alert color="red" variant="light" py={6} icon={<IconAlertTriangle size={16} />}>
+        <Text size="sm" fw={600}>
+          Reddedildi{draft.reviewer ? ` — ${draft.reviewer.name}` : ""}
+        </Text>
+        <Text size="sm">{draft.review_note}</Text>
+      </Alert>
+    );
+  }
+  return null;
+}
+
+
+/** Taslak sahibinin "Farkı Gör" penceresi (onaylayıcının inceleme ekranıyla ORTAK). */
 function DiffModal({ items, turAdi, onClose }: {
-  items: DraftDiffItem[] | null;
-  turAdi: string;
-  onClose: () => void;
+  items: DraftDiffItem[] | null; turAdi: string; onClose: () => void;
 }) {
   return (
     <Modal opened={items !== null} onClose={onClose} size="lg" radius="md"
@@ -314,9 +365,7 @@ function DiffModal({ items, turAdi, onClose }: {
 /** Onaya gönderme kapısı (K-59). HARD çakışma varsa sunucu 409 döner ve talep
  *  HİÇ oluşmaz — onay kuyruğu baştan bozuk taleplerle dolmasın (K-03 aynen). */
 function SubmitModal({ draft, turAdi, onClose, onDone }: {
-  draft: ScheduleDraft;
-  turAdi: string;
-  onClose: () => void;
+  draft: ScheduleDraft; turAdi: string; onClose: () => void;
   onDone: (d: ScheduleDraft) => void;
 }) {
   const [note, setNote] = useState("");
@@ -328,30 +377,22 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
     setBlockers(null);
     try {
       const r = await api.post<{ draft: ScheduleDraft; warnings: ConflictResult[] }>(
-        `/schedule-drafts/${draft.id}/submit`, { note: note.trim() || null },
-      );
+        `/schedule-drafts/${draft.id}/submit`, { note: note.trim() || null });
       notifications.show({
-        color: "green",
-        title: "Onaya gönderildi",
+        color: "green", title: "Onaya gönderildi",
         message: r.warnings.length
           ? `${r.warnings.length} uyarı var ama engellemiyor — onaylayıcı görecek`
           : "Bir onay yetkilisi inceleyip yayına alacak",
       });
       onDone(r.draft);
     } catch (err) {
-      // 409 gövdesi {detail, conflicts} taşır — listeyi modalda açık bırakırız
-      // ki kullanıcı neyi düzelteceğini görsün, düzeltip tekrar denesin.
       if (err instanceof ApiError && err.status === 409) {
         const body = err.body as { conflicts?: ConflictResult[] } | null;
         if (body?.conflicts?.length) { setBlockers(body.conflicts); return; }
       }
       notifications.show({
-        color: "red",
-        message: err instanceof ApiError ? err.message : "Gönderilemedi",
-      });
-    } finally {
-      setBusy(false);
-    }
+        color: "red", message: err instanceof ApiError ? err.message : "Gönderilemedi" });
+    } finally { setBusy(false); }
   };
 
   return (

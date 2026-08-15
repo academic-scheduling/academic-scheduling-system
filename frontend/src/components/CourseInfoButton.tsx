@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ActionIcon, Anchor, Badge, Group, Popover, Stack, Text } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
@@ -27,6 +28,13 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
     .filter((s) => s.active)
     .sort((a, b) => a.section_no - b.section_no);
 
+  // K-76: pop-up artık HOVER'da da açılır (yalnız tıklama değil). Tıklama SABİTLER
+  // (pinned) — sabitken fareyi çekince kapanmaz, böylece içindeki bağlantıya
+  // gidilebilir. Hover'la açıldıysa fareyi çekince kapanır. Başka bir "i" açılınca
+  // (opened dışarıdan false olur) sabitleme sıfırlanır.
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => { if (!opened) setPinned(false); }, [opened]);
+
   return (
     <Popover width={280} position="right-start" withArrow shadow="md" withinPortal
       opened={opened} onChange={onOpenChange}>
@@ -37,10 +45,17 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
           draggable={false}
           onMouseDown={(e) => e.stopPropagation()}
           onDragStart={(e) => e.preventDefault()}
+          onMouseEnter={() => { if (!pinned) onOpenChange(true); }}
+          onMouseLeave={() => { if (!pinned) onOpenChange(false); }}
           // Kontrollü modda Popover.Target kendiliğinden açılmaz; toggle'ı biz
-          // yaparız. stopPropagation da kartın kendi tıklama/sürükleme davranışını
-          // engeller.
-          onClick={(e) => { e.stopPropagation(); onOpenChange(!opened); }}
+          // yaparız. Tıklama sabitler/çözer. stopPropagation kartın kendi
+          // tıklama/sürükleme davranışını engeller.
+          onClick={(e) => {
+            e.stopPropagation();
+            const willOpen = !opened || !pinned;
+            setPinned(willOpen);
+            onOpenChange(willOpen);
+          }}
         >
           <IconInfoCircle size={15} />
         </ActionIcon>

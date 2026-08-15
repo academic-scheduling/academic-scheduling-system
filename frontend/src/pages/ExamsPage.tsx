@@ -19,16 +19,16 @@ import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
-import ChangeFeed from "../components/ChangeFeed";
-import DraftBar from "../components/DraftBar";
+import { DraftStatus, DraftActions, DraftNotes } from "../components/DraftBar";
 import ExportMenu from "../components/ExportMenu";
+import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
 import { CourseInfoButton, type CourseInfoExam } from "../components/CourseInfoButton";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  EXAM_HOUR_H, GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
   PAGE_SURFACE, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
-  paletteItemStyle,
+  WEEKLY_ROW_H, paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
@@ -42,10 +42,16 @@ import type {
    Burada yalnız bu ekrana özel olan dakika ölçeği tanımlanır. */
 const DAY_START = 8 * 60;        // 08:00
 const DAY_END = 21 * 60;         // 21:00 — akşam sınavları da sığsın
-const HOUR_H = EXAM_HOUR_H;      // bir saatin piksel yüksekliği
+// K-76: bir saat artık haftalık slotla AYNI yükseklikte (91px). Eskiden 63px'ti
+// (13 saati weekly yüksekliğine sıkıştırmak için); "yarım slot" gibi duruyordu.
+// Grid böylece uzuyor → aşağıda weekly boyuna sabitlenip fazlası scroll edilir.
+const HOUR_H = WEEKLY_ROW_H;     // bir saatin piksel yüksekliği
 const PX = HOUR_H / 60;          // dakika başına piksel
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 },
   (_, i) => DAY_START + i * 60);
+// K-76: gridin görünür yüksekliği = haftalık program gridiyle aynı (9 slot).
+// Kalan saatler (akşam) dikey scroll ile görünür.
+const VISIBLE_H = HEAD_H + WEEKLY_ROW_H * 9;
 
 const toMin = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -534,6 +540,7 @@ export default function ExamsPage() {
         kind: "EXAM",
       });
       setDraft(d);
+      writeScheduleMode("exam-mode", dep, year, sem, d.id);   // K-73
       notifications.show({
         color: "green",
         message: `Taslak açıldı — yayındaki sınav takviminin kopyası (${d.entry_count} sınav). `
@@ -546,20 +553,6 @@ export default function ExamsPage() {
       });
       return null;
     }
-  };
-
-  /** Yayın modunda bir sınava dokunulduğunda sorulur (haftalıktaki eşi). */
-  const askSwitchToDraft = () => {
-    if (!dep || year === COMMON_YEAR) return;
-    if (!window.confirm(
-      [
-        "Bu sınav takvimi YAYINDA ve doğrudan değiştirilemez.",
-        "",
-        "Yayındaki takvimin bir kopyasıyla taslak açılsın mı?",
-        "Değişiklikleriniz yalnız size görünür; onaylandığında yayına geçer.",
-      ].join("\n"),
-    )) return;
-    void createDraft();
   };
 
   /** Taslak sayaçlarını (change_count) tazeler: takvimde bir şey değiştiğinde
@@ -586,11 +579,17 @@ export default function ExamsPage() {
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan sınavı ekrandan kaçırır. Bayrak tek seferliktir.
     if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
+    // K-73: en son YAYINDA bıraktıysam taslağa atlama; tercih belirli taslaksa onu seç.
+    const pref = readScheduleMode("exam-mode", dep, year, sem);
+    if (pref === "pub") return;
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
-        const eslesen = liste.find((d) => d.kind === "EXAM"
+        const cohortDrafts = liste.filter((d) => d.kind === "EXAM"
           && String(d.department_id) === dep
           && String(d.year) === year && d.semester === sem);
+        const eslesen = typeof pref === "number"
+          ? cohortDrafts.find((d) => d.id === pref)
+          : cohortDrafts[0];
         if (eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
@@ -618,33 +617,38 @@ export default function ExamsPage() {
 
   return (
     <Stack gap="lg">
-      {/* Tek yatay araç çubuğu: solda başlık, ortada mercek (bölüm/sınıf/dönem),
-          sağda hafta gezinme + yayınlama. Üç bölüm tek bir kabuk içinde durur —
-          iki ayrı çerçeve, aralarındaki boşluğu gereksiz bir sınır gibi
-          gösteriyordu. */}
+      {/* K-74: TEK araç çubuğu — eski ayrı "mod çubuğu" buraya gömüldü.
+          Sol: başlık + cohort + durum. Sağ: hafta gezinme + taslak eylemleri +
+          (yayında) Dışa Aktar + (taslakta) Geri Al. Taslaktayken bar renklenir. */}
+      {/* K-76: taslakta bar RENK DEĞİŞTİRMEZ (TASLAK rozeti zaten belli ediyor). */}
       <Paper radius="md" px="md" py={10}
         style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
-            Sınav Takvimi
-          </Title>
-
-          <Group gap={8} align="center" wrap="wrap">
-            <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-            <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
-                ...["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
-            <Select size="xs" w={104} radius="md" value={sem}
-              onChange={(v) => v && setSem(v as SemesterType)}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                value: s, label: SEMESTER_LABELS[s] }))} />
+          <Group gap="md" align="center" wrap="wrap">
+            <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
+              Sınav Takvimi
+            </Title>
+            <Group gap={8} align="center" wrap="wrap">
+              <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+              <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
+                  ...["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
+              <Select size="xs" w={104} radius="md" value={sem}
+                onChange={(v) => v && setSem(v as SemesterType)}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
+                  value: s, label: SEMESTER_LABELS[s] }))} />
+            </Group>
+            <DraftStatus
+              departmentId={dep ? Number(dep) : null}
+              year={year === COMMON_YEAR ? null : Number(year)}
+              semester={sem} kind="EXAM" draft={draft} />
           </Group>
 
-          <Group gap={6} align="center" wrap="nowrap">
+          <Group gap={6} align="center" wrap="wrap">
             <ActionIcon variant="default" radius="md" color="gray"
               style={{ width: CONTROL_H, height: CONTROL_H, borderColor: BORDER }}
               onClick={() => gitHafta(-1)} aria-label="Önceki hafta">
@@ -672,50 +676,44 @@ export default function ExamsPage() {
               onClick={() => setWeek(new Date())}>
               Bu Hafta
             </Button>
-            {/* Sınav programı resmi formatta (K-09): Vize / Final+Bütünleme ayrı
-                sayfa düzeni — bu yüzden xlsx/csv değil, iki anlamlı seçenek.
-                Diğer sayfalarla aynı ExportMenu bileşeni: tetikleyici her yerde
-                birebir aynı görünür. */}
+            {/* K-76: Geri Al yalnız simge (yazı kaldırıldı); sayı tooltip'te. */}
             {canWrite && (
-              <Tooltip label="Son taslak değişikliğini geri al">
-                <Button variant="default" size="xs" radius="md"
-                  leftSection={<IconArrowBackUp size={15} />}
-                  disabled={undoCount === 0 || undoBusy}
-                  loading={undoBusy}
-                  style={{ height: CONTROL_H, borderColor: BORDER }}
-                  onClick={handleUndo}>
-                  Geri Al{undoCount ? ` (${undoCount})` : ""}
-                </Button>
+              <Tooltip label={`Son taslak değişikliğini geri al${undoCount ? ` (${undoCount})` : ""}`}>
+                <ActionIcon variant="default" radius="md"
+                  style={{ width: CONTROL_H, height: CONTROL_H, borderColor: BORDER }}
+                  disabled={undoCount === 0 || undoBusy} loading={undoBusy}
+                  onClick={handleUndo} aria-label="Geri Al">
+                  <IconArrowBackUp size={16} />
+                </ActionIcon>
               </Tooltip>
             )}
-            <ExportMenu disabled={!dep} items={[
-              { label: "Vize Programı (Excel)", path: examExportPath("midterm") },
-              { label: "Final + Bütünleme (Excel)", path: examExportPath("final") },
-            ]} />
-            {/* K-60: eski "Yayınla" düğmesi KALKTI. Yayına giden tek yol onay;
-                düğmeyi bırakmak, onay adımını atlamanın bir yolunu bırakmak
-                olurdu (haftalıkta K-59'da aynı gerekçeyle kaldırılmıştı). */}
+            {/* K-76: taslak eylemleri; taslakta Onaya Gönder en sağda. */}
+            <DraftActions
+              departmentId={dep ? Number(dep) : null}
+              year={year === COMMON_YEAR ? null : Number(year)}
+              semester={sem} kind="EXAM" draft={draft} canSubmit={canSubmitDraft}
+              onSelect={(d) => {
+                setDraft(d);
+                if (dep && year !== COMMON_YEAR) {
+                  writeScheduleMode("exam-mode", dep, year, sem, d ? d.id : "pub");
+                }
+              }}
+              onCreate={async () => { await createDraft(); }}
+              onChanged={() => { load(); refreshDraft(); }}
+            />
+            {/* K-76: Dışa Aktar EN SAĞDA (yalnız yayında). */}
+            {!draft && (
+              <ExportMenu disabled={!dep} items={[
+                { label: "Vize Programı (Excel)", path: examExportPath("midterm") },
+                { label: "Final + Bütünleme (Excel)", path: examExportPath("final") },
+              ]} />
+            )}
           </Group>
         </Group>
       </Paper>
 
-      {/* Mod çubuğu: "yayına mı yazıyorum, taslağa mı" sorusunun cevabı
-          takvimin hemen üstünde durmalı — taslaktayken renklenir. */}
-      <DraftBar
-        departmentId={dep ? Number(dep) : null}
-        year={year === COMMON_YEAR ? null : Number(year)}
-        semester={sem}
-        kind="EXAM"
-        draft={draft}
-        canSubmit={canSubmitDraft}
-        onSelect={(d) => setDraft(d)}
-        onCreate={async () => { await createDraft(); }}
-        onChanged={() => { load(); refreshDraft(); }}
-      />
-
-      {/* Yalnız YAYIN modunda: taslaktayken kullanıcı kendi işine bakıyor,
-          arka plandaki yayın hareketleri o an gürültü olur (K-59 gerekçesi). */}
-      {!draft && <ChangeFeed limit={3} />}
+      {/* K-74: PENDING/REJECTED bilgi satırı barın altında (yalnız o durumlarda). */}
+      <DraftNotes draft={draft} />
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
 
@@ -725,14 +723,16 @@ export default function ExamsPage() {
             tek bir yüzeye yapışıyor ve gözün dinlendiği bir sınır kalmıyordu. */}
         <Paper p="sm" radius="md" w={SIDE_W}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-                   height: HEAD_H + HOUR_H * (HOURS.length - 1) + 32,
+                   // K-76: sol panel yüksekliği grid'in GÖRÜNÜR yüksekliğiyle eşit.
+                   height: VISIBLE_H + 32,
                    background: SIDEBAR_BG, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
           <TextInput size="xs" mb={10} radius="md" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
                                borderColor: BORDER, background: PAGE_SURFACE } }}
             placeholder="Ders ara" />
-          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+          {/* K-74: offsetScrollbars kaldırıldı — kartlar arama kutusuyla aynı genişlik. */}
+          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
             <Stack gap={6}>
               {paletDersler.length === 0 && (
                 <Text size="xs" c="dimmed" px={4}>Bu sınıfta ders yok.</Text>
@@ -755,9 +755,11 @@ export default function ExamsPage() {
           </ScrollArea>
         </Paper>
 
-        {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen */}
+        {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen.
+            K-76: görünür yükseklik weekly gridiyle eşit; akşam saatleri dikey
+            scroll ile açılır (p="md" → +32 dolgu payı). */}
         <Paper ref={examGridRef} p="md" radius="md"
-          style={{ flex: 1, minWidth: 0, overflowX: "auto",
+          style={{ flex: 1, minWidth: 0, overflow: "auto", maxHeight: VISIBLE_H + 32,
                    background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
                    boxShadow: SHADOW }}>
           {loading ? (
@@ -836,7 +838,9 @@ export default function ExamsPage() {
                       }}
                       onMouseLeave={() => setHoverCell(null)}
                       onClick={(ev) => {
-                        if (!canWrite) { if (!draft) askSwitchToDraft(); return; }
+                        // K-75: yayın modunda tıklama bir şey yapmaz — taslak
+                        // yalnız üstteki bardan açılır.
+                        if (!canWrite) return;
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                         const dk = DAY_START + Math.floor(y / PX / 30) * 30;
                         setPlacing({ date: gun, min: dk });
@@ -904,7 +908,7 @@ export default function ExamsPage() {
                           }}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
                           onDragEnd={() => setDrag(null)}
-                          onEdit={() => (canWrite ? setEditing(e) : askSwitchToDraft())}
+                          onEdit={() => { if (canWrite) setEditing(e); }}
                           onDelete={() => sil(e)} />
                       ))}
                     </div>
@@ -914,13 +918,6 @@ export default function ExamsPage() {
             </div>
           )}
         </Paper>
-      </Group>
-
-      <Group gap="lg" style={{ fontSize: 11, color: TEXT_MUTED }}>
-        <Legend label="Yayınlanmış" color={ACCENT.normal} />
-        <Legend label="Taslak" color={ACCENT.draft} />
-        <Legend label="Uyarı" color={ACCENT.warn} />
-        <Legend label="Çakışma" color={ACCENT.hard} />
       </Group>
 
       <Paper ref={conflictsRef} p="md" radius="md"
@@ -1136,15 +1133,6 @@ function WeekPicker({ weekStart, examDates, onPick }: {
         })}
       </Stack>
     </Stack>
-  );
-}
-
-function Legend({ label, color }: { label: string; color: string }) {
-  return (
-    <Group gap={6} wrap="nowrap">
-      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: color }} />
-      <span>{label}</span>
-    </Group>
   );
 }
 

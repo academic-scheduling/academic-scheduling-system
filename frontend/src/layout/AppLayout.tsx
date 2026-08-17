@@ -31,11 +31,12 @@ import {
   IconSun,
   IconUsers,
   type IconProps,
-  IconChecklist,
-  IconFileStack,
+  IconInbox,
 } from "@tabler/icons-react";
 import { useEffect, useState, type ComponentType } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { api } from "../api/client";
+import type { ScheduleDraft } from "../api/types";
 
 type MenuItem = {
   label: string;
@@ -57,11 +58,9 @@ const MENU: MenuItem[] = [
   { label: "Öğretim Üyeleri", path: "/lecturers", icon: IconUsers },
   { label: "Haftalık Program", path: "/weekly", icon: IconCalendarWeek },
   { label: "Sınavlar", path: "/exams", icon: IconPencil },
-  // K-61: hazırlayan tarafın kuyruğu — "Onay Bekleyenler"in eşi. Yetki
-  // istemez: taslak açmak da istemiyor (K-59), liste yalnız kendi
-  // taslaklarını gösterir.
-  { label: "Taslaklarım", path: "/drafts", icon: IconFileStack },
-  { label: "Onay Bekleyenler", path: "/approvals", icon: IconChecklist, approverOnly: true },
+  // K-77: "Taslaklarım" + "Onay Bekleyenler" tek "Yayın Merkezi"nde birleşti.
+  // Herkeste görünür (herkesin taslağı olabilir); rozet bekleyen sayısını verir.
+  { label: "Yayın Merkezi", path: "/publishing", icon: IconInbox },
   { label: "Çakışma Raporu", path: "/conflicts", icon: IconAlertTriangle },
 ];
 
@@ -79,6 +78,7 @@ export default function AppLayout() {
     defaultValue: false,
   });
   const { pathname } = useLocation();
+  const pending = usePendingCount(pathname);
 
   // Menüde gizlemek GÜVENLİK DEĞİLDİR — otorite backend'de (403).
   // Buradaki filtre yalnız kullanıcıyı çalışmayacak bir sayfaya sokmamak için.
@@ -136,12 +136,17 @@ export default function AppLayout() {
           {items.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.path;
+            // K-77: Yayın Merkezi'nde bekleyen onay sayısı rozeti.
+            const badge = item.path === "/publishing" && pending > 0
+              ? <Badge size="sm" circle variant="filled" color="blue">{pending}</Badge>
+              : undefined;
             const link = (
               <NavLink
                 component={Link}
                 to={item.path}
                 label={collapsed ? undefined : item.label}
                 leftSection={<Icon size={20} stroke={1.5} />}
+                rightSection={!collapsed ? badge : undefined}
                 active={active}
                 // Daraltılmışken ikonu ortala, boş etiket alanını gizle.
                 styles={
@@ -230,6 +235,31 @@ export default function AppLayout() {
       </AppShell.Main>
     </AppShell>
   );
+}
+
+/** K-77: sol menüdeki Yayın Merkezi rozeti — bekleyen onay sayısı.
+ *
+ *  Onaylayıcıda kapsamındaki tüm kuyruk (`/schedule-approvals`), değilse yalnız
+ *  kendi bekleyen taleplerim (K-59 gizliliği — sayfayla aynı kaynak). Sayfada bir
+ *  karar verilince `publishing:refresh` olayıyla, gezinince pathname ile tazelenir. */
+function usePendingCount(pathname: string): number {
+  const { user } = useAuth();
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    let cancel = false;
+    const fetchCount = () => {
+      const p = user.can_approve_schedule
+        ? api.get<ScheduleDraft[]>("/schedule-approvals").then((q) => q.length)
+        : api.get<ScheduleDraft[]>("/schedule-drafts")
+            .then((d) => d.filter((x) => x.status === "PENDING").length);
+      p.then((n) => { if (!cancel) setCount(n); }).catch(() => { /* rozet ikincil */ });
+    };
+    fetchCount();
+    window.addEventListener("publishing:refresh", fetchCount);
+    return () => { cancel = true; window.removeEventListener("publishing:refresh", fetchCount); };
+  }, [user, pathname]);
+  return count;
 }
 
 /** GEÇİCİ TANI (kaldırılacak): oturum boşta-uyarısına kaç dk:sn kaldığını gösterir.

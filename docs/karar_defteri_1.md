@@ -2781,3 +2781,75 @@ kapanır. Başka "i" açılınca sabitleme sıfırlanır.
 **Doğrulama (tarayıcı):** Bar (Dışa Aktar sağda, Geri Al simge, ton yok, çerçeveler),
 Temizle modalı (ortak ders onayı), sınav gridi (91px satır + dikey scroll ile 17:00+),
 hover "i" — hepsi teyit. tsc + vite build temiz (frontend-only).
+
+## K-77 · Yayın Merkezi: Taslaklarım + Onay Bekleyenler tek master-detail sayfada [S+E]
+Kullanıcı (design import): iki sayfa birleşsin, tek "Yayın Merkezi" olsun. Design
+solda durum-gruplu kuyruk, sağda seçili kaydın tam incelemesi + kararı gösteriyor.
+
+**Neden birleşti.** DraftsPage ("kendi kuyruğum") ile ApprovalsPage ("onay
+kuyruğu") aynı yaşam döngüsünün (OPEN→PENDING→APPROVED|REJECTED) iki ucuydu;
+kullanıcı ikisi arasında gidip geliyordu. Artık tek ekran, tek zihinsel model.
+Sol menüde iki öğe (Taslaklarım + Onay Bekleyenler) tek **Yayın Merkezi**'ne indi
+(IconInbox); yeni bir liste ucu değil, iki mevcut ucun master-detail birleşimi.
+
+**Görünürlük K-59 gizliliğine SADIK (kullanıcı kararı — mock'un birleşik havuzu
+DEĞİL).** Design herkesin taslağını tek havuzda gösteriyordu; backend ise OPEN/
+REJECTED/APPROVED taslakları yalnız sahibine, PENDING'i kapsamdaki onaylayıcıya
+açıyor. İki seçenek sunuldu (gizliliğe sadık kal / yeni birleşik uç); kullanıcı
+gizliliği seçti. Sonuç asimetrik ama dürüst:
+- **Taslaklar/Reddedilenler/Yayında** = yalnız BENİM (`/schedule-drafts?
+  include_history=true`).
+- **Onay bekleyenler** = onaylayıcıysam kapsam kuyruğu (`/schedule-approvals`),
+  değilsem kendi PENDING'lerim (myDrafts süzgeci). Tek kaynak → mükerrer yok.
+  (Kendi PENDING'im onaylayıcıda daima kuyrukta görünür: submit bölüm üyeliği
+  ister, admin tüm workgroup'u görür → "görünmez pending" oluşmaz.)
+
+**Detay paneli — kayda göre kaynak + GERÇEK eylem modeli.** Design'ın "admin→
+onayla / diğer→gönder" basitleştirmesi yerine duruma göre:
+- İncelenebilir PENDING (onaylayıcı) → `/schedule-approvals/{id}` (fark + ızgara/
+  liste + çakışma + bayatlık). Başkasınınsa **Onayla ve yayınla** (hard'da kilitli)
+  + **Reddet**; kendiminse **Geri çek** + "kendi talebinizi onaylayamazsınız".
+- Kendi taslağım (OPEN/REJECTED/PENDING) → `/schedule-drafts/{id}` diff+conflicts+
+  entries/exams. OPEN/REJECTED: **Onaya gönder** (opsiyonel not modalı) + **Programda
+  düzenle** + **Sil**; PENDING: **Geri çek**.
+- **APPROVED özel:** satırlar yayına geçip silindiği için canlı fark/ızgara YOK;
+  yeşil "Bu değişiklik yayında" + `applied_summary` gösterilir, footer salt-okunur
+  (yalnız Programda gör). Adım çubuğu (Taslak→Onayda→Yayında) duruma göre dolar.
+
+**v1 sadeleştirme (kullanıcı kararı).** Design'ın kart-başı çakışma çipleri, "Engelli
+önce" sıralaması ve "Temizleri onayla" toplu onayı liste uçlarında çakışma sayısı
+gerektiriyor (kart başına tarama). v1'de yok: çakışma yalnız detay panelinde (zaten
+orada taranıyor). Toplu onay sonraki tura.
+
+**Revizyon (aynı tur, kullanıcı geri bildirimi): sol panel Bölümler kabuğu +
+sıralama seçici kaldırıldı (gruplar KALDI).** İlk sürümde sol panel dört durum
+grubu (sayaçlı düğmeler) + bir sıralama seçicisi (En yeni / Bölüme göre)
+taşıyordu. Kullanıcı: (a) sol taraf **Bölümler ekranındaki gibi** olsun — design
+zaten öyle; (b) "kategorileme"den kastı yalnız SIRALAMAYDI → sıralama seçicisi
+kalksın, grup içinde daima en yeni önce. Dört durum grubu KORUNDU.
+- **Yalnız sıralama seçicisi SİLİNDİ.** Grup içi liste daima `ts` (submitted ??
+  created) azalan. Grup havuzu ilk tasarımdaki gibi: PENDING onaylayıcıda kuyruktan
+  (`/schedule-approvals`), OPEN/REJECTED/APPROVED "benim taslaklarım"dan — her grup
+  tek kaynak, tekilleştirmeye gerek yok.
+- Sol panel Bölümler kabuğuna geçti: `Grid columns={100}` (sol 26 / sağ 74),
+  `Title order={4}`, dört grup düğmesi (leftSection ikon + rightSection sayaç,
+  seçili olan `variant=light` grup renginde), "Ara" `TextInput`, `ScrollArea.Autosize
+  mah="calc(100vh - 220px)"`, kartlar `UnstyledButton` + `.pub-card` (DepartmentsPage
+  `.dept-card`'ının aynısı: hover yükselme, seçilide sol mavi kenar + blue-light
+  zemin). Sağ panel de sabit-yükseklik/iç-kaydırma yerine sayfa akışına döndü;
+  eylem çubuğu içeriğin sonunda ince bir ayraçla durur.
+- Karttaki durum rozeti korundu (design'da da var; grup zaten durumu söylese de
+  design bütünlüğü için bırakıldı).
+
+**Program önizleme yeniden kullanımı.** ApprovalsPage'e gömülü `ProposedGrid` +
+`ProposedExamList` ortak `components/ProposedSchedule.tsx`'e taşındı (tek kaynak).
+DiffTable'ın `placementText`/`examPlacementText`'i değişiklik listesinde kullanıldı.
+Eski iki sayfa silindi; `/drafts` ve `/approvals` query'yi koruyarak `/publishing`'e
+yönlenir (derin bağlantılar kırılmaz). Menü rozeti (bekleyen sayısı) AppLayout'ta
+canlı: onaylayıcıda kuyruk, değilse kendi PENDING'i; `publishing:refresh` olayıyla
+karar sonrası tazelenir.
+
+**Doğrulama (tarayıcı):** Dört grup (sayaçlar 0/5/1/3), OPEN detayı (stat hücreleri
+DEĞİŞİKLİK/ENGEL/UYARI/DÖNEM + program ızgarası + W9 çakışma kartları + gönderen/
+karar + 3 butonlu footer), REJECTED (adım notu "düzeltip yeniden gönderilebilir"),
+APPROVED (applied_summary özeti + salt-okunur footer) teyit. tsc + vite build temiz.

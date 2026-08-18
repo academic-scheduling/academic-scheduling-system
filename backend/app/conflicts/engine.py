@@ -103,6 +103,18 @@ def w7_capacity(a):
     if a["expected_students"] > a["capacity"]:
         return {"rule_id": "W7", "severity": "WARNING"}
     return None
+
+
+def w9_missing_classroom(a):
+    """K-70: yüz yüze bir oturuma derslik atanmamışsa → WARNING.
+
+    Tekil kural (W6/W7 gibi). Online (SYNC/ASYNC) girişler tasarımca
+    dersliksizdir (K-10/K-23) — bir eksiklik değildir, o yüzden yalnız
+    FACE_TO_FACE'te boş derslik uyarı üretir. delivery_mode taşımayan eski/
+    minimal dict'ler için de sessiz kalır (yanlış uyarı yağdırmamak için)."""
+    if a.get("delivery_mode") == "FACE_TO_FACE" and a["classroom_id"] is None:
+        return {"rule_id": "W9", "severity": "WARNING"}
+    return None
   
 
 def courses_conflict(sections_a, sections_b):
@@ -135,6 +147,27 @@ def effective_cohorts(entry):
         "year": entry.get("year"),
         "semester": entry.get("semester"),
     }]
+
+
+def same_semester(a, b):
+    """K-70: iki nesne aynı döneme mi ait? Dönem değerlerinin EŞİTLİĞİNE bakar —
+    hiçbir dönem adı (FALL/SPRING veya ileride eklenecek herhangi biri) gömülü
+    DEĞİLDİR; "farklı dönem = ayrı" kuralı geneldir.
+
+    Neden gerekli: farklı dönemin HAFTALIK dersleri/oturumları takvimde farklı
+    haftalarda tekrar eder, asla aynı fiziksel anda olmaz. Kaynak kuralları
+    (W1/W2/W5) ve çapraz kural (X1/X3) yalnız gün+saat kesişimine bakıp dönemi
+    görmez; bu kapı olmadan bir dönemde A101-Pzt-1.slot, başka dönemde aynı
+    derslik/saat sahte bir W1 (veya sınav×ders'te sahte X1) üretir.
+
+    Nerede KULLANILMAZ: sınav×sınav (E1–E4). Sınav somut tarih taşır, tekrar
+    etmez; kesişim zaten aynı `exam_date` şartına bağlıdır ve bir takvim günü tek
+    döneme aittir -> dönem ayrımı orada gereksizdir (orchestrator'da uygulanmaz).
+    Cohort kuralları (W3/W4/E4/X2) dönemi zaten cohort anahtarında taşır.
+
+    `semester` taşımayan minimal dict'lerde iki taraf da None → eşit sayılır
+    (geriye uyumlu)."""
+    return a.get("semester") == b.get("semester")
 
 
 def _cohort_key(c):
@@ -236,6 +269,16 @@ def e5a_missing_exam_capacity(a):
         return None
     if any(room["exam_capacity"] is None for room in a["rooms"]):
         return {"rule_id": "E5a", "severity": "WARNING"}
+    return None
+
+
+def e8_missing_classroom(a):
+    """K-70: sınava hiç derslik seçilmemişse → WARNING. Tekil kural (E5/E5a/E6
+    gibi). Sınavın online kavramı yoktur; dersliksiz her sınav uyarılır. E5/E5a/E7
+    dersliksiz sınavda sessizce atlar (kontenjan hesaplayacak oda yok); E8 tam o
+    boşluğu yakalayıp 'derslik ekle' der."""
+    if not a["rooms"]:
+        return {"rule_id": "E8", "severity": "WARNING"}
     return None
 
 

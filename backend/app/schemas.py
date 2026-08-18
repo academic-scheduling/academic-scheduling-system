@@ -1,9 +1,10 @@
 from datetime import date, datetime, time
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models import UserRole, UserStatus, SemesterType
-from app.models import EntryStatus, ExamType, DeliveryMode, SessionType, RoomType
+from app.models import ExamType, DeliveryMode, SessionType, RoomType
+from app.models import DraftKind, DraftStatus
 
 class LoginRequest(BaseModel):
     email: str
@@ -19,6 +20,7 @@ class UserPublic(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59: taslağı yayına alma
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
@@ -36,6 +38,9 @@ class UserPublic(BaseModel):
             self.can_manage_exams = True
             self.can_manage_classrooms = True
             self.can_manage_lecturers = True
+            # K-59: ADMIN bayraktan muaftır (başkasının talebini onaylayabilir).
+            # ÖZ-ONAY yasağından muaf DEĞİLDİR — onu sunucu ayrıca denetler.
+            self.can_approve_schedule = True
         return self
 
 class TokenResponse(BaseModel):
@@ -56,6 +61,8 @@ class InviteRequest(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59
+
 
 class InviteResponse(BaseModel):
     id: int
@@ -123,6 +130,7 @@ class UserUpdate(BaseModel):
     can_manage_exams: bool | None = None
     can_manage_classrooms: bool | None = None
     can_manage_lecturers: bool | None = None
+    can_approve_schedule: bool | None = None      # K-59
 
 
 class UserListItem(BaseModel):
@@ -137,6 +145,7 @@ class UserListItem(BaseModel):
     can_manage_exams: bool = False
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
+    can_approve_schedule: bool = False      # K-59
     model_config = ConfigDict(from_attributes=True)
 
 # --- Bölümler (WP2) ---
@@ -173,6 +182,7 @@ class LecturerCreate(BaseModel):
     # Asli bölüm. API'de opsiyonel (import ve eski akışlar bölümsüz kayıt
     # üretebilir); ekleme formu zorunlu tutar.
     department_id: int | None = None
+    detail_url: str | None = None             # K-71: akademik personel sayfası (opsiyonel)
 
 class LecturerUpdate(BaseModel):
     full_name: str | None = None
@@ -181,6 +191,7 @@ class LecturerUpdate(BaseModel):
     is_external: bool | None = None
     active: bool | None = None
     department_id: int | None = None
+    detail_url: str | None = None             # K-71
 
 class LecturerOut(BaseModel):
     id: int
@@ -193,6 +204,7 @@ class LecturerOut(BaseModel):
     department_id: int | None = None          # asli bölüm (frontend ad'a kendi eşler)
     duty_unit: str | None = None              # K-50: Görev Birimi (web import)
     cadre_unit: str | None = None             # K-50: Kadro Birimi (web import)
+    detail_url: str | None = None             # K-71: akademik personel sayfası linki
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -206,23 +218,41 @@ class ImportRow(BaseModel):
     duty_unit: str | None = None
     cadre_unit: str | None = None
     email: str | None = None
-    department_id: int | None = None          # görev biriminden eşlenen bölüm
+    department_id: int | None = None          # K-72: KADRO biriminden eşlenen bölüm
     department_label: str | None = None        # "CENG — Bilgisayar Müh." veya None
     detail_url: str
+    # K-72: kadro birimi bir bölüme eşleşmezse kullanıcı satırı elle çözer —
+    # ya bir bölüm seçer (department_id doldurulur) ya da 40/a işaretler
+    # (is_external=True, bölümsüz dış görevli). Bölümsüz VE 40/a değilse eklenmez.
+    is_external: bool = False
+
+class ImportUpdateRow(BaseModel):
+    """K-72: sistemde ZATEN olan ama eksik bilgisi (detay sayfası / e-posta)
+    siteden doldurulabilen kayıt. Önizleme üretir, commit uygular — yalnız NULL
+    alanları doldurur, var olanı ezmez."""
+    id: int
+    full_name: str
+    normalized_name: str
+    detail_url: str | None = None              # doldurulacak yeni detay linki (varsa)
+    email: str | None = None                   # doldurulacak yeni e-posta (varsa)
+    missing: list[str] = []                    # ["detay sayfası", "e-posta"] — UI etiketi
 
 class ImportPreviewOut(BaseModel):
     """`POST /lecturers/import/preview` cevabı — hiçbir şey yazılmaz."""
     new: list[ImportRow]                       # sistemde olmayan, eklenebilecek kişiler
+    updates: list[ImportUpdateRow]             # K-72: mevcut ama eksik bilgili kayıtlar
     already_present: int                       # ada göre zaten kayıtlı olanların sayısı
     list_total: int                            # liste sayfasında bulunan toplam kişi
 
 class ImportCommitIn(BaseModel):
     """Kullanıcının önizlemeden seçip onayladığı satırlar."""
-    rows: list[ImportRow]
+    rows: list[ImportRow] = []
+    updates: list[ImportUpdateRow] = []        # K-72: doldurulacak mevcut kayıtlar
 
 class ImportCommitOut(BaseModel):
     created: list[LecturerOut]
-    skipped: list[str]                         # bu arada eklenmiş/çakışan adlar (TOCTOU)
+    updated: list[LecturerOut] = []            # K-72: eksik bilgisi doldurulanlar
+    skipped: list[str]                         # çakışan/bölümsüz-40a-değil adlar
 
 # --- Binalar (WP2, K-18) ---
 
@@ -255,6 +285,7 @@ class BuildingRef(BaseModel):
 class ClassroomCreate(BaseModel):
     building_id: int
     room_code: str
+    floor: int | None = None              # K-68: kat, opsiyonel
     room_type: RoomType = RoomType.CLASSROOM   # K-31: amfi / lab / derslik
     capacity: int = Field(gt=0)           # K-07: zorunlu ve pozitif
     exam_capacity: int | None = Field(None, gt=0)   # K-21: opsiyonel
@@ -262,6 +293,7 @@ class ClassroomCreate(BaseModel):
 class ClassroomUpdate(BaseModel):
     building_id: int | None = None
     room_code: str | None = None
+    floor: int | None = None              # K-68: kat, opsiyonel
     room_type: RoomType | None = None          # K-31
     capacity: int | None = Field(None, gt=0)
     exam_capacity: int | None = Field(None, gt=0)
@@ -271,6 +303,7 @@ class ClassroomOut(BaseModel):
     id: int
     building: BuildingRef                 # iç içe nesne — kontrat şekli
     room_code: str
+    floor: int | None                     # K-68: kat
     room_type: RoomType                   # K-31
     capacity: int
     exam_capacity: int | None
@@ -398,6 +431,16 @@ class ConflictResultOut(BaseModel):
     affected: list[ConflictAffectedRef] = []
 
 
+class ConflictScanOut(BaseModel):
+    """GET /conflicts cevabi (kontrat 9).
+
+    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
+    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
+    """
+    hard: list[ConflictResultOut] = []
+    warnings: list[ConflictResultOut] = []
+
+
 # --- Sınavlar (WP4, K-16/K-17/K-22) ---
 
 class ExamCreate(BaseModel):
@@ -451,21 +494,15 @@ class ExamOut(BaseModel):
     lecturer: LecturerOut
     total_expected_students: int              # türetilir: aktif şubelerin toplamı (K-16)
     notes: str | None
-    status: EntryStatus
+    # K-60: `status` KALKTI. Satırın "yayında mı" cevabı artık `draft_id`'den
+    # okunur ve istemciye ayrıca söylenmesi gerekmez — hangi uçtan geldiği
+    # zaten söylüyor (`/exams` yayın, `/schedule-drafts/{id}/exams` taslak).
     model_config = ConfigDict(from_attributes=True)
 
 class ExamSaveResponse(BaseModel):
     """POST/PATCH cevabı: conflicts dolu olsa bile kayıt başarılıdır (K-03)."""
     exam: ExamOut
     conflicts: list[ConflictResultOut]
-
-class ExamSubmitRequest(BaseModel):
-    exam_ids: list[int] = Field(min_length=1)
-
-class ExamSubmitResponse(BaseModel):
-    submitted: list[int]
-    warnings: list[ConflictResultOut]
-
 
 # --- Haftalık Program (WP3, K-03/K-14/K-19/K-20) ---
 
@@ -503,7 +540,6 @@ class WeeklyEntryOut(BaseModel):
     slot_count: int
     session_type: SessionType
     delivery_mode: DeliveryMode
-    status: EntryStatus
     model_config = ConfigDict(from_attributes=True)
 
 class WeeklyEntrySaveResponse(BaseModel):
@@ -511,12 +547,193 @@ class WeeklyEntrySaveResponse(BaseModel):
     entry: WeeklyEntryOut
     conflicts: list[ConflictResultOut]
 
-class WeeklyEntrySubmitRequest(BaseModel):
-    entry_ids: list[int] = Field(min_length=1)
+# --- Program taslaklari (K-59) ---
 
-class WeeklyEntrySubmitResponse(BaseModel):
-    submitted: list[int]
-    warnings: list[ConflictResultOut]
+class DraftCreate(BaseModel):
+    """Taslak bir COHORT uzerinde acilir (K-59) — kapsami bu uclu belirler."""
+    department_id: int
+    year: int = Field(ge=1, le=6)
+    semester: SemesterType
+    # K-60: haftalık program mı sınav takvimi mi. Varsayılan WEEKLY —
+    # K-60 öncesi yazılmış istemciler alanı hiç göndermeden çalışmaya devam eder.
+    kind: DraftKind = DraftKind.WEEKLY
+    name: str | None = None          # boş bırakılırsa sunucu üretir
+
+class DraftRename(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+class DraftClearRequest(BaseModel):
+    # K-59: ortak dersler varsayılan olarak KORUNUR — silmek üç bölümün
+    # programından ders düşürebilir, bu yüzden açıkça istenmeli.
+    include_shared: bool = False
+
+class DraftSubmitRequest(BaseModel):
+    note: str | None = Field(None, max_length=2000)   # PR açıklaması gibi
+
+class DraftUserRef(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class DraftOut(BaseModel):
+    id: int
+    department_id: int
+    department_name: str
+    year: int
+    semester: SemesterType
+    kind: DraftKind                               # K-60: WEEKLY | EXAM
+    name: str
+    status: DraftStatus
+    entry_count: int                              # taslaktaki yerleşim/sınav sayısı
+    change_count: int                             # yayına göre kaç fark var
+    owner: DraftUserRef
+    created_at: datetime
+    submitted_at: datetime | None = None
+    submit_note: str | None = None
+    reviewer: DraftUserRef | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    # Onay anında dondurulan özet — onaylandıktan sonra fark yeniden
+    # hesaplanamaz (taslağın satırları yayına geçip silinir), kayıt kendi
+    # kendine yetsin diye saklanır (K-36 deseni).
+    applied_summary: str | None = None
+
+class DraftPlacementOut(BaseModel):
+    day_of_week: int
+    start_slot: int
+    slot_count: int
+    classroom_id: int | None
+    classroom_label: str | None
+    delivery_mode: DeliveryMode
+
+class DraftAffectedDepartmentOut(BaseModel):
+    id: int
+    name: str
+
+class DraftExamPlacementOut(BaseModel):
+    """Sınavın yerleşimi (K-60) — haftalığın gün/slot'unun karşılığı.
+
+    `notes` bilerek burada: öğrenciye basılan bir içerik, dolayısıyla yalnız
+    notu değişen bir sınav da onaydan geçmesi gereken bir değişikliktir.
+    """
+    exam_date: date
+    start_time: time
+    duration_minutes: int
+    lecturer_id: int
+    lecturer_name: str | None = None
+    classroom_ids: list[int] = []
+    classroom_label: str | None = None
+    notes: str | None = None
+
+class DraftDiffItemOut(BaseModel):
+    """Tek bir haftalık değişiklik satırı — inceleme ekranının okuduğu birim."""
+    entity: Literal["weekly"] = "weekly"
+    kind: Literal["ADDED", "REMOVED", "MOVED"]
+    section_id: int
+    course_code: str
+    course_name: str
+    section_no: int
+    session_type: SessionType
+    is_shared: bool                               # K-48 ortak ders mi
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+    before: DraftPlacementOut | None = None
+    after: DraftPlacementOut | None = None
+
+class ExamDraftDiffItemOut(BaseModel):
+    """Tek bir sınav değişikliği (K-60).
+
+    Haftalık satırla AYNI kabuğu taşır (kind, ders, ortak ders uyarısı,
+    before/after) ama kimliği şube değil `(ders, tip, sıra)` üçlüsüdür ve
+    yerleşimi gün/slot değil tarih/saattir. İkisini tek modele sıkıştırmak,
+    iki farklı yerleşim şeklini aynı alanlara zorlamak olurdu.
+    """
+    entity: Literal["exam"] = "exam"
+    kind: Literal["ADDED", "REMOVED", "MOVED"]
+    course_id: int
+    course_code: str
+    course_name: str
+    exam_type: ExamType
+    exam_index: int                               # K-46: kaçıncı vize
+    is_shared: bool
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+    before: DraftExamPlacementOut | None = None
+    after: DraftExamPlacementOut | None = None
+
+# `entity` ayırt edici alan: istemci tek bir listede iki şekli birbirinden
+# ayırabilsin, Pydantic de doğru modeli seçebilsin diye.
+DraftDiffItem = Annotated[
+    Union[DraftDiffItemOut, ExamDraftDiffItemOut], Field(discriminator="entity")
+]
+
+class DraftDiffOut(BaseModel):
+    draft_id: int
+    kind: DraftKind                               # K-60: hangi tür taslağın farkı
+    items: list[DraftDiffItem] = []
+
+class DraftSubmitResponse(BaseModel):
+    draft: DraftOut
+    warnings: list[ConflictResultOut] = []        # engellemez, görünür kalır
+
+class DraftRejectRequest(BaseModel):
+    # Gerekçesiz ret işe yaramaz: gönderen neyi düzelteceğini bilemez.
+    note: str = Field(min_length=1, max_length=2000)
+
+class DraftStalenessOut(BaseModel):
+    """Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).
+
+    Taslak, açıldığı andaki yayının kopyasıdır ve eskiyebilir; sahibinin
+    dokunmadığı satırlar bile arada başkasının onayı geçtiyse farkta "geri
+    alınacak değişiklik" olarak belirir. Fark bunu zaten satır satır gösterir;
+    bu, onaylayıcıya DİKKATLİ BAKMASI gerektiğini söyleyen üst düzey işaret.
+    """
+    opened_at: datetime
+    publications_since: int
+    last_published_at: datetime | None = None
+    last_published_by: str | None = None
+
+class DraftReviewOut(BaseModel):
+    """İnceleme ekranının tek çağrıda ihtiyaç duyduğu her şey.
+
+    Yayındaki ızgara ayrı uçtan (`GET /weekly-entries`) gelir; burada
+    ÖNERİLEN taraf + fark + çakışma + bayatlık işareti durur.
+    """
+    draft: DraftOut
+    items: list[DraftDiffItem] = []
+    entries: list[WeeklyEntryOut] = []            # önerilen ızgara (WEEKLY)
+    exams: list[ExamOut] = []                     # önerilen sınav takvimi (EXAM, K-60)
+    conflicts: ConflictScanOut
+    staleness: DraftStalenessOut
+
+class ScheduleChangeOut(BaseModel):
+    """Değişiklik akışının bir satırı (K-59).
+
+    Kaynağı onaylanmış taslak kaydının kendisidir — ayrı bildirim tablosu yok.
+    `summary` onay anında dondurulmuştur: taslağın satırları yayına geçip
+    silindiği için fark geriye dönük yeniden hesaplanamaz (K-36 deseni).
+    """
+    id: int
+    department_id: int
+    department_name: str
+    year: int
+    semester: SemesterType
+    kind: DraftKind                           # K-60: ders programı mı, sınav mı
+    summary: str | None                       # "1 taşındı, 1 kaldırıldı · ..."
+    published_at: datetime | None
+    published_by: str                         # değişikliği yapan (taslak sahibi)
+    approved_by: str | None                   # yayına alan onay yetkilisi
+    # K-48: ortak ders taşındıysa dolu — bu değişiklik onların programına da düştü.
+    affected_departments: list[DraftAffectedDepartmentOut] = []
+
+
+class DraftApproveResponse(BaseModel):
+    draft: DraftOut
+    applied: list[DraftDiffItem] = []             # yayına ne geçti
+    warnings: list[ConflictResultOut] = []
+
+class DraftClearResponse(BaseModel):
+    deleted: int
+    preserved_shared: int                         # korunan ortak ders yerleşimi
+
 
 # --- Dashboard (WP6, K-33) ---
 
@@ -536,16 +753,6 @@ class DashboardSummary(BaseModel):
     exams: int
     unresolved_hard: int
     unresolved_warnings: int
-
-
-class ConflictScanOut(BaseModel):
-    """GET /conflicts cevabi (kontrat 9).
-
-    Tam tarama sonucu ikiye ayrilmis halde doner: hard submit'i engeller,
-    warning engellemez (K-05). Ayrimi sunucu yapar, UI yalnizca cizer.
-    """
-    hard: list[ConflictResultOut] = []
-    warnings: list[ConflictResultOut] = []
 
 
 # --- Islem kayitlari (WP6, K-35) ---

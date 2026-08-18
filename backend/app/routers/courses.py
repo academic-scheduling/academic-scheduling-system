@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
+from app.cohort import cohort_course_filter
 from app.deps import get_db, get_current_user, require_course_manager
 from app.models import (
     Classroom, Course, CourseCohort, CourseSection, Department, DepartmentMembership,
-    EntryStatus, Exam, ExamType, Lecturer, SemesterType, User, UserRole,
+    Exam, ExamType, Lecturer, SemesterType, User, UserRole,
     WeeklyScheduleEntry,
 )
 from app.schemas import (
@@ -114,30 +115,6 @@ def _covered_cohorts(course: Course) -> set[tuple[int, int, SemesterType]]:
     covered = {(course.department_id, course.year, course.semester)}
     covered |= {(cc.department_id, cc.year, cc.semester) for cc in course.extra_cohorts}
     return covered
-
-
-def cohort_course_filter(department_id: int, year: int | None, semester: SemesterType | None):
-    """K-57: cohort üyeliği filtresi = BİRİNCİL ∪ EK cohort.
-
-    Bir cohort görünümünde (Dersler / Haftalık / Sınav — bölüm+yıl+dönem seçili)
-    year/semester eşleşmesi hem birincile HEM ek cohort'a uygulanır. Böylece ortak
-    (servis) ders, onu TÜKETEN bölümün cohort'undan da gelir — yalnız ilk atandığı
-    (birincil) bölümden değil. Eski filtre `Course.department_id == X` idi ve ek
-    cohort'la tüketilen ortak dersleri (ENG/MATH/PHYS...) kohortun listesinden
-    düşürüyordu (kullanıcı: "8 ders olması gerekirken 2 çıkıyor").
-
-    Course entity'si sorguya JOIN'li olmalı; `extra_cohorts.any(...)` korele EXISTS
-    üretir (join'den bağımsız çalışır).
-    """
-    primary = [Course.department_id == department_id]
-    extra = [CourseCohort.department_id == department_id]
-    if year is not None:
-        primary.append(Course.year == year)
-        extra.append(CourseCohort.year == year)
-    if semester is not None:
-        primary.append(Course.semester == semester)
-        extra.append(CourseCohort.semester == semester)
-    return or_(and_(*primary), Course.extra_cohorts.any(and_(*extra)))
 
 
 def _build_extra_cohorts(
@@ -332,8 +309,14 @@ def update_course(
     # yoksa yüksek sıralı vize "kapsam dışı" kalır (aynı deseni K-27/K-32'de
     # olduğu gibi engelliyoruz). Önce ilgili vizeler silinsin.
     if "midterm_count" in data and data["midterm_count"] < course.midterm_count:
+        # K-60: yalnız YAYINDAKİ vizeler sayılır. Taslaktaki kopya BAŞKASININ
+        # özel denemesidir; onun yüzünden ders düzenlemesini bloklamak, K-59'un
+        # "birinin özel taslağı kimseyi engellemez" kuralını çiğnerdi. Bayat
+        # kalan taslak sahibinin sorunudur ve o taslağı bir dahaki düzenleyişinde
+        # görünür (aynı tolerans K-59'da online/saat değişikliği için kabul edildi).
         over = db.query(Exam).filter(
             Exam.course_id == course.id,
+            Exam.draft_id.is_(None),
             Exam.exam_type == ExamType.MIDTERM,
             Exam.exam_index > data["midterm_count"],
         ).count()
@@ -363,15 +346,24 @@ def update_course(
                 CourseSection.course_id == course.id
             )
         ]
+        # K-59: "yayınlanmış" artık `draft_id IS NULL` demek. Taslaklardaki
+        # kopyalar SAYILMAZ — onlar sahiplerine özeldir ve yayına ancak onayla
+        # geçerler; birinin özel denemesi ders düzenlemesini bloklamamalı.
         submitted_weekly = (
             db.query(WeeklyScheduleEntry).filter(
                 WeeklyScheduleEntry.section_id.in_(section_ids),
-                WeeklyScheduleEntry.status == EntryStatus.SUBMITTED,
+                WeeklyScheduleEntry.draft_id.is_(None),
             ).count() if section_ids else 0
         )
+        # K-60: sınavda da "yayında" artık `draft_id IS NULL`. Eski hali
+        # `status == SUBMITTED` idi ve BİR VERİ KAYBI HATASI taşıyordu: gerçek
+        # veride import/seed her sınavı `DRAFT` yazmış, dolayısıyla bu sayaç 0
+        # dönüyor, aşağıdaki "taslakları sil" bloğu ise YAYINDAKİ sınavların
+        # tamamını siliyordu. K-59'da haftalıkta ölçülen tuzağın aynısı
+        # ("status'e bakıp silmek programın tamamını silerdi").
         submitted_exam = db.query(Exam).filter(
             Exam.course_id == course.id,
-            Exam.status == EntryStatus.SUBMITTED,
+            Exam.draft_id.is_(None),
         ).count()
         if submitted_weekly or submitted_exam:
             parcalar = []
@@ -381,25 +373,15 @@ def update_course(
                 parcalar.append(f"{submitted_exam} sınav")
             raise HTTPException(
                 status_code=409,
-                detail=f"Bu dersin yayınlanmış {' ve '.join(parcalar)} var — programa "
-                       "etki eden alanı (online/saat) değiştirmeden önce onları taslağa çevirin.",
+                detail=f"Bu dersin yayında {' ve '.join(parcalar)} var — programa "
+                       "etki eden alanı (online/saat) değiştirmeden önce bir taslakla "
+                       "onları programdan çıkarıp onaylatın.",
             )
-        draft_weekly = (
-            db.query(WeeklyScheduleEntry).filter(
-                WeeklyScheduleEntry.section_id.in_(section_ids),
-                WeeklyScheduleEntry.status == EntryStatus.DRAFT,
-            ).all() if section_ids else []
-        )
-        draft_exams = db.query(Exam).filter(
-            Exam.course_id == course.id,
-            Exam.status == EntryStatus.DRAFT,
-        ).all()
-        for we in draft_weekly:
-            log_action(db, user, "DELETE", "weekly_entry", we.id, we)
-            db.delete(we)
-        for ex in draft_exams:
-            log_action(db, user, "DELETE", "exam", ex.id, ex)
-            db.delete(ex)
+        # K-59/K-60: eskiden buradaki DRAFT satırları (haftalık ve sınav)
+        # silinirdi. Artık taslak satırı BAŞKASININ ÖZEL kopyasıdır; sessizce
+        # silmek onun işini yok etmek olur. Yayında satır kalmadığı için
+        # silinecek bir şey de yok — bu yüzden burada hiçbir silme YOK. Taslak
+        # sahibi değişikliği kendi ekranında W8/çakışma uyarısı olarak görecek.
 
     ozet = build_change_summary(course, data)
     for field, value in data.items():

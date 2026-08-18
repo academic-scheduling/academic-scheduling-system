@@ -8,7 +8,7 @@ from app.normalize import normalize_lecturer_name, turkish_lower
 from app.scrapers import mu_akademik
 from app.scrapers.mu_akademik import ScrapeError
 from app.schemas import (
-    ImportCommitIn, ImportCommitOut, ImportPreviewOut, ImportRow,
+    ImportCommitIn, ImportCommitOut, ImportPreviewOut, ImportRow, ImportUpdateRow,
     LecturerCreate, LecturerUpdate, LecturerOut,
 )
 from app.audit import build_change_summary, log_action
@@ -76,6 +76,7 @@ def create_lecturer(
         email=payload.email,
         is_external=payload.is_external,
         department_id=payload.department_id,
+        detail_url=payload.detail_url or None,   # K-71: akademik personel sayfası
         source="MANUAL",          # elle eklenen 40/a; web import'u IMPORT yazar
     )
     db.add(lec)
@@ -231,53 +232,59 @@ def import_preview(
         # görünür bir üst-akış hatası (502).
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    existing = {
-        norm
-        for (norm,) in db.query(Lecturer.normalized_name).filter(
+    existing_by_norm: dict[str, Lecturer] = {
+        lec.normalized_name: lec
+        for lec in db.query(Lecturer).filter(
             Lecturer.workgroup_id == manager.workgroup_id
         )
     }
     dept_index = _department_index(db, manager.workgroup_id)
+    cap = settings.lecturer_import_max_detail_fetch
 
-    # 1. Faz — sınıflandırma (ağ yok): kim yeni, kim zaten kayıtlı. Yalnız
-    # YENİ kişilerin detayı çekilecek (mevcutlar için detay sayfasına gidilmez).
-    new_refs: list[tuple[str, object]] = []      # (normalized_name, PersonRef)
+    # 1. Faz — sınıflandırma (ağ yok): kim yeni, kim zaten kayıtlı-ama-eksik.
+    #   new_refs    → sistemde YOK; detay çekilip eklenebilir.
+    #   update_refs → sistemde VAR ama detay sayfası ya da e-postası eksik; K-72
+    #                 gereği bunlara da güncelleme önerilir. detay linki liste
+    #                 taramasından (PersonRef) BEDAVA gelir; e-posta için detay
+    #                 sayfası gerekir (yalnız e-postası eksik olanları çekeriz).
+    new_refs: list[tuple[str, object]] = []          # (normalized_name, PersonRef)
+    update_refs: list[tuple[Lecturer, object]] = []  # (mevcut kayıt, PersonRef)
     already_present = 0
     seen: set[str] = set()
     for person in people:
         norm = normalize_lecturer_name(person.full_name)
         if not norm:
             continue
-        if norm in existing:
+        if norm in existing_by_norm:
             already_present += 1
+            lec = existing_by_norm[norm]
+            if lec.detail_url is None or lec.email is None:
+                update_refs.append((lec, person))
             continue
         if norm in seen:
             continue                      # aynı taramada mükerrer (nadir)
         seen.add(norm)
-        if len(new_refs) >= settings.lecturer_import_max_detail_fetch:
-            break                          # emniyet supabı: yüzlerce detay çekme
-        new_refs.append((norm, person))
+        if len(new_refs) < cap:           # emniyet supabı: yüzlerce detay çekme
+            new_refs.append((norm, person))
 
-    # 2. Faz — detayları SINIRLI eşzamanlılıkla topluca çek. İş ağ-bekleme
-    # ağırlıklı; sıralı ~2 dk süren çekim havuzla ~15 sn'ye iner. Tek sayfanın
-    # hatası o kişiyi bölümsüz bırakır, import'u düşürmez (bulk içinde ele alınır).
+    # 2. Faz — detayları SINIRLI eşzamanlılıkla topluca çek. Yeni kişilerin
+    # HEPSİ + yalnızca e-postası eksik güncelleme adaylarının detayı çekilir
+    # (detay linki eksik olanlar detay sayfasına gitmeden PersonRef'ten dolar).
+    email_fetch = [(lec, p) for (lec, p) in update_refs if lec.email is None][:cap]
+    fetch_urls = ([p.detail_url for _, p in new_refs]
+                  + [p.detail_url for _, p in email_fetch])
     details = mu_akademik.fetch_details_bulk(
-        [person.detail_url for _, person in new_refs],
-        max_workers=settings.lecturer_import_concurrency,
+        fetch_urls, max_workers=settings.lecturer_import_concurrency,
     )
+    empty = mu_akademik.PersonDetail(duty_unit=None, cadre_unit=None, email=None)
 
     new_rows: list[ImportRow] = []
     for norm, person in new_refs:
-        detail = details.get(
-            person.detail_url,
-            mu_akademik.PersonDetail(duty_unit=None, cadre_unit=None, email=None),
-        )
-        # Önce Görev Birimi (fiilen ders verdiği yer); tutmazsa Kadro Birimi'ne
-        # düş. Yönetici hocalarda Görev bölüm değildir ("Rektörlük"), asıl bölüm
-        # Kadro'da yazar (örn. Görev Rektörlük / Kadro İnşaat → İnşaat'a eşleşir).
-        dept_id, dept_label = _match_department(dept_index, detail.duty_unit)
-        if dept_id is None:
-            dept_id, dept_label = _match_department(dept_index, detail.cadre_unit)
+        detail = details.get(person.detail_url, empty)
+        # K-72: bölüm YALNIZ Kadro Birimi'nden eşlenir. Görev birimi (fiilen ders
+        # verdiği yer) dikkate alınmaz — o verdiği derslerden türetilir. Eşleşmezse
+        # department_id NULL; kullanıcı önizlemede bölüm seçer ya da 40/a işaretler.
+        dept_id, dept_label = _match_department(dept_index, detail.cadre_unit)
         new_rows.append(
             ImportRow(
                 full_name=person.full_name,
@@ -292,8 +299,32 @@ def import_preview(
             )
         )
 
+    update_rows: list[ImportUpdateRow] = []
+    for lec, person in update_refs:
+        detail = details.get(person.detail_url, empty)
+        new_detail_url = person.detail_url if lec.detail_url is None else None
+        new_email = detail.email if (lec.email is None and detail.email) else None
+        missing: list[str] = []
+        if new_detail_url:
+            missing.append("detay sayfası")
+        if new_email:
+            missing.append("e-posta")
+        if not missing:
+            continue                      # doldurulacak bir şey çıkmadı (ör. detay çekilmedi)
+        update_rows.append(
+            ImportUpdateRow(
+                id=lec.id,
+                full_name=lec.full_name,
+                normalized_name=lec.normalized_name,
+                detail_url=new_detail_url,
+                email=new_email,
+                missing=missing,
+            )
+        )
+
     return ImportPreviewOut(
         new=new_rows,
+        updates=update_rows,
         already_present=already_present,
         list_total=len(people),
     )
@@ -312,8 +343,17 @@ def import_commit(
     yana biri eklenmiş olabilir — TOCTOU) ve (b) department_id'nin bu
     workgroup'a ait olduğunu doğrular; ait değilse bölümü boş bırakır, tüm
     partiyi düşürmez. Her satır ayrı ayrı loglanır (K-37 deseni).
+
+    K-72 — bölümsüz kayıt kuralı: bir satırın bölümü yoksa (kadro eşleşmedi ve
+    kullanıcı da elle seçmedi) YALNIZ 40/a (is_external) işaretliyse eklenir
+    (bölümsüz dış görevli). Bölümsüz VE 40/a değilse EKLENMEZ — atlananlar
+    listeye "(bölümsüz)" ile döner ki kullanıcı neyin düştüğünü görsün.
+
+    K-72 — güncelleme kolu: `updates` mevcut kayıtların yalnız NULL alanlarını
+    (detay sayfası / e-posta) doldurur; var olan değeri asla ezmez.
     """
     created: list[Lecturer] = []
+    updated: list[Lecturer] = []
     skipped: list[str] = []
 
     for row in payload.rows:
@@ -335,24 +375,49 @@ def import_commit(
             if dep is None or dep.workgroup_id != manager.workgroup_id:
                 dept_id = None            # güvenilmez bölüm: boş geç, partiyi düşürme
 
+        # K-72: bölümsüz VE 40/a değil → ekleme (belirsiz kayıt sisteme girmesin).
+        if dept_id is None and not row.is_external:
+            skipped.append(f"{row.full_name} (bölümsüz)")
+            continue
+
         lec = Lecturer(
             workgroup_id=manager.workgroup_id,
             full_name=row.full_name,
             title=row.title,              # K-52: unvan ayrı alan
             normalized_name=norm,
             email=row.email,
-            is_external=False,            # fakülte kadrosu; 40/a değil
+            is_external=row.is_external,  # K-72: 40/a çözümü kullanıcıdan gelir
             source="IMPORT",
             department_id=dept_id,
             duty_unit=row.duty_unit,
             cadre_unit=row.cadre_unit,
+            detail_url=row.detail_url,       # K-71: akademik personel sayfası
         )
         db.add(lec)
         db.flush()
         log_action(db, manager, "CREATE", "lecturer", lec.id, lec)
         created.append(lec)
 
+    # K-72: eksik bilgisi doldurulacak mevcut kayıtlar. Yalnız NULL alanı doldur.
+    for urow in payload.updates:
+        lec = db.get(Lecturer, urow.id)
+        if lec is None or lec.workgroup_id != manager.workgroup_id:
+            continue
+        data: dict[str, object] = {}
+        if urow.detail_url and not lec.detail_url:
+            data["detail_url"] = urow.detail_url
+        if urow.email and not lec.email:
+            data["email"] = urow.email
+        if data:
+            ozet = build_change_summary(lec, data)
+            for field, value in data.items():
+                setattr(lec, field, value)
+            log_action(db, manager, "UPDATE", "lecturer", lec.id, lec, ozet)
+            updated.append(lec)
+
     db.commit()
     for lec in created:
         db.refresh(lec)
-    return ImportCommitOut(created=created, skipped=skipped)
+    for lec in updated:
+        db.refresh(lec)
+    return ImportCommitOut(created=created, updated=updated, skipped=skipped)

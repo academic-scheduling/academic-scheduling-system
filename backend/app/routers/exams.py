@@ -1,45 +1,40 @@
-"""Sinav endpoint'leri (WP4) — kontrat §8, save/submit deseni (K-03).
+"""Sinav OKUMA uclari (WP4 kalintisi) — kontrat §8.
 
 Sinav DERS duzeyindedir (K-16, subeden bagimsiz) ve birden cok derslige
-yayilabilir (K-17, exam_classrooms). Cakisma kontrolu conflict_service
-dikisi uzerinden yapilir (K-22); motor WP5'te C tarafindan takilir.
+yayilabilir (K-17, exam_classrooms).
+
+**K-60: bu dosyada artik YAZMA UCU YOK.** Eskiden burada duran
+`POST/PATCH/DELETE /exams`, `POST /exams/submit` ve
+`POST /exams/{id}/revert-to-draft` KALDIRILDI. Duran her kopyasi onay adimini
+atlamanin bir yoluydu: `can_manage_exams` yetkisi olan biri onlari cagirarak
+tek basina yayina yazabiliyordu — K-59'un haftalikta kapattigi bypass'in
+aynisi. Sinav yazmanin tek yolu artik `schedule_drafts.py`'deki taslak uclari,
+yayina gecmenin tek yolu ise onaydir.
+
+Geriye kalan yardimcilar (`_eager_exam_query`, `_get_owned_course`,
+`_validate_exam_refs`, `_ensure_weekday`, `_normalize_exam_index`,
+`_e2_message`, `_load_classrooms`) SILINMEDI: dogrulama kurallari degismedi,
+yalnizca KAPI degisti — taslak router'i ve export bunlari import ediyor.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.audit import build_change_summary, log_action
-from app.conflict_service import check_exams_save, check_exams_submit
-from app.deps import get_db, get_current_user, require_exam_manager
-from app.routers.courses import cohort_course_filter
+from app.deps import get_db, get_current_user
+from app.cohort import cohort_course_filter
 from app.models import (
-    Classroom, Course, CourseSection, Department, EntryStatus, Exam,
-    ExamType, Lecturer, SemesterType, User, UserRole,
+    Classroom, Course, Department, Exam, ExamType, Lecturer, SemesterType, User,
 )
-from app.schemas import (
-    ExamCreate, ExamOut, ExamSaveResponse, ExamSubmitRequest,
-    ExamSubmitResponse, ExamUpdate,
-)
+from app.schemas import ExamOut
 
 router = APIRouter(tags=["exams"])
 
 
 # ------------------------------------------------------------------
-# Yardımcılar: erişim ve sahiplik kontrolleri (courses.py deseni)
+# Yardımcılar: taslak router'ı ve export bunları paylaşır (K-60)
 # ------------------------------------------------------------------
-
-def _member_department_ids(user: User) -> set[int]:
-    return {m.department_id for m in user.memberships}
-
-
-def _ensure_department_access(db: Session, user: User, department_id: int) -> None:
-    """Alt hesap yalnız atanmış bölümlerinin sınavlarını yazabilir (kontrat §8)."""
-    if user.role != UserRole.ADMIN and department_id not in _member_department_ids(user):
-        raise HTTPException(status_code=403, detail="Bu bölümde yetkiniz yok")
-
 
 def _get_owned_course(db: Session, user: User, course_id: int) -> Course:
     """Gövdedeki ders referansı bizim workgroup'un mu? Değilse 400."""
@@ -53,20 +48,6 @@ def _get_owned_course(db: Session, user: User, course_id: int) -> Course:
     if course is None:
         raise HTTPException(status_code=400, detail="Geçersiz ders seçimi")
     return course
-
-
-def _get_owned_exam(db: Session, user: User, exam_id: int) -> Exam:
-    """Sınav bizim workgroup'ta mı? Değilse/yoksa 404 (varlık sızdırmama)."""
-    exam = (
-        db.query(Exam)
-        .join(Course).join(Department)
-        .filter(Exam.id == exam_id,
-                Department.workgroup_id == user.workgroup_id)
-        .first()
-    )
-    if exam is None:
-        raise HTTPException(status_code=404, detail="Sınav bulunamadı")
-    return exam
 
 
 def _validate_exam_refs(db: Session, user: User, data: dict) -> None:
@@ -117,24 +98,29 @@ def _e2_message(exam_type: ExamType, exam_index: int) -> str:
     return "Bu dersin bu tipte sınavı zaten var (E2)"
 
 
-def _ensure_draft(exam: Exam) -> None:
-    if exam.status != EntryStatus.DRAFT:
-        raise HTTPException(status_code=409,
-                            detail="Sınav SUBMITTED durumda — önce draft'a çevrilmeli")
-
-
 def _load_classrooms(db: Session, classroom_ids: list[int]) -> list[Classroom]:
     if not classroom_ids:
         return []
     return db.query(Classroom).filter(Classroom.id.in_(classroom_ids)).all()
 
 
-def _eager_exam_query(db: Session):
+def _eager_exam_query(db: Session, published_only: bool = True):
     """ExamOut'un ihtiyaç duyduğu ilişkileri tek seferde yükler (N+1 önleme).
 
     course.sections, total_expected_students hesabı için gerekir (K-16).
+
+    K-60: `published_only` GÜVENLİ VARSAYILAN olarak True. Taslak sınavlar
+    sahiplerine özeldir; genel okuma yollarından (liste, export) görünmemeleri
+    gerekir. Varsayılanı True tutmanın gerekçesi K-59'un pahalı dersi: haftalıkta
+    bu süzgeç unutulmuştu ve herkesin özel taslak satırları ızgarada çizildi
+    ("aynı saatte 4 tane ISG 1801"). Yeni bir çağıran süzgeci unutursa sızıntı
+    değil EKSİK VERİ olur — ikincisi fark edilir, birincisi edilmez.
+
+    Bütünlük kontrolleri (silme engelleri) bu sorguyu KULLANMAZ ve kullanmamalı:
+    ders/hoca silinirken taslaktaki kopya da FK'ya takılır, onu saymamak
+    kullanıcıya "silinebilir" deyip ham DB hatası göstermek olurdu.
     """
-    return (
+    q = (
         db.query(Exam)
         .join(Course).join(Department)
         .options(
@@ -143,6 +129,7 @@ def _eager_exam_query(db: Session):
             selectinload(Exam.lecturer),
         )
     )
+    return q.filter(Exam.draft_id.is_(None)) if published_only else q
 
 
 # ------------------------------------------------------------------
@@ -185,173 +172,3 @@ def list_exams(
     if lecturer_id is not None:
         q = q.filter(Exam.lecturer_id == lecturer_id)
     return q.order_by(Exam.exam_date, Exam.start_time).all()
-
-
-# ------------------------------------------------------------------
-# Kayıt (save) — asla engellemez, conflicts bilgilendirir (K-03)
-# ------------------------------------------------------------------
-
-@router.post("/exams", response_model=ExamSaveResponse,
-             status_code=status.HTTP_201_CREATED)
-def create_exam(
-    payload: ExamCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_exam_manager),
-):
-    course = _get_owned_course(db, user, payload.course_id)
-    _ensure_department_access(db, user, course.department_id)
-
-    data = payload.model_dump()
-    _validate_exam_refs(db, user, data)
-    _ensure_weekday(payload.exam_date)
-
-    # K-46: sırayı kurallara göre sabitle (final/büt→1, vize 1..midterm_count).
-    data["exam_index"] = _normalize_exam_index(payload.exam_type, payload.exam_index, course)
-
-    # E2 ön-kontrolü: aynı (ders, tip, SIRA) ikinci sınav (DB UNIQUE yedekte).
-    # Farklı numaralı vizeler (1./2./3.) çakışmaz — çoklu vize bu sayede olur.
-    clash = db.query(Exam).filter(
-        Exam.course_id == course.id,
-        Exam.exam_type == payload.exam_type,
-        Exam.exam_index == data["exam_index"],
-    ).first()
-    if clash:
-        raise HTTPException(status_code=409,
-                            detail=_e2_message(payload.exam_type, data["exam_index"]))
-
-    classroom_ids = data.pop("classroom_ids")
-    exam = Exam(created_by=user.id, **data)
-    exam.classrooms = _load_classrooms(db, classroom_ids)
-    db.add(exam)
-    db.flush()
-    log_action(db, user, "CREATE", "exam", exam.id, exam)
-    db.commit()
-
-    exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
-    conflicts = check_exams_save(db, exam)
-    return {"exam": exam, "conflicts": conflicts}
-
-
-@router.patch("/exams/{exam_id}", response_model=ExamSaveResponse)
-def update_exam(
-    exam_id: int,
-    payload: ExamUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_exam_manager),
-):
-    exam = _get_owned_exam(db, user, exam_id)
-    _ensure_department_access(db, user, exam.course.department_id)
-    _ensure_draft(exam)  # yalnız DRAFT düzenlenir (K-22)
-
-    data = payload.model_dump(exclude_unset=True)
-    _validate_exam_refs(db, user, data)
-    if "exam_date" in data:
-        _ensure_weekday(data["exam_date"])
-
-    new_type = data.get("exam_type", exam.exam_type)
-    new_index = _normalize_exam_index(
-        new_type, data.get("exam_index", exam.exam_index), exam.course)
-    # Sıra değiştiyse (ör. final'e çevrilince 1'e sabitlendi) data'ya yaz ki
-    # aşağıdaki setattr döngüsü kalıcı kılsın.
-    if new_index != exam.exam_index:
-        data["exam_index"] = new_index
-    if (new_type, new_index) != (exam.exam_type, exam.exam_index):
-        clash = db.query(Exam).filter(
-            Exam.course_id == exam.course_id,
-            Exam.exam_type == new_type,
-            Exam.exam_index == new_index,
-            Exam.id != exam.id,
-        ).first()
-        if clash:
-            raise HTTPException(status_code=409, detail=_e2_message(new_type, new_index))
-
-    classroom_ids = data.pop("classroom_ids", None)
-    if classroom_ids is not None:  # verilirse liste TAM değişir (K-22)
-        exam.classrooms = _load_classrooms(db, classroom_ids)
-    ozet = build_change_summary(exam, data)
-    for field, value in data.items():
-        setattr(exam, field, value)
-    log_action(db, user, "UPDATE", "exam", exam.id, exam, ozet)
-    db.commit()
-
-    exam = _eager_exam_query(db).filter(Exam.id == exam.id).first()
-    conflicts = check_exams_save(db, exam)
-    return {"exam": exam, "conflicts": conflicts}
-
-
-# ------------------------------------------------------------------
-# Yaşam döngüsü: submit / revert / delete (K-03)
-# ------------------------------------------------------------------
-
-@router.post("/exams/submit", response_model=ExamSubmitResponse)
-def submit_exams(
-    payload: ExamSubmitRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_exam_manager),
-):
-    exams: list[Exam] = []
-    for exam_id in payload.exam_ids:
-        exam = _get_owned_exam(db, user, exam_id)
-        _ensure_department_access(db, user, exam.course.department_id)
-        if exam.status == EntryStatus.SUBMITTED:
-            raise HTTPException(status_code=409,
-                                detail=f"Sınav {exam_id} zaten submit edilmiş")
-        exams.append(exam)
-
-    conflicts = check_exams_submit(db, exams)
-    hard = [c for c in conflicts if c["severity"] == "HARD"]
-    warnings = [c for c in conflicts if c["severity"] == "WARNING"]
-
-    if hard:
-        # Hep-veya-hiç: tek HARD bile tüm kümeyi düşürür (K-03).
-        # Kontrat 409 gövdesi detail + conflicts içerir; HTTPException
-        # detail'i sarmaladığından JSONResponse kullanıyoruz.
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={"detail": "Hard çakışma nedeniyle submit reddedildi",
-                     "conflicts": hard},
-        )
-
-    now = datetime.now(timezone.utc)
-    for exam in exams:
-        exam.status = EntryStatus.SUBMITTED
-        exam.submitted_at = now  # CHECK: status ile tutarlı olmak zorunda
-        log_action(db, user, "SUBMIT", "exam", exam.id, exam)
-    db.commit()
-    return {"submitted": [e.id for e in exams], "warnings": warnings}
-
-
-@router.post("/exams/{exam_id}/revert-to-draft", response_model=ExamOut)
-def revert_exam_to_draft(
-    exam_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_exam_manager),
-):
-    exam = _get_owned_exam(db, user, exam_id)
-    _ensure_department_access(db, user, exam.course.department_id)
-    if exam.status != EntryStatus.SUBMITTED:
-        raise HTTPException(status_code=409, detail="Sınav zaten taslak durumda")
-
-    exam.status = EntryStatus.DRAFT
-    exam.submitted_at = None
-    # Değişiklik sabit ve bilinen: SUBMITTED → DRAFT. Burada `data` sözlüğü
-    # yok, o yüzden özet elle veriliyor (K-38).
-    log_action(db, user, "UPDATE", "exam", exam.id, exam,
-               "Durum: Yayınlandı → Taslak")
-    db.commit()
-    return _eager_exam_query(db).filter(Exam.id == exam.id).first()
-
-
-@router.delete("/exams/{exam_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_exam(
-    exam_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_exam_manager),
-):
-    exam = _get_owned_exam(db, user, exam_id)
-    _ensure_department_access(db, user, exam.course.department_id)
-    _ensure_draft(exam)  # SUBMITTED silinemez; önce draft'a çevrilir
-
-    log_action(db, user, "DELETE", "exam", exam.id, exam)
-    db.delete(exam)  # exam_classrooms satırları CASCADE ile gider
-    db.commit()

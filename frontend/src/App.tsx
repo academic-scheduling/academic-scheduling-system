@@ -16,6 +16,7 @@ import LecturersPage from "./pages/LecturersPage";
 import ClassroomsPage from "./pages/ClassroomsPage";
 import CoursesPage from "./pages/CoursesPage";
 import ConflictsPage from "./pages/ConflictsPage";
+import PublishingCenterPage from "./pages/PublishingCenterPage";
 
 export default function App() {
   return (
@@ -37,6 +38,12 @@ export default function App() {
           <Route path="/weekly" element={<WeeklyPage />} />
           <Route path="/exams" element={<ExamsPage />} />
           <Route path="/conflicts" element={<ConflictsPage />} />
+          {/* K-77: Taslaklarım + Onay Bekleyenler tek "Yayın Merkezi" sayfasında
+              birleşti. Eski yollar korunur (derin bağlantılar kırılmasın) ve
+              query'yi (draft_id vb.) taşıyarak yönlenir. */}
+          <Route path="/publishing" element={<PublishingCenterPage />} />
+          <Route path="/drafts" element={<Navigate to={`/publishing${window.location.search}`} replace />} />
+          <Route path="/approvals" element={<Navigate to={`/publishing${window.location.search}`} replace />} />
 
           {/* Yalnız ADMIN — üçüncü kabuk katmanı */}
           <Route element={<RequireAdmin />}>

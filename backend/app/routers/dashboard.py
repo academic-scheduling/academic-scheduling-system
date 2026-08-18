@@ -42,10 +42,11 @@ def get_summary(
         Department.workgroup_id == wg, Course.active.is_(True)
     ).count()
 
-    # Sınav: ders → bölüm zinciri. `active` bayrağı yok, yerine DRAFT/SUBMITTED
-    # var (K-03); taslak sınav da gerçek bir kayıttır, ikisi birlikte sayılır.
+    # Sınav: ders → bölüm zinciri. `active` bayrağı yok; kapsamı K-60'tan beri
+    # `draft_id` çizer — sayaç YAYINDAKİ sınav takvimini anlatır, kimsenin özel
+    # taslağı fakültenin sınav sayısını şişirmemeli (haftalık sayacın eşi).
     exams = db.query(Exam).join(Course).join(Department).filter(
-        Department.workgroup_id == wg
+        Department.workgroup_id == wg, Exam.draft_id.is_(None)
     ).count()
 
     # Haftalık giriş: şube → ders → bölüm zinciri. Kart olarak çizilmiyor ama
@@ -55,7 +56,10 @@ def get_summary(
         .join(CourseSection)
         .join(Course)
         .join(Department)
-        .filter(Department.workgroup_id == wg)
+        .filter(Department.workgroup_id == wg,
+                # K-59: sayaç YAYINDAKİ programı anlatır; kimsenin özel
+                # taslağı fakültenin ders sayısını şişirmemeli.
+                WeeklyScheduleEntry.draft_id.is_(None))
         .count()
     )
 

@@ -35,6 +35,11 @@ export const BORDER_HOVER = "light-dark(#CBD5E1, #4A4E57)";  // hover'da bir tı
 export const HEADER_BG = "light-dark(#EEF2F7, #2A2C31)";     // gün başlığı bandı
 export const SIDEBAR_BG = "light-dark(#F8FAFC, #1E1F23)";    // sol panel zemini
 export const PAGE_SURFACE = "light-dark(#FFFFFF, #2C2E33)";  // kart zemini (en açık katman)
+// K-59: taslak modu şeridi. Kullanıcının "şu an yayına mı yazıyorum" sorusunu
+// hiç sormaması gerekir; şerit bu yüzden zeminden AYRIŞIR. Koyu temada açık
+// sarı kullanmak ekranı yırtıyordu — iki tema için ayrı ton.
+export const DRAFT_SURFACE = "light-dark(#FFFBEB, #33301F)";
+export const DRAFT_BORDER = "light-dark(#FDE68A, #6B5D2A)";
 
 /** BOŞ slotun zemini: ızgara gövdesinden bir ton, karttan iki ton koyu.
  *  Böylece kart "dolu", boşluk "boş" olarak okunur — aydınlıkta beyaz kart /

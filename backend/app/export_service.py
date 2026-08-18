@@ -47,7 +47,7 @@ def _classroom_label(entry) -> str:
 
 WEEKLY_HEADERS = [
     "Bölüm", "Yıl", "Dönem", "Ders Kodu", "Ders Adı", "Şube",
-    "Öğretim Üyesi", "Gün", "Saat", "Derslik", "Tür", "Durum",
+    "Öğretim Üyesi", "Gün", "Saat", "Derslik", "Tür",
 ]
 
 
@@ -68,7 +68,6 @@ def weekly_rows(entries) -> list[list]:
             slot_range(e.start_slot, e.slot_count),
             _classroom_label(e),
             SESSION_TR.get(e.session_type.value, e.session_type.value),
-            e.status.value,
         ])
     return rows
 

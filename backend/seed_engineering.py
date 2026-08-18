@@ -10,7 +10,10 @@ Ayrıca bir TEST ALT HESABI ekler (kısıtlı yetki testleri için).
 İdempotent: var olan kayıtları (kod / normalized_name / e-posta) atlar.
 """
 from app.db import SessionLocal
-from app.models import Department, Lecturer, User, UserRole, UserStatus, Workgroup
+from app.models import (
+    Department, DepartmentMembership, Lecturer, User, UserRole, UserStatus,
+    Workgroup,
+)
 from app.security import hash_password
 
 DEPARTMENTS = [{'code': 'CE', 'name': 'İnşaat Mühendisliği'},
@@ -759,19 +762,50 @@ LECTURERS = [{'full_name': 'Ahmet Deniz BAŞ',
   'cadre_unit': None,
   'dept_code': 'CE'}]
 
-# Kısıtlı yetki testleri için alt hesap: yalnız derslik + öğretim üyesi
-# yönetebilir; ders/haftalık/sınav yönetimi ve admin ekranları (Dashboard,
-# Kullanıcılar) KAPALI.
-SUB_ACCOUNT = {
-    "name": "Alt Hesap (Test)",
-    "email": "althesap@muh.example.edu.tr",
-    "password": "test1234",
-    "can_manage_courses": False,
-    "can_manage_weekly": False,
-    "can_manage_exams": False,
-    "can_manage_classrooms": True,
-    "can_manage_lecturers": True,
-}
+# Test hesaplari.
+#
+# K-59 ONAY AKISI ICIN UCU DE GEREKLI: oz-onay YASAK (admin dahil), yani
+# gonderen ile onaylayan AYRI kisiler olmak zorunda. Tek hesapla akis bastan
+# sona denenemez -- bu yuzden seed hem "hazirlayan" hem "onaylayan" kurar.
+#
+# `departments`: "all" -> tum bolumlere uyelik (K-25'in ikinci boyutu; haftalik
+# gonderim ve onay ikisi de uyelik arar). Bos liste -> uyeliksiz.
+TEST_ACCOUNTS = [
+    {
+        # Kisitli yetki testleri: yalniz derslik + ogretim uyesi.
+        "name": "Alt Hesap (Test)",
+        "email": "althesap@muh.example.edu.tr",
+        "password": "test1234",
+        "departments": [],
+        "flags": {
+            "can_manage_classrooms": True,
+            "can_manage_lecturers": True,
+        },
+    },
+    {
+        # Program HAZIRLAYAN: taslak acar, duzenler, onaya gonderir.
+        "name": "Program Sorumlusu (Test)",
+        "email": "program@muh.example.edu.tr",
+        "password": "test1234",
+        "departments": "all",
+        "flags": {
+            "can_manage_courses": True,
+            "can_manage_weekly": True,
+            "can_manage_exams": True,
+        },
+    },
+    {
+        # ONAYLAYAN: baskasinin taslagini inceleyip yayina alir.
+        # Kendi talebini onaylayamaz -- bu yuzden ayri bir hesap.
+        "name": "Onay Yetkilisi (Test)",
+        "email": "onay@muh.example.edu.tr",
+        "password": "test1234",
+        "departments": "all",
+        "flags": {
+            "can_approve_schedule": True,
+        },
+    },
+]
 
 
 def seed_engineering():
@@ -823,22 +857,28 @@ def seed_engineering():
             eklendi += 1
         print(f"Öğretim üyesi: {eklendi} yeni eklendi, {len(LECTURERS) - eklendi} zaten vardı.")
 
-        # --- Test alt hesabı ---
-        if db.query(User).filter(User.email == SUB_ACCOUNT["email"]).first() is None:
-            db.add(User(
+        # --- Test hesapları (e-postaya göre idempotent) ---
+        for acc in TEST_ACCOUNTS:
+            if db.query(User).filter(User.email == acc["email"]).first() is not None:
+                continue
+            u = User(
                 workgroup_id=wg.id,
-                name=SUB_ACCOUNT["name"],
-                email=SUB_ACCOUNT["email"],
-                password_hash=hash_password(SUB_ACCOUNT["password"]),
+                name=acc["name"],
+                email=acc["email"],
+                password_hash=hash_password(acc["password"]),
                 role=UserRole.SUB_ACCOUNT,
                 status=UserStatus.ACTIVE,
-                can_manage_courses=SUB_ACCOUNT["can_manage_courses"],
-                can_manage_weekly=SUB_ACCOUNT["can_manage_weekly"],
-                can_manage_exams=SUB_ACCOUNT["can_manage_exams"],
-                can_manage_classrooms=SUB_ACCOUNT["can_manage_classrooms"],
-                can_manage_lecturers=SUB_ACCOUNT["can_manage_lecturers"],
-            ))
-            print(f"Alt hesap eklendi: {SUB_ACCOUNT['email']} / {SUB_ACCOUNT['password']}")
+                **acc["flags"],
+            )
+            db.add(u)
+            db.flush()
+            if acc["departments"] == "all":
+                for dep in dep_by_code.values():
+                    db.add(DepartmentMembership(user_id=u.id, department_id=dep.id))
+            print(f"Hesap eklendi: {acc['email']} / {acc['password']}"
+                  f"  ({', '.join(acc['flags']) or 'yetkisiz'})")
+
+        print("\nK-59: öz-onay yasak — program@ hazırlar, onay@ yayına alır.")
 
         db.commit()
         print("seed_engineering tamam.")

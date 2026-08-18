@@ -52,7 +52,7 @@ from app.conflict_service import scan_workgroup
 from app.db import SessionLocal, engine
 from app.models import (
     Building, Classroom, Course, CourseSection, Department,
-    DepartmentMembership, DeliveryMode, EntryStatus, Exam, ExamType, Lecturer,
+    DepartmentMembership, DeliveryMode, Exam, ExamType, Lecturer,
     SemesterType, SessionType, Slot, User, UserRole, UserStatus,
     WeeklyScheduleEntry, Workgroup,
 )
@@ -82,8 +82,6 @@ TABLES = (
 # Sınavlar MIDTERM olmak ZORUNDA: K-41 gereği X kuralları yalnız vizede çalışır.
 PZT, SAL, CAR, PER, CUM = (date(2026, 4, d) for d in (13, 14, 15, 16, 17))
 
-# SUBMITTED kayıtların submitted_at damgası (DB kısıtı zorunlu kılıyor).
-SIMDI = datetime.now(timezone.utc)
 
 # Seed'in sözleşmesi: tam tarama bu kural kümesini üretmeli. Ne eksik ne fazla.
 # Fazlası da hatadır — istenmeyen bir çakışma sızdıysa veri kurgusu bozulmuş
@@ -323,6 +321,13 @@ def seed():
               can_manage_courses=True, can_manage_weekly=True,
               can_manage_exams=True, can_manage_classrooms=False)
 
+    # K-59: ONAY YETKILISI. Oz-onay YASAK (admin dahil), yani yukaridaki iki
+    # sorumlu kendi taslaklarini yayina alamaz -- akisin bastan sona
+    # denenebilmesi icin AYRI bir onaylayici sart. Yetkisi yalniz onay:
+    # "gozetim" rolu, yazma rolu degil.
+    alt_hesap("Onay Yetkilisi", "onay@muh.example.edu.tr", [ceng, eee],
+              can_approve_schedule=True)
+
     # Davet akışı demosu: aktifleşmemiş kullanıcı. Şifresi yok, giremez.
     bekleyen = User(id=next_id(User), workgroup_id=wg.id, name="Yeni Öğretim Üyesi",
                     email="pending@muh.example.edu.tr",
@@ -334,16 +339,14 @@ def seed():
 
     # --- haftalık program ---
     def giris(subesi, derslik_, gun, baslangic, adet, *,
-              tur=SessionType.THEORY, mod=DeliveryMode.FACE_TO_FACE,
-              durum=EntryStatus.DRAFT):
+              tur=SessionType.THEORY, mod=DeliveryMode.FACE_TO_FACE):
         e = WeeklyScheduleEntry(
             id=next_id(WeeklyScheduleEntry),
             section_id=subesi.id, classroom_id=derslik_.id if derslik_ else None,
             day_of_week=gun, start_slot=baslangic, slot_count=adet,
-            session_type=tur, delivery_mode=mod, status=durum,
-            # DB kısıtı: (status = SUBMITTED) = (submitted_at IS NOT NULL).
-            # İkisi birlikte yürümek zorunda, ayrı ayrı set edilemez.
-            submitted_at=SIMDI if durum is EntryStatus.SUBMITTED else None,
+            session_type=tur, delivery_mode=mod,
+            # K-59: haftalık satırın status/submitted_at kolonu YOK.
+            # draft_id NULL = yayında; seed doğrudan yayın üretir.
             created_by=admin.id,
         )
         db.add(e)
@@ -351,13 +354,12 @@ def seed():
         log("CREATE", "weekly_entry", e)
         return e
 
-    S, D = EntryStatus.SUBMITTED, EntryStatus.DRAFT
 
     # PAZARTESİ — cohort ve hoca çakışmaları
-    giris(s2001, b201, 1, 1, 2, durum=S)      # çapa: 08:30-10:15
+    giris(s2001, b201, 1, 1, 2)      # çapa: 08:30-10:15
     giris(s2003, b202, 1, 2, 2)              # → W3 (aynı cohort, ikisi zorunlu)
-    giris(e2015_1, a101, 1, 1, 2, durum=S)   # → W2 (Kaya iki bölümde aynı anda)
-    giris(s2030_1, b203, 1, 1, 3, durum=S)   # CENG2030 şube 1
+    giris(e2015_1, a101, 1, 1, 2)   # → W2 (Kaya iki bölümde aynı anda)
+    giris(s2030_1, b203, 1, 1, 3)   # CENG2030 şube 1
     # CENG2030 şube 2 PERŞEMBE'de: CENG2001 ile uyumlu bir kombinasyon KALIR,
     # bu yüzden CENG2001 × CENG2030 W3 ÜRETMEZ (K-15 kanıtı).
 
@@ -368,22 +370,23 @@ def seed():
     # SALI — seçmeli uyarısı, online ders, derslik çakışması
     giris(s2051, None, 2, 2, 2, mod=DeliveryMode.ONLINE_SYNC)  # derslik NULL (K-23)
     giris(s2052, lab1, 2, 3, 2)              # → W4 (ikisi seçmeli, slot 3 kesişir)
-    giris(s2020, b202, 2, 5, 2, tur=SessionType.PRACTICE, durum=S)
+    giris(s2020, b202, 2, 5, 2, tur=SessionType.PRACTICE)
     giris(e2010_1, b202, 2, 5, 2)            # → W1 (aynı derslik, aynı slotlar)
 
     # ÇARŞAMBA — kapasite
-    giris(s2020, lab1, 3, 1, 2, durum=S)     # → W7 (55 öğrenci > LAB-1 kapasite 30)
+    giris(s2020, lab1, 3, 1, 2)     # → W7 (55 öğrenci > LAB-1 kapasite 30)
 
     # PERŞEMBE — mükerrer oturum
-    giris(s2030_2, b201, 4, 3, 2, durum=S)
+    giris(s2030_2, b201, 4, 3, 2)
     giris(s2030_2, b202, 4, 4, 1)            # → W5 (aynı şube) + W2 (aynı hoca)
 
     # --- sınavlar (hepsi MIDTERM — K-41) ---
-    def sinav(dersi, hoca_, tarih, saat, sure, derslikler, *, durum=EntryStatus.DRAFT):
+    def sinav(dersi, hoca_, tarih, saat, sure, derslikler):
         x = Exam(id=next_id(Exam), course_id=dersi.id, exam_type=ExamType.MIDTERM,
                  exam_date=tarih, start_time=saat, duration_minutes=sure,
-                 lecturer_id=hoca_.id, status=durum,
-                 submitted_at=SIMDI if durum is EntryStatus.SUBMITTED else None,
+                 lecturer_id=hoca_.id,
+                 # K-60: sınavda da status/submitted_at KALKTI. draft_id NULL
+                 # (varsayılan) = yayında; seed doğrudan yayın üretir.
                  created_by=admin.id)
         x.classrooms = derslikler
         db.add(x)
@@ -393,7 +396,7 @@ def seed():
 
     # ÇARŞAMBA akşamı — sınavlarda saat penceresi YOKTUR (K-06), 18:00 geçerli.
     # 17:30 sonrası olduğu için hiçbir haftalık dersle kesişemez → X sessiz.
-    sinav(c2001, kaya, CAR, time(18, 0), 90, [a101], durum=S)
+    sinav(c2001, kaya, CAR, time(18, 0), 90, [a101])
     sinav(c2003, demir, CAR, time(18, 30), 90, [a101])   # → E1 (ortak A-101) + E4a
     sinav(c2051, arslan, CAR, time(18, 0), 60, [b201])   # → E4b ×2 (seçmeli)
     sinav(e2015, kaya, CAR, time(18, 0), 90, [b202, b203])   # → E3 (Kaya)
@@ -503,6 +506,7 @@ def main():
 │  DEMO HAZIR                                                   │
 │  Admin:       admin@muh.example.edu.tr  /  admin1234          │
 │  Alt hesap:   ceng@ ve eee@ (.../althesap123)                 │
+│  Onaylayan:   onay@   (.../althesap123)  — K-59 oz-onay yasak │
 │  Bekleyen:    pending@  — davet akisi demosu icin             │
 │                                                               │
 │  Haftalik program (2025-26 Bahar, 2. sinif):                  │

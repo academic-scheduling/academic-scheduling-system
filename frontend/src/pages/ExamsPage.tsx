@@ -18,17 +18,21 @@ import {
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
+import type { UndoEntity } from "../hooks/useUndoStack";
+import { DraftStatus, DraftActions, DraftNotes } from "../components/DraftBar";
 import ExportMenu from "../components/ExportMenu";
+import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
+import { CourseInfoButton, type CourseInfoExam } from "../components/CourseInfoButton";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  EXAM_HOUR_H, GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
   PAGE_SURFACE, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
-  paletteItemStyle,
+  WEEKLY_ROW_H, paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
-  Lecturer, SemesterType,
+  Lecturer, ScheduleDraft, SemesterType,
 } from "../api/types";
 
 /* Haftalık programdan TEMEL FARK: burada slot yok, gerçek takvim var.
@@ -38,10 +42,16 @@ import type {
    Burada yalnız bu ekrana özel olan dakika ölçeği tanımlanır. */
 const DAY_START = 8 * 60;        // 08:00
 const DAY_END = 21 * 60;         // 21:00 — akşam sınavları da sığsın
-const HOUR_H = EXAM_HOUR_H;      // bir saatin piksel yüksekliği
+// K-76: bir saat artık haftalık slotla AYNI yükseklikte (91px). Eskiden 63px'ti
+// (13 saati weekly yüksekliğine sıkıştırmak için); "yarım slot" gibi duruyordu.
+// Grid böylece uzuyor → aşağıda weekly boyuna sabitlenip fazlası scroll edilir.
+const HOUR_H = WEEKLY_ROW_H;     // bir saatin piksel yüksekliği
 const PX = HOUR_H / 60;          // dakika başına piksel
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 },
   (_, i) => DAY_START + i * 60);
+// K-76: gridin görünür yüksekliği = haftalık program gridiyle aynı (9 slot).
+// Kalan saatler (akşam) dikey scroll ile görünür.
+const VISIBLE_H = HEAD_H + WEEKLY_ROW_H * 9;
 
 const toMin = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -200,7 +210,14 @@ export default function ExamsPage() {
   const [placing, setPlacing] =
     useState<{ date: string; min: number; courseId?: number } | null>(null);
   const [editing, setEditing] = useState<Exam | null>(null);
-  const [submitOpen, setSubmitOpen] = useState(false);
+  // K-60: NULL = yayındaki sınav takvimi (salt-okunur). Dolu = kendi özel
+  // taslağım; takvim, çakışma ve bütün yazma işlemleri onun içine yönlenir.
+  const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  // Ders bilgi "i" pop-up'ı: aynı anda tek pop-up açık kalsın diye paylaşılan state.
+  const [openInfoId, setOpenInfoId] = useState<number | null>(null);
+  /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır
+   *  (çakışma vurgusu yayındaki bir sınava götürdüğünde). */
+  const taslakSecimiAtla = useRef(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -211,19 +228,31 @@ export default function ExamsPage() {
 
   // Geri Al: taslak sınavlara yapılan taşıma/düzenleme/ekleme/silmeyi geri alır.
   // Kalıcı (localStorage) ve çok adımlı — sayfa yenilense de yığın durur.
+  // Geri al yığını TASLAK BAZLIDIR (haftalıkla aynı, K-64 sonrası): her sınav
+  // taslağının kendi anahtarı; global tek yığın onaylanmış taslakların adımlarını
+  // da tutuyordu. Taslak yokken yazma kapalı → sabit boş anahtar.
   const { record: recordUndo, undo: popUndo, count: undoCount, busy: undoBusy } =
-    useUndoStack("exams-undo");
+    useUndoStack(draft ? `exams-undo-${draft.id}` : "exams-undo-none");
 
   const load = () => {
     setLoading(true);
     setError(null);
+    // K-60: taslaktayken takvim TASLAĞIN kopyasını gösterir ve çakışma tablosu
+    // taslağın evreninde hesaplanır (kendi sınavları + diğer cohort'ların
+    // yayını + yayındaki ders programı). Yayın modunda eski davranış aynen.
+    const sinavlar = draft
+      ? api.get<Exam[]>(`/schedule-drafts/${draft.id}/exams`)
+      : api.get<Exam[]>("/exams");
+    const cakismalar = draft
+      ? api.get<ConflictScan>(`/schedule-drafts/${draft.id}/conflicts`)
+      : api.get<ConflictScan>("/conflicts");
     Promise.all([
-      api.get<Exam[]>("/exams"),
+      sinavlar,
       api.get<Course[]>("/courses"),
       api.get<Classroom[]>("/classrooms"),
       api.get<Lecturer[]>("/lecturers?search="),
       api.get<Department[]>("/departments"),
-      api.get<ConflictScan>("/conflicts"),
+      cakismalar,
     ])
       .then(([x, c, cl, l, d, s]) => {
         setExams(x); setCourses(c); setClassrooms(cl);
@@ -240,7 +269,9 @@ export default function ExamsPage() {
       .catch((e) => setError(e instanceof ApiError ? e.message : "Sınavlar yüklenemedi"))
       .finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  // Taslağa girip çıkmak takvimin kaynağını değiştirir; durum değişimi de
+  // (geri çekme / ret) yeniden yükleme ister — donmuş taslak salt-okunurdur.
+  useEffect(load, [draft?.id, draft?.status]);
 
   // Bölümler genel-bakışından ?department_id= ile gelindiğinde o bölümü seç;
   // parametreyi bir kez tüketip URL'den temizle. Yıl/dönem kullanıcıya bırakılır.
@@ -248,8 +279,17 @@ export default function ExamsPage() {
     const depParam = searchParams.get("department_id");
     if (!depParam) return;
     setDep(depParam);
+    // K-61: "Taslaklarım"dan gelindiğinde cohort'un tamamı verilir; mod çubuğu
+    // o cohort'un açık sınav taslağını bulup kendiliğinden seçer.
+    const yearParam = searchParams.get("year");
+    const semParam = searchParams.get("semester");
+    if (yearParam) setYear(yearParam);
+    if (semParam) setSem(semParam as SemesterType);
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
+    next.delete("year");
+    next.delete("semester");
+    next.delete("draft_id");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -264,6 +304,12 @@ export default function ExamsPage() {
           const firstTarget = targets[0];
           const fullCourse = courses.find((c) => c.id === firstTarget.course.id);
           if (fullCourse) {
+            // K-62: hedef YAYINDA (`/exams` yalnız yayını döner), o yüzden
+            // yayın moduna geçilir. Yoksa gidilen cohort'ta açık sınav
+            // taslağım varsa ekran ona geçer ve aranan sınav orada olmadığı
+            // için boş bir takvime bakılır (haftalıktaki kusurun ikizi).
+            taslakSecimiAtla.current = true;
+            setDraft(null);
             setDep(String(fullCourse.department_id));
             setYear(String(fullCourse.year));
             setSem(fullCourse.semester);
@@ -275,7 +321,7 @@ export default function ExamsPage() {
               id: `exam-highlight-${highlightIds.join("-")}`,
               color: "blue",
               title: `Çakışan Sınavlar Vurgulandı (${ruleParam})`,
-              message: `${courseCodes} sınavları takvim üzerinde gösteriliyor.`,
+              message: `${courseCodes} — YAYINDAKİ sınav takviminde gösteriliyor.`,
             });
           }
           setDeepHighlightIds(targets.map((t) => t.id));
@@ -326,6 +372,21 @@ export default function ExamsPage() {
     return { hardIds: h, warnIds: w };
   }, [scan]);
 
+  // Her ders için o an gösterilen (taslak/yayın) sınavların özeti — bilgi
+  // pop-up'ı şube yerine bunu gösterir (kullanıcı isteği). Tarih/saate göre sıralı.
+  const examsByCourse = useMemo(() => {
+    const fmtDate = (iso: string) =>
+      new Date(`${iso}T00:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+    const m = new Map<number, CourseInfoExam[]>();
+    for (const e of [...exams].sort((a, b) =>
+      a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time))) {
+      const arr = m.get(e.course.id) ?? [];
+      arr.push({ label: examTypeLabel(e), date: fmtDate(e.exam_date), time: e.start_time.slice(0, 5) });
+      m.set(e.course.id, arr);
+    }
+    return m;
+  }, [exams]);
+
   /** Sol panel: cohort'un dersleri + her birinde HANGİ sınav türü tanımlı.
    *  Üç türü de tanımlanmış ders "bitmiş" sayılır: soluk ve listenin altında
    *  (haftalık programdaki tamamlanmış ders deseniyle aynı). */
@@ -347,17 +408,21 @@ export default function ExamsPage() {
   const bolumOf = (courseId: number) =>
     courses.find((c) => c.id === courseId)?.department_id;
 
-  const canWriteCourse = (courseId: number) =>
-    canWriteIn(user, "can_manage_exams", bolumOf(courseId));
-  // Herhangi bir bölümde sınav yazabiliyor mu (boş hücreye tıklama için)
-  const canWriteAny = canWriteIn(user, "can_manage_exams")
-    && (user?.role === "ADMIN" || (user?.department_ids.length ?? 0) > 0);
+  // K-60: YAYINDAKİ sınav takvimine artık kimse doğrudan yazamaz. Yazma yalnız
+  // kendi taslağının içinde olur ve yetki İSTEMEZ — özel taslak kimseyi
+  // etkilemez. Yetki (can_manage_exams + bölüm üyeliği) ONAYA GÖNDERME
+  // kapısında aranır (haftalıktaki K-59 devriyle birebir aynı).
+  const canWrite = draft !== null
+    && (draft.status === "OPEN" || draft.status === "REJECTED");
 
-  // Yayınlanacak küme: bu cohort'un, yazma yetkim olan taslak sınavları.
-  const drafts = useMemo(
-    () => exams.filter((e) => cohortCourseIds.has(e.course.id) && e.status === "DRAFT"
-      && canWriteCourse(e.course.id)),
-    [exams, cohortCourseIds, user, courses]);
+  const canSubmitDraft = canWriteIn(user, "can_manage_exams",
+                                    dep ? Number(dep) : undefined);
+
+  /** Yazma uçlarının kökü. Taslaktayken bütün CRUD taslağın altına gider;
+   *  yayın modunda yazma zaten kapalı (canWrite false). */
+  const writeBase: UndoEntity = draft
+    ? `schedule-drafts/${draft.id}/exams`
+    : "exams";
 
   /** Sayfa altındaki liste: SINAVI ilgilendiren çakışmalar.
    *  Alt hesap süzmesi haftalık ekrandakiyle aynı mantık (K-26 notu orada). */
@@ -394,13 +459,20 @@ export default function ExamsPage() {
   };
 
   const sil = async (e: Exam) => {
-    if (!window.confirm(`${e.course.code} ${examTypeLabel(e)} sınavı silinsin mi?`)) return;
+    if (!canWrite) return;
+    // K-60: taslaktan çıkarmak yayındaki sınavı SİLMEZ; kaldırma ancak onayla
+    // gerçekleşir. Metin bunu söylemeli, yoksa kullanıcı geri dönüşü olmayan
+    // bir şey yaptığını sanır.
+    if (!window.confirm(
+      `${e.course.code} ${examTypeLabel(e)} sınavı taslaktan çıkarılsın mı?\n\n`
+      + "Yayındaki takvimden ancak onaylandığında düşer."
+    )) return;
     try {
-      await api.delete(`/exams/${e.id}`);
+      await api.delete(`/${writeBase}/${e.id}`);
       // Geri al = aynı sınavı yeniden yarat (yeni id alır, remap yığında yapılır).
       recordUndo({
-        label: `${e.course.code} ${examTypeLabel(e)} silme`,
-        entity: "exams",
+        label: `${e.course.code} ${examTypeLabel(e)} çıkarma`,
+        entity: writeBase,
         action: { type: "create", restoreId: e.id, body: {
           course_id: e.course.id, exam_type: e.exam_type, exam_index: e.exam_index,
           exam_date: e.exam_date, start_time: e.start_time,
@@ -409,30 +481,33 @@ export default function ExamsPage() {
           lecturer_id: e.lecturer.id, notes: e.notes,
         } },
       });
-      notifications.show({ message: "Sınav silindi", color: "gray" });
+      notifications.show({ message: "Sınav taslaktan çıkarıldı", color: "gray" });
       load();
+      refreshDraft();
     } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Silinemedi" });
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Çıkarılamadı" });
     }
   };
 
   /** Taşıma: yalnız tarih ve saat değişir; derslik, süre, sorumlu korunur. */
   const tasi = async (e: Exam, tarih: string, dk: number) => {
+    if (!canWrite) return;
     if (e.exam_date === tarih && toMin(e.start_time) === dk) return;
     const prevDate = e.exam_date, prevTime = e.start_time;   // geri al için
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
-        `/exams/${e.id}`, { exam_date: tarih, start_time: fmt(dk) });
+        `/${writeBase}/${e.id}`, { exam_date: tarih, start_time: fmt(dk) });
       recordUndo({
         label: `${e.course.code} ${examTypeLabel(e)} taşıma`,
-        entity: "exams",
+        entity: writeBase,
         action: { type: "patch", id: e.id,
           body: { exam_date: prevDate, start_time: prevTime } },
       });
       load();
+      refreshDraft();
       showConflicts(res.conflicts, "Sınav taşındı");
     } catch (err) {
-      // SUBMITTED kilidi (409) ve hafta sonu (400) burada görünür.
+      // Donmuş taslak (409) ve hafta sonu (400) burada görünür.
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Taşınamadı" });
     }
   };
@@ -449,22 +524,76 @@ export default function ExamsPage() {
   /** Sınavı olan tarihler — hafta seçicideki kırmızı noktalar için. */
   const examDates = useMemo(() => new Set(exams.map((e) => e.exam_date)), [exams]);
 
-  /** Ekleme modalındaki ders listesi: SEÇİLİ SINIFIN, yazma yetkim olan dersleri.
-   *  Tüm derslere açık bırakılsaydı kullanıcı başka sınıfın dersine sınav koyup
-   *  onu bu takvimde göremez, "kaydettim ama yok" durumuna düşerdi. */
-  const secilebilirDersler = useMemo(
-    () => cohortCourses.filter((c) => canWriteCourse(c.id)),
-    [cohortCourses, user, courses]);
+  /** Ekleme modalındaki ders listesi: SEÇİLİ SINIFIN dersleri.
+   *  K-60: yetki süzgeci KALKTI — taslağın kapsamı zaten cohort'tur ve sunucu
+   *  kapsam dışı dersi 400 ile reddeder (`_ensure_course_in_cohort`). Yetki
+   *  onaya gönderme kapısında aranır. */
+  const secilebilirDersler = cohortCourses;
 
-  const taslagaCevir = async (e: Exam) => {
+  /** Taslak açma TEK yer (K-60): hem çubuktaki "Taslak Aç" düğmesi hem de
+   *  takvimde yayındaki bir sınava dokunulduğunda çıkan soru buraya iner. */
+  const createDraft = async (): Promise<ScheduleDraft | null> => {
+    if (!dep || year === COMMON_YEAR) return null;
     try {
-      await api.post(`/exams/${e.id}/revert-to-draft`);
-      notifications.show({ message: "Sınav taslağa çevrildi", color: "gray" });
-      load();
-    } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Çevrilemedi" });
+      const d = await api.post<ScheduleDraft>("/schedule-drafts", {
+        department_id: Number(dep), year: Number(year), semester: sem,
+        kind: "EXAM",
+      });
+      setDraft(d);
+      writeScheduleMode("exam-mode", dep, year, sem, d.id);   // K-73
+      notifications.show({
+        color: "green",
+        message: `Taslak açıldı — yayındaki sınav takviminin kopyası (${d.entry_count} sınav). `
+          + "Değişiklikleriniz yalnız size görünür, onaylanınca yayına geçer.",
+      });
+      return d;
+    } catch (e) {
+      notifications.show({
+        color: "red", message: e instanceof ApiError ? e.message : "Taslak açılamadı",
+      });
+      return null;
     }
   };
+
+  /** Taslak sayaçlarını (change_count) tazeler: takvimde bir şey değiştiğinde
+   *  çubuktaki "N değişiklik" yazısı da güncellenmeli. */
+  const refreshDraft = () => {
+    if (!draft) return;
+    api.get<ScheduleDraft>(`/schedule-drafts/${draft.id}`)
+      .then(setDraft)
+      .catch(() => { /* taslak silinmişse çubuk zaten yayına dönecek */ });
+  };
+
+  /** Cohort değişince taslak ilişiği kesilir: CE/1/Güz taslağıyla EEE/2/Bahar
+   *  takvimini göstermek anlamsız olurdu. */
+  useEffect(() => {
+    setDraft((d) => (d && (String(d.department_id) !== dep
+      || String(d.year) !== year
+      || d.semester !== sem) ? null : d));
+  }, [dep, year, sem]);
+
+  /** Bu cohort için AÇIK sınav taslağım varsa çubuk onu hatırlatsın (sayfa
+   *  yenilense de kaybolmasın). Yalnız kendi taslaklarım döner. */
+  useEffect(() => {
+    if (!dep || year === COMMON_YEAR) return;
+    // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
+    // aranan sınavı ekrandan kaçırır. Bayrak tek seferliktir.
+    if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
+    // K-73: en son YAYINDA bıraktıysam taslağa atlama; tercih belirli taslaksa onu seç.
+    const pref = readScheduleMode("exam-mode", dep, year, sem);
+    if (pref === "pub") return;
+    api.get<ScheduleDraft[]>("/schedule-drafts")
+      .then((liste) => {
+        const cohortDrafts = liste.filter((d) => d.kind === "EXAM"
+          && String(d.department_id) === dep
+          && String(d.year) === year && d.semester === sem);
+        const eslesen = typeof pref === "number"
+          ? cohortDrafts.find((d) => d.id === pref)
+          : cohortDrafts[0];
+        if (eslesen) setDraft(eslesen);
+      })
+      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
+  }, [dep, year, sem]);
 
   const haftaEtiketi = () => {
     const son = addDays(weekStart, 4);
@@ -488,33 +617,38 @@ export default function ExamsPage() {
 
   return (
     <Stack gap="lg">
-      {/* Tek yatay araç çubuğu: solda başlık, ortada mercek (bölüm/sınıf/dönem),
-          sağda hafta gezinme + yayınlama. Üç bölüm tek bir kabuk içinde durur —
-          iki ayrı çerçeve, aralarındaki boşluğu gereksiz bir sınır gibi
-          gösteriyordu. */}
+      {/* K-74: TEK araç çubuğu — eski ayrı "mod çubuğu" buraya gömüldü.
+          Sol: başlık + cohort + durum. Sağ: hafta gezinme + taslak eylemleri +
+          (yayında) Dışa Aktar + (taslakta) Geri Al. Taslaktayken bar renklenir. */}
+      {/* K-76: taslakta bar RENK DEĞİŞTİRMEZ (TASLAK rozeti zaten belli ediyor). */}
       <Paper radius="md" px="md" py={10}
         style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
-            Sınav Takvimi
-          </Title>
-
-          <Group gap={8} align="center" wrap="wrap">
-            <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-            <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
-                ...["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
-            <Select size="xs" w={104} radius="md" value={sem}
-              onChange={(v) => v && setSem(v as SemesterType)}
-              styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-              data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                value: s, label: SEMESTER_LABELS[s] }))} />
+          <Group gap="md" align="center" wrap="wrap">
+            <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
+              Sınav Takvimi
+            </Title>
+            <Group gap={8} align="center" wrap="wrap">
+              <Select size="xs" w={200} radius="md" value={dep} onChange={setDep}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+              <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
+                  ...["1", "2", "3", "4"].map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
+              <Select size="xs" w={104} radius="md" value={sem}
+                onChange={(v) => v && setSem(v as SemesterType)}
+                styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
+                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
+                  value: s, label: SEMESTER_LABELS[s] }))} />
+            </Group>
+            <DraftStatus
+              departmentId={dep ? Number(dep) : null}
+              year={year === COMMON_YEAR ? null : Number(year)}
+              semester={sem} kind="EXAM" draft={draft} />
           </Group>
 
-          <Group gap={6} align="center" wrap="nowrap">
+          <Group gap={6} align="center" wrap="wrap">
             <ActionIcon variant="default" radius="md" color="gray"
               style={{ width: CONTROL_H, height: CONTROL_H, borderColor: BORDER }}
               onClick={() => gitHafta(-1)} aria-label="Önceki hafta">
@@ -542,36 +676,44 @@ export default function ExamsPage() {
               onClick={() => setWeek(new Date())}>
               Bu Hafta
             </Button>
-            {/* Sınav programı resmi formatta (K-09): Vize / Final+Bütünleme ayrı
-                sayfa düzeni — bu yüzden xlsx/csv değil, iki anlamlı seçenek.
-                Diğer sayfalarla aynı ExportMenu bileşeni: tetikleyici her yerde
-                birebir aynı görünür. */}
-            {canWriteAny && (
-              <Tooltip label="Son taslak değişikliğini geri al">
-                <Button variant="default" size="xs" radius="md"
-                  leftSection={<IconArrowBackUp size={15} />}
-                  disabled={undoCount === 0 || undoBusy}
-                  loading={undoBusy}
-                  style={{ height: CONTROL_H, borderColor: BORDER }}
-                  onClick={handleUndo}>
-                  Geri Al{undoCount ? ` (${undoCount})` : ""}
-                </Button>
+            {/* K-76: Geri Al yalnız simge (yazı kaldırıldı); sayı tooltip'te. */}
+            {canWrite && (
+              <Tooltip label={`Son taslak değişikliğini geri al${undoCount ? ` (${undoCount})` : ""}`}>
+                <ActionIcon variant="default" radius="md"
+                  style={{ width: CONTROL_H, height: CONTROL_H, borderColor: BORDER }}
+                  disabled={undoCount === 0 || undoBusy} loading={undoBusy}
+                  onClick={handleUndo} aria-label="Geri Al">
+                  <IconArrowBackUp size={16} />
+                </ActionIcon>
               </Tooltip>
             )}
-            <ExportMenu disabled={!dep} items={[
-              { label: "Vize Programı (Excel)", path: examExportPath("midterm") },
-              { label: "Final + Bütünleme (Excel)", path: examExportPath("final") },
-            ]} />
-            {canWriteAny && (
-              <Button size="xs" radius="md" disabled={drafts.length === 0}
-                style={{ height: CONTROL_H }}
-                onClick={() => setSubmitOpen(true)}>
-                Yayınla{drafts.length ? ` (${drafts.length})` : ""}
-              </Button>
+            {/* K-76: taslak eylemleri; taslakta Onaya Gönder en sağda. */}
+            <DraftActions
+              departmentId={dep ? Number(dep) : null}
+              year={year === COMMON_YEAR ? null : Number(year)}
+              semester={sem} kind="EXAM" draft={draft} canSubmit={canSubmitDraft}
+              onSelect={(d) => {
+                setDraft(d);
+                if (dep && year !== COMMON_YEAR) {
+                  writeScheduleMode("exam-mode", dep, year, sem, d ? d.id : "pub");
+                }
+              }}
+              onCreate={async () => { await createDraft(); }}
+              onChanged={() => { load(); refreshDraft(); }}
+            />
+            {/* K-76: Dışa Aktar EN SAĞDA (yalnız yayında). */}
+            {!draft && (
+              <ExportMenu disabled={!dep} items={[
+                { label: "Vize Programı (Excel)", path: examExportPath("midterm") },
+                { label: "Final + Bütünleme (Excel)", path: examExportPath("final") },
+              ]} />
             )}
           </Group>
         </Group>
       </Paper>
+
+      {/* K-74: PENDING/REJECTED bilgi satırı barın altında (yalnız o durumlarda). */}
+      <DraftNotes draft={draft} />
 
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
 
@@ -581,21 +723,27 @@ export default function ExamsPage() {
             tek bir yüzeye yapışıyor ve gözün dinlendiği bir sınır kalmıyordu. */}
         <Paper p="sm" radius="md" w={SIDE_W}
           style={{ flexShrink: 0, display: "flex", flexDirection: "column",
-                   height: HEAD_H + HOUR_H * (HOURS.length - 1) + 32,
+                   // K-76: sol panel yüksekliği grid'in GÖRÜNÜR yüksekliğiyle eşit.
+                   height: VISIBLE_H + 32,
                    background: SIDEBAR_BG, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
           <TextInput size="xs" mb={10} radius="md" value={search}
             onChange={(ev) => setSearch(ev.currentTarget.value)}
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
                                borderColor: BORDER, background: PAGE_SURFACE } }}
             placeholder="Ders ara" />
-          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+          {/* K-74: offsetScrollbars kaldırıldı — kartlar arama kutusuyla aynı genişlik. */}
+          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
             <Stack gap={6}>
               {paletDersler.length === 0 && (
                 <Text size="xs" c="dimmed" px={4}>Bu sınıfta ders yok.</Text>
               )}
               {paletDersler.map(({ course: c, done }) => (
                 <PaletteItem key={c.id} course={c} done={done}
-                  draggable={canWriteCourse(c.id)}
+                  draggable={canWrite}
+                  infoOpen={openInfoId === c.id}
+                  examInfo={examsByCourse.get(c.id) ?? []}
+                  onInfoOpenChange={(o) => setOpenInfoId(o ? c.id : null)}
+                  onOpenCourses={() => navigate(`/courses?search=${encodeURIComponent(c.code)}`)}
                   onHover={setHoverCourse}
                   onDragStart={() => setDrag({ kind: "new", courseId: c.id, label: c.code })}
                   onDragEnd={() => setDrag(null)}
@@ -607,9 +755,11 @@ export default function ExamsPage() {
           </ScrollArea>
         </Paper>
 
-        {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen */}
+        {/* Takvim: gerçek tarihli 5 gün × dakika ölçekli dikey eksen.
+            K-76: görünür yükseklik weekly gridiyle eşit; akşam saatleri dikey
+            scroll ile açılır (p="md" → +32 dolgu payı). */}
         <Paper ref={examGridRef} p="md" radius="md"
-          style={{ flex: 1, minWidth: 0, overflowX: "auto",
+          style={{ flex: 1, minWidth: 0, overflow: "auto", maxHeight: VISIBLE_H + 32,
                    background: PAGE_SURFACE, border: `1px solid ${BORDER}`,
                    boxShadow: SHADOW }}>
           {loading ? (
@@ -670,7 +820,11 @@ export default function ExamsPage() {
                       style={{ position: "relative", height: HOUR_H * (HOURS.length - 1),
                                borderBottom: `1px solid ${LINE}` }}
                       onMouseMove={(ev) => {
-                        if (!canWriteAny) return;
+                        // Yayın modunda boş hücre işareti gösterilmez (yazma
+                        // kapalı). Taslağa geçme SORUSU burada değil TIKLAMADA
+                        // sorulur — fare hareketinde sormak diyaloğu her
+                        // kıpırdanışta açardı.
+                        if (!canWrite) return;
                         /* İmleç bir KARTIN üzerindeyse işaret gösterme. Saat
                            aralığına bakmak YETMEZ: yan yana şeritlerde bir kart
                            sütunun yalnız bir bölümünü kaplar, kalan boşluğa
@@ -684,7 +838,9 @@ export default function ExamsPage() {
                       }}
                       onMouseLeave={() => setHoverCell(null)}
                       onClick={(ev) => {
-                        if (!canWriteAny) return;
+                        // K-75: yayın modunda tıklama bir şey yapmaz — taslak
+                        // yalnız üstteki bardan açılır.
+                        if (!canWrite) return;
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
                         const dk = DAY_START + Math.floor(y / PX / 30) * 30;
                         setPlacing({ date: gun, min: dk });
@@ -735,13 +891,15 @@ export default function ExamsPage() {
                           <IconPlus size={16} color={TIME_COLOR} />
                         </div>
                       )}
+                      {/* K-60: düzenlenebilirlik artık SATIRIN değil MODUN
+                          özelliği — taslaktaysak yazılır, yayındaysak okunur.
+                          Kart başına durum rozeti / kilit ikonu yok. */}
                       {dayExams.map((e) => (
                         <ExamCard key={e.id} e={e}
                           hard={hardIds.has(e.id)} warn={warnIds.has(e.id)}
                           highlight={deepHighlightIds.includes(e.id)}
                           listHover={hoverCourse === e.course.id}
-                          editable={canWriteCourse(e.course.id) && e.status === "DRAFT"}
-                          revertable={canWriteCourse(e.course.id) && e.status === "SUBMITTED"}
+                          editable={canWrite}
                           onWarningClick={() => {
                             // Bu sınavı işaretle; aşağıda yalnız bu sınavı
                             // etkileyen çakışma satırları yanacak.
@@ -750,9 +908,8 @@ export default function ExamsPage() {
                           }}
                           onDragStart={() => setDrag({ kind: "move", exam: e })}
                           onDragEnd={() => setDrag(null)}
-                          onEdit={() => setEditing(e)}
-                          onDelete={() => sil(e)}
-                          onRevert={() => taslagaCevir(e)} />
+                          onEdit={() => { if (canWrite) setEditing(e); }}
+                          onDelete={() => sil(e)} />
                       ))}
                     </div>
                   </div>
@@ -761,13 +918,6 @@ export default function ExamsPage() {
             </div>
           )}
         </Paper>
-      </Group>
-
-      <Group gap="lg" style={{ fontSize: 11, color: TEXT_MUTED }}>
-        <Legend label="Yayınlanmış" color={ACCENT.normal} />
-        <Legend label="Taslak" color={ACCENT.draft} />
-        <Legend label="Uyarı" color={ACCENT.warn} />
-        <Legend label="Çakışma" color={ACCENT.hard} />
       </Group>
 
       <Paper ref={conflictsRef} p="md" radius="md"
@@ -841,11 +991,20 @@ export default function ExamsPage() {
                         <Button key={idx} size="compact-xs" variant="light"
                           color={a.type === "exam" ? "violet" : "blue"}
                           onClick={() => {
-                            if (a.type === "exam") {
-                              setSearchParams({ highlight: String(a.id), rule: c.rule_id });
-                            } else {
+                            if (a.type !== "exam") {
                               navigate(`/weekly?highlight=${a.id}&rule=${c.rule_id}`);
+                              return;
                             }
+                            // K-62: çakışmanın iki tarafı iki AYRI evrenden
+                            // gelebilir — biri taslağımın sınavı, öteki başka
+                            // cohort'un YAYINDAKİ sınavı. Önce "ekranda mı".
+                            const ekranda = exams.find((e) => e.id === a.id);
+                            if (ekranda) {
+                              setDeepHighlightIds([a.id]);
+                              setHighlightInfo({ rule: c.rule_id, exams: [ekranda] });
+                              return;       // zaten buradayız, gidilecek yer yok
+                            }
+                            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
                           }}>
                           {a.course_code ?? `#${a.id}`}
                         </Button>
@@ -869,19 +1028,20 @@ export default function ExamsPage() {
           classrooms={classrooms}
           lecturers={lecturers}
           exams={exams}
+          writeBase={writeBase}
           onClose={() => { setPlacing(null); setEditing(null); }}
           onSaved={(info) => {
             if (info.created) {
               recordUndo({
                 label: `${info.created.course.code} ${examTypeLabel(info.created)} ekleme`,
-                entity: "exams",
+                entity: writeBase,
                 action: { type: "delete", id: info.created.id },
               });
             } else if (info.before) {
               const b = info.before;
               recordUndo({
                 label: `${b.course.code} ${examTypeLabel(b)} düzenleme`,
-                entity: "exams",
+                entity: writeBase,
                 action: { type: "patch", id: b.id, body: {
                   exam_type: b.exam_type, exam_index: b.exam_index,
                   exam_date: b.exam_date, start_time: b.start_time,
@@ -893,23 +1053,11 @@ export default function ExamsPage() {
             }
           }}
           onDone={(conflicts, baslik) => {
-            setPlacing(null); setEditing(null); load(); showConflicts(conflicts, baslik);
+            setPlacing(null); setEditing(null); load(); refreshDraft();
+            showConflicts(conflicts, baslik);
           }} />
       )}
 
-      {submitOpen && (
-        <SubmitModal drafts={drafts} onClose={() => setSubmitOpen(false)}
-          onDone={(warnings) => {
-            setSubmitOpen(false); load();
-            notifications.show({
-              color: warnings.length ? "orange" : "green",
-              title: "Sınavlar yayınlandı",
-              message: warnings.length
-                ? `${warnings.length} uyarı görünür kalıyor: ${warnings.map((w) => w.rule_id).join(", ")}`
-                : "Çakışma yok",
-            });
-          }} />
-      )}
     </Stack>
   );
 }
@@ -988,22 +1136,15 @@ function WeekPicker({ weekStart, examDates, onPick }: {
   );
 }
 
-function Legend({ label, color }: { label: string; color: string }) {
-  return (
-    <Group gap={6} wrap="nowrap">
-      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: color }} />
-      <span>{label}</span>
-    </Group>
-  );
-}
-
 /** Sol paneldeki tek ders satırı.
  *
  *  Hover durumu bileşen içinde tutulur: listedeki her satır kendi durumunu
  *  bilir, üst bileşenin "hangi satırın üstündeyim" diye state taşımasına
  *  gerek kalmaz (liste uzadıkça o yaklaşım gereksiz render üretirdi). */
-function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragEnd, onPick }: {
+function PaletteItem({ course: c, done, draggable, infoOpen, examInfo, onInfoOpenChange, onOpenCourses, onHover, onDragStart, onDragEnd, onPick }: {
   course: Course; done: boolean; draggable: boolean;
+  infoOpen: boolean; examInfo: CourseInfoExam[];
+  onInfoOpenChange: (opened: boolean) => void; onOpenCourses: () => void;
   onHover: (courseId: number | null) => void;
   onDragStart: () => void; onDragEnd: () => void; onPick: () => void;
 }) {
@@ -1035,22 +1176,31 @@ function PaletteItem({ course: c, done, draggable, onHover, onDragStart, onDragE
             Seçmeli
           </Badge>
         )}
-        {/* Üç sınav türü de tanımlıysa satır "bitmiş" sayılır. */}
-        {done && (
-          <IconCheck size={13} stroke={2.4} color="#16A34A"
-            style={{ marginLeft: "auto", flexShrink: 0 }} />
-        )}
+        {/* Sağ blok: bitmiş onayı + ders bilgisi "i" pop-up'ı. */}
+        <Group gap={4} wrap="nowrap" style={{ marginLeft: "auto", flexShrink: 0 }}>
+          {/* Üç sınav türü de tanımlıysa satır "bitmiş" sayılır. */}
+          {done && <IconCheck size={13} stroke={2.4} color="#16A34A" />}
+          <CourseInfoButton
+            course={c}
+            opened={infoOpen}
+            exams={examInfo}
+            onOpenChange={onInfoOpenChange}
+            onOpenCourses={onOpenCourses}
+          />
+        </Group>
       </Group>
       <Text fz={11} truncate mt={1} style={{ color: TEXT_MUTED }}>{c.name}</Text>
     </div>
   );
 }
 
-function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete, onRevert }: {
+function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClick, onDragStart, onDragEnd, onEdit, onDelete }: {
   e: Placed; hard: boolean; warn: boolean; highlight?: boolean; listHover?: boolean;
-  editable: boolean; revertable: boolean; onWarningClick?: () => void;
+  /** K-60: SATIRIN durumu yok — düzenlenebilirlik MODUN özelliği (taslak mı,
+   *  yayın mı). Bu yüzden eskiden buradaki `revertable` ve durum rozeti gitti. */
+  editable: boolean; onWarningClick?: () => void;
   onDragStart: () => void; onDragEnd: () => void;
-  onEdit: () => void; onDelete: () => void; onRevert: () => void;
+  onEdit: () => void; onDelete: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1061,7 +1211,10 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
 
   const [hover, setHover] = useState(false);
 
-  const draft = e.status === "DRAFT";
+  // K-60: satırın kendi "durumu" yok artık — hangi moddaysak o. Kesikli kenar
+  // ve taslak vurgusu, kartın yayında mı taslakta mı olduğunu değil EKRANIN
+  // hangi modda olduğunu anlatır (haftalıktaki K-59 devriyle aynı).
+  const draft = editable;
   // Durum rengi YALNIZ ince sol çizgide ve küçük durum ikonunda yaşar.
   // Kartın zemini her durumda beyaz kalır: renkli dolgu, yan yana duran üç
   // sınavı okunmaz bir vitrine çeviriyordu.
@@ -1083,50 +1236,32 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
   const showName = h >= 62;
   const showRoom = h >= 88;
   const showLecturer = h >= 116;
-  const showDraftBadge = draft && h >= 144;
 
-  const actionsVisible = (editable || revertable) && hover;
+  const actionsVisible = editable && hover;
 
   return (
     <div
       ref={cardRef}
-      draggable={editable || revertable}
+      draggable={editable}
       onDragStart={(ev) => {
-        // Yayınlanmış sınav taşınamaz. Sürüklemeyi sessizce yutmak yerine
-        // sebebini söylüyoruz — haftalık programdaki davranışın aynısı.
-        if (!editable) {
-          ev.preventDefault();
-          if (revertable) {
-            notifications.show({
-              color: "orange",
-              title: "Kilitli Sınav",
-              message: "Yayınlanmış sınavlar taşınamaz. Önce taslağa çevirin.",
-            });
-          }
-          return;
-        }
+        // Yayın modunda taşıma yok: yayına yazan tek yol onaydır (K-60).
+        if (!editable) { ev.preventDefault(); return; }
         ev.dataTransfer.effectAllowed = "move";
         onDragStart();
       }}
       onDragEnd={onDragEnd}
       onClick={(ev) => {
         ev.stopPropagation();
-        if (editable) onEdit();
-        else if (revertable) {
-          notifications.show({
-            color: "orange",
-            title: "Kilitli Sınav",
-            message: "Yayınlanmış sınavlar kilitlidir. Düzenlemek için önce taslağa çevirin.",
-          });
-        }
+        // Yayın modunda tıklama "taslağa geçilsin mi?" sorusuna gider (onEdit
+        // sayfada o davranışa bağlandı) — kullanıcı çıkmaza düşmesin.
+        onEdit();
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       title={editable
         ? `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · düzenlemek için tıkla, taşımak için sürükle`
-        : revertable
-        ? `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · Yayınlanmış (kilitli) — düzenlemek için önce taslağa çevirin`
-        : `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · ${e.total_expected_students} öğrenci`}
+        : `${e.course.code} · ${fmt(bas)}-${fmt(bit)} · ${e.total_expected_students} öğrenci`
+          + ` · yayında — değiştirmek için taslak açın`}
       style={{
         position: "absolute",
         top: (bas - DAY_START) * PX + 1,
@@ -1150,7 +1285,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
         borderLeftColor: accent,
         borderRadius: CARD_RADIUS, padding: CARD_PADDING, lineHeight: 1.25,
         overflow: "hidden",
-        cursor: editable ? "pointer" : revertable ? "not-allowed" : "default",
+        cursor: "pointer",
         transition: "box-shadow 130ms ease, border-color 130ms ease",
         // Çakışmada çok hafif kırmızı hâle — dolgu değil, yalnız derinlik.
         boxShadow: highlight || listHover ? SHADOW_SELECTED
@@ -1178,18 +1313,11 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
               {examTypeLabel(e)}
             </Badge>
           )}
-          {actionsVisible && editable && (
+          {actionsVisible && (
             <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sınavı sil"
               title="Sil"
               onClick={(ev) => { ev.stopPropagation(); onDelete(); }}>
               <IconTrash size={15} />
-            </ActionIcon>
-          )}
-          {actionsVisible && revertable && (
-            <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Taslağa çevir"
-              title="Taslağa çevir"
-              onClick={(ev) => { ev.stopPropagation(); onRevert(); }}>
-              <IconArrowBackUp size={15} />
             </ActionIcon>
           )}
         </Group>
@@ -1213,14 +1341,6 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, revertable, o
           <IconUser size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
           <Text fz={12} truncate style={{ color: TEXT_MUTED }}>{lecturerLabel(e.lecturer)}</Text>
         </Group>
-      )}
-
-      {showDraftBadge && (
-        <Badge size="xs" variant="default" radius="sm" mt={6}
-          style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
-                   color: TEXT_MUTED, borderColor: BORDER, background: PAGE_SURFACE }}>
-          Taslak
-        </Badge>
       )}
 
       {(hard || warn) && (
@@ -1252,7 +1372,7 @@ function examTypeLabel(e: { exam_type: ExamType; exam_index: number }): string {
   return EXAM_TYPE_LABELS[e.exam_type];
 }
 
-function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone, onSaved }: {
+function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone, onSaved, writeBase }: {
   exam: Exam | null;
   initialDate?: string;
   initialMin?: number;
@@ -1269,6 +1389,12 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   /** Geri Al için: kayıt başarılı olunca eklenen sınav (created) ya da
    *  düzenleme öncesi durum (before) üst bileşene verilir. */
   onSaved?: (info: { created?: Exam; before?: Exam }) => void;
+  /** K-60: yazma ucunun kökü — taslaktayken `schedule-drafts/{id}/exams`.
+   *  Sayfadan GEÇİRİLİR, burada türetilmez: modalın kendi başına "hangi
+   *  moddayım" bilmesi, iki yerde ayrı ayrı doğru tutulması gereken bir
+   *  gerçek olurdu. (Tarayıcıda yakalandı: modal eski `/exams` ucuna
+   *  yazmaya devam ediyordu ve taslak satırında 500 veriyordu.) */
+  writeBase: string;
 }) {
   const duzenle = exam != null;
   const [courseId, setCourseId] = useState<string | null>(
@@ -1312,14 +1438,15 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         lecturer_id: Number(hoca), notes: not || null,
       };
       if (duzenle) {
-        const res = await api.patch<{ conflicts: ConflictResult[] }>(`/exams/${exam!.id}`, govde);
+        const res = await api.patch<{ conflicts: ConflictResult[] }>(
+          `/${writeBase}/${exam!.id}`, govde);
         onSaved?.({ before: exam! });      // geri al = eski alanlara döndür
         onDone(res.conflicts, "Sınav güncellendi");
       } else {
         const res = await api.post<{ exam: Exam; conflicts: ConflictResult[] }>(
-          "/exams", { course_id: Number(courseId), ...govde });
+          `/${writeBase}`, { course_id: Number(courseId), ...govde });
         onSaved?.({ created: res.exam });  // geri al = eklenen sınavı sil
-        onDone(res.conflicts, "Sınav kaydedildi (taslak)");
+        onDone(res.conflicts, "Sınav taslağa eklendi");
       }
     } catch (err) {
       notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Kaydedilemedi" });

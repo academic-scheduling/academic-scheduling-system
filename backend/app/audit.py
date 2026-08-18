@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AuditLog, Building, Classroom, Course, CourseSection, Department,
-    Exam, Lecturer, User, WeeklyScheduleEntry,
+    Exam, Lecturer, ScheduleDraft, User, WeeklyScheduleEntry,
 )
 
 
@@ -42,6 +42,8 @@ def build_label(nesne) -> str | None:
     if isinstance(nesne, WeeklyScheduleEntry):
         return f"{nesne.section.course.code} Şube {nesne.section.section_no}"
     if isinstance(nesne, User):
+        return nesne.name
+    if isinstance(nesne, ScheduleDraft):
         return nesne.name
     return None
 
@@ -89,6 +91,7 @@ FIELD_LABELS: dict[str, str] = {
     "can_manage_exams": "Sınav yetkisi",
     "can_manage_classrooms": "Derslik yetkisi",
     "can_manage_lecturers": "Öğretim üyesi yetkisi",
+    "can_approve_schedule": "Program onaylama yetkisi",   # K-59
 }
 
 # Enum degerlerinin Turkce karsiligi (UI'daki etiketlerle ayni kelimeler).

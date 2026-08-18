@@ -21,6 +21,7 @@ export type User = {
   can_manage_exams: boolean;
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
+  can_approve_schedule: boolean;      // K-59: taslağı yayına alma
 };
 
 /** Kontrat §1 · POST /auth/login cevabı */
@@ -78,6 +79,9 @@ export type Lecturer = {
    *  eklenen kayıtta null. */
   duty_unit: string | null;
   cadre_unit: string | null;
+  /** K-71: akademik personel sayfası (detay) linki. Web import doldurur ya da
+   *  elle girilir. null = girilmemiş. */
+  detail_url: string | null;
 };
 
 /** K-50 · POST /lecturers/import/preview cevabındaki tek aday satır. */
@@ -92,11 +96,24 @@ export type ImportRow = {
   department_id: number | null;
   department_label: string | null;
   detail_url: string;
+  /** K-72: kadro eşleşmezse kullanıcı 40/a işaretleyip bölümsüz ekleyebilir. */
+  is_external?: boolean;
+};
+
+/** K-72 · sistemde olan ama eksik bilgisi (detay/e-posta) doldurulabilen kayıt. */
+export type ImportUpdateRow = {
+  id: number;
+  full_name: string;
+  normalized_name: string;
+  detail_url: string | null;
+  email: string | null;
+  missing: string[];
 };
 
 /** K-50 · önizleme cevabı — hiçbir şey yazılmadan sistemdeki farkı gösterir. */
 export type ImportPreview = {
   new: ImportRow[];
+  updates: ImportUpdateRow[];               // K-72
   already_present: number;
   list_total: number;
 };
@@ -104,6 +121,7 @@ export type ImportPreview = {
 /** K-50 · commit cevabı. */
 export type ImportCommit = {
   created: Lecturer[];
+  updated: Lecturer[];                       // K-72
   skipped: string[];
 };
 
@@ -137,6 +155,8 @@ export type Classroom = {
   id: number;
   building: BuildingRef;
   room_code: string;
+  /** K-68: kat (opsiyonel). null = girilmemiş. */
+  floor: number | null;
   room_type: RoomType;
   capacity: number;
   /** K-21: opsiyonel — boşsa sınav yerleşiminde uyarı üretir */
@@ -154,7 +174,9 @@ export const SEMESTER_LABELS: Record<SemesterType, string> = {
 
 export type SessionType = "THEORY" | "PRACTICE" | "LAB";
 export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
-export type EntryStatus = "DRAFT" | "SUBMITTED";
+/* K-60: `EntryStatus` KALKTI. Satırın "yayında mı" cevabı artık tek bir
+   gerçekten okunur (`draft_id IS NULL`) ve istemciye ayrıca söylenmez —
+   hangi uçtan geldiği zaten söylüyor. */
 
 /** Kontrat §7 · GET /weekly-entries elemanı */
 export type WeeklyEntry = {
@@ -166,7 +188,8 @@ export type WeeklyEntry = {
   slot_count: number;
   session_type: SessionType;
   delivery_mode: DeliveryMode;
-  status: EntryStatus;
+  // K-59: satırın status'ü YOK. "Yayında mı" sorusunu sunucuda `draft_id`
+  // cevaplar; istemcide MOD cevaplar (yayın görünümü mü, taslak mı).
 };
 
 /** Kontrat §8 · Sınav türleri (K-16: sınav DERS düzeyindedir, şubeden bağımsız) */
@@ -205,7 +228,6 @@ export type Exam = {
   /** Türetilir: dersin aktif şubelerinin expected_students toplamı (K-16) */
   total_expected_students: number;
   notes: string | null;
-  status: EntryStatus;
 };
 
 /** POST/PATCH cevabı: conflicts dolu olsa bile kayıt BAŞARILIDIR (K-03). */
@@ -324,7 +346,7 @@ export type ConflictAffectedRef = {
 
 export type ConflictResult = {
   severity: ConflictSeverity;
-  rule_id: string;                  // "W1".."W8" | "E1".."E7" | "X1".."X3"
+  rule_id: string;                  // "W1".."W9" | "E1".."E8" | "X1".."X3"
   message: string;
   affected: ConflictAffectedRef[];
 };
@@ -364,15 +386,21 @@ export type ManagedUser = {
   can_manage_exams: boolean;
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
+  can_approve_schedule: boolean;      // K-59
 };
 
-/** K-25'in beş yetenek bayrağı — form ve rozet listelerinin tek kaynağı. */
+/** Yetenek bayrakları — form ve rozet listelerinin tek kaynağı (K-25, K-59).
+ *
+ *  İlk beşi "neyi YAZABİLİRİM" der. Sonuncusu farklı bir eksende durur:
+ *  "başkasının yazdığını YAYINA geçirebilir miyim" (K-59). Bu yüzden ayrı
+ *  bir grup olarak işaretlenir; form onu ayrı başlık altında gösterir. */
 export const CAPABILITIES = [
-  { key: "can_manage_courses", label: "Dersler" },
-  { key: "can_manage_weekly", label: "Haftalık Program" },
-  { key: "can_manage_exams", label: "Sınavlar" },
-  { key: "can_manage_classrooms", label: "Derslikler" },
-  { key: "can_manage_lecturers", label: "Öğretim Üyeleri" },
+  { key: "can_manage_courses", label: "Dersler", group: "write" },
+  { key: "can_manage_weekly", label: "Haftalık Program", group: "write" },
+  { key: "can_manage_exams", label: "Sınavlar", group: "write" },
+  { key: "can_manage_classrooms", label: "Derslikler", group: "write" },
+  { key: "can_manage_lecturers", label: "Öğretim Üyeleri", group: "write" },
+  { key: "can_approve_schedule", label: "Program Onaylama", group: "approve" },
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
@@ -380,6 +408,7 @@ export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
 /** Kontrat §12 · işlem kayıtları (K-35). */
 export type AuditAction =
   | "CREATE" | "UPDATE" | "DELETE" | "SUBMIT"
+  | "APPROVE" | "REJECT" | "WITHDRAW"     // yayın onay akışı (K-59)
   | "INVITE" | "ACTIVATE"           // davet akışı (K-37)
   | "RESET_REQUEST" | "RESET_PASSWORD";   // şifre sıfırlama (K-43)
 
@@ -410,7 +439,13 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
   CREATE: { label: "Ekledi", color: "green" },
   UPDATE: { label: "Düzenledi", color: "blue" },
   DELETE: { label: "Sildi", color: "red" },
-  SUBMIT: { label: "Yayınladı", color: "violet" },
+  // K-59: "SUBMIT" artık YAYINLAMAK değil ONAYA GÖNDERMEK demek. Yayına geçiren
+  // tek eylem APPROVE. Eski satırlar da bu etiketle görünür; o dönemde submit
+  // gerçekten yayınlamaktı, ama iki ayrı etiket taşımak logu okunmaz yapardı.
+  SUBMIT: { label: "Onaya gönderdi", color: "violet" },
+  APPROVE: { label: "Onayladı (yayına aldı)", color: "green" },
+  REJECT: { label: "Reddetti", color: "red" },
+  WITHDRAW: { label: "Geri çekti", color: "gray" },
   // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
   INVITE: { label: "Davet etti", color: "cyan" },
   ACTIVATE: { label: "Hesabını açtı", color: "teal" },
@@ -432,4 +467,177 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
   exam: "Sınav",
   weekly_entry: "Haftalık giriş",
   user: "Kullanıcı",
+};
+
+
+/* ==================================================================
+ * Program taslakları ve onay akışı (K-59)
+ * ================================================================== */
+
+/** Taslağın yaşam döngüsü. REJECTED, OPEN gibi DÜZENLENEBİLİR bir durumdur —
+ *  ret gerekçesi üstünde durur, sahibi düzeltip yeniden gönderir. */
+export type DraftStatus = "OPEN" | "PENDING" | "APPROVED" | "REJECTED";
+
+export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
+  OPEN: "Taslak", PENDING: "Onay bekliyor",
+  APPROVED: "Onaylandı", REJECTED: "Reddedildi",
+};
+
+export const DRAFT_STATUS_COLORS: Record<DraftStatus, string> = {
+  OPEN: "yellow", PENDING: "blue", APPROVED: "green", REJECTED: "red",
+};
+
+export type DraftUserRef = { id: number; name: string };
+
+/** K-60: taslak neyi kapsıyor. Yaşam döngüsü, öz-onay yasağı, kuyruk ve
+ *  inceleme ikisi için de AYNI; ayrışan tek şey satırların şekli. */
+export type DraftKind = "WEEKLY" | "EXAM";
+
+export const DRAFT_KIND_LABELS: Record<DraftKind, string> = {
+  WEEKLY: "haftalık program", EXAM: "sınav takvimi",
+};
+
+/** Taslaktaki satırın adı — çubuk ve temizleme mesajları bunu kullanır. */
+export const DRAFT_ROW_LABELS: Record<DraftKind, string> = {
+  WEEKLY: "yerleşim", EXAM: "sınav",
+};
+
+export type ScheduleDraft = {
+  id: number;
+  department_id: number;
+  department_name: string;
+  year: number;
+  semester: SemesterType;
+  kind: DraftKind;
+  name: string;
+  status: DraftStatus;
+  entry_count: number;
+  /** Yayına göre kaç fark var. CANLI hesaplanır (K-59) — taslak açıldığındaki
+   *  hale göre değil, O ANKİ yayına göre. */
+  change_count: number;
+  owner: DraftUserRef;
+  created_at: string;
+  submitted_at: string | null;
+  submit_note: string | null;
+  reviewer: DraftUserRef | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  applied_summary: string | null;
+};
+
+export type DraftPlacement = {
+  day_of_week: number;
+  start_slot: number;
+  slot_count: number;
+  classroom_id: number | null;
+  classroom_label: string | null;
+  delivery_mode: DeliveryMode;
+};
+
+/** K-60: sınavın yerleşimi. Haftalığın gün/slot'unun karşılığı; `notes` de
+ *  burada, çünkü öğrenciye basılan bir içeriktir ve değişikliği onaydan geçer. */
+export type DraftExamPlacement = {
+  exam_date: string;
+  start_time: string;
+  duration_minutes: number;
+  lecturer_id: number;
+  lecturer_name: string | null;
+  classroom_ids: number[];
+  classroom_label: string | null;
+  notes: string | null;
+};
+
+export type DiffKind = "ADDED" | "REMOVED" | "MOVED";
+
+/** Ortak kabuk: iki tür de aynı rozeti, ders sütununu ve ortak ders uyarısını
+ *  taşır. Ayrışan tek şey KİMLİK (şube / sınav) ve YERLEŞİM (gün-slot / tarih-saat). */
+type DiffItemBase = {
+  kind: DiffKind;
+  course_code: string;
+  course_name: string;
+  is_shared: boolean;
+  affected_departments: { id: number; name: string }[];
+};
+
+export type WeeklyDiffItem = DiffItemBase & {
+  entity: "weekly";
+  section_id: number;
+  section_no: number;
+  session_type: SessionType;
+  before: DraftPlacement | null;
+  after: DraftPlacement | null;
+};
+
+export type ExamDiffItem = DiffItemBase & {
+  entity: "exam";
+  course_id: number;
+  exam_type: ExamType;
+  exam_index: number;
+  before: DraftExamPlacement | null;
+  after: DraftExamPlacement | null;
+};
+
+/** Ayırt edici alan `entity` (K-60): tek listede iki şekil taşınabilsin diye. */
+export type DraftDiffItem = WeeklyDiffItem | ExamDiffItem;
+
+export const DIFF_KIND_LABELS: Record<DiffKind, string> = {
+  ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı",
+};
+
+export const DIFF_KIND_COLORS: Record<DiffKind, string> = {
+  ADDED: "green", REMOVED: "red", MOVED: "blue",
+};
+
+export type DraftDiff = {
+  draft_id: number;
+  kind: DraftKind;
+  items: DraftDiffItem[];
+};
+
+export type DraftClearResponse = { deleted: number; preserved_shared: number };
+
+/** Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).
+ *  Fark zaten satır satır gösterir; bu, onaylayıcıya dikkatli bakması
+ *  gerektiğini söyleyen üst düzey işaret. */
+export type DraftStaleness = {
+  opened_at: string;
+  publications_since: number;
+  last_published_at: string | null;
+  last_published_by: string | null;
+};
+
+export type DraftReview = {
+  draft: ScheduleDraft;
+  items: DraftDiffItem[];
+  /** Önerilen taraf: taslağın türüne göre BİRİ dolar, öteki boş kalır (K-60). */
+  entries: WeeklyEntry[];
+  exams: Exam[];
+  conflicts: ConflictScan;
+  staleness: DraftStaleness;
+};
+
+export type DraftApproveResponse = {
+  draft: ScheduleDraft;
+  applied: DraftDiffItem[];
+  warnings: ConflictResult[];
+};
+
+/** Değişiklik akışının bir satırı (K-59).
+ *
+ *  Kaynağı onaylanmış taslak kaydının kendisidir — ayrı bildirim tablosu yok.
+ *  `summary` onay anında dondurulmuştur: taslağın satırları yayına geçip
+ *  silindiği için fark geriye dönük yeniden hesaplanamaz. */
+export type ScheduleChange = {
+  id: number;
+  department_id: number;
+  department_name: string;
+  year: number;
+  semester: SemesterType;
+  /** K-60: akışta ders programı ve sınav onayları bir arada akıyor. */
+  kind: DraftKind;
+  summary: string | null;
+  published_at: string | null;
+  published_by: string;
+  approved_by: string | null;
+  affected_departments: { id: number; name: string }[];
 };

@@ -8,6 +8,8 @@ from app.conflicts.engine import w2_lecturer_conflict
 from app.conflicts.engine import w5_duplicate_session
 from app.conflicts.engine import w6_out_of_window
 from app.conflicts.engine import w7_capacity
+from app.conflicts.engine import w9_missing_classroom
+from app.conflicts.engine import e8_missing_classroom
 from app.conflicts.engine import e1_exam_classroom_conflict
 from app.conflicts.engine import e2_duplicate_exam
 from app.conflicts.engine import e3_exam_lecturer_conflict
@@ -1065,3 +1067,103 @@ def test_x2_common_exam_shared_cohort_warning():
     hit = x2_exam_weekly_course_conflict(exam, weekly)
     assert hit is not None and hit["rule_id"] == "X2"
     assert hit["cohort"]["department_id"] == 99             # paylaşılan EEE-2
+
+# ============================================================
+# K-70: eksik derslik uyarilari (W9 / E8)
+# ============================================================
+
+def test_w9_face_to_face_missing_classroom_warns():
+    # yuz yuze oturum + derslik yok -> W9 WARNING
+    a = base_session(); a["classroom_id"] = None
+    hit = w9_missing_classroom(a)
+    assert hit is not None and hit["rule_id"] == "W9" and hit["severity"] == "WARNING"
+
+
+def test_w9_face_to_face_with_classroom_silent():
+    # yuz yuze + derslik var -> W9 yok
+    assert w9_missing_classroom(base_session()) is None
+
+
+def test_w9_online_missing_classroom_silent():
+    # online oturum dersliksizdir, bu bir eksiklik degildir -> W9 yok
+    for mode in ("ONLINE_SYNC", "ONLINE_ASYNC"):
+        a = base_session(); a["classroom_id"] = None; a["delivery_mode"] = mode
+        assert w9_missing_classroom(a) is None, mode
+
+
+def test_e8_missing_classroom_warns():
+    # sinava hic derslik secilmemis -> E8 WARNING
+    a = base_exam(); a["rooms"] = []
+    hit = e8_missing_classroom(a)
+    assert hit is not None and hit["rule_id"] == "E8" and hit["severity"] == "WARNING"
+
+
+def test_e8_with_classroom_silent():
+    assert e8_missing_classroom(base_exam()) is None
+
+
+def test_scan_weekly_emits_w9():
+    # orchestrator kablolamasi: dersliksiz yuz yuze giris tam taramada W9 uretir
+    a = base_session(); a["classroom_id"] = None
+    results = scan_weekly([a])
+    assert any(r["rule_id"] == "W9" for r in results)
+
+
+def test_scan_exams_emits_e8():
+    a = base_exam(); a["rooms"] = []
+    results = scan_exams([a])
+    assert any(r["rule_id"] == "E8" for r in results)
+
+
+# ============================================================
+# K-70: donemler-arasi (guz/bahar) karsilastirma yapilmaz
+# ============================================================
+
+def test_scan_weekly_cross_semester_no_w1():
+    # ayni derslik + ayni gun/slot ama FALL vs SPRING -> sahte W1 URETILMEZ
+    a = base_session(); a["id"] = 1; a["section_id"] = 100; a["semester"] = "FALL"
+    b = base_session(); b["id"] = 2; b["section_id"] = 200; b["course_id"] = 9
+    b["semester"] = "SPRING"
+    results = scan_weekly([a, b])
+    assert not any(r["rule_id"] == "W1" for r in results)
+
+
+def test_scan_weekly_same_semester_still_w1():
+    # kontrol: ayni donemde ayni derslik/saat -> W1 hala uretilir
+    a = base_session(); a["id"] = 1; a["section_id"] = 100
+    b = base_session(); b["id"] = 2; b["section_id"] = 200; b["course_id"] = 9
+    results = scan_weekly([a, b])
+    assert any(r["rule_id"] == "W1" for r in results)
+
+
+def test_scan_exams_no_semester_gate():
+    # K-70: sinav-sinav'da DONEM KAPISI YOK. Sinav somut tarih uzerinde calisir;
+    # ayni tarih/saat/derslik ise donem etiketi ne olursa olsun E1 uretilir.
+    # (Gercek veride ayni takvim gunu tek doneme aittir; bu test kapinin sinav
+    # tarafinda uygulanmadigini kanitlar.)
+    a = base_exam(); a["id"] = 1; a["semester"] = "FALL"
+    b = base_exam(); b["id"] = 2; b["course_id"] = 9; b["semester"] = "SPRING"
+    results = scan_exams([a, b])
+    assert any(r["rule_id"] == "E1" for r in results)
+
+
+def test_scan_cross_cross_semester_no_x1():
+    # FALL vizesi ile SPRING haftalik dersi ayni derslik/gun/saat -> X1 URETILMEZ
+    exam = base_exam(); exam["exam_type"] = "MIDTERM"; exam["semester"] = "FALL"
+    weekly = base_session(); weekly["course_id"] = 9; weekly["semester"] = "SPRING"
+    weekly["classroom_id"] = 10                             # sinavla ayni derslik
+    weekly["day_of_week"] = date(2026, 6, 15).isoweekday()
+    weekly["start_slot"] = 3; weekly["slot_count"] = 2
+    results = scan_cross([exam], [weekly], check_exam_vs_course=True)
+    assert not any(r["rule_id"] == "X1" for r in results)
+
+
+def test_scan_cross_same_semester_still_x1():
+    # kontrol: ayni donemde X1 hala uretilir
+    exam = base_exam(); exam["exam_type"] = "MIDTERM"; exam["semester"] = "FALL"
+    weekly = base_session(); weekly["course_id"] = 9; weekly["semester"] = "FALL"
+    weekly["classroom_id"] = 10
+    weekly["day_of_week"] = date(2026, 6, 15).isoweekday()
+    weekly["start_slot"] = 3; weekly["slot_count"] = 2
+    results = scan_cross([exam], [weekly], check_exam_vs_course=True)
+    assert any(r["rule_id"] == "X1" for r in results)

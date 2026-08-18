@@ -76,12 +76,12 @@ def _require_capability(flag_name: str, error_detail: str):
 require_course_manager = _require_capability(
     "can_manage_courses", "Ders yönetim yetkisi gerekli"
 )
-require_weekly_manager = _require_capability(
-    "can_manage_weekly", "Haftalık program yönetim yetkisi gerekli"
-)
-require_exam_manager = _require_capability(
-    "can_manage_exams", "Sınav yönetim yetkisi gerekli"
-)
+# K-59/K-60: `require_weekly_manager` ve `require_exam_manager` KALKTI.
+# İkisi de "yayına yazma" kapısıydı; yayına yazan uçlar kalmadığı için birer
+# bağımlılık olarak karşılıkları da kalmadı. Bayrakların KENDİSİ duruyor ve
+# hâlâ aranıyor — ama artık ONAYA GÖNDERME kapısında, taslağın türüne göre
+# (`schedule_drafts._ensure_can_submit`). Kapıyı burada bir Depends olarak
+# bırakmak, "bu yetki bir ucu açıyor" izlenimi verirdi; açmıyor.
 
 # Workgroup geneli paylaşımlı kaynaklar: üyelik boyutu yok, bayrak yeter.
 require_classroom_manager = _require_capability(
@@ -89,4 +89,12 @@ require_classroom_manager = _require_capability(
 )
 require_lecturer_manager = _require_capability(
     "can_manage_lecturers", "Öğretim üyesi yönetim yetkisi gerekli"
+)
+
+# K-59: taslağı YAYINA alma yetkisi. Diğerleri "neyi yazabilirim" der, bu
+# "başkasının yazdığını yayına geçirebilir miyim" der. Bayrak tek başına
+# yetmez: bölüm üyeliği + öz-onay yasağı router'da aranır (ADMIN bayraktan
+# muaftır ama öz-onay yasağından DEĞİL — K-59).
+require_schedule_approver = _require_capability(
+    "can_approve_schedule", "Program onaylama yetkisi gerekli"
 )

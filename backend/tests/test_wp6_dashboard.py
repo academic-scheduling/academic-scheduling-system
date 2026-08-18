@@ -6,7 +6,9 @@ sayaçlarda görünür. Bu yüzden hiçbir test MUTLAK sayı iddia etmez — hep
 iddia eden bir test, test sırası değişince kırılırdı.
 """
 
-from tests.helpers import client, admin_headers, foreign_admin_headers, sub_headers, _u
+from tests.helpers import (
+    client, admin_headers, foreign_admin_headers, publish_exam, sub_headers, _u,
+)
 from tests.test_wp2_courses import make_department, make_lecturer, make_course, make_section
 
 
@@ -102,18 +104,18 @@ def test_admin_counter_is_at_least_one():
 # --- K-03: sınav sayacı taslakları da sayar ---
 
 def test_draft_exam_is_counted():
-    """Sınavda `active` yok; DRAFT sınav da gerçek kayıttır, sayılır (K-33)."""
+    """Sayaç YAYINDAKİ sınav takvimini anlatır (K-60).
+
+    Eskiden "DRAFT sınav da gerçek kayıttır, sayılır" diyordu; K-60'tan sonra
+    kapsamı `draft_id` çiziyor — kimsenin özel taslağı fakültenin sınav
+    sayısını şişirmemeli (haftalık sayacın eşi).
+    """
     h = admin_headers()
     course = make_course(h, make_department(h))
     lec = make_lecturer(h)
     once = summary(h)["exams"]
 
-    r = client.post("/exams", json={
-        "course_id": course["id"], "exam_type": "MIDTERM", "exam_date": "2026-11-12",
-        "start_time": "10:00", "duration_minutes": 90, "classroom_ids": [],
-        "lecturer_id": lec["id"],
-    }, headers=h)
-    assert r.status_code == 201, r.text
+    publish_exam(course["id"], lec["id"])
     assert summary(h)["exams"] == once + 1
 
 

@@ -25,7 +25,7 @@ from app.db import SessionLocal, engine
 from app.models import (
     Exam, ExamType,
     Building, Classroom, Course, CourseSection, Department, DepartmentMembership,
-    DeliveryMode, EntryStatus, Lecturer, SemesterType, SessionType, Slot, User,
+    DeliveryMode, Lecturer, SemesterType, SessionType, Slot, User,
     UserRole, UserStatus, WeeklyScheduleEntry, Workgroup,
 )
 from app.normalize import normalize_lecturer_name
@@ -393,8 +393,7 @@ def main():
             day_of_week=e["day"], start_slot=e["slot"],
             slot_count=min(e["slot_count"], 9 - e["slot"] + 1),
             session_type=e["session_type"],
-            delivery_mode=DeliveryMode.ONLINE_SYNC if online else DeliveryMode.FACE_TO_FACE,
-            status=EntryStatus.DRAFT, created_by=admin.id)
+            delivery_mode=DeliveryMode.ONLINE_SYNC if online else DeliveryMode.FACE_TO_FACE, created_by=admin.id)
         db.add(w); db.flush()
         log_action(db, admin, "CREATE", "weekly_entry", w.id, w)
 
@@ -438,8 +437,7 @@ def main():
         w = WeeklyScheduleEntry(section_id=s.id, classroom_id=oda_id, day_of_week=gun,
                                 start_slot=slot, slot_count=saat,
                                 session_type=SessionType.THEORY,
-                                delivery_mode=DeliveryMode.FACE_TO_FACE,
-                                status=EntryStatus.DRAFT, created_by=admin.id)
+                                delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin.id)
         db.add(w); db.flush()
         log_action(db, admin, "CREATE", "weekly_entry", w.id, w)
 
@@ -482,8 +480,7 @@ def main():
                     if ck == kod and cy == yil), None)
         x = Exam(course_id=c.id, exam_type=tip, exam_date=tarih, start_time=saat,
                  duration_minutes=sure,
-                 lecturer_id=sec.lecturer_id if sec else admin.id,
-                 status=EntryStatus.DRAFT, created_by=admin.id)
+                 lecturer_id=sec.lecturer_id if sec else admin.id, created_by=admin.id)
         # Çakışan ikili AYNI dersliği paylaşsın diye havuzun başından veriyoruz
         x.classrooms = oda_havuzu[:oda_adet]
         db.add(x); db.flush()

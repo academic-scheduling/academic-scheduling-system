@@ -27,7 +27,6 @@ from app.models import (
     Course,
     CourseSection,
     Department,
-    EntryStatus,
     Exam,
     ExamType,
     Lecturer,
@@ -213,20 +212,6 @@ def test_slot_overflow_rejected(session):
     # 8. slotta baslayip 3 slot: 8 + 3 - 1 = 10 > 9  -> reddedilmeli
     wse = WeeklyScheduleEntry(
         section_id=sec.id, day_of_week=1, start_slot=8, slot_count=3
-    )
-    session.add(wse)
-    with pytest.raises(IntegrityError):
-        session.flush()
-
-
-def test_submitted_requires_timestamp(session):
-    _, dep, lec, _, _ = make_base(session)
-    course = make_course(session, dep, code="CE106")
-    sec = make_section(session, course, lec)
-    # SUBMITTED ama submitted_at = None -> tutarlilik CHECK'i reddetmeli (K-03)
-    wse = WeeklyScheduleEntry(
-        section_id=sec.id, day_of_week=1, start_slot=1, slot_count=1,
-        status=EntryStatus.SUBMITTED, submitted_at=None,
     )
     session.add(wse)
     with pytest.raises(IntegrityError):

@@ -9,11 +9,30 @@ Ortak DB kullanıldığı için hiçbir test mutlak sayı iddia etmez; hep "bu i
 cevabında şu rule_id var mı" diye bakılır.
 """
 
-from tests.helpers import client, admin_headers, foreign_admin_headers, _u
+from tests.helpers import (
+    client, admin_headers, foreign_admin_headers, publish_exam, _u,
+)
 from tests.test_wp2_courses import make_department, make_lecturer
 from tests.test_wp3_weekly import make_classroom, make_entry, make_section
 from app.db import SessionLocal
-from app.models import CourseCohort, SemesterType
+from app.models import CourseCohort, SemesterType, WeeklyScheduleEntry
+
+
+def unpublish(entry_id: int) -> None:
+    """Yayin satirini kaldirir.
+
+    K-59: `DELETE /weekly-entries/{id}` ucu YOK — yayina yazan tek yol onaydir.
+    Bu testlerin derdi motor evreni; onay akisini kurmak konularinin disinda,
+    o yuzden satir dogrudan silinir. (Onay akisi test_k59_* dosyalarinda.)
+    """
+    db = SessionLocal()
+    try:
+        e = db.get(WeeklyScheduleEntry, entry_id)
+        if e is not None:
+            db.delete(e)
+            db.commit()
+    finally:
+        db.close()
 
 
 # ------------------------------------------------------------------
@@ -30,13 +49,9 @@ def save_conflicts(response) -> list[dict]:
 
 
 def make_exam(h, course_id, lecturer_id, **overrides):
-    body = {
-        "course_id": course_id, "exam_type": "MIDTERM",
-        "exam_date": "2026-11-12", "start_time": "10:00",
-        "duration_minutes": 90, "classroom_ids": [], "lecturer_id": lecturer_id,
-    }
-    body.update(overrides)
-    return client.post("/exams", json=body, headers=h)
+    """K-60: eski `POST /exams` kalktı; motor testleri YAYINDAKİ sınava bakar.
+    `h` artık kullanılmıyor ama imza korundu — çağrı yerleri sabit kalsın."""
+    return publish_exam(course_id, lecturer_id, **overrides)
 
 
 def make_course(h, dep, **overrides):
@@ -142,41 +157,51 @@ def test_w7_capacity_warning():
 # Submit kapısı (K-03: HARD reddeder, WARNING geçirir)
 # ==================================================================
 
-def test_submit_rejected_by_real_hard_conflict():
-    """Gerçek W1 çakışması submit'i 409 ile düşürür — hep-veya-hiç."""
+def test_real_hard_conflict_is_reported_between_published_entries():
+    """Gerçek W1: aynı derslik, aynı gün/saat → HARD.
+
+    K-59: eski `submit` ucu kalktı; "HARD onaya göndermeyi engeller" kuralı
+    `test_k59_draft_api.test_submit_is_blocked_by_hard_conflict`'te uçtan uca
+    test edilir. Burada ölçülen şey MOTORUN kendisi.
+    """
     h = admin_headers()
     room = make_classroom(h)
     ortak = {"classroom_id": room["id"], "day_of_week": 1, "start_slot": 7}
 
     e1 = make_entry(h, make_section(h), **ortak).json()["entry"]
-    e2 = make_entry(h, make_section(h), **ortak).json()["entry"]
+    ikinci = make_entry(h, make_section(h), **ortak).json()
+    assert "W1" in rule_ids(ikinci["conflicts"])
+    w1 = [c for c in ikinci["conflicts"] if c["rule_id"] == "W1"][0]
+    assert w1["severity"] == "HARD"
 
-    r = client.post("/weekly-entries/submit",
-                    json={"entry_ids": [e1["id"], e2["id"]]}, headers=h)
-    assert r.status_code == 409, r.text
-    assert "W1" in rule_ids(r.json()["conflicts"])
-
-    # Hep-veya-hiç kanıtı: ikisi de DRAFT kaldı → hâlâ silinebilirler
-    assert client.delete(f"/weekly-entries/{e1['id']}", headers=h).status_code == 204
-    assert client.delete(f"/weekly-entries/{e2['id']}", headers=h).status_code == 204
+    unpublish(e1["id"])
+    unpublish(ikinci["entry"]["id"])
 
 
-def test_w8_completeness_only_at_submit():
-    """K-20: W8 save'de SESSİZ, submit'te WARNING — ve submit'i durdurmaz."""
+def test_w8_completeness_is_silent_on_save_but_shown_on_scan():
+    """K-20: W8 kayıt anında SESSİZ, tam taramada görünür.
+
+    K-59: "submit anı" artık taslağın gönderilmesi; W8 orada da uyarı olarak
+    çıkar ve göndermeyi durdurmaz (test_k59_draft_api). Buradaki iddia
+    kuralın kendisi: save susar, tarama konuşur.
+    """
     h = admin_headers()
     section = make_section(h)          # ders 3+2+0 ister
-    entry = make_entry(h, section, slot_count=1).json()["entry"]
+    kayit = make_entry(h, section, slot_count=1).json()
 
     # save anında tamlık uyarısı YOK
-    r = client.patch(f"/weekly-entries/{entry['id']}",
-                     json={"slot_count": 1}, headers=h)
-    assert "W8" not in rule_ids(r.json()["conflicts"])
+    assert "W8" not in rule_ids(kayit["conflicts"])
 
-    # submit anında VAR ve submit başarılı
-    r = client.post("/weekly-entries/submit",
-                    json={"entry_ids": [entry["id"]]}, headers=h)
-    assert r.status_code == 200, r.text
-    assert "W8" in rule_ids(r.json()["warnings"])
+    # tam taramada VAR
+    tarama = client.get("/conflicts", headers=h).json()
+    ilgili = [
+        c for c in tarama["warnings"]
+        if c["rule_id"] == "W8"
+        and any(a["id"] == kayit["entry"]["id"] for a in c["affected"])
+    ]
+    assert ilgili, "W8 tam taramada görünmedi"
+
+    unpublish(kayit["entry"]["id"])
 
 
 # ==================================================================
@@ -216,17 +241,35 @@ def test_e5a_missing_exam_capacity_warning():
 
 
 def test_exam_submit_rejected_by_hard_conflict():
+    """Hard çakışma onaya göndermeyi engeller — talep hiç oluşmaz (K-03/K-60).
+
+    Kapı değişti (`/exams/submit` yerine taslak submit'i), kural aynı: motorun
+    E1'i gönderim kapısına ULAŞIYOR mu, bu testin ölçtüğü şey o.
+    """
     h = admin_headers()
     dep = make_department(h)
     lec = make_lecturer(h)
     room = make_classroom(h)
+    a = make_course(h, dep)
+    b = make_course(h, dep)
 
-    x1 = make_exam(h, make_course(h, dep)["id"], lec["id"],
-                   classroom_ids=[room["id"]]).json()["exam"]
-    x2 = make_exam(h, make_course(h, dep)["id"], lec["id"],
-                   classroom_ids=[room["id"]], exam_type="FINAL").json()["exam"]
+    r = client.post("/schedule-drafts", json={
+        "department_id": dep["id"], "year": 2, "semester": "FALL", "kind": "EXAM",
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    draft = r.json()
 
-    r = client.post("/exams/submit", json={"exam_ids": [x1["id"], x2["id"]]}, headers=h)
+    # Aynı derslik, aynı gün-saat, farklı ders → E1 (HARD)
+    for course, tip in ((a, "MIDTERM"), (b, "FINAL")):
+        r = client.post(f"/schedule-drafts/{draft['id']}/exams", json={
+            "course_id": course["id"], "exam_type": tip,
+            "exam_date": "2026-11-12", "start_time": "10:00",
+            "duration_minutes": 90, "classroom_ids": [room["id"]],
+            "lecturer_id": lec["id"],
+        }, headers=h)
+        assert r.status_code == 201, r.text
+
+    r = client.post(f"/schedule-drafts/{draft['id']}/submit", json={}, headers=h)
     assert r.status_code == 409, r.text
     assert "E1" in rule_ids(r.json()["conflicts"])
 
@@ -285,7 +328,7 @@ def test_inactive_section_leaves_conflict_universe():
     # aksi halde bir sonraki probe bu aktif girişle çakışır, testi yanıltır.
     probe = make_entry(h, make_section(h), **ortak).json()
     assert "W1" in rule_ids(probe["conflicts"])
-    assert client.delete(f"/weekly-entries/{probe['entry']['id']}", headers=h).status_code == 204
+    unpublish(probe["entry"]["id"])
 
     # Şubeyi pasife al → sec_eski'nin girişi artık evren dışı → çakışma yok
     assert client.patch(f"/course-sections/{sec_eski['id']}",
@@ -304,7 +347,7 @@ def test_inactive_course_leaves_conflict_universe():
     make_entry(h, sec_eski, **ortak)
     probe = make_entry(h, make_section(h), **ortak).json()
     assert "W1" in rule_ids(probe["conflicts"])
-    assert client.delete(f"/weekly-entries/{probe['entry']['id']}", headers=h).status_code == 204
+    unpublish(probe["entry"]["id"])
 
     # Dersi pasife al (şube değil) → şubenin girişleri de evren dışı kalmalı
     assert client.patch(f"/courses/{sec_eski['course']['id']}",

@@ -1,7 +1,7 @@
 # Proje Karar Defteri (Decision Log)
 
 **Proje:** Akademik Ders Programı ve Sınav Çakışma Yönetim Sistemi
-**Son güncelleme:** 5 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-58: hızlı işlemler yetkiye göre kilitli)
+**Son güncelleme:** 11 Ağustos 2026 (Not: W6/E2/E6 DB şemasıyla engelli · K-60: sınav onay akışı tamamlandı — yayına yazan tek yol onay)
 **Amaç:** Doküman WP0 gereği, gereksinim netleştirme kararlarının izlenebilir kaydı.
 Kaynaklar: [S] = Süpervizör cevabı, [E] = Ekip kararı, [D] = Doküman varsayılanı.
 
@@ -1443,3 +1443,1413 @@ Bu gözlem, çakışma örnekleri seed edilirken çıktı: kalan 17 kural gerçe
 kurulup GET /conflicts'te doğrulandı (9 HARD + 13 WARNING); bu 3'ü kurulamadı.
 İleride motor testlerinde bu 3 kural yalnız birim düzeyde (elle dict ile) test
 edilebilir — uçtan uca (DB üzerinden) değil.
+
+## K-59 · Yayın onay akışı: özel cohort taslağı + yetkili onayı [E] — K-03 revizyonu
+**Belirti (kullanıcı):** Program düzenleme yetkisi olan tek kişi, yaptığı
+değişikliği doğrudan yayına alabiliyordu. "Son programa ilk kullanıcı tek başına
+etki ediyor." İkinci bir göz yok.
+
+**Mevcut durumun tespiti (tasarım öncesi okuma):**
+- Program "sürüm" taşımıyor; `DRAFT`/`SUBMITTED` bütün programın değil TEK TEK
+  SATIRLARIN durumu. "Yayınlamak" = seçili satırları SUBMITTED yapmak.
+- Taslaklar **zaten herkese görünüyordu**: `GET /weekly-entries` status'e hiç
+  bakmıyor (K-26), frontend yalnız rozetle ayırıyordu. Yani "yayınlayınca
+  herkese düşer" değil, satır oluştuğu anda düşüyordu.
+- `revert-to-draft` **denetimsiz bir yayından-kaldırmaydı**: `can_manage_weekly`
+  olan biri yayındaki satırı tek istekle indirebiliyordu. Onay kapısı yalnız
+  submit'e konsaydı bu delik açık kalırdı.
+- Export status'e bakmıyor, taslakları da basıyordu.
+
+**Karar — model:** Onay birimi satır değil, **cohort taslağı**. Bir taslak, bir
+cohort'un (bölüm+yıl+dönem) bağımsız ve tam program halidir; açılırken o anki
+yayının kopyasıyla dolar, "Temizle" ile sıfırdan da dizilebilir.
+
+- **Taslak ÖZELDİR.** Yalnız sahibi görür ve saklanır (sonradan devam edilir).
+  Herkesin gördüğü tek şey yayındaki onaylı programdır. Bunun sonucu: **taslaklar
+  arası çakışma diye bir şey yoktur** — başka hesabın taslağı hiçbir sorguya,
+  hiçbir çakışma evrenine girmez.
+- **Fark CANLIDIR.** Taslağın açıldığı andaki hali saklanmaz; fark her seferinde
+  *o anki yayına* karşı hesaplanır (eşleştirme: şube + oturum tipi).
+  Dolayısıyla taban anlık görüntüsü, sürüm sayacı, `origin_entry_id`, "bayat
+  taban" kavramı ve buna dayalı engelleme kuralları **yoktur**.
+- **Onay, farkı uygular** — taslağın tamamını yayının yerine geçirmez.
+  > Tasarım sırasında önce "onay = cohort'un satırlarını taslağınkilerle
+  > değiştir" kurulmuştu. Bu, iki kişinin aynı cohorttan taslak açtığı durumda
+  > sonra onaylananın diğerinin onaylanmış değişikliğini SESSİZCE silmesine yol
+  > açıyordu. Canlı fark bunu çözer: onaylayıcı "PHYS101 Sal 3 → Pzt 2" satırını
+  > ekranda görür, geri alındığını bilerek karar verir. Sorun üzerine yazmak
+  > değil, sessizce yazmaktı; çözüm engelleme değil şeffaflık.
+
+- **DÜZELTME [uygulama sırasında ölçüldü].** Yukarıdaki paragraf, ilk yazıldığında
+  "farkı uygulamak diğerinin değişikliğini KORUR" gibi okunuyordu. **Korumaz.**
+  Fark, "gönderen ne değiştirdi" değil "gönderenin taslağı ŞU ANKİ yayından
+  nerede farklı" demektir. Mehmet'in taslağı Ayşe'nin taşıdığı dersin eski
+  halini taşıyorsa, Mehmet'in onayı o dersi de eski yerine geri götürür — ve
+  bu, onay ekranında ayrı bir satır olarak görünür.
+  - Sonuç olarak fark-uygulama ile toptan-ikame **aynı son duruma** varır;
+    aradaki gerçek fark **satır kimliğinin korunması**dır (taşıma, satırı silip
+    yeniden yaratmaz → denetim izi kopmaz).
+  - Yani sessiz üzerine yazmaya karşı tek koruma **görünürlüktür**: onaylayıcı
+    geri alınacak her satırı fark listesinde görür.
+    Test: `test_approving_a_stale_draft_also_reverts_the_other_persons_change`.
+  - **Bayatlık işareti (bu düzeltmenin gereği):** inceleme ekranı "taslak şu
+    tarihte açıldı, program o tarihten sonra N kez güncellendi (son: kim,
+    ne zaman)" bilgisini taşır (`DraftReviewOut.staleness`). Fark zaten satır
+    satır gösteriyor; bu, onaylayıcıya DİKKATLİ BAKMASI gerektiğini söyleyen
+    üst düzey işaret. Yeni şema gerekmedi: aynı cohort'un onaylanmış
+    taslakları + `affected_departments` üzerinden ortak ders etkisi sayılır.
+
+**Karar — yetki:** Yeni tek bayrak `users.can_approve_schedule` (K-25 fabrikası
+`_require_capability` ile), haftalık + sınav ortak. Onaylamak bir alan
+uzmanlığı değil gözetim rolüdür; ikiye bölmek kuyruğu/UI/testi ikiye katlar.
+- **Taslak açmak:** herkese açık. Özel taslak kimseyi etkilemez, "şunu taşısak
+  ne olur" kum havuzu olarak değerlidir.
+- **Onaya göndermek:** `can_manage_weekly` + bölüm üyeliği (K-25 iki boyut aynen).
+- **Onaylamak:** `can_approve_schedule` + bölüm üyeliği.
+- **Öz-onay YASAK, ADMIN dahil.** İstisna yok: tek yetkilisi olan workgroup
+  yayın yapamaz, ikinci onay yetkilisi davet etmek zorundadır. Bilinen sonuç —
+  seed/demo ve test hesabı kurulumu buna göre güncellenecek.
+
+**Karar — yaşam döngüsü:** `OPEN → PENDING → APPROVED | REJECTED`.
+- Bekleyen taslak **donar** (salt-okunur): onaylayıcı hareketli hedef
+  incelemesin. Sahibi "geri çek" derse `OPEN`'a döner.
+- Onaylanan taslak salt-okunur geçmiş kaydı olur; reddedilen gerekçesiyle
+  `OPEN`'a döner, düzeltilip yeniden gönderilir.
+- Kuyruk **ortak ve atamasız** (bölümün onay yetkilileri görür) + gönderende
+  serbest not alanı. Atama kolonu sonradan eklenebilir, sökülmesi zordur.
+
+**Karar — şema:**
+- Yeni `schedule_drafts`: cohort kimliği (department_id, year, semester), ad,
+  durum, `created_by`, gönderim (`submitted_at`, `submit_note`), inceleme
+  (`reviewed_by`, `reviewed_at`, `review_note`), etkilenen bölümler (ortak ders).
+- `weekly_schedule_entries.draft_id` (nullable FK). **`draft_id IS NULL` = yayında.**
+- `weekly_schedule_entries.status` ve `submitted_at` **KALKAR**: `draft_id` ile
+  aynı gerçeği söyleyen iki kolon er geç birbiriyle çelişir. `(status =
+  'SUBMITTED') = (submitted_at IS NOT NULL)` CHECK'i de onunla birlikte gider.
+  **Ama ilk migration'da değil.** `status`'ü hemen düşürmek `schemas.py`,
+  `weekly_entries.py`, `export_service.py`, seed'ler, testler ve frontend'i aynı
+  anda kırar — bunları düzeltmek zaten 3-6. adımların işi. Bu yüzden ilk
+  migration **tamamen eklemelidir** (hiçbir kolon düşmez, mevcut akış aynen
+  çalışır); düşürme + artık `DRAFT` satırlarının **silinmesi** (kullanıcı kararı:
+  taşınmayacak) yeni uçlar devreye girdikten sonra ayrı bir **temizlik
+  migration'ına** bırakılır. Böylece her commit'te ağaç yeşil kalır.
+- `entry_status` enum TİPİ kalır: sınavlar hâlâ kullanıyor (sınav fazı ayrı).
+- Onaylanan taslak kaydı **değişiklik kaydının kendisidir** — ayrı bildirim
+  tablosu yok. Uygulama içi akış ("bölümünüzü etkileyen son değişiklikler")
+  bu tablodan türetilir. E-posta bu fazda YOK (kullanıcı kararı).
+
+**Karar — çakışma motoru:** Motorun kendisine (`app/conflicts/`, saf Python)
+DOKUNULMAZ. Tek değişiklik `conflict_service._weekly_universe(...)` dikişinde
+bir `draft_id` parametresi (K-22'nin "motoru tek dikişten çağır" kararı tam
+burada ödüyor):
+- `draft_id` yok → evren = yalnız yayındaki satırlar.
+- `draft_id` var → diğer cohort'ların yayını + taslağın kendi satırları.
+- Cohort kapsamı için yeni sorgu yazılmaz, K-57'nin `cohort_course_filter`'ı
+  kullanılır (ortak dersi tüketen bölümden de getirir).
+- Kontrol **hem gönderimde hem onayda** koşar. Talep temizken başka bölüm bir şey
+  yayınlayabilir; onay anında hard çakışma çıkarsa onay engellenir ("bu talep
+  artık güncel programla çakışıyor"). Kullanıcının en baştaki isteği buydu:
+  "o anki program ile çalışmaları kontrol edilip".
+- Çakışma raporu ve dashboard **yalnız yayını** tarar. Bugünkü "DRAFT + SUBMITTED
+  hepsi" evreni sadeleşir.
+
+**Karar — ortak ders (K-48/K-49 ile ilişki):** K-49 ortak dersin düzenlenmesini,
+şube yönetimini ve silinmesini tüketen bölümlere açtı; ama **haftalık yerleşimi
+açmadı** — `weekly_entries` uçları hâlâ birincil bölüme bakıyor
+(`_ensure_department_access(user, section.course.department_id)`). Bugünkü
+tutarsız sonuç: CE, MATH101'e kendi şubesini ekleyebiliyor ama o şubeyi programa
+YERLEŞTİREMİYOR.
+- **Yerleştirme de paylaşıma açılır:** haftalık uçlarda K-49'un mevcut
+  `_ensure_course_access` yardımcısı kullanılır. Şubeye bölüm kolonu
+  (`course_sections.department_id`) EKLENMEZ — yerleştirme paylaşımlıysa şubeyi
+  bir bölüme atfetmeye gerek yoktur.
+- Ortak dersin tek fiziksel yerleşimi vardır; "onaylanınca tüm programlarda yeri
+  değişir" davranışı bu yüzden kendiliğinden gelir, ek iş gerektirmez.
+- **Uyarı zorunlu:** ortak ders taşınmadan önce etkilenen bölümleri listeleyen
+  pop-up (`_course_cohorts()` verisi hazır).
+- **Tek onay + bildirim:** talebi gönderen bölümün onaylayıcısı tek başına
+  onaylar, etkilenen bölümler akışta görür. K-49'un kabul ettiği "güvenilen
+  fakülte ölçeği" toleransıyla tutarlı.
+- **"Temizle" ortakları silmez** (varsayılan): yalnız cohort'un kendi dersleri.
+  Ortakları da silmek ayrı ve açıkça uyaran bir seçenektir — aksi halde masum
+  görünen bir düğme üç bölümün programından ders düşürür.
+
+**Uygulama sırası:**
+1. Şema + migration — **eklemeli** (`schedule_drafts`,
+   `draft_affected_departments`, `weekly_schedule_entries.draft_id`,
+   `users.can_approve_schedule`). ✅ `d3f8b1c47a09`; up/down/up doğrulandı,
+   9 şema testi (`test_k59_draft_schema.py`) + mevcut 467 test yeşil.
+2. Motor dikişi: `_weekly_universe(..., draft=None)` + `scan_draft`. ✅
+   `cohort_course_filter` router'dan `app/cohort.py`'ye taşındı (servisin
+   router'dan import etmesi bağımlılığı ters çevirirdi). 8 test
+   (`test_k59_draft_universe.py`).
+3. Taslak API'si: oluştur (kopyala) / temizle / düzenle / fark / gönder / geri çek. ✅
+   `app/draft_service.py` (kopyalama + temizleme + **canlı fark**) ve
+   `routers/schedule_drafts.py` (14 uç). Fark eşleştirmesi `(şube, oturum tipi)`
+   grubu içinde yapılır; aynı yerleşimler birebir eşleşip elenir, artan varsa
+   TAŞINDI / EKLENDİ / KALDIRILDI çıkar. "Temizle"den sonra baştan dizilse bile
+   sonuç doğru: fark "nasıl yapıldığını" değil "sonucun neresi farklı"yı anlatır.
+   15 test (`test_k59_draft_api.py`).
+4. Onay API'si: kuyruk / inceleme / onayla (fark uygula) / reddet. ✅
+   `routers/schedule_approvals.py` + `deps.require_schedule_approver`.
+   `draft_service.pair_changes` TEK eşleştirme noktası: onaylayıcının GÖRDÜĞÜ
+   fark ile onayın UYGULADIĞI fark aynı hesaptan çıkar, yoksa ekranda bir şey
+   görünüp başka bir şey yayına geçebilirdi. 12 test
+   (`test_k59_approval_api.py`); öz-onay yasağı admin dahil doğrulandı.
+5. Frontend haftalık: yayın-taslak modu, temizle, ortak ders uyarısı. ✅
+   `components/DraftBar.tsx` (mod çubuğu + fark tablosu + onaya gönderme) ve
+   `WeeklyPage.tsx` bağlantısı. Kilit noktalar:
+   - **Yazma yetkisi yer değiştirdi.** `canWrite` artık "düzenlenebilir bir
+     taslağın içindeyim" demek; `can_manage_weekly` + üyelik **onaya gönderme**
+     kapısına taşındı. Taslak açmak/düzenlemek yetki istemez (K-59).
+   - Bütün CRUD `writeBase` üzerinden taslağın altına gider; geri-al yığını da
+     (`UndoEntity` şablon tipiyle) aynı kökü kullanır.
+   - **Satır bazlı `status` arayüzden kalktı**: "yayında/taslak" rozeti, kilit
+     ikonu ve "taslağa çevir" düğmesi silindi — durum artık satırın değil
+     MODUN özelliği. Eski `Yayınla` düğmesi ve `SubmitModal` da kaldırıldı.
+   - Ortak ders taşınırken/kaldırılırken etkilenen bölümleri sayan onay
+     diyaloğu (`sharedCourseOk`, veri `Course.extra_cohorts`'tan).
+   - Taslaklar yalnız cohort bakışında; "Ortak dersler" sözde-yılında taslak
+     açılamaz (cohort'un sayısal yılı yok).
+   - Yetki arayüzü: `can_approve_schedule` kontrata bağlandı (UserPublic /
+     UserListItem / InviteRequest / UserUpdate + users router) ve
+     `UsersSection`'da YAZMA yetkilerinden **ayrı başlık** altında gösteriliyor —
+     aynı listede sıradan bir kutu gibi dursa yanlışlıkla verilmesi kolaylaşırdı.
+6. Frontend onay sayfası: kuyruk + inceleme + fark + ızgara + onay/ret. ✅
+   `pages/ApprovalsPage.tsx` + `components/DiffTable.tsx` (taslak sahibinin
+   "Farkı Gör"ü ile onaylayıcının incelemesi AYNI tabloyu kullanır — ayrı
+   çizilseydi zamanla ayrışırlardı). Menü girişi `approverOnly` ile gizli.
+   - **"Yan yana ızgara" yerine tek ızgara + fark tablosu.** İki ızgarayı yan
+     yana sıkıştırmak ikisini de okunmaz yapıyordu; fark tablosu zaten "ne
+     değişti"yi anlatıyor, ızgara "haftanın bütününde nereye oturuyor"u.
+     Değişen yerleşimler ızgarada vurgulu.
+   - **Vurgu ŞUBEYE değil YERLEŞİME bağlı.** İlk hali şube bazlıydı ve gerçek
+     veride bir şubenin aynı slotta iki satırı olunca DEĞİŞMEYEN kopyayı da
+     "taşındı" gibi gösteriyordu (tarayıcıda yakalandı).
+   - Bayatlık bandı, hard çakışmada onay düğmesinin kapanması, öz-onayda
+     ikisinin de kapanması ve gerekçe zorunlu ret ekranı burada.
+7. Taslak kapsamı + değişiklik akışı. ✅
+   - **Kapsam açığı kapandı.** Taslağa yerleşim eklerken yalnız workgroup
+     izolasyonu aranıyordu; CE'nin sorumlusu MATH'in dersini kendi taslağına
+     koyup onaylatabiliyordu (gönderim yetkisi yalnız CE üyeliğine bakıyor).
+     `_ensure_section_in_cohort` sınırı `cohort_course_filter` ile çizer —
+     taslağın neyi kopyaladığını ve çakışma evreninin neyi dışladığını
+     belirleyen filtrenin AYNISI. İkinci fayda: kapsam dışı satırın yayında
+     karşılığı olmadığı için farkta sonsuza dek "EKLENDİ" görünürdü.
+   - **K-49 tutarsızlığı kendiliğinden çözüldü.** Ortak ders, tüketen bölümün
+     cohort'undan filtreye takılır → tüketen bölüm onu KENDİ taslağında
+     yerleştirebilir. Eski `_ensure_department_access` (birincil bölüm) engeli
+     yeni akışta yok; `course_sections.department_id` eklemeye gerek kalmadı.
+   - **Değişiklik akışı** (`GET /schedule-changes` + `ChangeFeed`): ayrı
+     bildirim tablosu YOK, onaylanmış taslak kaydının kendisi değişiklik
+     kaydıdır. "Beni ilgilendiren" = kendi bölümümün cohort'u VEYA ortak ders
+     üzerinden etkilenen bölümler (`affected_departments`). Okundu/okunmadı
+     yok — bu bir akış, bildirim merkezi değil. Ana sayfada ve haftalık
+     ekranın YAYIN modunda görünür (taslaktayken gürültü olurdu).
+8. Seed/test hesapları: ikinci onay yetkilisi. ✅
+   Öz-onay yasağı (admin dahil) tek hesapla akışın denenmesini imkânsız kılıyor;
+   seed artık **hazırlayan ve onaylayan**ı ayrı ayrı kuruyor.
+   - `seed_engineering.py`: tek `SUB_ACCOUNT` sabiti yerine `TEST_ACCOUNTS`
+     listesi — `althesap@` (kısıtlı, değişmedi), `program@`
+     (`can_manage_weekly`, tüm bölümlere üye → hazırlar ve onaya gönderir),
+     `onay@` (`can_approve_schedule`, tüm bölümlere üye → yayına alır).
+     Üyelik şart: K-25'in ikinci boyutu hem gönderimde hem onayda aranıyor.
+   - `seed_demo.py`: `onay@` eklendi (ceng + eee üyeliğiyle); demo bandosunda
+     görünüyor.
+   - Hepsi e-postaya göre idempotent; şifreler değişmedi.
+9. **Temizlik + eski uçların kapatılması.** ✅ (`e6b2d95c31af`)
+   - **Eski YAZMA uçları kaldırıldı** (`POST/PATCH/DELETE /weekly-entries`,
+     `/submit`, `/revert-to-draft`). Duran her kopyası onay adımını atlamanın
+     bir yoluydu; arayüz kullanmasa da API açıktı. `GET` kaldı.
+   - `weekly_schedule_entries.status` + `submitted_at` + tutarlılık CHECK'i +
+     `idx_wse_status` düşürüldü. `entry_status` TİPİ durur — sınavlar kullanıyor.
+   - **"Kalan DRAFT satırlarını sil" adımı İPTAL EDİLDİ.** Plandaki varsayım
+     "DRAFT = yarım kalmış iş" idi; gerçek veride import/seed her şeyi `DRAFT`
+     yazmış ve adım 1'den beri bu satırların TAMAMI `draft_id IS NULL` olduğu
+     için uygulama onları YAYIN olarak gösteriyor. Ölçüm: 19 yayın satırının
+     19'u da `status=DRAFT`. Status'e bakıp silmek **programın tamamını**
+     silerdi. Kolonu düşürmek zaten doğru sonucu veriyor.
+   - **Bulunan sızıntı (adım 1'den beri taşınıyordu):** `GET /weekly-entries`,
+     export ve dashboard sayacı `draft_id` süzmüyordu — herkesin ÖZEL taslak
+     satırları genel okuma yollarından görünüyordu. İki sonucu vardı:
+     gizlilik ihlali ve aynı dersin ızgarada birkaç kez çizilmesi (kullanıcının
+     "aynı saatte 4 tane ISG 1801" şikâyeti tam olarak buydu: ölçüm sırasında
+     uç 6 satır dönüyordu — 2 yayın + 4 taslak kopyası).
+     Düzeltme `_eager_entry_query(db, published_only=True)` ile **güvenli
+     varsayılana** bağlandı: yeni bir çağıran filtreyi unutursa sızıntı değil
+     eksik veri olur — ikincisi fark edilir, birincisi edilmez.
+     Regresyon testi: `test_draft_rows_do_not_leak_into_public_reads`.
+   - Testler: `test_wp3_weekly.py` doğrulama kuralları taslak ucuna çevrildi
+     (kural aynı, kapı değişti); yaşam döngüsü testleri `test_k59_*`'e
+     devredildi. `test_wp5/wp6` için `tests/helpers.publish_weekly` eklendi.
+     `test_wp0_smoke`'taki CHECK testi sınava taşındı. 524 test yeşil.
+   **Ayrıca ZORUNLU — eski yazma uçlarını kapat.** `POST/PATCH/DELETE
+   /weekly-entries`, `/weekly-entries/submit` ve `/weekly-entries/{id}/
+   revert-to-draft` hâlâ ayakta ve `can_manage_weekly` yetkisi olan biri
+   onları çağırarak **onay adımını tümden atlayıp doğrudan yayına
+   yazabilir**. Arayüz onları kullanmıyor ama API açık; bu, K-59'un bütün
+   amacını boşa çıkaran bir bypass'tır. Adım 9 bitmeden sistem "onaylı" değil.
+   (Kasıtlı olarak ertelendi: bu uçları şimdi kaldırmak `test_wp3_weekly.py`'yi
+   toptan yeniden yazmayı gerektiriyor ve ağacı fazlar boyunca kırık bırakırdı.)
+
+**Ek · Palet ders düzeyine geçti + mükerrer yerleşim koruması [E]**
+**Belirti (kullanıcı):** "Cuma günü aynı saatte aynı yerde Şube 1'den birkaç
+ISG 1801 dersi var." Ölçüm: yayında ISG 1801 Şube 1 için Cuma 1. slotta
+**iki özdeş satır**; motorun W5 kuralı bunu görüyor ama **WARNING** olarak
+bildiriyor (K-03/K-05'in "uyar, engelleme" çizgisi).
+
+- **Palet artık ŞUBE değil DERS taşır.** Servis derslerinin 7-8 şubesi listeyi
+  şişiriyor ve "hangi şubeyi sürüklüyorum" kararı, daha yeri seçilmeden
+  verilmek zorunda kalıyordu. Şube **bırakma anında** sorulur; tek şubeli
+  derste hiç sorulmaz. Palet kartında `N şube` rozeti + ders düzeyinde
+  tamamlanma işareti (tüm şubeleri bitmişse). Izgara vurgusu da şubeden
+  derse geçti.
+- **Ama asıl düzeltme bu DEĞİL.** Palet değişikliği mükerrer kaydı engellemez;
+  onu `_ensure_not_duplicate` engeller: aynı şube + aynı gün + aynı başlangıç
+  slotu + aynı oturum türü ikinci kez girilemez (409). Ekleme ve TAŞIMA
+  yollarının ikisinde de.
+- **Kapsam bilerek dar:** yalnız TAM özdeş yerleşim bloklanır. Üst üste binen
+  ama özdeş olmayan yerleşimler W5 uyarısı olarak kalır — "uyar ama engelleme"
+  kararı değiştirilmedi.
+- **Mevcut veri temizlenmedi:** yayındaki iki özdeş ISG satırı duruyor; bunlar
+  import/seed'den gelmiş, silinmesi kullanıcının kararı.
+
+**Açık uçlar (bu fazda değil):**
+- **Sınavlar.** → **K-60'ta ele alındı.** Bu maddenin ilk hali "K-16 gereği
+  sınav ders düzeyindedir, cohort'a bağlanmaz; cohort taslağı kavramı sınavda
+  karşılıksız, birim muhtemelen bölüm + sınav dönemi olur" diyordu. **Bu
+  gerekçe yanlıştı** ve düzeltildi: sınav derse, ders de `(department_id, year,
+  semester)` + `extra_cohorts`'a bağlı olduğu için bir cohort'un sınavları
+  `cohort_course_filter` ile — haftalıkta kullanılan filtrenin AYNISIYLA — tam
+  seçilebiliyor. Ayrıntı ve düzeltmenin gerekçesi K-60'ta.
+- **Bildirim merkezi.** Kişi başına okundu/okunmadı durumu + zil ikonu; uygulama
+  içi akışın üstüne sonradan eklenebilir.
+- **Cohort dışı düzenleme.** Taslaklar yalnız cohort modunda olduğu için derslik/
+  hoca merceğinden düzenleme kalkar (mercekler görüntüleme olarak kalır). "Şu
+  derslik tadilata girdi, boşalt" işi cohort cohort dolaşmayı gerektirir —
+  bilerek kabul edildi.
+- **Export.** "Resmî program" kavramı ancak bu fazla anlam kazanıyor; export'un
+  varsayılan olarak yalnız yayını basması ayrıca ele alınacak.
+
+---
+
+## K-60 · Sınav onay akışı: `kind` ayracıyla aynı taslak mekanizması [E] — K-59'un ikinci yarısı
+**Belirti:** K-59 haftalık programı onay kapısının arkasına aldı, sınav tarafına
+dokunmadı. Sistem şu an **yarım**: ders programı onaylı, sınav takvimi değil.
+Aynı kurumda iki farklı yönetişim kuralı işliyor.
+
+**Mevcut durumun tespiti (tasarım öncesi okuma — kodda ölçüldü):**
+- `POST /exams/submit` (`routers/exams.py:286`) ve
+  `POST /exams/{id}/revert-to-draft` (`:324`) **ayakta**. `can_manage_exams`
+  yetkisi olan biri ikinci bir göz olmadan sınav takvimini yayına alıyor **ve**
+  yayından indiriyor. Bu, K-59 adım 9'da haftalıkta kapatılan bypass'ın
+  birebir aynısı — orada "adım 9 bitmeden sistem onaylı değil" demiştik;
+  sınav için henüz o adım hiç atılmadı.
+- `Exam.status` + `submitted_at` + `ck_exams_status_submitted_consistency`
+  duruyor. `entry_status` enum TİPİ K-59'da tam olarak bunun için bırakılmıştı.
+- `_exam_universe(db, workgroup_id)` (`conflict_service.py:207`) evreni
+  **"DRAFT + SUBMITTED hepsi"**. Yani sınavda, haftalıkta sadeleştirdiğimiz
+  "yarım işler herkesin çakışma evreninde" durumu aynen sürüyor.
+- Sınavı okuyan **altı** yol var: `routers/exams.py`, `dashboard.py`,
+  `export.py`, `courses.py`, `lecturers.py` ve `conflict_service.py`.
+  Hepsi bugün her satırı görüyor.
+
+**Karar — taslak birimi: cohort, K-59'daki gibi.** K-59'un açık uçlar
+maddesinde "sınav ders düzeyindedir, cohort taslağı kavramı sınavda
+karşılıksız; birim muhtemelen bölüm + sınav dönemi" yazıyordu. **Bu gerekçe
+yanlıştı, iptal edildi.**
+- `Exam.course_id → Course`, `Course` ise `(department_id, year, semester)`
+  taşıyor ve ortak dersi `extra_cohorts` üzerinden veriyor. Yani bir cohort'un
+  sınav kümesi `cohort_course_filter` ile **tam** seçilebiliyor — haftalık
+  taslağın kapsamını, kopyalayacağı satırları ve çakışma evrenini belirleyen
+  filtrenin AYNISI. Sınav "ders düzeyinde" olmak yüzünden cohort'suz değil;
+  cohort'a dersin üzerinden bağlı.
+- Ortak dersin sınavının birkaç bölümü aynı anda etkilemesi **yeni bir sorun
+  değil**: haftalıkta aynı durum paylaşımlı yerleştirme + "etkilenen bölümler"
+  uyarısı + tek onay ile çözüldü (K-59 / K-48-49). Sınavda tekrar çözülecek
+  bir şey yok, aynı çözüm devralınıyor.
+- **"Bölüm + sınav dönemi" birimi REDDEDİLDİ.** Dönem zaten cohort kimliğinin
+  içinde (`semester`). Yeni bir kapsam kavramı icat etmek ikinci bir filtre,
+  ikinci bir kapsam denetimi ve ikinci bir kuyruk mantığı demek olurdu —
+  hiçbirinin karşılığı yok.
+
+**Karar — ayrı mekanizma değil, `schedule_drafts.kind: WEEKLY | EXAM`.**
+Yaşam döngüsü (`OPEN → PENDING → APPROVED | REJECTED`), donma, geri çekme,
+öz-onay yasağı (ADMIN dahil), ortak ve atamasız kuyruk, inceleme ekranı,
+bayatlık bandı, `applied_summary` dondurma ve değişiklik akışı **olduğu gibi
+yeniden kullanılır**. K-59 bu ayrımı zaten öngörmüştü: `can_approve_schedule`
+oraya "haftalık + sınav ortak" gerekçesiyle tek bayrak olarak konmuştu.
+- **Haftalık ve sınav AYRI onaylanır**, tek talepte birleşmez. Sınav dönemi
+  planlaması ders programından bağımsız yürüyor; birleştirmek "vize takvimini
+  onaylatmak için ders programını da onaylatmak" demeye gelirdi.
+
+**Karar — yetki:** onaylamak tek bayrak (`can_approve_schedule`, kind'a
+bakmaz — gözetim rolü bölünmez, K-59). **Onaya göndermek kind'a göre**
+ayrışır: `WEEKLY → can_manage_weekly`, `EXAM → can_manage_exams`. Bölüm
+üyeliği (K-25'in ikinci boyutu) her iki kapıda da aranır. Taslak açmak yine
+yetkisiz — özel taslak kimseyi etkilemez.
+
+**Karar — şema:**
+- `schedule_drafts.kind` (`DraftKind` enum, `server_default 'WEEKLY'` →
+  mevcut satırlar doğru değeri kendiliğinden alır).
+- **`uq_schedule_drafts_active_per_owner` indeksine `kind` EKLENİR.** Yoksa
+  bir kullanıcı aynı cohort için haftalık ve sınav taslağını aynı anda
+  açamaz — bu iki iş birbirinden bağımsız yürüdüğü için kabul edilemez.
+- `exams.draft_id` (nullable FK). **`draft_id IS NULL` = yayında**, haftalıkla
+  aynı tek-gerçek kuralı.
+- **`uq_exams_course_type_index` PARÇALANIR — bu, sınava özgü ve zorunlu.**
+  Bugün `(course_id, exam_type, exam_index)` üzerinde koşulsuz UNIQUE (K-46).
+  Taslak yayının kopyasını taşıyacağı için **kopyalama anında** bu kısıt
+  ihlal edilir. İki KISMİ indekse bölünür:
+  - `(course_id, exam_type, exam_index) WHERE draft_id IS NULL`
+    → yayında tekillik korunur; K-46'nın asıl amacı budur.
+  - `(course_id, exam_type, exam_index, draft_id) WHERE draft_id IS NOT NULL`
+    → her taslağın kendi içinde tekillik.
+
+  Tek bir dört kolonlu UNIQUE **yetmez**: Postgres'te NULL'lar birbirine eşit
+  sayılmaz, o indeks altında yayında aynı sınavın iki kopyası geçerdi.
+  (Haftalıkta bu iş çıkmadı, çünkü `weekly_schedule_entries`'te böyle bir
+  tekillik kısıtı yok.)
+- Sınav kopyalanırken **`exam_classrooms` M2M satırları da kopyalanır**;
+  derslik listesi sınavın yerleşiminin parçası (K-17).
+- `Exam.status`, `submitted_at`, tutarlılık CHECK'i ve `idx_exams_status`
+  **düşer — ama ilk migration'da değil.** K-59'un dersi aynen geçerli: ilk
+  migration tamamen eklemelidir, mevcut akış bozulmadan çalışmaya devam eder;
+  düşürme son temizlik migration'ına kalır. Böylece her commit'te ağaç yeşil.
+- `entry_status` TİPİ: haftalık onu K-59'da bıraktı, sınav bu fazın sonunda
+  bırakacak. Son adımda **kullananı kalmadığı ölçülüp** tip de düşürülür.
+
+**Karar — fark eşleştirmesi:** anahtar `(course_id, exam_type, exam_index)`,
+yerleşim `(exam_date, start_time, duration_minutes, lecturer_id,
+classroom_ids, notes)`.
+- **`notes` karşılaştırmaya DAHİL** [uygulama sırasında eklendi]. İlk liste onu
+  dışarıda bırakıyordu, çünkü not "yerleşim" değil. Ama not öğrenciye basılan
+  bir içerik: dışarıda kalsaydı yalnızca notu değiştiren bir düzenleme ne farkta
+  görünür ne de onayla yayına geçerdi — kullanıcı, yaptığı düzenlemenin sessizce
+  kaybolduğunu görürdü. Test: `test_note_only_change_is_a_change`.
+- Haftalıktan **daha basit**: bu üçlü veritabanında zaten tekil olduğu için
+  grup içi çoklu eşleştirme, sıralı `zip`'leme ve "bir şubenin aynı tipte iki
+  oturumu olabilir" karmaşası **yok**. Her anahtarda en fazla bir yayın + bir
+  taslak satırı: ikisi de varsa ve yerleşim aynıysa elenir, farklıysa MOVED;
+  yalnız yayında REMOVED; yalnız taslakta ADDED.
+- **Derslik karşılaştırması KÜMEdir** (M2M, sıra anlamsız).
+- **Gözetmen farka girer.** Haftalıkta hoca şubeden türüyordu; sınavda
+  `lecturer_id` satırın kendi alanı, dolayısıyla gözetmen değişikliği de
+  onaylayıcının gördüğü farkta ayrı bir satırdır.
+
+**Karar — `pair_changes` GENELLEŞTİRİLMEZ, sınav için ayrı yazılır.**
+Ortak bir "entity + anahtar fonksiyonu + yerleşim fonksiyonu" soyutlaması
+kurmak, haftalığın grup-içi eşleştirme mantığını sınava da taşırdı — oysa
+sınavda o mantığın karşılığı yok. Bedeli iki tarafı da okunmaz yapmak olurdu.
+Paylaşılan şey **hesap değil şekil**: `Change` üçlüsü, fark kontratı ve
+`DiffTable`. Tablo "yer" sütununu bir **metinleştirici** üzerinden çizer
+(haftalık `"Sal 3"`, sınav `"12 Oca 09:00 (90 dk)"`); kind rozeti, ders
+sütunu ve ortak ders uyarısı aynen paylaşılır. Onaylayıcının GÖRDÜĞÜ fark ile
+onayın UYGULADIĞI farkın tek hesaptan çıkması kuralı (K-59 adım 4) sınav
+kolunda da geçerli.
+
+**Karar — çakışma motoru:** motora yine DOKUNULMAZ, tek değişiklik dikişte:
+`_exam_universe(db, wg, draft=None)`.
+- `draft` yok → yalnız `draft_id IS NULL`.
+- `draft` var → taslağın kendi sınavları + yayının, taslağın cohort kapsamı
+  DIŞINDA kalan sınavları (`cohort_course_filter`'ın tersi — haftalıkla
+  birebir aynı desen).
+- `scan_draft` **kind'a göre hangi tarafı taslak evrenine alacağını seçer**:
+  WEEKLY taslağında haftalık taslaktan + sınav yayından, EXAM taslağında sınav
+  taslaktan + haftalık yayından. K-06'nın X kuralları (sınav-ders çakışması)
+  böylece taslak içinde de doğru koşar.
+- Kontrol hem gönderimde hem onayda koşar; onay anında hard çakışma çıkarsa
+  onay engellenir (K-59 ile aynı).
+
+**Karar — sızıntı baştan kapatılır.** `_eager_exam_query(db,
+published_only=True)` **güvenli varsayılan** olarak kurulur ve yukarıdaki altı
+okuma yolu daha ilk adımda ona bağlanır. Haftalıkta bu sızıntı adım 1'den adım
+9'a kadar taşındı ve kullanıcı "aynı saatte 4 tane ISG 1801" diye şikâyet
+edene kadar görülmedi (testler görmüyordu). Aynı hatayı bile bile ikinci kez
+yapmanın anlamı yok.
+
+**Karar — doğrulama kuralları:** E1/E2/E6 ve `_validate_exam_refs`,
+`_ensure_weekday`, `_normalize_exam_index` **aynen kalır, yalnız kapı
+değişir** — taslak yazma yoluna taşınır (K-59 adım 9'daki
+`test_wp3_weekly.py` dönüşümünün aynısı: kural aynı, uç farklı).
+
+**Uygulama sırası:**
+1. ✅ Şema + migration — **eklemeli** (`schedule_drafts.kind`, indekse `kind`,
+   `exams.draft_id`, `uq_exams_course_type_index`'in iki kısmi indekse
+   bölünmesi). Hiçbir kolon düşmedi. `b7d3e0a15c92`; up/down/up elle
+   doğrulandı (testler `create_all` ile kurulduğu için migration'ları
+   çalıştırmıyor), 8 şema testi (`test_k60_exam_draft_schema.py`) + mevcut
+   524 test yeşil (532).
+   - Geliştirme veritabanında ölçüldü: iki kısmi indeks beklendiği gibi kuruldu,
+     eski koşulsuz constraint `pg_constraint`'ten düştü, mevcut 3 taslak
+     `server_default` sayesinde `WEEKLY` aldı, 11 sınavın 11'i de `draft_id
+     IS NULL` (yayında).
+   - Tarayıcı: sınav ekranı ve çakışma taraması bozulmadan çalışıyor, eski
+     "Yayınla" akışı aynen duruyor — eklemeli migration'ın amacı buydu.
+2. ✅ Motor dikişi: `_exam_universe(..., draft=None)` + `scan_draft`'in kind'a
+   göre evren seçimi + okuma yollarının süzülmesi. 11 test
+   (`test_k60_exam_universe.py`), toplam 543 yeşil.
+   - **kind süzgeci evrenin İÇİNE kondu**, çağırana bırakılmadı: `scan_draft`
+     aynı taslağı iki evrene de veriyor, her biri yalnız kendi türünü alıyor
+     (`_weekly_universe` bir EXAM taslağını yok sayar, `_exam_universe` bir
+     WEEKLY taslağını). Sessiz bir hata değil doğru bir ifade — "sınav taslağı
+     haftalık programın hiçbir dilimini değiştirmez" — ve yanlış kullanımı
+     imkânsız kılıyor. Öteki taraf hep yayın olduğu için K-06'nın X kuralları
+     taslağın içinde de yayındaki gerçeğe karşı koşuyor (X1 testi).
+   - **Okuma yolları ikiye ayrıldı, hepsine aynı muamele YAPILMADI:**
+     görüntüleme/sızıntı yolları (`_eager_exam_query` → liste + export,
+     dashboard sayacı, çakışma evreni) `published_only`ye bağlandı; **bütünlük
+     kontrolleri bilerek her satırı saymaya devam ediyor** (ders/hoca silme
+     engelleri — taslaktaki kopya da FK'ya takılır, saymamak kullanıcıya
+     "silinebilir" deyip ham DB hatası göstermek olurdu). K-59'un haftalıkta
+     kurduğu ayrımın aynısı (`courses.py:485`, `classrooms.py:129`).
+   - **Bulunan canlı veri kaybı hatası:** `courses.py`'de "programa etki eden
+     alan değişti → taslak yerleşimleri sil" bloğu sınav tarafında hâlâ
+     `status`'e bakıyordu. Gerçek veride her sınav `DRAFT` olduğu için
+     `SUBMITTED` sayacı 0 dönüyor, blok ise o dersin **yayındaki** sınavlarını
+     siliyordu — K-59'da haftalıkta ölçülen tuzağın aynısı. `draft_id`
+     semantiğine çevrildi; artık 409 ile duruyor. Canlı ölçüm: CE 4523'ün
+     dersinde `theory_online` değişikliği → 409, 11 sınav yerinde.
+     (Silme bloğu bu değişiklikten sonra ispatlanabilir biçimde ölü kaldığı
+     için haftalıktaki eşiyle birlikte kaldırıldı.)
+3. ✅ Taslak API'sinin sınav kolu: oluştur (kopyala) / temizle / düzenle /
+   fark / gönder / geri çek. 18 test (`test_k60_exam_draft_api.py`),
+   toplam 561 yeşil.
+   - `app/exam_draft_service.py` (kopyalama + temizleme + canlı fark + onayın
+     uygulaması) ve `schedule_drafts.py`'ye dört sınav ucu.
+   - **Dağıtıcı ayrı bir modülde:** `app/draft_dispatch.py → service_for(draft)`.
+     İki servis modülü bilerek AYNI adları taşıyor
+     (`copy_published_into_draft`, `clear_draft`, `compute_diff`, `apply_draft`,
+     `build_applied_summary`, `draft_row_count`) → ortak uçlar tek satırla doğru
+     kola gidiyor. Ayrı modül olmasının tek sebebi çevrimsel import:
+     `exam_draft_service` zaten `draft_service`'ten kind-agnostik yardımcıları
+     alıyor, dağıtıcı ikisinin üstünde durmalı.
+   - **Fark kontratı ayrık:** `entity: "weekly" | "exam"` ayırt edici alanıyla
+     Pydantic union. Tek modele sıkıştırmak iki yerleşim şeklini aynı alanlara
+     zorlamak olurdu; ayrı uçlara bölmek ise onay ekranını ikiye ayırırdı.
+   - **Kapsam denetimi ders düzeyine indi:** `_ensure_course_in_cohort`.
+     Haftalık yol şubeden derse inip aynı fonksiyona geliyor — sınırı çizen
+     filtre tek.
+   - `publications_since_opened`'a `kind` süzgeci eklendi: sınav taslağının
+     bayatlık ölçüsü SINAV onaylarıdır, haftalık onaylar onun kopyaladığı
+     hiçbir satırı değiştirmez ve sayılırsa yanlış alarm üretir.
+   - **Onay router'ının dağıtıcıya bağlanması bu adımda yapıldı** (adım 4'e
+     bırakılmadı): adım 3'ten itibaren sınav taslağı onaya gönderilebiliyor,
+     kuyruk ve inceleme uçları o taslağı görüyor. Sonraki adıma bırakmak ağacı
+     "gönderilebilen ama incelenince 500 veren" bir arada durumda bırakırdı.
+   - Gerçek veriyle ölçüm: CE/4/Güz sınav taslağı açıldı → 5 sınav çok-derslikli
+     M2M'iyle kopyalandı, bir sınav taşındı → fark tek MOVED satırı, çakışma
+     tablosu 0 engel/5 uyarı, yayındaki 11 sınav değişmedi, taslak silindi.
+4. ✅ Onay API'si. Kod adım 3'te dağıtıcıya bağlanmıştı; bu adım **kanıt**:
+   10 test (`test_k60_exam_approval_api.py`), toplam 571 yeşil.
+   - K-59'da kanıtlanmış genel kapılar (kuyruk yetkisi, ret gerekçesi,
+     öz-onay yasağının genel hali) TEKRAR EDİLMEDİ; dosya yalnız sınava özgü
+     olanı ölçüyor: taşımanın satır kimliğini koruması, derslik listesinin
+     onayla geçmesi, ekleme/kaldırma, `applied_summary`'nin sınav dili
+     ("1 taşındı · CE 4523 Vize 1 14 Eyl → 15 Eyl"), incelemenin `entries`
+     değil `exams` taşıması.
+   - **Bayat sınav taslağı testi** haftalıktaki eşinin aynısı: ikinci onay,
+     dokunulmayan satırı da geri alır ve bu inceleme ekranında ayrı bir satır
+     olarak görünür. Ayrıca `kind` süzgecinin karşılığı ölçüldü — haftalık bir
+     onay, sınav taslağının bayatlık sayacını artırmıyor.
+   - Gerçek veride uçtan uca (yayına yazmadan): taslak → 5 sınav kopyası →
+     değişiklik → onaya gönder → kuyrukta `kind=EXAM` → inceleme
+     (`entries: 0, exams: 5`, bayatlık 0, fark tek MOVED satırı notuyla,
+     0 engel/5 uyarı) → geri çek → sil. Yayındaki 11 sınav ve saatleri aynı.
+5. ✅ `ExamsPage`: yayın/taslak modu, `DraftBar`'ın yeniden kullanımı,
+   satır bazlı durum rozetlerinin kaldırılması. `tsc --noEmit` + `vite build`
+   temiz, 571 backend testi yeşil.
+   - `DraftBar` ve `DiffTable` **ortak kaldı, kopyalanmadı**: çubuk bir `kind`
+     alıyor (metinler ve gönderme yetkisinin adı ondan geliyor), tablo ise
+     `entity`ye bakan iki küçük metinleştiriciyle iki şekli de çiziyor
+     ("Çar 5 · A Blok 101" / "15 Eyl 09:00 (90 dk) · B Blok 202"). İkişer
+     bileşen yazmak, K-59'da bilerek kaçınılan ayrışmayı geri getirirdi.
+   - **Yazma yetkisi yer değiştirdi** (haftalıktaki devrin aynısı): `canWrite`
+     artık "düzenlenebilir bir taslağın içindeyim" demek; `can_manage_exams` +
+     üyelik onaya gönderme kapısına taşındı. Palet ve ders seçici yetki
+     süzgeçlerini bıraktı — kapsamı sunucu (`_ensure_course_in_cohort`) çiziyor.
+   - **Eski "Yayınla" düğmesi, `SubmitModal`, "taslağa çevir" ve kart başına
+     durum rozeti/kilit KALKTI.** Durum artık satırın değil MODUN özelliği.
+   - **Tarayıcı iki kusur yakaladı, ikisi de testlerle görünmezdi:**
+     1. `ExamModal` hâlâ eski `/exams` ucuna yazıyordu → taslaktaki bir sınavı
+        düzenlemek HTTP 500 veriyordu. Yazma kökü artık sayfadan geçiriliyor;
+        modalın "hangi moddayım"ı kendi başına bilmesi, iki yerde ayrı ayrı
+        doğru tutulması gereken bir gerçek olurdu.
+     2. Asıl sorun bunun ALTINDAYDI: `_get_owned_exam` taslak satırlarını da
+        buluyordu, yani eski yazma uçları **başkasının özel taslak kopyasını
+        düzenleyebiliyordu**. Taslağın gizliliği yalnız okuma yollarında
+        korunuyormuş. `draft_id IS NULL` şartı eklendi — uçlar adım 7'de zaten
+        kalkacak ama o güne kadar delik açık kalmamalı.
+   - Tarayıcıda uçtan uca: taslak aç (1 sınav kopyalandı) → saat değiştir →
+     "1 değişiklik" → Farkı Gör tablosunda TAŞINDI satırı, ortak ders uyarısı
+     ve "8 Eyl 08:30 → 8 Eyl 14:30" → taslak silindi, yayındaki 11 sınav ve
+     saatleri değişmedi.
+6. ✅ `ApprovalsPage`: tür rozeti + sınav incelemesi. `tsc --noEmit` temiz,
+   571 backend testi yeşil.
+   - **Kuyruk BÖLÜNMEDİ, rozetlendi.** Sekme/ayrı kuyruk düşünüldü ve
+     reddedildi: onaylamak tek bir gözetim rolü (`can_approve_schedule`,
+     K-59) ve "bugün ne bekliyor" sorusunun tek bir cevabı olmalı. Ama
+     onaylayıcının neye baktığını ilk bakışta bilmesi gerekir — her satır ve
+     inceleme başlığı türünü rozetle söylüyor.
+   - **Sınavda IZGARA YOK, kronolojik liste var** (`ProposedExamList`).
+     Haftalık ızgara işini görüyor çünkü haftalık program TEK haftaya sığar;
+     sınav takvimi iki-üç haftalık bir döneme yayılır. Doğrulamada açılan
+     gerçek talep 7 Eylül–16 Eylül arasına yayıldı — tek haftalık bir ızgara
+     bu takvimin yarısını gösteremezdi. Aynı soruya ("bu değişiklik takvimin
+     bütününde nereye oturuyor") cevap veren şey güne göre gruplanmış sıra:
+     onaylayıcı aynı günde başka ne var, gün yüklü mü, sınavlar arka arkaya
+     mı düşüyor görür.
+   - Vurgu yine YERLEŞİME bağlı, derse değil — K-59'da haftalıkta şube bazlı
+     vurgunun yaptığı hatanın (değişmeyen kardeş satırı da "taşındı" göstermek)
+     sınav karşılığı bir dersin birden çok sınavı olduğunda çıkardı.
+   - **Değişiklik akışına `kind` eklendi** (`ScheduleChangeOut.kind`) ve akış
+     sınav ekranının YAYIN moduna da kondu: iki tür onay aynı akışta akıyor,
+     hangisinin değiştiği özetten tahmin edilmemeli.
+   - Tarayıcıda uçtan uca, İKİ hesapla (öz-onay yasak): `program@` talebi
+     gönderdi → `onay@` kuyrukta "SINAV TAKVİMİ" rozetli satırı gördü →
+     incelemede fark tablosu ("7 Eyl 15:30 → 7 Eyl 16:30"), 5 uyarı ve
+     güne göre gruplanmış öneri listesi → "Onayla ve yayına al" → yayına
+     geçti, akışta sınav dili özetiyle göründü.
+     **Doğrulama değişikliği aynı akıştan geçirilerek geri alındı**; yayın
+     15:30'a döndü, 11 sınav yerinde. Geliştirme veritabanında kalan tek iz
+     değişiklik akışındaki iki kayıt (K-59 gereği onaylanmış taslak silinmez,
+     geçmiş kaydıdır).
+7. ✅ Temizlik + eski uçların kapatılması. `c4a70f2d9e83`; up/down/up elle
+   doğrulandı, 570 test yeşil, `tsc --noEmit` temiz.
+   - **Kaldırılan uç listesi plandakinden GENİŞ.** Plan yalnız
+     `/exams/submit` ve `/exams/{id}/revert-to-draft` diyordu; ama
+     `POST/PATCH/DELETE /exams` de kaldırıldı. Onları bırakmak, K-59'un
+     haftalıkta kapattığı bypass'ı sınavda açık bırakmak olurdu:
+     `can_manage_exams` yetkisi olan biri onları çağırarak onay adımını
+     tümden atlayıp doğrudan yayına yazabilirdi. `GET /exams` kaldı.
+     Ölçüm: `POST /exams → 405`, `PATCH/DELETE /exams/{id} → 404`,
+     `/exams/submit → 404`, `/exams/{id}/revert-to-draft → 404`,
+     `GET /exams → 200`.
+   - `Exam.status`, `submitted_at`, tutarlılık CHECK'i ve `idx_exams_status`
+     düştü. **`entry_status` TİPİ de düştü** — kullananı kalmadığı ölçüldü
+     (haftalık onu K-59'da, sınav burada bıraktı). Kontrattan `ExamOut.status`
+     ve frontend'den `EntryStatus` kalktı.
+   - **Veri silinmedi.** K-59'un dersi burada da geçerli: gerçek veride her
+     sınav `DRAFT` yazılmış, `status`'e bakıp satır silmek yayındaki takvimin
+     tamamını silerdi. Kolonu düşürmek zaten doğru sonucu veriyor. Ölçüm:
+     11 yayın sınavı, 19 yayın haftalık satırı yerinde.
+   - **`require_weekly_manager` ve `require_exam_manager` bağımlılıkları da
+     kalktı** (ilki K-59'dan beri ölüydü, fark edilmemişti). İkisi de "yayına
+     yazma" kapısıydı; yayına yazan uç kalmayınca karşılıkları da kalmadı.
+     Bayrakların kendisi duruyor ve hâlâ aranıyor — ama onaya gönderme
+     kapısında, taslağın türüne göre.
+   - **`test_wp4_exams.py` dönüştürüldü** (K-59'daki `test_wp3_weekly.py`
+     dönüşümünün aynısı): doğrulama kuralları — hafta sonu yasağı, E2
+     ön-kontrolü, K-46 sıra normalizasyonu, çapraz-FK izolasyonu, derslik
+     listesinin tam değişimi — aynı gövdeyle taslak ucuna taşındı. Yaşam
+     döngüsü testleri `test_k60_*`'e devredildi. `tests/helpers.publish_exam`
+     eklendi (`publish_weekly`'nin ikizi); wp2/wp5/wp6 testleri ona bağlandı.
+   - **Bulunan tutarsızlık:** `midterm_count` düşürme engeli taslaktaki
+     kopyaları da sayıyordu — yani birinin özel denemesi başkasının ders
+     düzenlemesini bloklayabiliyordu. K-59'un "özel taslak kimseyi engellemez"
+     kuralı gereği yayına daraltıldı; bayat kalan taslak sahibinin sorunudur.
+   - Tarayıcı: her iki ekran da (haftalık + sınav) yayın modunda sağlam,
+     değişiklik akışı tür rozetleriyle çalışıyor, tüm istekler 200.
+
+**Açık uçlar (bu fazda değil):**
+- **Bildirim merkezi** ve **export'un yalnız yayını basması** — K-59'dan
+  devrolan iki madde, sınav fazı bunları da kapsamıyor.
+- **Sınav dönemi takvimi.** "Vize haftası 12-23 Ocak" gibi bir dönem tanımı
+  yok; sınavlar serbest tarihe konuyor. Taslak birimi cohort olduğu için bu
+  faz onu gerektirmiyor, ama ileride gelirse taslağa değil **workgroup
+  ayarına** bağlanmalı.
+
+---
+
+## K-61 · Taslağa dönüş yolu + iki adımlı yerleştirme [E] — K-59/K-60 kullanım düzeltmeleri
+**Belirti (kullanıcı, üç madde):** (1) paletten şube kaldırılıp "bırakma anında
+sorulacak" denmişti, sorulmuyor; (2) modal "Ders / şube" diye tek soru soruyor,
+önce ders sonra şube sorulmalı; (3) taslak açıp "Yayına Dön" dedikten sonra o
+taslağa geri dönülemiyor — "Bu cohort için zaten açık program taslağınız var
+(#16)" deyip çıkmaza sokuyor.
+
+**Tespit — (1) bir hata DEĞİL, veri durumu.** Kod K-59 ekinde kararlaştırıldığı
+gibi çalışıyor: tek şubeli derste şube sorulmuyor, çok şubelide soruluyor.
+Geliştirme veritabanında ölçüldü: **313 ders 0 aktif şubeli, 24 ders 1 şubeli,
+2+ şubeli ders YOK.** Yani sorulacak bir seçim hiç oluşmamış. Şubesiz dersler
+paletten zaten sürüklenemiyor ("şube yok" rozeti + "önce şube ekleyin" uyarısı),
+orada çıkmaz yok.
+- Yine de kullanıcının istediği akış farklı ve daha iyi: **her durumda önce ders,
+  sonra şube.** Tek şubelide şube seçtirilmez ama GÖSTERİLİR — kullanıcı neyi
+  yerleştirdiğini görür, akış her durumda aynı okunur ve çok şubeli veri
+  geldiğinde davranış değişmez.
+
+**Karar — yerleştirme modalı iki adım.** Birleşik `CENG 1801-1 — IT FOR
+ENGINEERS` listesi kalkar; yerine "Ders" ve "Şube" iki ayrı seçici gelir.
+- Sürükleyerek gelindiğinde ders zaten bellidir → salt-okunur gösterilir,
+  yalnız şube sorulur. Boş slota tıklanarak gelindiyse ikisi de sorulur.
+- **Tek şubede seçici DEVRE DIŞI ama görünür.** Gizlemek "şube diye bir şey
+  yok" izlenimi verirdi; asıl bilgi "bu dersin tek şubesi var" ve bunu
+  söylemenin yeri burası.
+- Ders değişince şube seçimi sıfırlanır — başka dersin şubesi taşınırsa sunucu
+  400 verir, ama kullanıcı sebebini anlamaz.
+
+**Karar — açık taslağa dönüş İKİ yüzeyden (kullanıcı kararı: "ikisi de").**
+Asıl kusur şu: çubuktaki "Taslak Aç" her seferinde POST atıyor, mevcut taslağı
+SEÇME yolu yok. Taslağı hatırlayan efekt yalnız cohort değişince koşuyor, o
+yüzden "Yayına Dön" → "Taslak Aç" 409'a çarpıyor.
+- **Çubukta:** düğme, o cohort için açık taslağım varsa "Taslağı Aç (#N)"
+  olur ve POST atmaz. 409 bir daha hiç görünmemeli — çünkü kullanıcı hatası
+  değil, arayüzün mevcut durumu bilmemesiydi.
+- **Menüde "Taslaklarım" sayfası:** haftalık + sınav bütün açık taslaklarım tek
+  listede (cohort, tür, kaç değişiklik, durum) ve "Aç" düğmesi ilgili ekrana o
+  taslak seçili olarak götürür. **Onay Bekleyenler'in eşi** — o onaylayan
+  tarafın kuyruğu, bu hazırlayan tarafın. Yalnız çubukla yetinmek, bulunduğunuz
+  cohort dışındaki taslakları görünmez bırakırdı; "bir yerlerde açık taslağım
+  var mı" sorusunun cevabı hiçbir yerde olmazdı.
+- Sayfa herkese açık: taslak açmak yetki istemiyor, dolayısıyla "kendi
+  taslaklarım" listesi de istemez. Sunucu zaten yalnız kendi taslaklarını döner.
+
+**Karar — değişiklik akışının başlığı netleşir.** Kullanıcı "bu panel neyi
+gösteriyor, ortak dersleri mi çakışmaları mı?" diye sordu; soru sorulmuşsa
+başlık kendini anlatmıyor demektir. Panel ONAYLANIP YAYINA GEÇMİŞ değişiklikleri
+gösterir (çakışmayla ilgisi yok) ve bir kayıt iki yoldan düşer: değişiklik kendi
+bölümümün cohort'unda yapıldı, ya da başka bölümün onayı ortak ders üzerinden
+beni etkiledi. Bu ikinci cümle panele alt başlık olarak yazılır.
+
+**Uygulama sırası:**
+1. ✅ `EntryModal` iki adıma bölündü (ders → şube). Sürükleyerek gelindiğinde
+   ders seçicisi DOLU ve kilitli; tek şubede şube kendiliğinden seçiliyor ve
+   seçici "Bu dersin tek şubesi var" açıklamasıyla kilitli görünüyor.
+   - **Yol üstünde bulunan kusur:** modalın ders listesi `paletteItems`'tan
+     türetiliyordu, yani **palet arama kutusuna bağlıydı**. "MATH" aratıp boş
+     bir hücreye tıklayan kullanıcı modalda yalnız MATH derslerini görürdü.
+     Arama bir gezinme yardımıdır, kapsam değil — liste `courses`'tan (cohort'un
+     şubesi olan dersleri) türetiliyor artık.
+2. ✅ `DraftBar` yayın modundayken o cohort'un açık taslağını arar; varsa düğme
+   "Taslağa Dön (#N)" olur ve POST atmaz. **409 bir daha görünmemeli** — o bir
+   kullanıcı hatası değil, arayüzün mevcut durumu bilmemesiydi.
+3. ✅ `Taslaklarım` sayfası (`/drafts`) + menü girişi. "Aç", cohort'u sorgu
+   parametreleriyle vererek ilgili ekrana götürüyor; ekran cohort'u seçince mod
+   çubuğu taslağı kendiliğinden buluyor. Reddedilen taslağın gerekçesi listede
+   de görünüyor — kullanıcı neyi düzelteceğini öğrenmek için taslağı açmak
+   zorunda kalmasın.
+4. ✅ Değişiklik akışına alt başlık eklendi.
+
+**Doğrulama (tarayıcı):** Taslaklarım 4 taslağı listeliyor → "Aç" (#16) doğru
+cohort'a taslak seçili olarak gitti → "Yayına Dön" → düğme "Taslağa Dön (#16)"
+oldu → tıklayınca 409 almadan taslağa döndü. Boş hücre modalı ders/şube ayrı
+soruyor; palet "CE 1002"ye filtreliyken bile modal cohort'un tamamını sunuyor.
+- **Sürükleyip bırakma yolu tarayıcıda TIKLANAMADI:** sentetik fare olayları
+  HTML5 sürükle-bırak API'sini tetiklemiyor. Bu yolun tek farkı `fixedCourseId`
+  propunun dolu gelmesi; tip denetimi geçiyor ama gerçek bırakma denenmedi.
+
+---
+
+## K-62 · Çakışma listesi taslak/yayın ayrımını kaybetmişti [E] — K-59/K-60 kalıntısı
+**Belirti (kullanıcı):** bir taslakta çalışırken çakışma listesindeki iki çipin
+ikisi de yanlış davranıyor. "DENEME-1" → *"Vurgulanacak kayıt bulunamadı"*;
+"CE 1003-1" → dersin cohort'una gidiyor ama oradaki AÇIK TASLAĞA düşüyor ve
+aranan ders orada olmadığı için boş ızgara görünüyor. Kullanıcının teşhisi:
+"çakışma listesi taslak ve yayın arasında karışmış görünüyor."
+
+**Tespit — liste DOĞRU, tıklama bozuk.** Ölçülen veri:
+`CE 1003-1` (#121) YAYINDA, cohort 5/1/**Güz**; `DENEME-1` (#180) TASLAK #16'da,
+cohort 5/1/**Bahar**. İkisi de aynı hocada (id 9) ve Çarşamba 1-2. slotta →
+W2 gerçek bir çakışma. Taslak evreni tanım gereği böyle kurulur (K-59): taslağın
+kendi satırları + yayının, taslağın cohort'u DIŞINDA kalan kısmı. Yani çakışmanın
+**iki tarafı iki ayrı evrenden** gelir ve bu, mekanizmanın hatası değil amacıdır.
+
+**Kök sebep:** vurgulama/yönlendirme kodu taslaklardan ÖNCE yazılmıştı ve her
+satırın yayında olduğunu varsayıyordu — `GET /weekly-entries` çağırıyor, o da
+K-59'dan beri yalnız yayını döndürüyor. Taslak satırı orada yok → "bulunamadı".
+Yayın satırı bulunuyor ama gidilen cohort'ta açık taslak varsa ekran ona geçiyor
+ve aranan satır görünmüyor.
+
+**Karar — tıklama önce "bu satır ekranda mı" diye sorar.**
+- Satır o an gösterilen kümedeyse (taslaktaysam taslağımın satırı) → YERİNDE
+  vurgulanır, hiçbir yere gidilmez. Zaten oradayız.
+- Değilse tanım gereği YAYINDAKİ bir satırdır → cohort'una gidilir **ve yayın
+  moduna geçilir**. Taslağı kendiliğinden seçen efekt tek seferlik bir bayrakla
+  atlatılır; yoksa hedef yine ekrandan kaçar. Bildirim de nereye gidildiğini
+  ("YAYINDAKİ programda, N. sınıf görünümüne geçildi") açıkça söyler.
+- Aynı düzeltme sınav ekranına da uygulandı — orada `GET /exams` ile birebir
+  aynı kusur vardı.
+
+**Karar — panelin kapsamı yazıyla söylenir.** Kullanıcı "bu cohortu mu yoksa tüm
+sistemi mi gösteriyor" diye sordu. Taslakta liste **taslağımın satırlarına
+dokunanlarla** sınırlıdır (sunucu `scan_draft`'ta öyle süzer) ama karşı taraf
+başka cohort'un yayındaki dersi olabilir. Bunu söylememek listeyi "neden burada
+başka sınıfın dersi var" sorusuna açık bırakıyordu; panele alt başlık kondu.
+
+**Bulunan ikinci kusur (tarayıcı yakaladı):** haftalık ekranın "bu cohort için
+açık taslağımı seç" arayışı **`kind` süzmüyordu**. K-60'ta sınav taslakları
+eklendiğinde bu arayış güncellenmemiş; aynı cohort'un SINAV taslağı haftalık
+ekranda seçilebiliyor ve ekran *"Bu taslak bir sınav takvimi taslağı — bu uç ona
+uygun değil"* hatasına düşüyordu. Sınav ekranındaki eşi K-60'ta doğru yazılmıştı,
+haftalıktaki geride kalmış. Süzgeç eklendi.
+
+**Doğrulama (tarayıcı, kullanıcının senaryosu birebir):** Taslaklarım → #16
+"Aç" → doğru taslak (Program, sınav değil) açıldı → çakışma listesinde
+"DENEME-1" yerinde vurgulandı (taslaktan çıkmadan) → "CE 1003-1" CE/1/Güz'e
+**yayın modunda** götürdü, satır vurgulu göründü, çubuk "Taslağa Dön (#3)"
+seçeneğini sundu ama zorlamadı.
+
+---
+
+## K-63 · Program sıfırlama betiği [E]
+**Bağlam (kullanıcı):** "örnek ve test verilerini sil; bölümler, hesaplar,
+öğretim üyeleri, derslikler ve dersler kalsın ama program ve sınavlar boş olsun
+— gerçek programları kendim tek tek ekleyip denemek istiyorum."
+
+**Karar — sınır İKİ KATMAN arasından geçer.** Seed betikleri veri ÜRETİR;
+bu betik yalnız **program katmanını** siler, **kimlik ve katalog katmanına**
+dokunmaz:
+- **Silinir:** `weekly_schedule_entries`, `exams` (+`exam_classrooms` CASCADE),
+  `schedule_drafts` (+`draft_affected_departments`), `audit_logs`.
+- **Kalır:** workgroup, kullanıcı, üyelik, bölüm, öğretim üyesi, bina, derslik,
+  ders, şube, ek cohort, slot.
+
+**Onaylanmış taslaklar da silinir** (kullanıcı kararı): onaylanan taslak kaydı
+K-59 gereği aynı zamanda "son değişiklikler" akışının kaynağıdır — bırakılsaydı
+artık var olmayan satırların geçmişi akışta durmaya devam ederdi.
+
+`backend/reset_schedule.py`. Onay bayrağı olmadan **yalnız ölçer**
+(`--evet-sil` verilmeden hiçbir şey silmez) — yanlışlıkla çalıştırılan bir
+sıfırlama betiği, geri alınamayan bir zarardır. `--dersi-sil KOD` ile tek tek
+ders de düşürülebilir (test dersleri için).
+
+**Uygulandı (11 Ağustos 2026, geliştirme veritabanı):** 41 haftalık yerleşim,
+12 sınav, 13 sınav-derslik bağı, 9 taslak, 1043 denetim kaydı ve `DENEME` test
+dersi (1 şube + 3 ek cohort) silindi. 7 bölüm, 7 kullanıcı, 93 öğretim üyesi,
+23 derslik, 336 ders, 23 şube, 52 ek cohort duruyor.
+- Boş durum tarayıcıda doğrulandı: haftalık, sınav, çakışma raporu ve
+  Taslaklarım ekranları boş veriyle sorunsuz çiziliyor; boş programda taslak
+  açma (0 satır kopyalanır, fark boş, çakışma boş) çalışıyor.
+
+---
+
+## K-64 · Bologna'dan hoca eşleştirmeli şube import'u [E]
+**Bağlam (kullanıcı):** "Ders aktarmada dersleri şubesiz ekliyoruz. Ders
+detayında ( 'i' simgesi) 'Dersi Verenler' yazıyor, bazen birden fazla. Şube
+oluşturmayı bunu baz alarak yap — orada yazan öğretmene direkt şube atanmış
+gelsin. Kontenjan görünmüyor, varsayılan 80 olsun." Bu, K-14'te ertelenen
+"şube sonra elle eklenir" kararının otomatik hâli; K-08 hoca listesini kimlik
+anahtarı olarak kullanır.
+
+**Kaynağın anatomisi (tarayıcı + httpx ile kanıtlandı).** `progCourses.aspx`
+(WP7'de kazınan liste sayfası) hoca içermez. Hoca yalnız ders DETAY sayfasında:
+`progCourseDetails.aspx?curCourse=<ID>&lang=tr`. Ama `curCourse` ID'si liste
+sayfasında **gömülü değildir** — her satırdaki "i" bağlantısı bir ASP.NET
+postback'idir (`__doPostBack('grdBolognaDersler$ctlNN$btnDersAyrinti','')`) ve
+ID sunucuda viewstate'ten çözülür. Zincir: liste GET → gizli alanları
+(`__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION`, `curYear`) al →
+her ders için `__EVENTTARGET`'i o satırın bağlantısından oku → aynı viewstate
+ile POST → 302 → detay sayfasına in → parse. **Tek GET'in viewstate'i tüm
+dersler için yeniden kullanılabilir** (ölçüldü: 22 ders tek viewstate ile
+çekildi). Detay ~160 KB; ders başına bir postback+redirect. K-50'deki
+`fetch_details_bulk` deseniyle (8 worker, istek başına taze bağlantı) paralel
+çekilir — kaynağı bombalamadan beklemeleri üst üste bindirir.
+
+**"Dersi Verenler" biçimi.** `span#dlDers_DERS_VERENLabel_0` içinde, çoklu hoca
+`<br>` ile ayrılır. Her giriş `<Unvan> <Ad>` (ör. `Dr.Öğr.Üyesi BARIŞ İŞÇİ
+PEMBECİ`, noktalar bitişik). `normalize.split_title` noktayı boşluğa çevirip
+baştaki unvan token'larını greedy tüketir → (kanonik unvan, ad).
+`normalize_lecturer_name` unvanı atıp Türkçe-küçük harfe indirir → eşleştirme
+anahtarı. Tek kaynak; yeni normalizasyon yazılmadı.
+
+**Eşleştirme KISMİDİR — tasarımın kalbi budur.** Gerçek CENG verisinde ölçüldü:
+kendi bölüm hocaları eşleşir (`BARIŞ İŞÇİ PEMBECİ`→`barış işçi pembeci`), ama üç
+sınıf eşleşmez ve eşleşmemesi doğaldır:
+1. **Servis dersleri** — MATH/PHYS/CHEM/ENG hocaları başka fakültededir, K-50
+   listesi (yalnız Mühendislik kadrosu, 93 kişi) onları içermez.
+2. **Diakritiksiz yazım** — `Tugba Suzek` (Bologna) ≠ `tuğba süzek` (liste);
+   aynı kişi, farklı harfler.
+3. **Ad varyantı** — `Zeynep Filiz EREN DOĞU` (ek soyad) ≠ `zeynep filiz eren`.
+
+Şube `lecturer_id` NOT NULL/RESTRICT olduğundan eşleşmeyen otomatik bağlanamaz.
+
+**Karar — eşleşmeyen için ELLE EŞLE, oto-açma YOK (kullanıcı kararı).**
+Önizlemede eşleşmeyen hocanın ham Bologna adı gösterilir + bir hoca seçici;
+kullanıcı mevcut bir hocaya eşler ya da boş bırakır (o hoca için şube açılmaz).
+Yeni hoca **otomatik açılmaz**: `Tugba Suzek`i ayrı bir Lecturer yapmak, zaten
+var olan `Tuğba Süzek`in mükerreri olur ve W2/E3 hoca çakışma matematiğini
+böler (K-08'in tam tersi). Mükerrer üretmektense şubesiz bırakmak güvenlidir.
+
+**Karar — çoklu hoca → çoklu şube (kullanıcı kararı).** N hoca → N şube
+(Şube 1, Şube 2…), her biri o hocaya atanmış, hepsi `expected_students = 80`
+(kaynakta kontenjan yok). "Orada yazan öğretmene direkt şube atanır" isteğinin
+birebir karşılığı.
+
+**Karar — vize sayısı da otomatik dolar (kullanıcı kararı).** Detay sayfasını
+zaten çekiyoruz; `grd_degerlendirme` tablosunda ilk hücresi **tam olarak** "Ara
+Sınav" olan (çoğul "Ara Sınavlar" iş-yükü satırı ve hafta-konusu satırları
+HARİÇ), üç hücreli, ikinci hücresi sayı olan satırdan `courses.midterm_count`
+(K-46, 1–3'e kırpılır) yazılır. Bulunamazsa varsayılan 1 kalır.
+
+**Karar — kapsam: mevcut şubesiz derslere de (kullanıcı kararı).** 336 ders
+zaten aktarılmış, 313'ü şubesiz. Şube açmayı yalnız YENİ derse bağlamak mevcut
+veriye faydasız olurdu (kullanıcı 336 dersi silip yeniden aktarmalıydı). Bu
+yüzden önizleme, Bologna'da bulunan bir ders zaten kayıtlı **ama şubesizse**
+onu da şube adayı sayar: ders açılmaz, yalnız şubeleri eklenir. Zaten şubesi
+olan ders dokunulmaz (mükerrer önlenir). Böylece re-import ile 313 şubesiz ders
+şube kazanır.
+
+**Veri temizliği (kullanıcı kararı):** Var olan 23 şube deneme amaçlıydı;
+silindi (bağımlı haftalık giriş yok — K-63 sıfırlaması sonrası program boştu).
+Böylece 336 dersin tamamı şubesiz zemine indi ve Bologna şube-import'u hepsini
+tekdüze işler.
+
+**Sınır:** İş yine iki adımlı (K-61) — önizleme yazmaz, yalnız commit yazar.
+Detay çekme önizlemeyi yavaşlatır (ders başına bir postback); tek seferlik
+kurulum işi olduğu için kabul edildi. Bir dersin detayı çekilemezse o ders
+hocasız/şubesiz döner, tüm import düşmez (K-50'deki "tek sayfa patlarsa kişi
+detaysız kalır" toleransının aynısı).
+
+**Doğrulama (tarayıcı, gerçek Bologna, 11 Ağustos 2026):** program@ hesabıyla
+CENG (curSunit=253) önizlendi — 71 ders + detaylar canlı backend'den çekildi
+(POST /import/courses/preview → 200). Eşleşenler ön-dolu geldi (CENG 1007 →
+Barış İşçi Pembeci, ISG 1801 → İbrahim Ferid Öge), servis dersleri kırmızı
+"eşleşmedi" ile: ENG 1803 iki okutmanı da, MATH 1851 (Mehmet Ali Balcı) —
+listede olmayanlar. 71 dersin tamamı "kayıtlı · şubesiz" (313 şubesiz ders
+kararının somut hali). Tek ders (CENG 1007) commit edildi → "0 yeni ders · 1
+şube eklendi": DB'de Şube 1, Barış İŞÇİ PEMBECİ, 80 kontenjan. Doğrulama şubesi
+sonra silindi (kullanıcı programı kendi kuracak). 587 backend testi yeşil
+(17 yeni K-64), tsc + vite build temiz.
+
+**Veri notu:** Var olan 23 deneme şubesi bu iş kapsamında silindi; 336 dersin
+tamamı şubesiz. Hoca listesi 93 kişi (yalnız Mühendislik kadrosu) — servis
+dersi hocaları eşleşmez, elle eşlenir ya da şubesiz kalır.
+
+## K-65 · Dersler ekranı: tek sıralanabilir tablo + sağ Drawer + TÜR segmenti [E] — K-56 revizyonu
+**Bağlam (kullanıcı):** Claude Design'da (`claude.ai/design`, proje
+`a0c09d60…`, dosya `Dersler Yeni.dc.html`) Dersler sayfasının yeni arayüzü
+tasarlandı; "bu dersler sayfasının arayüzünü mevcut arayüze implement edelim".
+Mockup ham `<div>`+DC-runtime; Mantine v7'ye çevrildi. K-56'nın iki-tablo +
+satır-içi akordeon düzenini geri alır.
+
+**Karar — iki tablo TEK tabloya birleşti.** K-56'daki ayrı "Ortak Dersler" /
+"Bölüm Dersleri" tabloları kalktı; hepsi **tek sıralanabilir tabloda**
+(Kod · Ad · Tür · AKTS · T+U+L · Sınıf · Dönem · Şube). Ortak ders satırda
+kalır: TÜR rozeti "Ortak", Sınıf/Dönem "—" (tek değere sığmaz), cohort'ların
+tamamı Drawer'daki "Aldığı gruplar"da. Neden [E]: yeni tasarımın çözümü bu —
+TÜR sütunu + segment ortak dersi tek listede ayırt edilebilir kılıyor, iki ayrı
+tabloya gerek kalmıyor.
+
+**Karar — TÜR segmenti, "Ortak dersler" sözde-yılının yerini aldı.** Üstte
+`SegmentedControl` (Tümü/Zorunlu/Seçmeli/Ortak) — istemci tarafı süzgeç. K-48'de
+Sınıf filtresine konan `COMMON` sözde-değeri kaldırıldı; Sınıf artık sade 1–4.
+"Ortak" segmenti `is_common`'ı süzer.
+
+**Karar — satır-içi akordeon → sağdan Drawer.** Satıra tıklayınca detay **sağ
+Drawer'da** (Mantine `Drawer`, 560px): künye (kod+tür+ad) · istatistik ızgarası
+(AKTS/T+U+L/Sınıf-Dönem/Vize) · online bileşen · ortak dersse aldığı gruplar ·
+şubeler **kart** olarak · sabit alt çubuk (Dersi düzenle · Haftalık programda gör
+· Sil). Tüm şube CRUD'ı + K-48/K-49 yetki mantığı Drawer içinde korundu. K-56'nın
+"panel yalnız açıkken mount" gerekçesi Drawer'da doğal: gövde yalnız seçili ders
+varken render edilir.
+
+**Karar — sıralanabilir sütunlar (istemci).** Başlığa tıkla → o sütuna göre
+sırala, tekrar tıkla → yön çevir. Varsayılan gizli sıra `donem` (K-56'nın
+dönem-artan düzenini korur). Tür sırası Ortak<Seçmeli<Zorunlu; yıl/dönemde ortak
+ders dibe (99); eşitlikte koda göre.
+
+**Karar — süzgeç `Popover`'a toplandı + aktif çipler.** Bölüm/Hoca/Sınıf/Dönem
+selectleri düz satırdan `Popover`'a taşındı ("Pasif dersleri gizle" onayıyla);
+aktif filtreler çip olarak çubukta, "Temizle" ile toptan silinir. Filtre
+düğmesinde aktif sayısı rozeti.
+
+**Sunucu-taraf DEĞİŞMEDİ.** `load()` yine dep/yıl/dönem/arama'yı sunucuya sorar
+(kontrat §6); segment + sort + pasif süzgeci istemcide katman. K-48/K-57 backend
+semantiği aynen korundu. Şube slotları yine **yalnız yayındaki** yeşil rozet
+(GET /weekly-entries taslak görmez — mockup'taki DRAFT/SUBMITTED renkleri
+uydurulmadı). "Haftalık programda gör" → `/weekly?department_id&year&semester`
+(cohort görünümüne geçer).
+
+**Not:** Yalnız frontend (`CoursesPage.tsx`); API/şema değişmedi. `dataviz`/tema
+uyumu: kenarlıklar `--mantine-color-default-border` (koyu temada `gray-2` fazla
+açıktı); tablo dar ekranda `Table.ScrollContainer` ile yatay kayar.
+
+**Doğrulama (tarayıcı, gerçek veri, 12 Ağustos 2026):** 336 ders tek tabloda
+render; "Ortak" segmenti 51 derse indirdi; CENG bölüm filtresi 19 derse (çip +
+rozet "1") — sunucu reload'u ile. Normal ders Drawer'ı (CENG 1007: stat ızgarası,
+şube kartı, şube-ekle formu) ve ortak ders Drawer'ı (MATH 1851: "çok gruplu" +
+5 grubun teal rozeti) çalışıyor. AKTS başlığıyla sıralama doğrulandı. tsc + vite
+build temiz; temiz yenilemede konsol/ağ hatası yok.
+
+## K-66 · Öğretim Üyeleri + Derslikler ekranları K-65 arayüzüne geçti [E]
+**Bağlam (kullanıcı):** "Aynı arayüz değişikliklerini derslikler ve öğretim
+üyeleri sayfasına da yapalım." Claude Design mockup'ları (`Öğretim Üyeleri.dc.html`,
+`Derslikler.dc.html`) K-65'in kabuğunu (tek sıralanabilir tablo + sağ Drawer +
+TÜR segmenti + filtre popover + zebra + memo satır) bu iki ekrana taşıdı. Yalnız
+frontend (`LecturersPage.tsx`, `ClassroomsPage.tsx`); API/şema değişmedi.
+
+**İlke — mockup'ın backend'de KARŞILIĞI olmayan alanları UYDURULMADI.** İki
+mockup da gerçek veri modelinin ötesinde alanlar içeriyordu; K-64/K-65'teki
+"olmayan veriyi çizme" ilkesi (ör. DRAFT/SUBMITTED renkleri) burada da geçerli.
+Kabuk birebir alındı, veri panelleri gerçeğe göre budandı:
+
+- **Öğretim Üyeleri — düşürülenler:** ders yükü %'si / `maxHours` / "yükü aşan"
+  (hocada üst sınır alanı yok), KISITLAR (kısıt tablosu yok), HAFTALIK MÜSAİTLİK
+  ızgarası (kısıt verisi yok), Kadrolu/Yarı-zamanlı `type` (yok — en yakını
+  `is_external` 40/a). **Gerçek karşılıklar:** segment Tümü/Kadrolu/Dış görevli/
+  Ders vermeyen; stat ızgarası Ders·Şube·**Haftalık saat** (verdiği şubelerin
+  T+U+L toplamı — sınırsız, sadece "N sa")·Öğrenci; unvan rozeti renkli (prefix'e
+  göre); avatar baş harfleri; "Verdiği dersler" kartlarında gerçek yayın slotları
+  (`/weekly-entries`). Footer'da "Haftalık programda gör" KALDI (hocanın kendi
+  takvim görünümü `view=lecturer` — mevcut, çalışan özellik).
+- **Derslikler — düşürülenler:** Blok/Kat (yalnız `building.name`, kat yok),
+  Donanım (alan yok), Sorumlu bölüm (derslik paylaşımlı, K-25), haftalık kullanım
+  ızgarası, İçe Aktar (derslik import'u yok — mevcut Export + Binaları Yönet
+  korundu). **Gerçek karşılıklar:** segment Sınıf/Laboratuvar/Amfi (`room_type`);
+  tabloda **Sınav Kont.** (K-21) korundu + **Haftalık Doluluk** çubuğu (dolu slot
+  ÷ 45 = 5 gün × 9 slot, slots.ts'ten türetilir); Drawer'da "Yerleştirilen
+  dersler" gerçek yayın slotları + hoca + öğrenci + **kapasite aşımı** kontrolü
+  (`expected_students > capacity`). Booking'lerde hoca/öğrenci için `/courses` da
+  yükleniyor (WeeklyEntry.section bunları taşımaz).
+
+**Ortak desen (K-65 ile aynı):** sunucu yüklemesi değişmedi; segment+sort+pasif
+istemci katmanı. Satırlar `memo`, `onSelect` `useCallback` ile sabit; başlık
+`<SortTh/>` değil `sortTh()` fonksiyonu (gereksiz remount yok). Kenarlıklar
+`--mantine-color-default-border`; dar ekranda `Table.ScrollContainer`.
+
+**Doğrulama (tarayıcı, gerçek veri, 14 Ağustos 2026):** Öğretim Üyeleri 121 kişi,
+renkli unvan rozetleri + 40/A + avatar; drawer (Ali Ekber IRMAK: Ders 1·Şube 1·
+Haftalık saat 5 sa·Öğrenci 30, PHYS 1852 iki yayın slotu). Derslikler 29 derslik,
+doluluk çubukları; drawer (B3B08: %47 · 21/45 slot, 5 gerçek yerleştirilen ders,
+hoca+öğrenci). Her iki sayfada tsc + vite build temiz, konsol hatası yok.
+
+## K-67 · Haftalık Program yalnız cohort; derslik/hoca programları kendi drawer'larında [E]
+**Bağlam (kullanıcı):** "Haftalık programdaki derslik ve öğretim üyeleri
+programlarını kaldıralım; tasarım dosyalarındaki gibi programları derslikler ve
+öğretim üyeleri sayfalarındaki açılan sayfalara (drawer) ekleyelim; görünümleri
+demo'daki gibi basit olsun. Ayrıca dışarı aktarma kısımlarını da haftalık
+programdan kaldırıp kendi kısımlarına ekleyelim." Yalnız frontend.
+
+**Karar — Haftalık Program tek MERCEK: cohort.** WeeklyPage üç mercekliydi
+(cohort / derslik / hoca; sonuncu ikisi salt-okunur "kontrol" bakışıydı). Mercek
+seçici (SegmentedControl), derslik/hoca süzgeç Select'leri, `InfoPanel` (sol
+bilgi paneli), `roomFilter`/`lecFilter`/`view` state'i, iki `viewParam` deep-link
+efekti ve `lecturers` fetch'i tümüyle KALDIRILDI. `ClusterCard`'ın `view` prop'u
+ve dala bağlı metinleri sadeleşti. Cohort düzenleyici (palet, sürükle-bırak,
+taslak barı, değişiklik akışı, çakışmalar) aynen korundu.
+
+**Karar — programlar drawer'a `MiniWeekGrid` ile.** Yeni ortak bileşen
+`components/MiniWeekGrid.tsx`: 5 gün × 9 slot sade ızgara (mockup'ların HAFTALIK
+KULLANIM / MÜSAİTLİK'inin sade karşılığı). Salt-okunur, YALNIZ yayın yerleşimleri;
+çok-slotlu blok tüm slotlarını doldurur, etiket başta yazılır. Öğretim Üyeleri
+drawer'ında "HAFTALIK PROGRAM" (verdiği şubelerin gün-slot'u), Derslikler
+drawer'ında (odaya düşen yerleşimler). **Not:** K-66'da "düşürülen" ızgara
+KISIT-tabanlı müsaitlikti (veri yok); bu ise gerçek YERLEŞİM ızgarası — uydurma
+değil. "Haftalık programda gör" düğmeleri kalktı (program artık içeride).
+
+**Karar — export ilgili sayfaya taşındı (yeni backend ucu GEREKMEDİ).** Öğretim
+Üyeleri drawer'ında `/export/weekly?lecturer_id=X`, Derslikler drawer'ında
+`/export/classrooms?classroom_id=X` (ikisi de zaten vardı). Haftalık Program'daki
+export DÖNEM (cohort) programının resmi çizelgesiyle sınırlandı; **kullanıcı
+kararı: dönem export'u Haftalık Program'da KALSIN** (resmi çizelgenin başka evi
+yok). Derslik/hoca export dalları WeeklyPage'den çıktı.
+
+**Doğrulama (tarayıcı, gerçek veri, 14 Ağustos 2026):** Öğretim Üyeleri drawer'ı
+Ali Ekber IRMAK → HAFTALIK PROGRAM ızgarasında PHYS 1852 (Pzt 3 slot + Sal 2 slot
+= 5 sa) + "Programı Aktar". Derslikler drawer'ı B3B08 → 5 dersin gün-slot'u
+ızgarada + "Programı Aktar". Haftalık Program artık mercek seçicisiz, yalnız
+cohort; palet/grid/taslak/çakışma çalışıyor, `/lecturers` çekilmiyor, tüm API
+200. tsc + vite build temiz.
+
+## K-68 · Dersler/Derslikler/Öğretim Üyeleri arayüz düzeltmeleri + derslik `floor` [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri (K-65/66/67 üstüne). Çoğu frontend;
+biri backend şema (kat).
+
+**Dersler.** Segment TÜR (Zorunlu/Seçmeli/Ortak) yerine KATEGORİ:
+Tümü/Ortak/1-4. sınıf. Sınıf segmenti yıl süzgecini SUNUCUYA taşır (`year=N`);
+"Ortak" is_common (istemci); 1-4 sınıfta ortak dersler dışlanır. Ders türü
+(Zorunlu/Seçmeli) filtre popover'ına indi; popover'daki "Sınıf" kalktı. Çip
+"yıl" yerine "tür".
+
+**MiniWeekGrid (ortak).** Çok-slotlu blokta etiket artık HER slotta yazılır
+(eskiden yalnız başta, ardışık slotlar isimsiz boyanıyordu — kullanıcı "ne
+olduğu belirsiz" dedi). "ders/boş" legend'i kaldırıldı (isim yazınca gereksiz).
+
+**Derslikler.** Tabloda "Haftalık Doluluk" → "Haftalık Kullanım". Bina sütunu +
+drawer stat'ı bina+kat gösterir ("B Blok · 2. kat"). Drawer stat'ta "Haftalık
+saat" → "Konum". Künyeden bina+kapasite alt satırı kaldırıldı (ikisi de stat'ta).
+Özet etikete "N ders" (bu dersliklere yerleşmiş farklı ders) eklendi. Pasife-al
+simgesi daire yerine GÖZ (IconEye/EyeOff).
+- **Backend `floor` (K-68) [S]:** `classrooms.floor int NULL` — model + schema
+  (Create/Update/Out) + alembic migration `b8e4f1a09c2d`. Motor okumaz, opsiyonel
+  bilgi. Form'da "Kat" (opsiyonel, 0=zemin). Uçtan uca doğrulandı (B3B08 → 2. kat
+  kaydedildi, Konum'da göründü). 587 backend testi yeşil.
+
+**Öğretim Üyeleri.** "Bölüm" → "Kadro birimi" (sütun + form; kadro = asli bölüm,
+department_id). Drawer'a "GÖREV BİRİMİ" = verdiği ORTAK OLMAYAN derslerin
+bölümleri (türetilir; ortak ders çok bölümlü olduğu için görev birimi belirtmez).
+"Verdiği dersler" kartında slot rozetleri yan yana yerine ÜST ÜSTE (çok-günlü
+ders — CENG 4012, 5 slot — satırı kaplayıp çirkin duruyordu). "Ders vermeyen"
+segmenti kaldırıldı. Pasife-al simgesi GÖZ oldu.
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Dersler segmenti 1. sınıf → 18 ders
+(ortak yok); Derslikler drawer'ı Konum "B Blok · 2. kat", ızgarada her slotta
+isim, göz simgesi; Öğretim Üyeleri drawer'ı görev birimi + CENG 4012 slotları
+üst üste. tsc + vite build temiz; 587 backend testi yeşil.
+
+## K-69 · Başlık sayaçları sadeleşti + Dersler performans (istemci segment, statik-bir-kez) [E]
+Kullanıcı: başlık yanındaki çok parçalı sayaçlardan yalnız ana belirteç kalsın;
+"sayfalar biraz kasıyor". Yalnız frontend.
+
+**Sayaç etiketleri.** Üç sayfada da tek ana sayaç: Dersler "N ders" (eski
+"· şube · ortak" düştü), Derslikler "N derslik" (eski "· kişilik · ders ·
+kapalı"), Öğretim Üyeleri "N kişi" (eski "· ders veren"). Bunları besleyen
+`sectionTotal`/`commonCount`/`totalCap`/`closedCount`/`lessonCount`/`teachingCount`
+useMemo'ları da kaldırıldı (render başına iş azaldı).
+
+**Performans — Dersler.**
+- **Sınıf segmenti İSTEMCİYE alındı.** Eskiden 1-4. sınıf seçimi sunucuya
+  `year=N` gönderip TAM yeniden yükleme yapıyordu (ağ turu + 336 satır yeniden
+  render). Artık `seg` filtre `useEffect` bağımlılığında değil; yıl istemcide
+  süzülür (`c.year === N && !is_common`). Segment geçişi anlık — ders nesneleri
+  aynı ref kaldığı için memo'lu satırlar yeniden render bile olmaz, yalnız DOM
+  süzülür. (Derslikler/Öğretim Üyeleri zaten tümünü bir kez yükleyip istemcide
+  süzüyordu; Dersler tek sunucu-taraflı sayfaydı.)
+- **Statik listeler yalnız BİR kez.** Bölüm/hoca/derslik/haftalık filtreyle
+  değişmez; her dep/dönem/arama değişiminde dördünü birden çekmek gereksizdi.
+  `useRef` bayrağıyla ilk `load`'da hepsi (paralel), sonraki yüklemelerde yalnız
+  `/courses` çekilir. Tüm `load()` çağrı yerleri değişmedi (tek fonksiyon).
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Üç başlık tek sayaç; Dersler "1. sınıf"
+segmenti spinner'sız anında 18 derse indi (ağ isteği yok). tsc + vite build temiz.
+
+## K-70 · Dönemler-arası çakışma kapatıldı + eksik derslik uyarısı (W9/E8) [E]
+Kullanıcı: (1) sistem güz ile bahar dersleri arasında da çakışma arıyor — güz ve
+bahar farklı zamanlarda olduğundan bu saçma, kaldır. (2) Programa ders veya sınav
+konurken derslik girilmemişse uyarı ver.
+
+**Dönem kapısı (genel — dönem adına bağlı DEĞİL).** `same_semester(a,b)` yalnız
+`semester` eşitliğine bakar; FALL/SPRING (veya ileride bir YAZ) gömülü değildir,
+"farklı dönem = ayrı" kuralı geneldir. Kapıyı motorun saf kural fonksiyonlarına
+DEĞİL — orchestrator'ın ikili döngülerine koydum: yanlışsa `continue`. Neden
+orchestrator: kural fonksiyon imzaları sabit kalsın, birim testleri kırılmasın.
+
+Nerede uygulanır — gerekçesi "farklı dönemin **haftalık** dersi takvimde farklı
+haftalarda TEKRAR eder, asla aynı anda olmaz":
+- **W1/W2/W5 (haftalık kaynak): EVET.** Bir dönemde A101-Pzt-1.slot ↔ başka
+  dönemde aynı derslik/saat → eskiden sahte HARD W1, artık sessiz.
+- **X1–X3 (sınav×ders): EVET.** Haftalık taraf tekrar eden slot; sınavın somut
+  tarihi başka dönemin dersiyle `exam_date.weekday()` üzerinden sahte eşleşir.
+- **E1–E4 (sınav×sınav): HAYIR (kullanıcı düzeltmesi).** Sınav somut tarih taşır,
+  tekrar etmez; kesişim zaten aynı `exam_date` şartına bağlı ve bir takvim günü
+  tek döneme ait → dönem ayrımı gereksiz. Orchestrator'da E döngüsüne kapı KONMAZ.
+- Cohort kuralları (W3/W4/E4/X2) dönemi zaten cohort anahtarında taşır, etkilenmez.
+
+- **Cohort kuralları (W3/W4/E4/X2) dokunulmadı:** dönemi zaten cohort anahtarında
+  (`department_id, year, semester`) taşıyorlar; farklı dönem = farklı cohort =
+  zaten çakışmıyor. Kapı yalnız kaynak-kaynak (derslik/hoca/tarih) sahte
+  eşleşmelerini eler. En belirgin sahte durum: güz'de A101-Pzt-1.slot ile bahar'da
+  aynı derslik/saat → eskiden HARD W1, artık sessiz.
+- **Neden scalar `semester` yeterli:** ortak ders (K-48) birden çok cohort'a
+  yayılsa da tek fiziksel zamanda olur; extra_cohort'lar "kim katılıyor"u belirtir,
+  "ne zaman"ı değil. O yüzden dönem karşılaştırması dersin kendi `semester`'ı
+  üzerinden doğru.
+
+**W9 (haftalık eksik derslik).** Tekil kural (W6/W7 gibi). `delivery_mode=
+FACE_TO_FACE` VE `classroom_id` NULL → WARNING. Online (SYNC/ASYNC) girişler
+tasarımca dersliksizdir (K-10/K-23) — eksiklik değil, uyarı üretmez. W6 tekil
+döngüsüne eklendi (asenkron dahil tüm girişler; online zaten kural içinde susar).
+
+**E8 (sınav eksik derslik).** Tekil kural (E5/E5a/E6 gibi). `rooms` boş → WARNING.
+Sınavın online kavramı yok; dersliksiz her sınav uyarılır. E5/E5a/E7 boş kümede
+sessizce atlıyordu (kontenjan hesaplayacak oda yok); E8 tam o boşluğu yakalayıp
+"derslik ekle" der. `scan_exams` tekil döngüsüne eklendi.
+
+Her ikisi de WARNING (kullanıcı "uyarı" dedi) — yerleştirmeyi engellemez, submit'i
+kilitlemez; yalnız "derslik eklemeyi unuttun" hatırlatması. Mesajlar message.py'de
+(_msg_w9/_msg_e8); frontend değişmedi (kural mesajını sunucudan alıp gösteriyor,
+yalnız types.ts yorumu W9/E8'e güncellendi).
+
+**Doğrulama:** test_overlap 130→+13 test yeşil (W9/E8 motor + orchestrator
+kablolaması; dönemler-arası W1/E1/X1 bastırma + aynı-dönem kontrol testleri).
+
+## K-71 · Öğretim Üyeleri arayüz düzeltmeleri + `detail_url` + unvan normalizasyon bug'ı [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri. Biri backend şema (`detail_url`),
+biri veri düzeltmesi (unvan), gerisi frontend.
+
+**Akademik personel sayfası (`detail_url`).** Hoca modeline nullable `detail_url`
+kolonu (migration c1a2b3d4e5f6). Web import kişinin `detail_url`'ini artık
+SAKLIYOR (eskiden yalnız önizlemede vardı, yazılmıyordu); elle eklerken/düzenlerken
+opsiyonel "Akademik personel sayfası" alanından girilir ("detay" denince
+anlaşılmıyordu — açık ad). Drawer'da Öğrenci sayacı yerine "Akademik sayfa" linki
+(varsa "Aç ↗", yoksa —). NOT: bu kolondan ÖNCE import edilmiş kayıtlarda NULL;
+geri-doldurmak için yeniden scrape gerekir (yapılmadı, yeni import'lar dolu gelir).
+
+**Drawer stat ızgarası yeniden dizildi.** [Ders, Şube, Haftalık saat, Öğrenci] →
+[Ders, **Kadro birimi** (asli bölüm adı), Haftalık saat, **Akademik sayfa** (link)].
+Şube ve Öğrenci sayaçları kalktı. Künyede isim altındaki bölüm adı da kaldırıldı
+(artık Kadro birimi stat'ında; iki yerde yazmasın) — alt satırda yalnız e-posta.
+
+**Unvan normalizasyon bug'ı (aktarma hatası).** `normalize._TOKEN_ALIAS`'ta
+`"araş"→"arş"` yoktu; site "Araş.Gör.Dr." yazınca kanonikleşmeden HAM saklanıyordu
+("Araş.Gör.Dr."), frontend TITLES'ta bu yok → düzenle formunda Unvan Select'i BOŞ
+görünüyordu. Alias eklendi (kök neden, gelecekteki import'lar düzgün). Mevcut 9
+satır tek seferlik `canonical_title` ile yeniden normalize edildi ("Arş. Gör. Dr.").
+Ayrıca form Select'i artık kanonik-dışı bir unvanı da seçenek olarak gösteriyor
+(savunma; herhangi bir bilinmeyen unvanda boş kalmasın).
+
+**Import önizleme.** "Görev / Kadro Birimi" sütunu yalnız **Kadro Birimi**'ne indi.
+Görev birimi verdiği derslerden türetilir (dutyUnitsOf); import'ta göstermeye gerek
+yok. Backend bölüm eşleme (görev→kadro düşüşü) değişmedi — yalnız görüntü.
+
+**Küçük düzeltmeler.** (a) Öğretim Üyeleri + Derslikler drawer'larındaki export
+düğmesi "Programı Aktar" → "Programı İndir". (b) Tablo sütun genişlikleri: her iki
+tabloda tek genişliksiz sütun (Öğretim Üyeleri "Ad Soyad", Derslikler "Bina") tüm
+boşluğu yutup orantısız genişliyordu; hepsine genişlik verilince boşluk oranlı
+dağıldı, odak sütunu baskın ama diğerleri sıkışmıyor.
+
+**Yetki (kullanıcı sorusu).** `canWrite` false olduğunda tüm yazma kontrolleri
+(Ekle/İçe Aktar/Düzenle/Sil/Pasife al) `canWrite && (...)` ile HİÇ render edilmez —
+soluk/disabled değil, tamamen gizli. Salt-okunur drawer + "Programı İndir" herkeste.
+
+**Doğrulama (tarayıcı, 14 Ağustos 2026):** Drawer yeni stat düzeni, Aysu GÖÇÜGENCİ
+düzenle formunda "Arş. Gör. Dr." dolu (bug düzeldi), form açıklaması yok + akademik
+sayfa alanı var, iki tabloda sütunlar dengeli. tsc + vite build temiz; lecturer+
+import backend testleri (48) yeşil.
+
+## K-72 · Import kadro-only eşleştirme + 40/a çözümü + eksik-bilgi güncelleme + UI cila [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri (K-71 üstüne).
+
+**İçe aktarma — bölüm eşleştirme yalnız KADRO birimi.** `_match_department` artık
+görev birimini denemiyor (eskiden görev→kadro düşüşü vardı). Görev birimi fiilen
+ders verdiği yer; o zaten verdiği derslerden türetilir. Bölüm = resmi kadro.
+
+**İçe aktarma — bölümsüz kayıt kuralı.** Kadro bir bölüme eşleşmezse önizlemede o
+satırın "Bölüm" hücresi düzenlenebilir bir Select (bölümler + "40/a — dış görevli
+(bölümsüz)"). Eşleşen satır ön-dolu gelir. Commit kuralı: bölümü olan → normal
+eklenir; bölümsüz + 40/a işaretli → dış görevli (is_external, bölümsüz) eklenir;
+**bölümsüz VE 40/a değil → EKLENMEZ** (skipped "(bölümsüz)"). `ImportRow`'a
+`is_external` eklendi; commit'te sabit `is_external=False` yerine satırdan gelir.
+
+**İçe aktarma — eksik-bilgi güncelleme kolu.** Önce yalnız YENİ kişiler geliyordu;
+K-71'den önce eklenmiş kayıtlarda `detail_url` yok. Artık preview `updates` da
+döndürüyor: sistemde olan ama detay sayfası / e-postası eksik kayıtlar. detay linki
+liste taramasından BEDAVA (PersonRef); e-posta için yalnız eksik olanların detayı
+çekilir (cap'li). Commit `updates` kolu yalnız NULL alanı doldurur, var olanı
+EZMEZ. `ImportUpdateRow` + `ImportCommitOut.updated` eklendi. Canlı doğrulama:
+88 kişi, 85 zaten kayıtlı → 3 yeni + 85 güncellenebilir.
+
+**Öğretim Üyeleri UI.** (a) Kadro birimi artık KOD ("MINE", "CENG") — ad değil;
+hem derli toplu hem sütun sıkışmıyor (`depLabelOf` → `.code`). (b) Drawer stat
+"Akademik sayfa" → "Detay sayfası". (c) Her iki drawer'da "Sil" düğmesi metin
+yerine yalnız çöp-kutusu ikonu (ActionIcon). (d) İki filtre popover'ından
+gereksiz "Kapat" düğmesi kaldırıldı.
+
+**Derslik `floor` bug'ı.** Mantine NumberInput temizlenince değer "" (boş string)
+olup backend'e gidiyor, `int|None` "valid integer değil" 422 veriyordu → kat
+silinemiyordu. Submit'te `typeof === "number"` değilse null'a indirgeniyor;
+`allowDecimal={false}`. Canlı doğrulama: kat girip temizleyip kaydetme artık
+null olarak geçiyor.
+
+**Doğrulama:** 604 backend testi yeşil (5 yeni import testi: kadro-only, görev
+yok sayılır, bölümsüz-40a-değil skip, elle bölüm çözümü, eksik-bilgi güncelleme +
+ezmeme). tsc + vite build temiz. Tarayıcıda import akışı uçtan uca (40/a dropdown,
+kırmızı çözülmedi uyarısı, 85 güncelleme), kadro=kod, Detay sayfası, simge-Sil,
+Kapat yok, floor temizleme — hepsi teyit.
+
+## K-73 · Program sayfaları: değişiklik akışı sadeleşti, mod hafızası, yayın bilgisi pop-up'ı + küçük düzeltmeler [S+E]
+Kullanıcı geri bildirim toplu düzeltmeleri.
+
+**Küçük düzeltmeler.** (a) K-72'de kaldırılan filtre "Kapat" düğmeleri GERİ geldi
+(iki sayfa). (b) Hoca "Kadro birimi" artık "KOD - Ad" ("CE - İnşaat Mühendisliği")
+— K-72'de yalnız koddu, kullanıcı adı da istedi. (c) Derslik kat alanının
+"Opsiyonel (0 = zemin)." açıklaması kaldırıldı.
+
+**Değişiklik akışı (ChangeFeed) yeniden tasarlandı.** "Bölümünüzü etkileyen son
+değişiklikler" göz yoruyordu. Artık: (a) açılır-kapanır (varsayılan KAPALI, başlıkta
+sayaç), (b) her satır tek satır — "cohort · tür rozeti · tarih · Göster" (özet
+metni kalktı), (c) "Göster" o cohort'un YAYINDAKİ halini açar. (d) **Tür ayrımı:**
+Haftalık ekranda yalnız WEEKLY, Sınav ekranda yalnız EXAM değişiklikleri (`kind`
+prop + backend süzgeci); ana sayfada ikisi birden (URL ile yönlendirir).
+
+**Backend `/schedule-changes` süzgeçleri.** `kind`, `department_id`, `year`,
+`semester` opsiyonel parametreleri eklendi. Cohort süzgeci ORTAK DERS etkisini
+KATMAZ (DraftBar pop-up'ı "bu cohort'u kim düzenledi" sorar, doğrudan onayı ister).
+
+**Mod hafızası (K-73).** Bug: taslaktan yayına dönüp sayfa değiştirip geri
+gelince ekran hep taslağa atlıyordu. Artık cohort başına son mod localStorage'da
+(`weekly-mode`/`exam-mode` → "pub" | taslak id). Oto-seçim efekti tercihi gözetir:
+"pub" ise taslağa atlamaz; taslak id ise onu seçer; tercih yoksa (ilk ziyaret)
+eski davranış (açık taslağı seç). En optimize yol: zaten atılan taslak sorgusunun
+sonucundan HANGİSİNİ seçeceğimizi belirleyen bir yerel tercih — ek sunucu turu yok.
+
+**DraftBar: kilit + "salt-okunur" → "i" pop-up'ı.** Yayın modunda "Yayındaki
+program" yanındaki kilit simgesi ve "salt-okunur — değişiklik için taslak açın"
+metni kaldırıldı. Yerine bir "i" (HoverCard): bu cohort+tür için son APPROVED
+taslaktan **Düzenleyen (owner) · Onaylayan (reviewer) · Yayınlanma tarihi**. Onaylı
+değişiklik yoksa "henüz onaylı değişiklik yok" der. (Palet içindeki ayrı salt-okunur
+ipucu bırakıldı — o paletin neden sürüklenmediğini anlatır, farklı bir yer.)
+
+**Header hizalama.** Haftalık ve Sınav sayfalarında cohort seçicileri farklı
+konumdaydı (Haftalık'ta ortada justify=center, Sınav'da sağda) ve ortalanmış
+duruyordu. İkisi de başlıkla birlikte SOLA çekildi, hizalar tuttu.
+
+**Doğrulama (tarayıcı):** Header sol hizalı; DraftBar "i" pop-up'ı dolu (Düzenleyen
+Fakülte Yöneticisi · Onaylayan Alt Hesap (Test) · 12 Ağustos 2026) ve boş cohort'ta
+fallback; ChangeFeed açılır-kapanır + yalnız WEEKLY + Göster cohort'u yayında açtı
+(taslak #25 varken bile yayında kaldı); mod hafızası iki yönde (yayında bırak→yayın,
+taslakta bırak→taslak). tsc + vite build temiz; schedule-changes süzgeç testi eklendi.
+
+## K-74 · Mod çubuğu üst bara gömüldü (tek bar) + 40/a etiketi + palet düzeltmeleri [E]
+Kullanıcı: ayrı "mod çubuğu" kalabalık; üst barla birleştirelim. + küçük düzeltmeler.
+
+**DraftBar üçe bölündü, üst bara gömüldü.** Eskiden başlık barı + ayrı DraftBar +
+ChangeFeed üst üste 3 Paper'dı. DraftBar `DraftStatus` / `DraftActions` / `DraftNotes`
+olarak bölündü ve üst barın İÇİNE yerleşti (tek Paper): durum cohort seçicilerin
+SAĞINDA ("Yayındaki program"+i ya da taslak rozeti+"N değişiklik"; cohort adı
+TEKRAR yazılmaz — seçicilerde var), eylemler (Taslak Aç/Dön, Farkı Gör, Temizle,
+Onaya Gönder, Sil, Geri Çek, Yayına Dön) sağ eylem grubunda. PENDING/REJECTED bilgi
+satırı barın altına ince bir `DraftNotes` olarak indi (yalnız o durumlarda görünür).
+Taslaktayken bar hafif renklenir (DRAFT_SURFACE/BORDER) — eski renkli çubuğun işlevi.
+
+- **Dışa Aktar yalnız YAYINDA:** export yayındaki programı indirir, taslakta anlamsız
+  → taslak modunda gizli.
+- **"Taslağa Dön" sayısı kaldırıldı** ("(#25)" gitti; taslakta sayı tutmaya gerek yok).
+
+**40/a etiketi.** Import'ta "40/a — dış görevli (bölümsüz)" → "40/a — dış görevli".
+Kullanıcı: 40/a bölümsüz demek değil; başka fakültede kadrolu (Matematik/Fizik gibi
+servis derslerini verenler), bizim bölümlerimize ait olmaması onları bölümsüz yapmaz.
+
+**Palet.** (a) Haftalık paletindeki "Yayındaki program salt-okunur…" ipucu kaldırıldı.
+(b) `offsetScrollbars` kaldırıldı (iki sayfa) — ders kartları artık "Ders ara"
+kutusuyla aynı genişlikte (eskiden kaydırma payı kadar dardı).
+
+**Doğrulama (tarayıcı):** Haftalık + Sınav'da tek bar; yayın modu (Yayındaki
+program+i · Taslağa Dön · Dışa Aktar) ve taslak modu (renkli · TASLAK+durum ·
+tüm butonlar · export gizli) teyit; palet kartları arama kutusuyla eşit genişlik;
+salt-okunur ipucu yok. tsc + vite build temiz (frontend-only).
+
+**K-74 inceltme (aynı tur, kullanıcı geri bildirimi):** (a) Taslak durumundaki
+"yayındaki … ile aynı" metni kaldırıldı — değişiklik varken yalnız "N değişiklik",
+yokken hiçbir şey (TASLAK rozeti zaten belli ediyor). (b) Farkı Gör ve Temizle
+yalnız SİMGE (yazı yok; Sil zaten çöp simgesiydi). (c) Onaya Gönder birincil eylem
+olarak EN SAĞA alındı: DraftActions barın en sonunda render edilir (Geri Al ve
+Dışa Aktar ondan önce), Onaya Gönder de DraftActions içinde son buton. Yayın
+modunda aynı düzenden Taslak Aç/Dön en sağda kalır.
+
+## K-75 · Program gridi sadeleştirme: legend + grid etiketleri + tıkla-taslak kaldırıldı [E]
+Kullanıcı: grid çok kalabalık; renk açıklaması ve satır-içi etiketler gitsin.
+
+- **Renk açıklaması (legend) kaldırıldı** (Haftalık + Sınav). Yayınlanmış/Taslak/
+  Uyarı/Çakışma/Online swatch'ları ve `Legend` bileşeni silindi. Kart renkleri
+  (mavi/gri kenar, kesikli taslak kenarı, uyarı/çakışma köşesi) kalır — yalnız
+  açıklama satırı gitti.
+- **Online artık gridde özel kategori değil:** legend'deki "Online" swatch'ı kalktı.
+  (Karttaki işlevsel online göstergesi — küre ikonu + "online" oda etiketi —
+  korundu; oda bilgisi kaybolmasın diye. İstenirse o da kaldırılır.)
+- **Grid SEÇMELİ + TASLAK etiketleri kaldırıldı** (Haftalık ClusterCard). Palet/
+  sol-panel "Seçmeli" rozeti KALDI (kullanıcı "gridteki" dedi). Sınav gridinde
+  bu etiketler zaten yoktu.
+- **Yayında gridde tıkla→"taslak açılsın mı?" kaldırıldı.** `askSwitchToDraft`
+  (iki sayfa) ve `ClusterCard.onRequestDraft` silindi; yayın modunda karta/boş
+  hücreye tıklama artık bir şey yapmaz. Taslak YALNIZ üstteki bardan açılır.
+
+Frontend-only; tsc + vite build temiz. Tarayıcıda teyit: legend yok, grid
+kartlarında SEÇMELİ/TASLAK yok, yayında karta tıklama sessiz.
+
+## K-76 · Program barı ince ayarları + Temizle onayı + sınav gridi 1 saat + hover "i" [E]
+Kullanıcı geri bildirim toplu düzeltmeleri (Haftalık + Sınav).
+
+**Bar düzeni.** (a) Dışa Aktar EN SAĞA (DraftActions'tan sonra); yayın modunda
+en sağda, taslakta zaten gizli → Onaya Gönder en sağda kalır. (b) Geri Al yalnız
+SİMGE (ActionIcon; sayı tooltip'e taşındı). (c) Taslakta bar RENK DEĞİŞTİRMEZ —
+DRAFT_SURFACE/DRAFT_BORDER tonu kaldırıldı (TASLAK rozeti zaten belli ediyor).
+(d) Taslağı Sil simgesi çerçeveli (variant outline, kırmızı) + tooltip'ten
+"yayına etkisi yok" çıktı. (e) Yayına Dön çerçeveli (subtle → default).
+
+**Temizle onayı (K-76).** "Temizle" artık doğrudan silmiyor; bir modal açıyor:
+"Ortak dersleri de sil" onay kutusu. İşaretlenirse `include_shared=true` gider ve
+cohort'taki ortak (servis) dersler de silinir; işaretlenmezse korunur. Backend
+`/clear` bunu zaten destekliyordu; eksik olan istemci sorusuydu.
+
+**Değişiklik akışı programlardan kaldırıldı.** ChangeFeed yalnız ana sayfada;
+Haftalık + Sınav sayfalarından çıkarıldı (ana sayfada zaten var, tekrar gürültü).
+
+**Sınav gridi haftalık gibi 1 saat.** Bir saat 63px → `WEEKLY_ROW_H` (91px):
+saat satırı artık haftalık slotla aynı boyda (eskiden "yarım slot" gibi sıkışıktı).
+Grid böylece uzuyor; görünür yükseklik weekly gridiyle eşitlendi
+(`VISIBLE_H = HEAD_H + WEEKLY_ROW_H*9`) ve akşam saatleri dikey scroll ile açılıyor
+(Paper `overflow:auto` + `maxHeight`). Sol panel yüksekliği de VISIBLE_H'ye eşit.
+NOT: basit yaklaşım — scroll'da gün başlıkları da kayıyor (sticky başlık ayrı iş).
+
+**Ders "i" pop-up'ı hover'da da açılır.** CourseInfoButton artık `onMouseEnter`
+ile açılıyor (yalnız tıklama değil). Tıklama SABİTLER (pinned): sabitken fare
+çekilince kapanmaz (içindeki bağlantıya gidilebilir), hover'la açıldıysa çekilince
+kapanır. Başka "i" açılınca sabitleme sıfırlanır.
+
+**Doğrulama (tarayıcı):** Bar (Dışa Aktar sağda, Geri Al simge, ton yok, çerçeveler),
+Temizle modalı (ortak ders onayı), sınav gridi (91px satır + dikey scroll ile 17:00+),
+hover "i" — hepsi teyit. tsc + vite build temiz (frontend-only).
+
+## K-77 · Yayın Merkezi: Taslaklarım + Onay Bekleyenler tek master-detail sayfada [S+E]
+Kullanıcı (design import): iki sayfa birleşsin, tek "Yayın Merkezi" olsun. Design
+solda durum-gruplu kuyruk, sağda seçili kaydın tam incelemesi + kararı gösteriyor.
+
+**Neden birleşti.** DraftsPage ("kendi kuyruğum") ile ApprovalsPage ("onay
+kuyruğu") aynı yaşam döngüsünün (OPEN→PENDING→APPROVED|REJECTED) iki ucuydu;
+kullanıcı ikisi arasında gidip geliyordu. Artık tek ekran, tek zihinsel model.
+Sol menüde iki öğe (Taslaklarım + Onay Bekleyenler) tek **Yayın Merkezi**'ne indi
+(IconInbox); yeni bir liste ucu değil, iki mevcut ucun master-detail birleşimi.
+
+**Görünürlük K-59 gizliliğine SADIK (kullanıcı kararı — mock'un birleşik havuzu
+DEĞİL).** Design herkesin taslağını tek havuzda gösteriyordu; backend ise OPEN/
+REJECTED/APPROVED taslakları yalnız sahibine, PENDING'i kapsamdaki onaylayıcıya
+açıyor. İki seçenek sunuldu (gizliliğe sadık kal / yeni birleşik uç); kullanıcı
+gizliliği seçti. Sonuç asimetrik ama dürüst:
+- **Taslaklar/Reddedilenler/Yayında** = yalnız BENİM (`/schedule-drafts?
+  include_history=true`).
+- **Onay bekleyenler** = onaylayıcıysam kapsam kuyruğu (`/schedule-approvals`),
+  değilsem kendi PENDING'lerim (myDrafts süzgeci). Tek kaynak → mükerrer yok.
+  (Kendi PENDING'im onaylayıcıda daima kuyrukta görünür: submit bölüm üyeliği
+  ister, admin tüm workgroup'u görür → "görünmez pending" oluşmaz.)
+
+**Detay paneli — kayda göre kaynak + GERÇEK eylem modeli.** Design'ın "admin→
+onayla / diğer→gönder" basitleştirmesi yerine duruma göre:
+- İncelenebilir PENDING (onaylayıcı) → `/schedule-approvals/{id}` (fark + ızgara/
+  liste + çakışma + bayatlık). Başkasınınsa **Onayla ve yayınla** (hard'da kilitli)
+  + **Reddet**; kendiminse **Geri çek** + "kendi talebinizi onaylayamazsınız".
+- Kendi taslağım (OPEN/REJECTED/PENDING) → `/schedule-drafts/{id}` diff+conflicts+
+  entries/exams. OPEN/REJECTED: **Onaya gönder** (opsiyonel not modalı) + **Programda
+  düzenle** + **Sil**; PENDING: **Geri çek**.
+- **APPROVED özel:** satırlar yayına geçip silindiği için canlı fark/ızgara YOK;
+  yeşil "Bu değişiklik yayında" + `applied_summary` gösterilir, footer salt-okunur
+  (yalnız Programda gör). Adım çubuğu (Taslak→Onayda→Yayında) duruma göre dolar.
+
+**v1 sadeleştirme (kullanıcı kararı).** Design'ın kart-başı çakışma çipleri, "Engelli
+önce" sıralaması ve "Temizleri onayla" toplu onayı liste uçlarında çakışma sayısı
+gerektiriyor (kart başına tarama). v1'de yok: çakışma yalnız detay panelinde (zaten
+orada taranıyor). Toplu onay sonraki tura.
+
+**Revizyon (aynı tur, kullanıcı geri bildirimi): sol panel Bölümler kabuğu +
+sıralama seçici kaldırıldı (gruplar KALDI).** İlk sürümde sol panel dört durum
+grubu (sayaçlı düğmeler) + bir sıralama seçicisi (En yeni / Bölüme göre)
+taşıyordu. Kullanıcı: (a) sol taraf **Bölümler ekranındaki gibi** olsun — design
+zaten öyle; (b) "kategorileme"den kastı yalnız SIRALAMAYDI → sıralama seçicisi
+kalksın, grup içinde daima en yeni önce. Dört durum grubu KORUNDU.
+- **Yalnız sıralama seçicisi SİLİNDİ.** Grup içi liste daima `ts` (submitted ??
+  created) azalan. Grup havuzu ilk tasarımdaki gibi: PENDING onaylayıcıda kuyruktan
+  (`/schedule-approvals`), OPEN/REJECTED/APPROVED "benim taslaklarım"dan — her grup
+  tek kaynak, tekilleştirmeye gerek yok.
+- Sol panel Bölümler kabuğuna geçti: `Grid columns={100}` (sol 26 / sağ 74),
+  `Title order={4}`, dört grup düğmesi (leftSection ikon + rightSection sayaç,
+  seçili olan `variant=light` grup renginde), "Ara" `TextInput`, `ScrollArea.Autosize
+  mah="calc(100vh - 220px)"`, kartlar `UnstyledButton` + `.pub-card` (DepartmentsPage
+  `.dept-card`'ının aynısı: hover yükselme, seçilide sol mavi kenar + blue-light
+  zemin). Sağ panel de sabit-yükseklik/iç-kaydırma yerine sayfa akışına döndü;
+  eylem çubuğu içeriğin sonunda ince bir ayraçla durur.
+- Karttaki durum rozeti korundu (design'da da var; grup zaten durumu söylese de
+  design bütünlüğü için bırakıldı).
+
+**Program önizleme yeniden kullanımı.** ApprovalsPage'e gömülü `ProposedGrid` +
+`ProposedExamList` ortak `components/ProposedSchedule.tsx`'e taşındı (tek kaynak).
+DiffTable'ın `placementText`/`examPlacementText`'i değişiklik listesinde kullanıldı.
+Eski iki sayfa silindi; `/drafts` ve `/approvals` query'yi koruyarak `/publishing`'e
+yönlenir (derin bağlantılar kırılmaz). Menü rozeti (bekleyen sayısı) AppLayout'ta
+canlı: onaylayıcıda kuyruk, değilse kendi PENDING'i; `publishing:refresh` olayıyla
+karar sonrası tazelenir.
+
+**Doğrulama (tarayıcı):** Dört grup (sayaçlar 0/5/1/3), OPEN detayı (stat hücreleri
+DEĞİŞİKLİK/ENGEL/UYARI/DÖNEM + program ızgarası + W9 çakışma kartları + gönderen/
+karar + 3 butonlu footer), REJECTED (adım notu "düzeltip yeniden gönderilebilir"),
+APPROVED (applied_summary özeti + salt-okunur footer) teyit. tsc + vite build temiz.

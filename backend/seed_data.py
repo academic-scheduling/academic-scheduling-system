@@ -4,7 +4,7 @@ from app.db import engine, SessionLocal
 from app.models import (
     Base, Workgroup, User, UserRole, UserStatus, Department,
     Building, Classroom, RoomType, Lecturer, Course, CourseSection,
-    Slot, WeeklyScheduleEntry, SessionType, DeliveryMode, EntryStatus,
+    Slot, WeeklyScheduleEntry, SessionType, DeliveryMode,
     Exam, ExamType, SemesterType
 )
 from app.security import hash_password
@@ -225,15 +225,15 @@ def seed_database():
         if db.query(WeeklyScheduleEntry).count() == 0:
             entries = [
                 # CENG101 Sec 1 - Teori: Pazartesi 2-4 (09:30 - 12:15) MB-101
-                WeeklyScheduleEntry(id=1, section_id=sec_ceng101_1.id, classroom_id=cls101.id, day_of_week=1, start_slot=2, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, status=EntryStatus.DRAFT, created_by=admin1.id),
+                WeeklyScheduleEntry(id=1, section_id=sec_ceng101_1.id, classroom_id=cls101.id, day_of_week=1, start_slot=2, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin1.id),
                 # CENG101 Sec 1 - Lab: Çarşamba 6-7 (13:30 - 15:15) MB-201
-                WeeklyScheduleEntry(id=2, section_id=sec_ceng101_1.id, classroom_id=cls201.id, day_of_week=3, start_slot=6, slot_count=2, session_type=SessionType.LAB, delivery_mode=DeliveryMode.FACE_TO_FACE, status=EntryStatus.DRAFT, created_by=admin1.id),
+                WeeklyScheduleEntry(id=2, section_id=sec_ceng101_1.id, classroom_id=cls201.id, day_of_week=3, start_slot=6, slot_count=2, session_type=SessionType.LAB, delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin1.id),
                 # CENG201 Sec 1 - Teori: Salı 2-4 (09:30 - 12:15) MB-101
-                WeeklyScheduleEntry(id=3, section_id=sec_ceng201_1.id, classroom_id=cls101.id, day_of_week=2, start_slot=2, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, status=EntryStatus.DRAFT, created_by=admin1.id),
+                WeeklyScheduleEntry(id=3, section_id=sec_ceng201_1.id, classroom_id=cls101.id, day_of_week=2, start_slot=2, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin1.id),
                 # EEE101 Sec 1 - Teori: Perşembe 1-4 (08:30 - 12:15) MB-301
-                WeeklyScheduleEntry(id=4, section_id=sec_eee101_1.id, classroom_id=cls301.id, day_of_week=4, start_slot=1, slot_count=4, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, status=EntryStatus.DRAFT, created_by=admin1.id),
+                WeeklyScheduleEntry(id=4, section_id=sec_eee101_1.id, classroom_id=cls301.id, day_of_week=4, start_slot=1, slot_count=4, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin1.id),
                 # IE101 Sec 1 - Teori: Cuma 5-7 (12:30 - 15:15) MB-102
-                WeeklyScheduleEntry(id=5, section_id=sec_ie101_1.id, classroom_id=cls102.id, day_of_week=5, start_slot=5, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, status=EntryStatus.DRAFT, created_by=admin1.id),
+                WeeklyScheduleEntry(id=5, section_id=sec_ie101_1.id, classroom_id=cls102.id, day_of_week=5, start_slot=5, slot_count=3, session_type=SessionType.THEORY, delivery_mode=DeliveryMode.FACE_TO_FACE, created_by=admin1.id),
             ]
             for e in entries:
                 db.add(e)
@@ -243,9 +243,9 @@ def seed_database():
         # 8. Sınavlar (Exams)
         if db.query(Exam).count() == 0:
             exams = [
-                Exam(id=1, course_id=c_ceng101.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 10), start_time=time_type.fromisoformat("10:00:00"), duration_minutes=90, lecturer_id=lec_ahmet.id, notes="Ortak Vize Sınavı", status=EntryStatus.DRAFT, created_by=admin1.id),
-                Exam(id=2, course_id=c_ceng201.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 11), start_time=time_type.fromisoformat("14:00:00"), duration_minutes=120, lecturer_id=lec_ahmet.id, notes="Vize Sınavı", status=EntryStatus.DRAFT, created_by=admin1.id),
-                Exam(id=3, course_id=c_eee101.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 12), start_time=time_type.fromisoformat("09:00:00"), duration_minutes=90, lecturer_id=lec_zeynep.id, notes="Vize Sınavı", status=EntryStatus.DRAFT, created_by=admin1.id),
+                Exam(id=1, course_id=c_ceng101.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 10), start_time=time_type.fromisoformat("10:00:00"), duration_minutes=90, lecturer_id=lec_ahmet.id, notes="Ortak Vize Sınavı", created_by=admin1.id),
+                Exam(id=2, course_id=c_ceng201.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 11), start_time=time_type.fromisoformat("14:00:00"), duration_minutes=120, lecturer_id=lec_ahmet.id, notes="Vize Sınavı", created_by=admin1.id),
+                Exam(id=3, course_id=c_eee101.id, exam_type=ExamType.MIDTERM, exam_date=date(2026, 11, 12), start_time=time_type.fromisoformat("09:00:00"), duration_minutes=90, lecturer_id=lec_zeynep.id, notes="Vize Sınavı", created_by=admin1.id),
             ]
             for ex in exams:
                 db.add(ex)

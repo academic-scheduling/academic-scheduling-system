@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 
 // Taslak öğelere (haftalık giriş / sınav) yapılan değişiklikleri geri alan
@@ -13,7 +13,16 @@ import { api, ApiError } from "../api/client";
 // create geri alınınca öğe yeni bir id ile döner; yığında kalan ve aynı ESKİ
 // id'ye atıfta bulunan işlemler yeni id'ye REMAP edilir (id kayması bozmasın).
 
-export type UndoEntity = "weekly-entries" | "exams";
+/** Geri alma isteğinin gideceği uç kökü: `/${entity}/${id}`.
+ *
+ *  K-59: haftalık yerleşimler artık TASLAĞIN altında düzenleniyor
+ *  (`schedule-drafts/12/entries`), yayına doğrudan yazılmıyor. Şablon değişmez
+ *  — yalnız kök değişiyor. */
+export type UndoEntity =
+  | "weekly-entries"
+  | "exams"
+  | `schedule-drafts/${number}/entries`
+  | `schedule-drafts/${number}/exams`;      // K-60: sınav taslağının satırları
 
 export type UndoAction =
   | { type: "patch"; id: number; body: Record<string, unknown> }
@@ -59,6 +68,15 @@ export function useUndoStack(storageKey: string) {
   const ref = useRef<UndoOp[]>(loadStack(storageKey));
   const [count, setCount] = useState(ref.current.length);
   const [busy, setBusy] = useState(false);
+
+  // storageKey artık taslak bazlıdır (`weekly-undo-<draftId>`) — çağıran taslak
+  // değiştirince anahtar değişir. Yığın MOUNT'ta bir kez okunduğu için, anahtar
+  // değişince o taslağın KENDİ yığınını yeniden yükle. Böylece bir taslağın geri
+  // al adımları başka taslağa (ya da onaylanmış eski taslağa) sızmaz.
+  useEffect(() => {
+    ref.current = loadStack(storageKey);
+    setCount(ref.current.length);
+  }, [storageKey]);
 
   const save = useCallback(() => {
     setCount(ref.current.length);

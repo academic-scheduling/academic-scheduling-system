@@ -707,7 +707,7 @@ function ClassroomDrawerBody({
             <Text fw={700} size="lg" style={{ fontVariantNumeric: "tabular-nums" }}>{c.room_code}</Text>
             <Badge variant="light" color={typeColor(c.room_type)} size="sm">{t.enums.roomType[c.room_type]}</Badge>
             {c.building.is_external && <Badge variant="light" color="grape" size="sm">{t.classrooms.external}</Badge>}
-            {!c.active && <Badge color="gray" size="sm">Kapalı</Badge>}
+            {!c.active && <Badge color="gray" size="sm">{t.classrooms.closed}</Badge>}
           </Group>
           {/* K-68: bina + kapasite alt satırı kaldırıldı — ikisi de aşağıdaki
               stat ızgarasında (Konum / Kapasite) zaten var. */}

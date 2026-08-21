@@ -43,10 +43,6 @@ const YEARS = ["1", "2", "3", "4"];
    İki ekranın ızgara yüksekliği de orada eşitlenir (9 × 91 = 13 × 63). */
 const ROW_H = WEEKLY_ROW_H;   // tek slot: kod, ders adı ve konum rahatça okunur
 
-const SESSION_LABELS: Record<SessionType, string> = { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" };
-const DELIVERY_LABELS: Record<DeliveryMode, string> = {
-  FACE_TO_FACE: "Yüz yüze", ONLINE_SYNC: "Online (eşzamanlı)", ONLINE_ASYNC: "Online (asenkron)",
-};
 
 /** Gridde çizilen birim: bir KÜME.
  *
@@ -279,7 +275,7 @@ export default function WeeklyPage() {
             ? mevcut
             : d.length ? String(d[0].id) : null);
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Yüklenemedi"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.weekly.notLoaded));
   }, []);
 
   // deepHighlightIds hedefe ulaştığında ve kart çizildiğinde 3.5 saniyelik halka zamanlayıcısını başlatır
@@ -344,19 +340,19 @@ export default function WeeklyPage() {
             notifications.show({
               id: `highlight-${highlightIds.join("-")}`,
               color: "blue",
-              title: `Çakışan Dersler Vurgulandı (${ruleParam})`,
-              message: `${courseCodes} — YAYINDAKİ programda, `
-                + `${fullCourse ? `${fullCourse.year}. sınıf` : "ilgili cohort"} görünümüne geçildi.`,
+              title: t.weekly.highlightTitle(ruleParam),
+              message: t.weekly.highlightBody(courseCodes,
+                fullCourse ? t.weekly.yearN(fullCourse.year) : t.weekly.relevantCohort),
             });
           }
           setDeepHighlightIds(targets.map((t) => t.id));
           setHighlightInfo({
-            rule: ruleParam ?? "Çakışma",
+            rule: ruleParam ?? t.weekly.conflict,
             entries: targets,
           });
           setSearchParams({}, { replace: true });
         } else {
-          notifications.show({ color: "yellow", message: "Vurgulanacak kayıt bulunamadı." });
+          notifications.show({ color: "yellow", message: t.weekly.highlightNotFound });
           setSearchParams({}, { replace: true });
         }
       })
@@ -403,7 +399,7 @@ export default function WeeklyPage() {
     if (!istek) return;
     istek
       .then(([e, s]) => { setEntries(e); setScan(s); })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Program yüklenemedi"))
+      .catch((err) => setError(err instanceof ApiError ? err.message : t.weekly.loadFailed))
       .finally(() => setLoading(false));
   };
   useEffect(reload, [dep, year, sem, draft?.id, draft?.status]);
@@ -422,13 +418,12 @@ export default function WeeklyPage() {
 
       notifications.show({
         color: "green",
-        message: `Taslak açıldı — yayındaki programın kopyası (${d.entry_count} yerleşim). `
-          + "Değişiklikleriniz yalnız size görünür, onaylanınca yayına geçer.",
+        message: t.weekly.draftOpened(d.entry_count),
       });
       return d;
     } catch (e) {
       notifications.show({
-        color: "red", message: e instanceof ApiError ? e.message : "Taslak açılamadı",
+        color: "red", message: e instanceof ApiError ? e.message : t.weekly.draftFailed,
       });
       return null;
     }
@@ -489,7 +484,7 @@ export default function WeeklyPage() {
     refreshDraft();
     notifications.show({
       color: res.ok ? "gray" : "red",
-      message: res.ok ? `Geri alındı: ${res.label}` : `${res.label} — ${res.message}`,
+      message: res.ok ? t.weekly.undone(res.label) : `${res.label} — ${res.message}`,
     });
   };
 
@@ -542,14 +537,14 @@ export default function WeeklyPage() {
 
   const showConflicts = (conflicts: ConflictResult[], baslik: string) => {
     if (!conflicts.length) {
-      notifications.show({ color: "green", message: `${baslik} — çakışma yok` });
+      notifications.show({ color: "green", message: t.weekly.noConflictFor(baslik) });
       return;
     }
     const hard = conflicts.some((c) => c.severity === "HARD");
     notifications.show({
       color: hard ? "red" : "orange",
       title: baslik,
-      message: `${conflicts.length} çakışma: ${conflicts.map((c) => c.rule_id).join(", ")}`,
+      message: t.weekly.conflictList(conflicts.length, conflicts.map((c) => c.rule_id).join(", ")),
     });
   };
 
@@ -570,12 +565,12 @@ export default function WeeklyPage() {
     ])).filter(Boolean);
     return window.confirm(
       [
-        `${entry.section.course.code} ORTAK bir derstir.`,
+        t.weekly.sharedCourseTitle(entry.section.course.code),
         "",
-        `Bu dersi ${fiil}, onu alan diğer bölümlerin programını da etkiler:`,
+        t.weekly.sharedCourseBody(fiil),
         hepsi.join(", "),
         "",
-        "Devam edilsin mi? (Değişiklik onaylanana kadar yayına geçmez.)",
+        t.weekly.sharedCourseAsk,
       ].join("\n"),
     );
   };
@@ -583,24 +578,24 @@ export default function WeeklyPage() {
   /** Taşıma: yalnız gün/slot değişir; derslik, tür ve süre korunur. */
   const moveEntry = async (entry: WeeklyEntry, day: number, slot: number) => {
     if (entry.day_of_week === day && entry.start_slot === slot) return;
-    if (!sharedCourseOk(entry, "taşımak")) return;
+    if (!sharedCourseOk(entry, t.weekly.verbMove)) return;
     const prevDay = entry.day_of_week, prevSlot = entry.start_slot;   // geri al için
     try {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
         `/${writeBase}/${entry.id}`, { day_of_week: day, start_slot: slot },
       );
       recordUndo({
-        label: `${entry.section.course.code}-${entry.section.section_no} taşıma`,
+        label: t.weekly.moveLabel(entry.section.course.code, entry.section.section_no),
         entity: writeBase,
         action: { type: "patch", id: entry.id,
           body: { day_of_week: prevDay, start_slot: prevSlot } },
       });
       reload();
       refreshDraft();
-      showConflicts(res.conflicts, "Giriş taşındı");
+      showConflicts(res.conflicts, t.weekly.moved);
     } catch (err) {
       // Pencere taşması (400) ve donmuş taslak (409) burada görünür.
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Taşınamadı" });
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : t.weekly.moveFailed });
     }
   };
 
@@ -617,8 +612,8 @@ export default function WeeklyPage() {
   };
 
   const deleteEntry = async (e: WeeklyEntry) => {
-    if (!window.confirm(`${e.section.course.code}-${e.section.section_no} girişi silinsin mi?`)) return;
-    if (!sharedCourseOk(e, "kaldırmak")) return;
+    if (!window.confirm(t.weekly.deleteConfirm(e.section.course.code, e.section.section_no))) return;
+    if (!sharedCourseOk(e, t.weekly.verbRemove)) return;
     try {
       await api.delete(`/${writeBase}/${e.id}`);
       // Geri al = aynı girişi yeniden yarat (yeni id alır, remap yığında yapılır).
@@ -633,7 +628,7 @@ export default function WeeklyPage() {
           delivery_mode: e.delivery_mode,
         } },
       });
-      notifications.show({ message: "Giriş silindi", color: "gray" });
+      notifications.show({ message: t.weekly.deleted, color: "gray" });
       reload();
       refreshDraft();
     } catch (err) {
@@ -726,7 +721,7 @@ export default function WeeklyPage() {
       });
   }, [courses, paletteSearch, placedBySection]);
 
-  const DAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
+  const DAY_NAMES = [1, 2, 3, 4, 5].map((d) => t.days.long[d]);
 
   return (
     <Stack gap="lg">
@@ -738,7 +733,7 @@ export default function WeeklyPage() {
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           <Group gap="md" align="center" wrap="wrap">
             <Title order={2} fw={600} fz={18} style={{ letterSpacing: "-0.01em" }}>
-              Haftalık Program
+              {t.weekly.title}
             </Title>
             {/* Cohort seçimi: bölüm · sınıf · dönem. */}
             <Group gap={8} align="center" wrap="wrap">
@@ -747,8 +742,8 @@ export default function WeeklyPage() {
                 data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))} />
               <Select size="xs" w={130} radius="md" value={year} onChange={(v) => v && setYear(v)}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                data={[{ value: COMMON_YEAR, label: "Ortak dersler" },       // K-48
-                  ...YEARS.map((y) => ({ value: y, label: `${y}. sınıf` }))]} />
+                data={[{ value: COMMON_YEAR, label: t.weekly.commonCourses },       // K-48
+                  ...YEARS.map((y) => ({ value: y, label: t.weekly.yearN(Number(y)) }))]} />
               <Select size="xs" w={104} radius="md" value={sem}
                 onChange={(v) => v && setSem(v as SemesterType)}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
@@ -764,11 +759,11 @@ export default function WeeklyPage() {
           <Group gap={6} align="center" wrap="wrap">
             {/* K-76: Geri Al yalnız simge (yazı kaldırıldı); sayı tooltip'te. */}
             {canWrite && (
-              <Tooltip label={`Son taslak değişikliğini geri al${undoCount ? ` (${undoCount})` : ""}`}>
+              <Tooltip label={t.weekly.undoTip(undoCount)}>
                 <ActionIcon variant="default" radius="md"
                   style={{ width: CONTROL_H, height: CONTROL_H }}
                   disabled={undoCount === 0 || undoBusy} loading={undoBusy}
-                  onClick={handleUndo} aria-label="Geri Al">
+                  onClick={handleUndo} aria-label={t.weekly.undo}>
                   <IconArrowBackUp size={16} />
                 </ActionIcon>
               </Tooltip>
@@ -817,22 +812,22 @@ export default function WeeklyPage() {
             onChange={(ev) => setPaletteSearch(ev.currentTarget.value)}
             styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H,
                                borderColor: BORDER, background: PAGE_SURFACE } }}
-            placeholder="Ders ara" />
+            placeholder={t.weekly.searchCourse} />
           {/* minHeight:0 olmadan flex çocuğu küçülmez ve kaydırma çalışmaz.
               K-74: offsetScrollbars kaldırıldı — ders kartları artık "Ders ara"
               kutusuyla aynı genişlikte (eskiden kaydırma payı kadar dardı). */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
           <Stack gap={6}>
-            {courses.length === 0 && <Text size="xs" c="dimmed">Bu sınıfta ders yok.</Text>}
+            {courses.length === 0 && <Text size="xs" c="dimmed">{t.weekly.noCourseInYear}</Text>}
             {courses.length > 0 && paletteItems.length === 0 && (
-              <Text size="xs" c="dimmed">Eşleşen ders yok.</Text>
+              <Text size="xs" c="dimmed">{t.weekly.noMatch}</Text>
             )}
             {paletteItems.map((r) => r.kind === "empty" ? (
               // Şubesiz ders: sürüklenemez, tıklanınca "şube ekleyin" uyarısı.
               <Paper key={`empty-${r.course.id}`} p="xs" radius="sm"
                 onClick={() => notifications.show({
-                  color: "yellow", title: `${r.course.code} — şube yok`,
-                  message: "Programa eklemek için önce Dersler sekmesinden bu derse şube ekleyin.",
+                  color: "yellow", title: t.weekly.noSectionsTitle(r.course.code),
+                  message: t.weekly.noSectionsBody,
                 })}
                 style={{ ...paletteItemStyle(false), cursor: "pointer", flexShrink: 0, opacity: 0.7 }}>
                 <Group gap={6} wrap="nowrap" align="center">
@@ -840,7 +835,7 @@ export default function WeeklyPage() {
                   <Group gap={4} wrap="nowrap" style={{ marginLeft: "auto", flexShrink: 0 }}>
                     <Badge size="xs" variant="light" color="yellow" radius="sm"
                       style={{ textTransform: "none", paddingInline: 5 }}>
-                      şube yok
+                      {t.weekly.noSections}
                     </Badge>
                     {/* Şubesiz derste de bilgi "i"si — Paper onClick'i tetiklemesin
                         diye CourseInfoButton kendi tıklamasını durdurur. */}
@@ -888,7 +883,7 @@ export default function WeeklyPage() {
                     <Badge size="xs" variant="default" radius="sm"
                       style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
                                color: TEXT_MUTED, borderColor: BORDER }}>
-                      Seçmeli
+                      {t.weekly.elective}
                     </Badge>
                   )}
                   {/* Sağ blok: tamamlanma onayı + ders bilgisi "i" pop-up'ı. */}
@@ -1072,7 +1067,7 @@ export default function WeeklyPage() {
           }
         `}</style>
         <Group justify="space-between" mb={4}>
-          <Text fw={500} size="sm">Çakışmalar</Text>
+          <Text fw={500} size="sm">{t.weekly.conflictsTitle}</Text>
           <Group gap={6}>
             <Badge size="sm" color="red" variant="light">
               {weeklyConflicts.filter((c) => c.severity === "HARD").length} engel
@@ -1088,12 +1083,11 @@ export default function WeeklyPage() {
             "neden burada başka sınıfın dersi var" sorusuna açık bırakıyordu. */}
         <Text size="xs" c="dimmed" mb={weeklyConflicts.length ? "sm" : 0}>
           {draft
-            ? "Taslağınızın satırlarına dokunan çakışmalar — karşı taraf başka bir "
-              + "sınıfın yayındaki dersi olabilir."
-            : "Yayındaki programın çakışmaları."}
+            ? t.weekly.conflictsDraftHint
+            : t.weekly.conflictsPublishedHint}
         </Text>
         {weeklyConflicts.length === 0 ? (
-          <Text size="sm" c="dimmed">Haftalık programda çakışma yok.</Text>
+          <Text size="sm" c="dimmed">{t.weekly.noConflicts}</Text>
         ) : (
           <Stack gap={8}>
             {weeklyConflicts.map((c, i) => {
@@ -1185,7 +1179,7 @@ export default function WeeklyPage() {
         <EntryModal
           title={birakilan
             ? `${birakilan.code} → ${t.days.short[placing.day]} ${SLOT_START[placing.slot]}`
-            : `Ders ekle · ${t.days.short[placing.day]} ${SLOT_START[placing.slot]}`}
+            : t.weekly.addEntry(t.days.short[placing.day], SLOT_START[placing.slot])}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
           courses={dersler}
@@ -1196,8 +1190,8 @@ export default function WeeklyPage() {
               .sort((a, b) => a.section_no - b.section_no)     // şube no sırası
               .map((s) => ({
               value: String(s.id),
-              label: `Şube ${s.section_no} — ${lecturerLabel(s.lecturer)}`
-                     + ` · ${s.expected_students} öğrenci`,
+              label: t.weekly.sectionOption(s.section_no, lecturerLabel(s.lecturer),
+                                            s.expected_students),
             }));
           }}
           onClose={() => setPlacing(null)}
@@ -1214,7 +1208,7 @@ export default function WeeklyPage() {
             });
             return res;
           }}
-          onDone={(conflicts) => { setPlacing(null); reload(); refreshDraft(); showConflicts(conflicts, "Giriş kaydedildi (taslak)"); }}
+          onDone={(conflicts) => { setPlacing(null); reload(); refreshDraft(); showConflicts(conflicts, t.weekly.saved); }}
         />
         );
       })()}
@@ -1251,13 +1245,13 @@ export default function WeeklyPage() {
             const res = await api.patch<{ conflicts: ConflictResult[] }>(
               `/${writeBase}/${editing.id}`, body);
             recordUndo({
-              label: `${editing.section.course.code}-${editing.section.section_no} düzenleme`,
+              label: t.weekly.editLabel(editing.section.course.code, editing.section.section_no),
               entity: writeBase,
               action: { type: "patch", id: editing.id, body: before },
             });
             return res;
           }}
-          onDone={(conflicts) => { setEditing(null); reload(); refreshDraft(); showConflicts(conflicts, "Giriş güncellendi"); }}
+          onDone={(conflicts) => { setEditing(null); reload(); refreshDraft(); showConflicts(conflicts, t.weekly.updated); }}
         />
       )}
     </Stack>
@@ -1272,6 +1266,7 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
   onOpenGroup: () => void;
 }) {
+  const t = useT();
   const cardRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
   useEffect(() => {
@@ -1317,8 +1312,10 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
   const rooms = new Set(c.entries.map((x) => x.classroom?.room_code).filter(Boolean));
   // Tek kartın alt satırı: derslik (online ise "online").
   const altSatir = many
-    ? `${c.entries.length} şube${rooms.size > 1 ? ` · ${rooms.size} derslik` : rooms.size === 1 ? ` · ${[...rooms][0]}` : ""}`
-    : `${online ? "online" : e.classroom?.room_code ?? "—"}`;
+    ? t.weekly.sectionsCount(c.entries.length)
+      + (rooms.size > 1 ? t.weekly.roomsCount(rooms.size)
+         : rooms.size === 1 ? ` · ${[...rooms][0]}` : "")
+    : `${online ? t.weekly.online : e.classroom?.room_code ?? "—"}`;
 
   const canDrag = canWrite && !many;
   const showLecturer = !many && c.slot_count > 1 && lecturerName;
@@ -1343,9 +1340,9 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
         // taslak yalnız üstteki bardan açılır.
       }}
       title={many
-        ? `${c.entries.length} paralel şube — listelemek için tıkla`
+        ? t.weekly.parallelSections(c.entries.length)
         : editable
-        ? "Düzenlemek için tıkla, taşımak için sürükle"
+        ? t.weekly.cardEditable
         : `${e.section.course.code}-${e.section.section_no}`}
       style={{
         position: "absolute", top: (c.start_slot - 1) * ROW_H + 1, height: c.slot_count * ROW_H - 2,
@@ -1379,8 +1376,8 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
             zaten tek — taslakta sil, yayınlanmışta taslağa çevir. Yalnız
             üzerine gelince görünür; düzenleme karta tıklayarak yapılır. */}
         {hover && editable && (
-          <ActionIcon size="sm" variant="subtle" color="red" aria-label="Girişi sil"
-            title="Sil" style={{ flexShrink: 0 }}
+          <ActionIcon size="sm" variant="subtle" color="red" aria-label={t.weekly.deleteEntry}
+            title={t.common.delete} style={{ flexShrink: 0 }}
             onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}>
             <IconTrash size={15} />
           </ActionIcon>
@@ -1395,7 +1392,7 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
       </Group>
       {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
       {(hard || warn) && (
-        <span title={hard ? "Engelleyici çakışma — Çakışmalar bölümüne gitmek için tıklayın" : "Uyarı — Çakışmalar bölümüne gitmek için tıklayın"}
+        <span title={hard ? t.weekly.hardTip : t.weekly.warnTip}
           onClick={(ev) => {
             ev.stopPropagation();
             onWarningClick?.();
@@ -1428,7 +1425,9 @@ function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete }: {
   const first = cluster.entries[0];
   return (
     <Modal opened onClose={onClose} size="md"
-      title={`${first.section.course.code} · ${t.days.short[first.day_of_week]} ${SLOT_START[cluster.start_slot]} · ${cluster.entries.length} şube`}>
+      title={t.weekly.groupTitle(first.section.course.code,
+                                 t.days.short[first.day_of_week],
+                                 SLOT_START[cluster.start_slot], cluster.entries.length)}>
       <Stack gap={6}>
         <Text size="xs" c="dimmed">{first.section.course.name}</Text>
         {cluster.entries.map((e) => (
@@ -1447,8 +1446,8 @@ function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete }: {
             {canWrite && (
               <Group gap={4} wrap="nowrap">
                 <Button size="compact-xs" variant="subtle"
-                  onClick={() => { onClose(); onEdit(e); }}>Düzenle</Button>
-                <ActionIcon size="sm" variant="subtle" color="red" aria-label="Sil"
+                  onClick={() => { onClose(); onEdit(e); }}>{t.common.edit}</Button>
+                <ActionIcon size="sm" variant="subtle" color="red" aria-label={t.common.delete}
                   onClick={() => { onClose(); onDelete(e); }}>
                   <IconTrash size={14} />
                 </ActionIcon>
@@ -1495,6 +1494,7 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
 }) {
+  const t = useT();
   const [courseId, setCourseId] = useState<string | null>(
     fixedCourseId != null ? String(fixedCourseId) : null);
   const [sectionId, setSectionId] = useState<string | null>(null);
@@ -1564,40 +1564,40 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
           <>
             {/* Ders sürükleyerek geldiyse kilitli ama GÖRÜNÜR: kullanıcı neyi
                 yerleştirdiğini modalda da okuyabilmeli. */}
-            <Select label="Ders" value={courseId} onChange={setCourseId}
+            <Select label={t.weekly.course} value={courseId} onChange={setCourseId}
               data={courses} searchable filter={turkishOptionsFilter}
               disabled={fixedCourseId != null}
-              placeholder="Ders seç" nothingFoundMessage="Ders yok" />
-            <Select label="Şube" value={sectionId} onChange={setSectionId}
+              placeholder={t.weekly.pickCourse} nothingFoundMessage={t.weekly.noCourse} />
+            <Select label={t.weekly.section} value={sectionId} onChange={setSectionId}
               data={subeler} searchable filter={turkishOptionsFilter}
               disabled={!courseId || tekSube != null}
-              placeholder={courseId ? "Şube seç" : "Önce ders seçin"}
-              description={tekSube != null ? "Bu dersin tek şubesi var" : undefined}
-              nothingFoundMessage="Şube yok" />
+              placeholder={courseId ? t.weekly.pickSection : t.weekly.pickCourseFirst}
+              description={tekSube != null ? t.weekly.onlyOneSection : undefined}
+              nothingFoundMessage={t.weekly.noSectionOption} />
           </>
         )}
         {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
-        <Select label="Oturum türü (T/U/L)" value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
-          data={(Object.keys(SESSION_LABELS) as SessionType[]).map((k) => ({ value: k, label: SESSION_LABELS[k] }))} />
+        <Select label={t.weekly.sessionType} value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
+          data={(Object.keys(t.weekly.session) as SessionType[]).map((k) => ({ value: k, label: t.weekly.session[k] }))} />
         {componentOnline ? (
           // Bileşen online: yalnız senkron/asenkron. "Online mı" ders düzeyinde
           // sabit olduğu için burada seçtirilmez.
-          <Select label="Çevrimiçi türü" value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
+          <Select label={t.weekly.deliveryType} value={delivery} onChange={(v) => v && setDelivery(v as DeliveryMode)}
             data={[
-              { value: "ONLINE_SYNC", label: DELIVERY_LABELS.ONLINE_SYNC },
-              { value: "ONLINE_ASYNC", label: DELIVERY_LABELS.ONLINE_ASYNC },
+              { value: "ONLINE_SYNC", label: t.weekly.delivery.ONLINE_SYNC },
+              { value: "ONLINE_ASYNC", label: t.weekly.delivery.ONLINE_ASYNC },
             ]} />
         ) : (
-          <Select label="Derslik" value={classroomId} onChange={setClassroomId}
-            placeholder="Derslik seç" clearable searchable filter={turkishOptionsFilter}
-            nothingFoundMessage="Derslik yok"
+          <Select label={t.weekly.classroom} value={classroomId} onChange={setClassroomId}
+            placeholder={t.weekly.pickClassroom} clearable searchable filter={turkishOptionsFilter}
+            nothingFoundMessage={t.weekly.noClassroom}
             data={classrooms.map((c) => ({ value: String(c.id), label: `${c.building.name} ${c.room_code}` }))} />
         )}
-        <NumberInput label="Slot sayısı" value={slotCount} onChange={(v) => setSlotCount(Number(v) || 1)}
+        <NumberInput label={t.weekly.slotCount} value={slotCount} onChange={(v) => setSlotCount(Number(v) || 1)}
           min={1} max={maxSlots} />
         <Group justify="flex-end" gap="xs" mt="xs">
-          <Button variant="subtle" onClick={onClose} disabled={busy}>Vazgeç</Button>
-          <Button onClick={submit} loading={busy} disabled={dersEksik}>Kaydet</Button>
+          <Button variant="subtle" onClick={onClose} disabled={busy}>{t.common.dismiss}</Button>
+          <Button onClick={submit} loading={busy} disabled={dersEksik}>{t.common.save}</Button>
         </Group>
       </Stack>
     </Modal>

@@ -3,7 +3,7 @@ import {
   Alert, Badge, Group, Loader, Pagination, Paper, Select, Table, Text, Title,
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
-import { AUDIT_ACTION_LABELS } from "../api/types";
+import { AUDIT_ACTION_COLORS } from "../api/types";
 import type {
   AuditAction, AuditEntityType, AuditLogPage, ManagedUser,
 } from "../api/types";
@@ -102,8 +102,8 @@ export default function AuditLogSection() {
         <Select
           data={[
             { value: ALL, label: t.audit.allActions },
-            ...(Object.keys(AUDIT_ACTION_LABELS) as AuditAction[]).map((a) => ({
-              value: a, label: AUDIT_ACTION_LABELS[a].label,
+            ...(Object.keys(AUDIT_ACTION_COLORS) as AuditAction[]).map((a) => ({
+              value: a, label: t.enums.auditAction[a],
             })),
           ]}
           value={actionFilter}
@@ -146,8 +146,7 @@ export default function AuditLogSection() {
                 </Table.Thead>
                 <Table.Tbody>
                   {data.items.map((k) => {
-                    const eylem = AUDIT_ACTION_LABELS[k.action]
-                      ?? { label: k.action, color: "gray" };
+                    const eylemRengi = AUDIT_ACTION_COLORS[k.action] ?? "gray";
                     return (
                       <Table.Tr key={k.id}>
                         <Table.Td>
@@ -159,8 +158,8 @@ export default function AuditLogSection() {
                           <Text size="sm" truncate>{k.user?.name ?? "—"}</Text>
                         </Table.Td>
                         <Table.Td>
-                          <Badge variant="light" color={eylem.color} size="sm">
-                            {eylem.label}
+                          <Badge variant="light" color={eylemRengi} size="sm">
+                            {t.enums.auditAction[k.action] ?? k.action}
                           </Badge>
                         </Table.Td>
                         <Table.Td>

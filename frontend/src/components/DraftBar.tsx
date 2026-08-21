@@ -10,14 +10,14 @@ import {
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import {
-  DRAFT_KIND_LABELS, DRAFT_ROW_LABELS, DRAFT_STATUS_COLORS, DRAFT_STATUS_LABELS,
-} from "../api/types";
+  DRAFT_STATUS_COLORS, } from "../api/types";
 import DiffTable from "./DiffTable";
 import type {
   ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem, DraftKind,
   ScheduleChange, ScheduleDraft, SemesterType,
 } from "../api/types";
 import { CONTROL_H } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
 
 /** K-74: Mod çubuğu tek bir "bar" değil artık — parçaları sayfanın en üstteki
  *  araç çubuğuna gömülür (ayrı ikinci bar kalabalıktı). Üç parça:
@@ -39,7 +39,8 @@ type CohortProps = {
 
 /** Cohort seçicilerin sağındaki durum göstergesi. */
 export function DraftStatus({ departmentId, year, semester, kind, draft }: CohortProps) {
-  const turAdi = DRAFT_KIND_LABELS[kind];
+  const t = useT();
+  const turAdi = t.draft.kind[kind];
   const cohortHazir = departmentId !== null && year !== null;
   // K-73: yayın modunda "i" pop-up'ı için son APPROVED taslağın meta verisi.
   const [pubInfo, setPubInfo] = useState<ScheduleChange | null | undefined>(undefined);
@@ -61,7 +62,7 @@ export function DraftStatus({ departmentId, year, semester, kind, draft }: Cohor
     return (
       <Group gap={8} wrap="nowrap">
         <Badge color={DRAFT_STATUS_COLORS[draft.status]} variant="filled" size="sm">
-          {DRAFT_STATUS_LABELS[draft.status]}
+          {t.draft.status[draft.status]}
         </Badge>
         {/* K-74: "yayındaki ... ile aynı" metni kaldırıldı — değişiklik varken
             yalnız sayaç, yokken hiçbir şey (rozet zaten taslağı belli ediyor). */}
@@ -75,29 +76,29 @@ export function DraftStatus({ departmentId, year, semester, kind, draft }: Cohor
   return (
     <Group gap={6} wrap="nowrap">
       <Text size="sm" fw={600}>
-        Yayındaki {kind === "EXAM" ? "sınav takvimi" : "program"}
+        {t.draft.publishedOf(turAdi)}
       </Text>
       {/* K-73: bu yayını kim düzenledi/onayladı, ne zaman yayınlandı. */}
       <HoverCard width={280} shadow="md" position="bottom-start" withArrow openDelay={100}>
         <HoverCard.Target>
-          <ActionIcon variant="subtle" color="gray" size="sm" radius="xl" aria-label="Yayın bilgisi">
+          <ActionIcon variant="subtle" color="gray" size="sm" radius="xl" aria-label={t.draft.publishInfo}>
             <IconInfoCircle size={16} />
           </ActionIcon>
         </HoverCard.Target>
         <HoverCard.Dropdown>
           {pubInfo === undefined ? (
-            <Text size="xs" c="dimmed">Yükleniyor…</Text>
+            <Text size="xs" c="dimmed">{t.draft.loading}</Text>
           ) : pubInfo === null ? (
             <Text size="xs" c="dimmed">
-              Bu {turAdi} için henüz onaylı bir değişiklik yok. Değişiklik için taslak açın.
+              {t.draft.noApprovedChange(turAdi)}
             </Text>
           ) : (
             <Stack gap={4}>
-              <Text size="xs" c="dimmed">Yayındaki {turAdi}</Text>
-              <Text size="sm"><b>Düzenleyen:</b> {pubInfo.published_by}</Text>
-              <Text size="sm"><b>Onaylayan:</b> {pubInfo.approved_by ?? "—"}</Text>
+              <Text size="xs" c="dimmed">{t.draft.publishedOf(turAdi)}</Text>
+              <Text size="sm"><b>{t.draft.editedBy}</b> {pubInfo.published_by}</Text>
+              <Text size="sm"><b>{t.draft.approvedBy}</b> {pubInfo.approved_by ?? "—"}</Text>
               <Text size="sm">
-                <b>Yayınlanma:</b>{" "}
+                <b>{t.draft.publishedAt}</b>{" "}
                 {pubInfo.published_at
                   ? new Date(pubInfo.published_at).toLocaleString("tr-TR", {
                       day: "2-digit", month: "long", year: "numeric",
@@ -124,6 +125,7 @@ export type DraftActionsProps = CohortProps & {
 export function DraftActions({
   departmentId, year, semester, kind, draft, onSelect, onCreate, onChanged, canSubmit,
 }: DraftActionsProps) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -135,8 +137,8 @@ export function DraftActions({
   const cohortHazir = departmentId !== null && year !== null;
   const duzenlenebilir = draft !== null
     && (draft.status === "OPEN" || draft.status === "REJECTED");
-  const turAdi = DRAFT_KIND_LABELS[kind];
-  const satirAdi = DRAFT_ROW_LABELS[kind];
+  const turAdi = t.draft.kind[kind];
+  const satirAdi = t.draft.row[kind];
 
   useEffect(() => {
     if (draft || !cohortHazir) { setMevcut(null); return; }
@@ -172,12 +174,10 @@ export function DraftActions({
       setClearOpen(false);
       notifications.show({
         color: "gray",
-        message: `${r.deleted} ${satirAdi} silindi`
-          + (r.preserved_shared
-            ? ` · ${r.preserved_shared} ortak ders korundu`
-            : ""),
+        message: t.draft.cleared(r.deleted, satirAdi)
+          + (r.preserved_shared ? t.draft.preservedShared(r.preserved_shared) : ""),
       });
-    } catch (e) { hata(e, "Temizlenemedi"); } finally { setBusy(false); }
+    } catch (e) { hata(e, t.draft.clearFailed); } finally { setBusy(false); }
   };
 
   const farkiGoster = async () => {
@@ -186,7 +186,7 @@ export function DraftActions({
     try {
       const r = await api.get<DraftDiff>(`/schedule-drafts/${draft.id}/diff`);
       setDiff(r.items);
-    } catch (e) { hata(e, "Fark alınamadı"); } finally { setBusy(false); }
+    } catch (e) { hata(e, t.draft.diffFailed); } finally { setBusy(false); }
   };
 
   const geriCek = async () => {
@@ -195,20 +195,20 @@ export function DraftActions({
     try {
       const d = await api.post<ScheduleDraft>(`/schedule-drafts/${draft.id}/withdraw`);
       onSelect(d);
-      notifications.show({ color: "gray", message: "Talep geri çekildi — taslak yeniden düzenlenebilir" });
-    } catch (e) { hata(e, "Geri çekilemedi"); } finally { setBusy(false); }
+      notifications.show({ color: "gray", message: t.draft.withdrawn });
+    } catch (e) { hata(e, t.draft.withdrawFailed); } finally { setBusy(false); }
   };
 
   const sil = async () => {
     if (!draft) return;
     if (!window.confirm(
-      `"${draft.name}" taslağı silinsin mi? Yayındaki ${turAdi} etkilenmez.`)) return;
+      t.draft.deleteConfirm(draft.name, turAdi))) return;
     setBusy(true);
     try {
       await api.delete(`/schedule-drafts/${draft.id}`);
       onSelect(null);
-      notifications.show({ color: "gray", message: "Taslak silindi" });
-    } catch (e) { hata(e, "Silinemedi"); } finally { setBusy(false); }
+      notifications.show({ color: "gray", message: t.draft.deleted });
+    } catch (e) { hata(e, t.draft.deleteFailed); } finally { setBusy(false); }
   };
 
   return (
@@ -216,16 +216,16 @@ export function DraftActions({
       {!draft && (
         <Tooltip
           label={!cohortHazir
-            ? "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)"
+            ? t.draft.pickCohortFirst
             : mevcut
-            ? `Bu cohort için açık taslağınıza döner (${mevcut.change_count} değişiklik)`
-            : `Yayındaki ${turAdi} kopyalanarak açılır; yalnız siz görürsünüz`}>
+            ? t.draft.returnToDraftTip(mevcut.change_count)
+            : t.draft.openDraftTip(turAdi)}>
           {/* K-74: buton metninden sayı kaldırıldı — taslakta sayı tutmaya gerek yok. */}
           <Button size="xs" radius="md" loading={busy} disabled={!cohortHazir}
             variant={mevcut ? "light" : "filled"}
             leftSection={mevcut ? <IconPencil size={15} /> : <IconPlus size={15} />}
             style={{ height: CONTROL_H }} onClick={acTaslak}>
-            {mevcut ? "Taslağa Dön" : "Taslak Aç"}
+            {mevcut ? t.draft.returnToDraft : t.draft.openDraft}
           </Button>
         </Tooltip>
       )}
@@ -233,19 +233,19 @@ export function DraftActions({
       {draft && (
         <>
           {/* K-74: Farkı Gör ve Temizle yalnız simge (yazılar kaldırıldı). */}
-          <Tooltip label="Farkı Gör">
+          <Tooltip label={t.draft.seeDiff}>
             <ActionIcon variant="default" radius="md" loading={busy}
               style={{ width: CONTROL_H, height: CONTROL_H }}
-              onClick={farkiGoster} aria-label="Farkı Gör">
+              onClick={farkiGoster} aria-label={t.draft.seeDiff}>
               <IconGitCompare size={16} />
             </ActionIcon>
           </Tooltip>
 
           {duzenlenebilir && (
-            <Tooltip label="Taslağı boşalt">
+            <Tooltip label={t.draft.emptyDraft}>
               <ActionIcon variant="default" radius="md" loading={busy}
                 style={{ width: CONTROL_H, height: CONTROL_H }}
-                onClick={() => { setClearShared(false); setClearOpen(true); }} aria-label="Temizle">
+                onClick={() => { setClearShared(false); setClearOpen(true); }} aria-label={t.draft.clear}>
                 <IconEraser size={16} />
               </ActionIcon>
             </Tooltip>
@@ -253,10 +253,10 @@ export function DraftActions({
 
           {duzenlenebilir && (
             // K-76: çerçeveli (outline) + kırmızı; tooltip'ten "yayına etkisi yok" çıktı.
-            <Tooltip label="Taslağı sil">
+            <Tooltip label={t.draft.deleteDraft}>
               <ActionIcon variant="outline" color="red" radius="md" loading={busy}
                 style={{ width: CONTROL_H, height: CONTROL_H }}
-                onClick={sil} aria-label="Taslağı sil">
+                onClick={sil} aria-label={t.draft.deleteDraft}>
                 <IconTrash size={16} />
               </ActionIcon>
             </Tooltip>
@@ -266,27 +266,26 @@ export function DraftActions({
             <Button size="xs" radius="md" variant="default" loading={busy}
               leftSection={<IconArrowBackUp size={15} />} style={{ height: CONTROL_H }}
               onClick={geriCek}>
-              Geri Çek
+              {t.draft.withdraw}
             </Button>
           )}
 
           {/* K-76: çerçeveli (default) — eskiden subtle çerçevesizdi. */}
           <Button size="xs" radius="md" variant="default" style={{ height: CONTROL_H }}
             onClick={() => onSelect(null)}>
-            Yayına Dön
+            {t.draft.backToPublished}
           </Button>
 
           {/* K-74: Onaya Gönder — birincil eylem, EN SAĞDA. */}
           {duzenlenebilir && (
             <Tooltip label={canSubmit
-              ? "Onay yetkilisi inceleyip yayına alacak"
-              : `Onaya göndermek için ${kind === "EXAM" ? "sınav" : "haftalık program"}`
-                + " yetkisi ve bu bölümde üyelik gerekir"}>
+              ? t.draft.submitTip
+              : t.draft.submitDeniedTip(turAdi)}>
               <Button size="xs" radius="md" loading={busy}
                 disabled={!canSubmit || draft.change_count === 0}
                 leftSection={<IconSend size={15} />} style={{ height: CONTROL_H }}
                 onClick={() => setSubmitOpen(true)}>
-                Onaya Gönder
+                {t.draft.submit}
               </Button>
             </Tooltip>
           )}
@@ -302,21 +301,21 @@ export function DraftActions({
 
       {/* K-76: Temizle onayı — ortak dersler de silinsin mi? */}
       <Modal opened={clearOpen} onClose={() => setClearOpen(false)} radius="md"
-        title="Taslağı boşalt">
+        title={t.draft.emptyDraft}>
         <Stack gap="sm">
           <Text size="sm">
-            Taslaktaki tüm {satirAdi}lar silinecek. Yayındaki {turAdi} etkilenmez.
+            {t.draft.clearBody(t.draft.rowsPlural[kind], turAdi)}
           </Text>
           <Checkbox
             checked={clearShared}
             onChange={(e) => setClearShared(e.currentTarget.checked)}
-            label="Ortak dersleri de sil"
-            description="Bu cohort'taki ortak (servis) dersler de silinsin — onları alan diğer bölümlerin taslağını da etkileyebilir. İşaretlemezseniz ortak dersler korunur."
+            label={t.draft.clearShared}
+            description={t.draft.clearSharedHelp}
           />
           <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={() => setClearOpen(false)}>Vazgeç</Button>
+            <Button variant="default" onClick={() => setClearOpen(false)}>{t.common.dismiss}</Button>
             <Button color="red" loading={busy} onClick={() => temizle(clearShared)}>
-              Boşalt
+              {t.draft.empty}
             </Button>
           </Group>
         </Stack>
@@ -328,10 +327,11 @@ export function DraftActions({
 
 /** Çubuğun altındaki ince bilgi satırı — yalnız PENDING/REJECTED'de görünür. */
 export function DraftNotes({ draft }: { draft: ScheduleDraft | null }) {
+  const t = useT();
   if (draft?.status === "PENDING") {
     return (
       <Text size="xs" c="dimmed">
-        Onay bekliyor — inceleme sürerken taslak kilitlidir. Düzenlemek için geri çekin.
+        {t.draft.pendingNote}
       </Text>
     );
   }
@@ -339,7 +339,7 @@ export function DraftNotes({ draft }: { draft: ScheduleDraft | null }) {
     return (
       <Alert color="red" variant="light" py={6} icon={<IconAlertTriangle size={16} />}>
         <Text size="sm" fw={600}>
-          Reddedildi{draft.reviewer ? ` — ${draft.reviewer.name}` : ""}
+          {t.draft.rejected}{draft.reviewer ? ` — ${draft.reviewer.name}` : ""}
         </Text>
         <Text size="sm">{draft.review_note}</Text>
       </Alert>
@@ -353,9 +353,10 @@ export function DraftNotes({ draft }: { draft: ScheduleDraft | null }) {
 function DiffModal({ items, turAdi, onClose }: {
   items: DraftDiffItem[] | null; turAdi: string; onClose: () => void;
 }) {
+  const t = useT();
   return (
     <Modal opened={items !== null} onClose={onClose} size="lg" radius="md"
-      title={`Yayındaki ${turAdi} ile fark`}>
+      title={t.draft.diffTitle(turAdi)}>
       {items && <DiffTable items={items} />}
     </Modal>
   );
@@ -368,6 +369,7 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
   draft: ScheduleDraft; turAdi: string; onClose: () => void;
   onDone: (d: ScheduleDraft) => void;
 }) {
+  const t = useT();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
@@ -379,10 +381,10 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
       const r = await api.post<{ draft: ScheduleDraft; warnings: ConflictResult[] }>(
         `/schedule-drafts/${draft.id}/submit`, { note: note.trim() || null });
       notifications.show({
-        color: "green", title: "Onaya gönderildi",
+        color: "green", title: t.draft.submitted,
         message: r.warnings.length
-          ? `${r.warnings.length} uyarı var ama engellemiyor — onaylayıcı görecek`
-          : "Bir onay yetkilisi inceleyip yayına alacak",
+          ? t.draft.submittedWarnings(r.warnings.length)
+          : t.draft.submittedOk,
       });
       onDone(r.draft);
     } catch (err) {
@@ -391,26 +393,26 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
         if (body?.conflicts?.length) { setBlockers(body.conflicts); return; }
       }
       notifications.show({
-        color: "red", message: err instanceof ApiError ? err.message : "Gönderilemedi" });
+        color: "red", message: err instanceof ApiError ? err.message : t.draft.submitFailed });
     } finally { setBusy(false); }
   };
 
   return (
-    <Modal opened onClose={onClose} radius="md" title="Onaya gönder">
+    <Modal opened onClose={onClose} radius="md" title={t.draft.submitTitle}>
       <Stack gap="sm">
         <Text size="sm">
           <b>{draft.change_count}</b> değişiklik onaya gönderilecek. Onaylanana
           kadar yayındaki {turAdi} değişmez; taslak inceleme boyunca kilitlenir.
         </Text>
         <Textarea
-          label="Not (isteğe bağlı)"
-          description="Onaylayıcı bunu görecek — neden değiştirdiğinizi yazın"
-          placeholder="Örn. 3. sınıf laboratuvarı Çarşamba kapalı olduğu için kaydırıldı"
+          label={t.draft.noteLabel}
+          description={t.draft.noteHelp}
+          placeholder={t.draft.notePlaceholder}
           autosize minRows={2} maxRows={5}
           value={note} onChange={(e) => setNote(e.currentTarget.value)}
         />
         {blockers && (
-          <Alert color="red" variant="light" title="Gönderilemedi — hard çakışma">
+          <Alert color="red" variant="light" title={t.draft.submitBlockedTitle}>
             <Stack gap={2}>
               {blockers.map((c, i) => (
                 <Text key={i} size="sm">{c.rule_id} · {c.message}</Text>
@@ -419,9 +421,9 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
           </Alert>
         )}
         <Group justify="flex-end" gap="xs">
-          <Button variant="default" onClick={onClose}>Vazgeç</Button>
+          <Button variant="default" onClick={onClose}>{t.common.dismiss}</Button>
           <Button onClick={gonder} loading={busy} leftSection={<IconPencil size={15} />}>
-            {blockers ? "Tekrar dene" : "Gönder"}
+            {blockers ? t.draft.retry : t.draft.send}
           </Button>
         </Group>
       </Stack>

@@ -64,9 +64,9 @@ export default function ChangeFeed({
       <Group gap={8} wrap="nowrap" style={{ cursor: "pointer", userSelect: "none" }}
         onClick={() => setOpen((o) => !o)}>
         <IconHistory size={17} style={{ opacity: 0.6, flexShrink: 0 }} />
-        <Text fw={600} fz={15}>Bölümünüzü etkileyen son değişiklikler</Text>
+        <Text fw={600} fz={15}>{t.changeFeed.title}</Text>
         <Badge size="sm" variant="light" color="gray">{items.length}</Badge>
-        <ActionIcon variant="subtle" color="gray" ml="auto" aria-label={open ? "Kapat" : "Aç"}>
+        <ActionIcon variant="subtle" color="gray" ml="auto" aria-label={open ? t.common.close : t.changeFeed.open}>
           {open ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
         </ActionIcon>
       </Group>
@@ -78,15 +78,15 @@ export default function ChangeFeed({
               style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 6 }}>
               <Group gap={8} wrap="wrap" style={{ minWidth: 0 }}>
                 <Text size="sm" fw={500}>
-                  {c.department_name} · {c.year}. sınıf · {t.enums.semester[c.semester]}
+                  {c.department_name} · {t.courses.yearN(c.year)} · {t.enums.semester[c.semester]}
                 </Text>
                 <Badge size="xs" variant="light"
                   color={c.kind === "EXAM" ? "grape" : "teal"}>
-                  {c.kind === "EXAM" ? "sınav takvimi" : "ders programı"}
+                  {c.kind === "EXAM" ? t.changeFeed.examSchedule : t.changeFeed.weeklySchedule}
                 </Badge>
                 {c.affected_departments.length > 0 && (
                   <Badge size="xs" variant="light" color="orange">
-                    ortak ders — {c.affected_departments.length} bölüm
+                    {t.courseInfo.sharedCourseDepts(c.affected_departments.length)}
                   </Badge>
                 )}
                 <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at)}</Text>

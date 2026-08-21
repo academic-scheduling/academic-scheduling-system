@@ -423,7 +423,7 @@ export default function DepartmentsPage() {
                                     <Group gap={4}>
                                       {caps.map((c) => (
                                         <Badge key={c.key} size="xs" variant="outline" color="gray">
-                                          {c.label}
+                                          {t.enums.capability[c.key]}
                                         </Badge>
                                       ))}
                                     </Group>

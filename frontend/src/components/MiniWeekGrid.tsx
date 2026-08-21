@@ -24,14 +24,17 @@ const SLOTS = Object.keys(SLOT_TIMES).map(Number).sort((a, b) => a - b);
  * etiket yalnız başlangıç slotunda yazılır. Boş hücreler ince kenarlıkla durur.
  */
 export default function MiniWeekGrid({
-  placements, emptyLabel = "Programda ders yok.",
+  placements, emptyLabel,
 }: {
   placements: WeekPlacement[];
   emptyLabel?: string;
 }) {
   const t = useT();
+  // K-79: varsayılan etiket parametre varsayılanı OLAMAZ — sözlük hook'tan
+  // gelir, hook ise imzada çağrılamaz.
+  const bosMetin = emptyLabel ?? t.miniWeek.empty;
   if (placements.length === 0) {
-    return <Text size="sm" c="dimmed">{emptyLabel}</Text>;
+    return <Text size="sm" c="dimmed">{bosMetin}</Text>;
   }
 
   // `${gün}-${slot}` → o hücrenin etiketi. Etiket kapladığı HER slotta yazılır

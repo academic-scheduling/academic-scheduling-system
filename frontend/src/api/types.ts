@@ -382,12 +382,12 @@ export type ManagedUser = {
  *  "başkasının yazdığını YAYINA geçirebilir miyim" (K-59). Bu yüzden ayrı
  *  bir grup olarak işaretlenir; form onu ayrı başlık altında gösterir. */
 export const CAPABILITIES = [
-  { key: "can_manage_courses", label: "Dersler", group: "write" },
-  { key: "can_manage_weekly", label: "Haftalık Program", group: "write" },
-  { key: "can_manage_exams", label: "Sınavlar", group: "write" },
-  { key: "can_manage_classrooms", label: "Derslikler", group: "write" },
-  { key: "can_manage_lecturers", label: "Öğretim Üyeleri", group: "write" },
-  { key: "can_approve_schedule", label: "Program Onaylama", group: "approve" },
+  { key: "can_manage_courses", group: "write" },
+  { key: "can_manage_weekly", group: "write" },
+  { key: "can_manage_exams", group: "write" },
+  { key: "can_manage_classrooms", group: "write" },
+  { key: "can_manage_lecturers", group: "write" },
+  { key: "can_approve_schedule", group: "approve" },
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
@@ -422,25 +422,26 @@ export type AuditLogPage = {
   items: AuditLog[];
 };
 
-export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: string }> = {
-  CREATE: { label: "Ekledi", color: "green" },
-  UPDATE: { label: "Düzenledi", color: "blue" },
-  DELETE: { label: "Sildi", color: "red" },
+/** K-79: etiketler sözlükte (`t.enums.auditAction`); burada yalnız RENK. */
+export const AUDIT_ACTION_COLORS: Record<AuditAction, string> = {
+  CREATE: "green",
+  UPDATE: "blue",
+  DELETE: "red",
   // K-59: "SUBMIT" artık YAYINLAMAK değil ONAYA GÖNDERMEK demek. Yayına geçiren
   // tek eylem APPROVE. Eski satırlar da bu etiketle görünür; o dönemde submit
   // gerçekten yayınlamaktı, ama iki ayrı etiket taşımak logu okunmaz yapardı.
-  SUBMIT: { label: "Onaya gönderdi", color: "violet" },
-  APPROVE: { label: "Onayladı (yayına aldı)", color: "green" },
-  REJECT: { label: "Reddetti", color: "red" },
-  WITHDRAW: { label: "Geri çekti", color: "gray" },
+  SUBMIT: "violet",
+  APPROVE: "green",
+  REJECT: "red",
+  WITHDRAW: "gray",
   // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
-  INVITE: { label: "Davet etti", color: "cyan" },
-  ACTIVATE: { label: "Hesabını açtı", color: "teal" },
+  INVITE: "cyan",
+  ACTIVATE: "teal",
   // K-43: şifre sıfırlama. İkisinin de faili hesabın sahibidir. Talep ve
   // gerçekleşme AYRI satırlar: "link istendi ama kullanılmadı" durumu
   // denetimde görünmeli (istenmeyen talep = olası saldırı işareti).
-  RESET_REQUEST: { label: "Şifre sıfırlama istedi", color: "orange" },
-  RESET_PASSWORD: { label: "Şifresini yeniledi", color: "grape" },
+  RESET_REQUEST: "orange",
+  RESET_PASSWORD: "grape",
 };
 
 
@@ -453,11 +454,6 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
  *  ret gerekçesi üstünde durur, sahibi düzeltip yeniden gönderir. */
 export type DraftStatus = "OPEN" | "PENDING" | "APPROVED" | "REJECTED";
 
-export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
-  OPEN: "Taslak", PENDING: "Onay bekliyor",
-  APPROVED: "Onaylandı", REJECTED: "Reddedildi",
-};
-
 export const DRAFT_STATUS_COLORS: Record<DraftStatus, string> = {
   OPEN: "yellow", PENDING: "blue", APPROVED: "green", REJECTED: "red",
 };
@@ -468,15 +464,7 @@ export type DraftUserRef = { id: number; name: string };
  *  inceleme ikisi için de AYNI; ayrışan tek şey satırların şekli. */
 export type DraftKind = "WEEKLY" | "EXAM";
 
-export const DRAFT_KIND_LABELS: Record<DraftKind, string> = {
-  WEEKLY: "haftalık program", EXAM: "sınav takvimi",
-};
-
 /** Taslaktaki satırın adı — çubuk ve temizleme mesajları bunu kullanır. */
-export const DRAFT_ROW_LABELS: Record<DraftKind, string> = {
-  WEEKLY: "yerleşim", EXAM: "sınav",
-};
-
 export type ScheduleDraft = {
   id: number;
   department_id: number;
@@ -554,10 +542,6 @@ export type ExamDiffItem = DiffItemBase & {
 
 /** Ayırt edici alan `entity` (K-60): tek listede iki şekil taşınabilsin diye. */
 export type DraftDiffItem = WeeklyDiffItem | ExamDiffItem;
-
-export const DIFF_KIND_LABELS: Record<DiffKind, string> = {
-  ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı",
-};
 
 export const DIFF_KIND_COLORS: Record<DiffKind, string> = {
   ADDED: "green", REMOVED: "red", MOVED: "blue",

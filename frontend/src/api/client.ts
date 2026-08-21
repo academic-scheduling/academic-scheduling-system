@@ -12,6 +12,13 @@
 // düşer ve tüm istekler yanlış yola gider. Sondaki "/" da temizleniyor, yoksa
 // "https://api.x/" + "/courses" çift eğik çizgi üretir.
 import { readLang } from "../i18n/lang";
+import { tr } from "../i18n/tr";
+import { en } from "../i18n/en";
+
+// K-79: bu modül bir React bileşeni DEĞİL, hook kullanamaz. Sözlüğü
+// localStorage'daki dilden doğrudan seçer — provider ile aynı kaynağı
+// okuduğu için ikisi ayrışmaz.
+const dict = () => (readLang() === "en" ? en : tr);
 
 const RAW_BASE = import.meta.env.VITE_API_BASE_URL?.trim();
 const BASE_URL = RAW_BASE ? RAW_BASE.replace(/\/+$/, "") : "/api";
@@ -70,7 +77,7 @@ function normalizeDetail(body: unknown): string | null {
     return detail
       .map((item: { loc?: unknown[]; msg?: unknown }) => {
         const field = Array.isArray(item.loc) ? String(item.loc[item.loc.length - 1]) : "";
-        const msg = String(item.msg ?? "Geçersiz değer");
+        const msg = String(item.msg ?? dict().common.invalidValue);
         return field ? `${field}: ${msg}` : msg;
       })
       .join(" · ");
@@ -101,7 +108,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     // hatayı da YUTMUYORUZ: kullanıcıya dostça mesaj, geliştiriciye konsolda
     // gerçek sebep. Yutulan hata = saatlerce yanlış yerde arama.
     console.error(`[api] ${method} ${path} gönderilemedi:`, cause);
-    throw new ApiError(0, "Sunucuya ulaşılamıyor — backend çalışıyor mu?");
+    throw new ApiError(0, dict().common.serverUnreachable);
   }
 
   // Veri ucundan gelen HER 401 = oturum yok/geçersiz → düşür ve login'e dön.
@@ -114,7 +121,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (response.status === 401 && !path.startsWith("/auth/")) {
     clearToken();
     if (window.location.pathname !== "/login") window.location.assign("/login");
-    throw new ApiError(401, "Oturum süresi doldu — lütfen tekrar giriş yapın");
+    throw new ApiError(401, dict().common.sessionExpired);
   }
 
   if (response.status === 204) return undefined as T; // DELETE cevabı: gövdesiz
@@ -124,7 +131,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      normalizeDetail(data) ?? `Beklenmeyen hata (HTTP ${response.status})`,
+      normalizeDetail(data) ?? dict().common.unknownError(response.status),
       data
     );
   }
@@ -146,20 +153,20 @@ async function download(path: string): Promise<void> {
     response = await fetch(`${BASE_URL}${path}`, { headers });
   } catch (cause) {
     console.error(`[api] indirme gönderilemedi ${path}:`, cause);
-    throw new ApiError(0, "Sunucuya ulaşılamıyor — backend çalışıyor mu?");
+    throw new ApiError(0, dict().common.serverUnreachable);
   }
 
   if (response.status === 401 && !path.startsWith("/auth/")) {
     clearToken();
     if (window.location.pathname !== "/login") window.location.assign("/login");
-    throw new ApiError(401, "Oturum süresi doldu — lütfen tekrar giriş yapın");
+    throw new ApiError(401, dict().common.sessionExpired);
   }
 
   if (!response.ok) {
     const data: unknown = await response.json().catch(() => null);
     throw new ApiError(
       response.status,
-      normalizeDetail(data) ?? `Beklenmeyen hata (HTTP ${response.status})`,
+      normalizeDetail(data) ?? dict().common.unknownError(response.status),
       data
     );
   }

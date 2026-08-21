@@ -17,7 +17,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ProposedExamList, ProposedGrid } from "../components/ProposedSchedule";
 import { examPlacementText, placementText } from "../components/DiffTable";
 import {
-  DRAFT_KIND_LABELS, } from "../api/types";
+  } from "../api/types";
 import type {
   ConflictResult, ConflictScan, DraftApproveResponse, DraftDiffItem,
   DraftKind, DraftReview, DraftStaleness, DraftStatus, Exam, ScheduleDraft,
@@ -44,19 +44,21 @@ import type { Dict } from "../i18n/tr";
 
 type Group = "PENDING" | "OPEN" | "REJECTED" | "APPROVED";
 
+/** K-79: yalnız RENK + İKON burada (dile bağlı değil); etiket sözlükte
+ *  (`t.draft.status`), çünkü modül düzeyi dil değişimini göremez. */
 const STATUS_META: Record<DraftStatus,
-  { label: string; color: string; Icon: ComponentType<IconProps> }> = {
-  OPEN:     { label: "Taslak",        color: "yellow", Icon: IconFilePencil },
-  PENDING:  { label: "Onay bekliyor", color: "blue",   Icon: IconClockHour4 },
-  REJECTED: { label: "Reddedildi",    color: "red",    Icon: IconArrowBackUp },
-  APPROVED: { label: "Yayında",       color: "green",  Icon: IconCircleCheck },
+  { color: string; Icon: ComponentType<IconProps> }> = {
+  OPEN:     { color: "yellow", Icon: IconFilePencil },
+  PENDING:  { color: "blue",   Icon: IconClockHour4 },
+  REJECTED: { color: "red",    Icon: IconArrowBackUp },
+  APPROVED: { color: "green",  Icon: IconCircleCheck },
 };
 
-const GROUPS: { key: Group; label: string; color: string; Icon: ComponentType<IconProps> }[] = [
-  { key: "PENDING",  label: "Onay bekleyenler", color: "blue",   Icon: IconClockHour4 },
-  { key: "OPEN",     label: "Taslaklar",        color: "yellow", Icon: IconFilePencil },
-  { key: "REJECTED", label: "Reddedilenler",    color: "red",    Icon: IconArrowBackUp },
-  { key: "APPROVED", label: "Yayında",          color: "green",  Icon: IconCircleCheck },
+const GROUPS: { key: Group; color: string; Icon: ComponentType<IconProps> }[] = [
+  { key: "PENDING",  color: "blue",   Icon: IconClockHour4 },
+  { key: "OPEN",     color: "yellow", Icon: IconFilePencil },
+  { key: "REJECTED", color: "red",    Icon: IconArrowBackUp },
+  { key: "APPROVED", color: "green",  Icon: IconCircleCheck },
 ];
 
 /** Kart görünümü Bölümler ekranıyla AYNI (`.dept-card`): hover/seçili durumu
@@ -89,7 +91,7 @@ function tarih(s: string | null): string {
 }
 
 function cohortAdi(d: { department_name: string; year: number; semester: SemesterType }, t: Dict): string {
-  return `${d.department_name} · ${d.year}. sınıf · ${t.enums.semester[d.semester]}`;
+  return t.publishing.cohortName(d.department_name, d.year, t.enums.semester[d.semester]);
 }
 
 /** Sıralama anahtarı: bekleyende gönderim, ötekilerde açılış zamanı. */
@@ -113,6 +115,7 @@ const EMPTY_SCAN: ConflictScan = { hard: [], warnings: [] };
 
 
 export default function PublishingCenterPage() {
+  const t = useT();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -136,7 +139,7 @@ export default function PublishingCenterPage() {
       jobs.push(api.get<ScheduleDraft[]>("/schedule-approvals").then(setQueue));
     }
     Promise.all(jobs)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Yayın Merkezi yüklenemedi"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.publishing.loadFailed));
     // Sol menüdeki bekleyen rozetini de tazele.
     window.dispatchEvent(new Event("publishing:refresh"));
   };
@@ -221,9 +224,10 @@ function QueuePane({
   list: ScheduleDraft[]; loaded: boolean; error: string | null;
   curId: number | null; onSelect: (id: number) => void; meId: number;
 }) {
+  const t = useT();
   return (
     <Stack gap="sm">
-      <Title order={4}>Yayın Merkezi</Title>
+      <Title order={4}>{t.publishing.title}</Title>
 
       {/* Durum grupları (sıralama seçici YOK — grup içinde daima en yeni önce). */}
       <Stack gap={2}>
@@ -238,14 +242,14 @@ function QueuePane({
               styles={{ inner: { justifyContent: "space-between" },
                 label: { fontWeight: on ? 600 : 500 } }}
               onClick={() => onGroup(g.key)}>
-              {g.label}
+              {t.publishing.groups[g.key]}
             </Button>
           );
         })}
       </Stack>
 
       <TextInput
-        placeholder="Ara"
+        placeholder={t.common.search}
         value={search}
         leftSection={<IconSearch size={16} />}
         onChange={(e) => onSearch(e.currentTarget.value)}
@@ -256,7 +260,7 @@ function QueuePane({
 
       {loaded && list.length === 0 ? (
         <Text c="dimmed" size="sm" mt="xs">
-          {search ? "Eşleşen kayıt yok." : "Bu grupta kayıt yok."}
+          {search ? t.publishing.noMatch : t.publishing.emptyGroup}
         </Text>
       ) : (
         <ScrollArea.Autosize mah="calc(100vh - 220px)" type="hover">
@@ -275,6 +279,7 @@ function QueuePane({
 function QueueCard({ d, active, mine, onClick }: {
   d: ScheduleDraft; active: boolean; mine: boolean; onClick: () => void;
 }) {
+  const t = useT();
   const meta = STATUS_META[d.status];
   const KindIcon = d.kind === "EXAM" ? IconPencil : IconCalendarWeek;
   return (
@@ -293,13 +298,13 @@ function QueueCard({ d, active, mine, onClick }: {
       <Group gap={6} wrap="nowrap" fz={11} c={TEXT_MUTED} mb={7}>
         <IconGitCompare size={12} style={{ flex: "none" }} />
         <Text fz={11} style={{ fontVariantNumeric: "tabular-nums" }}>
-          {d.change_count} değişiklik
+          {t.publishing.changeCount(d.change_count)}
         </Text>
       </Group>
       <Group gap={5}>
         <Badge size="sm" variant="light" color={meta.color}
-          leftSection={<meta.Icon size={12} />}>{meta.label}</Badge>
-        {mine && <Badge size="sm" variant="light" color="gray">kendi talebiniz</Badge>}
+          leftSection={<meta.Icon size={12} />}>{t.draft.status[d.status]}</Badge>
+        {mine && <Badge size="sm" variant="light" color="gray">{t.publishing.yourRequest}</Badge>}
       </Group>
     </UnstyledButton>
   );
@@ -310,12 +315,13 @@ function QueueCard({ d, active, mine, onClick }: {
  * ================================================================== */
 
 function EmptyDetail({ loaded }: { loaded: boolean }) {
+  const t = useT();
   return (
     <Paper withBorder radius="md" p="xl" style={{ minHeight: 360 }}>
       <Stack align="center" justify="center" gap="sm" h={320} c="dimmed">
         <IconInbox size={34} style={{ opacity: 0.35 }} />
         <Text fz="sm" c="dimmed">
-          {loaded ? "İncelemek için soldan bir kayıt seçin." : "Yükleniyor…"}
+          {loaded ? t.publishing.pickOne : t.publishing.loading}
         </Text>
       </Stack>
     </Paper>
@@ -345,7 +351,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
     setBlockers(null);
 
     const fail = (e: unknown) =>
-      !iptal && setDetailError(e instanceof ApiError ? e.message : "İnceleme yüklenemedi");
+      !iptal && setDetailError(e instanceof ApiError ? e.message : t.publishing.detailFailed);
 
     if (draft.status === "APPROVED") {
       // Satırlar yayına geçip silindi; canlı fark/ızgara yok, özet gösterilir.
@@ -390,16 +396,16 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
     setBusy(true); setBlockers(null);
     try {
       const r = await api.post<DraftApproveResponse>(`/schedule-approvals/${draft.id}/approve`);
-      notifications.show({ color: "green", title: "Yayına alındı",
-        message: `${r.applied.length} değişiklik uygulandı`
-          + (r.warnings.length ? ` · ${r.warnings.length} uyarı görünür kaldı` : "") });
+      notifications.show({ color: "green", title: t.publishing.published,
+        message: t.publishing.appliedN(r.applied.length)
+          + (r.warnings.length ? t.publishing.warningsRemain(r.warnings.length) : "") });
       onChanged();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.body as { conflicts?: ConflictResult[] } | null;
         if (body?.conflicts?.length) { setBlockers(body.conflicts); return; }
       }
-      hata(e, "Onaylanamadı");
+      hata(e, t.publishing.approveFailed);
     } finally { setBusy(false); }
   };
 
@@ -407,13 +413,13 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
     setBusy(true);
     try {
       await api.post(`/schedule-drafts/${draft.id}/withdraw`);
-      notifications.show({ color: "gray", message: "Talep geri çekildi — taslak yeniden düzenlenebilir" });
+      notifications.show({ color: "gray", message: t.publishing.withdrawn });
       onChanged();
-    } catch (e) { hata(e, "Geri çekilemedi"); } finally { setBusy(false); }
+    } catch (e) { hata(e, t.publishing.withdrawFailed); } finally { setBusy(false); }
   };
 
   const sil = async () => {
-    if (!window.confirm(`"${draft.name}" taslağı silinsin mi? Yayındaki program etkilenmez.`)) return;
+    if (!window.confirm(t.publishing.deleteConfirm(draft.name))) return;
     setBusy(true);
     try {
       await api.delete(`/schedule-drafts/${draft.id}`);
@@ -434,11 +440,11 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         <Group gap={9} align="center">
           <Text fz={20} fw={700} truncate>{cohortAdi(draft, t)}</Text>
           <Badge variant="light" color={meta.color} leftSection={<meta.Icon size={13} />}>
-            {meta.label}
+            {t.draft.status[draft.status]}
           </Badge>
         </Group>
         <Text fz={13} c={TEXT_MUTED} mt={3}>
-          {sinav ? "Sınav takvimi" : "Haftalık ders programı"} · gönderen {draft.owner.name}
+          {sinav ? t.publishing.examSchedule : t.publishing.weeklySchedule}{" · "}{t.publishing.sentBy} {draft.owner.name}
           {" · "}{tarih(draft.submitted_at ?? draft.created_at)}
           {" · "}{draft.change_count} değişiklik
         </Text>
@@ -452,8 +458,8 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
 
           {detail?.approved && (
             <Alert color="green" variant="light" radius="md" icon={<IconCircleCheck size={18} />}
-              title="Bu değişiklik yayında">
-              <Text fz="sm">{draft.applied_summary || "Değişiklikler yayına alındı."}</Text>
+              title={t.publishing.appliedTitle}>
+              <Text fz="sm">{draft.applied_summary || t.publishing.appliedFallback}</Text>
             </Alert>
           )}
 
@@ -461,14 +467,16 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
             <>
               {detail.staleness && detail.staleness.publications_since > 0 && (
                 <Alert color="orange" variant="light" radius="md"
-                  icon={<IconAlertTriangle size={18} />} title="Bu taslak güncel olmayabilir">
+                  icon={<IconAlertTriangle size={18} />} title={t.publishing.staleTitle}>
                   <Text size="sm">
-                    Taslak {tarih(detail.staleness.opened_at)} tarihinde açıldı; yayındaki{" "}
-                    {DRAFT_KIND_LABELS[draft.kind]} o tarihten sonra{" "}
-                    <b>{detail.staleness.publications_since} kez</b> güncellendi
+                    {t.publishing.staleBody(tarih(detail.staleness.opened_at),
+                                            t.draft.kind[draft.kind])}{" "}
+                    <b>{t.publishing.staleTimes(detail.staleness.publications_since)}</b>{" "}
+                    {t.publishing.staleUpdated}
                     {detail.staleness.last_published_by
-                      && ` (son: ${detail.staleness.last_published_by})`}. Aşağıdaki listede
-                    onaylanırsa <b>geri alınacak</b> değişiklikler de olabilir.
+                      && t.publishing.staleLastBy(detail.staleness.last_published_by)}.{" "}
+                    {t.publishing.staleTail} <b>{t.publishing.staleWillRevert}</b>
+                    {t.publishing.staleTail2}
                   </Text>
                 </Alert>
               )}
@@ -476,19 +484,19 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
               {/* İstatistik hücreleri */}
               <Group grow gap={0} style={{
                 border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden" }}>
-                <StatCell label="DEĞİŞİKLİK" value={String(detail.items.length)} />
+                <StatCell label={t.publishing.statChange} value={String(detail.items.length)} />
                 <StatCell label="ENGEL" value={String(hard)} color={hard ? "red.7" : undefined} border />
                 <StatCell label="UYARI" value={String(warn)} color={warn ? "orange.7" : undefined} border />
-                <StatCell label="DÖNEM" value={`${draft.year}. / ${t.enums.semester[draft.semester]}`} border />
+                <StatCell label={t.publishing.statSemester} value={`${draft.year}. / ${t.enums.semester[draft.semester]}`} border />
               </Group>
 
               {/* Program görüntüsü */}
               <div>
                 <Group gap={14} mb={8} align="center">
-                  <Text fz={12} fw={600} c={TEXT_MUTED}>PROGRAM GÖRÜNTÜSÜ</Text>
+                  <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.gridTitle}</Text>
                   <div style={{ flex: 1 }} />
-                  <Legend swatch="light-blue" label="eklenen" />
-                  <Legend swatch="gray" label="mevcut" />
+                  <Legend swatch="light-blue" label={t.publishing.legendAdded} />
+                  <Legend swatch="gray" label={t.publishing.legendExisting} />
                 </Group>
                 <Paper withBorder radius="md" p="sm">
                   {sinav
@@ -500,15 +508,15 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
               {/* Değişiklikler + çakışma / gönderen-karar */}
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)", gap: 18, alignItems: "start" }}>
                 <div>
-                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>DEĞİŞİKLİKLER</Text>
+                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.changesTitle}</Text>
                   <ChangesList items={detail.items} />
 
-                  <Text fz={12} fw={600} c={TEXT_MUTED} mt={16} mb={8}>ÇAKIŞMA KONTROLÜ</Text>
+                  <Text fz={12} fw={600} c={TEXT_MUTED} mt={16} mb={8}>{t.publishing.conflictCheck}</Text>
                   <ConflictList scan={detail.conflicts} blockers={blockers} />
                 </div>
 
                 <div>
-                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>GÖNDEREN VE KARAR</Text>
+                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.senderAndDecision}</Text>
                   <DeciderCard draft={draft} />
                   {rejectOpen && (
                     <RejectPanel draftId={draft.id}
@@ -527,39 +535,39 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
         {reviewable && !isSelf && (
           <>
-            <Tooltip label={hard ? "Hard çakışma çözülmeden onaylanamaz" : "Değişiklikleri yayına al"}>
+            <Tooltip label={hard ? t.publishing.hardBlocks : t.publishing.approveTip}>
               <Button leftSection={<IconCircleCheck size={16} />} loading={busy}
                 disabled={hard > 0} onClick={onayla}>
-                {hard > 0 ? `${hard} engel giderilmeli` : "Onayla ve yayınla"}
+                {hard > 0 ? `${hard} engel giderilmeli` : t.publishing.approve}
               </Button>
             </Tooltip>
             <Button variant="default" color="red" leftSection={<IconX size={15} />}
               onClick={() => setRejectOpen(true)}
-              style={{ color: "var(--mantine-color-red-7)" }}>Reddet</Button>
+              style={{ color: "var(--mantine-color-red-7)" }}>{t.publishing.reject}</Button>
           </>
         )}
         {reviewable && isSelf && (
           <>
             <Button variant="light" color="gray" leftSection={<IconArrowBackUp size={15} />}
-              loading={busy} onClick={geriCek}>Geri çek</Button>
+              loading={busy} onClick={geriCek}>{t.publishing.withdraw}</Button>
             <Text fz="xs" c="dimmed" style={{ alignSelf: "center" }}>
-              Kendi talebinizi onaylayamazsınız — başka bir onay yetkilisi incelemeli.
+              {t.publishing.selfApprove}
             </Text>
           </>
         )}
         {!reviewable && draft.status === "PENDING" && (
           <Button variant="light" color="gray" leftSection={<IconArrowBackUp size={15} />}
-            loading={busy} onClick={geriCek}>Geri çek</Button>
+            loading={busy} onClick={geriCek}>{t.publishing.withdraw}</Button>
         )}
         {(draft.status === "OPEN" || draft.status === "REJECTED") && (
           <>
             <Button leftSection={<IconSend size={15} />} onClick={() => setSubmitOpen(true)}>
-              Onaya gönder
+              {t.publishing.submitForApproval}
             </Button>
             <Button variant="default" leftSection={<IconPencil size={15} />}
-              onClick={() => goProgram(true)}>Programda düzenle</Button>
+              onClick={() => goProgram(true)}>{t.publishing.editInSchedule}</Button>
             <Button variant="default" color="red" leftSection={<IconTrash size={15} />}
-              loading={busy} onClick={sil} style={{ color: "var(--mantine-color-red-7)" }}>Sil</Button>
+              loading={busy} onClick={sil} style={{ color: "var(--mantine-color-red-7)" }}>{t.common.delete}</Button>
           </>
         )}
         <div style={{ flex: 1 }} />
@@ -567,7 +575,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
             "Programda gör" yalnız düzenlenemeyen (bekleyen/yayında) kayıtlarda. */}
         {draft.status !== "OPEN" && draft.status !== "REJECTED" && (
           <Button variant="subtle" color="gray" leftSection={<IconCalendarWeek size={15} />}
-            onClick={() => goProgram(false)}>Programda gör</Button>
+            onClick={() => goProgram(false)}>{t.publishing.viewInSchedule}</Button>
         )}
       </div>
 
@@ -607,14 +615,16 @@ function Legend({ swatch, label }: { swatch: "light-blue" | "gray"; label: strin
 }
 
 function StatusSteps({ status, isApprover }: { status: DraftStatus; isApprover: boolean }) {
+  const t = useT();
   // OPEN/REJECTED taslak evresinde, PENDING onayda, APPROVED yayında.
   const at = status === "APPROVED" ? 2 : status === "PENDING" ? 1 : 0;
-  const note = status === "REJECTED" ? "reddedildi — düzeltip yeniden gönderilebilir"
-    : status === "PENDING" ? (isApprover ? "kararınızı bekliyor" : "yöneticinin kararını bekliyor")
-    : status === "APPROVED" ? "öğrenciye görünür, kilitli" : "öğrenciye görünmez";
+  const note = status === "REJECTED" ? t.publishing.noteRejected
+    : status === "PENDING" ? (isApprover ? t.publishing.noteAwaitingYou
+                                         : t.publishing.noteAwaitingAdmin)
+    : status === "APPROVED" ? t.publishing.notePublished : t.publishing.noteDraft;
   return (
     <Group gap={0} mt={12} align="center" wrap="nowrap">
-      {["Taslak", "Onayda", "Yayında"].map((label, i) => {
+      {t.publishing.steps.map((label, i) => {
         const done = i < at, on = i === at;
         const color = done ? "green" : on ? "blue" : "gray";
         return (
@@ -636,16 +646,17 @@ function StatusSteps({ status, isApprover }: { status: DraftStatus; isApprover: 
   );
 }
 
-const CH_META: Record<string, { Icon: ComponentType<IconProps>; tag: string; color: string }> = {
-  ADDED:   { Icon: IconPlus,   tag: "EKLENDİ",    color: "blue" },
-  MOVED:   { Icon: IconPencil, tag: "TAŞINDI",    color: "yellow" },
-  REMOVED: { Icon: IconMinus,  tag: "KALDIRILDI", color: "red" },
+// K-79: `tag` sözlüğe taşındı (etiket); ikon ve renk dile bağlı değil.
+const CH_META: Record<string, { Icon: ComponentType<IconProps>; color: string }> = {
+  ADDED:   { Icon: IconPlus,   color: "blue" },
+  MOVED:   { Icon: IconPencil, color: "yellow" },
+  REMOVED: { Icon: IconMinus,  color: "red" },
 };
 
 function ChangesList({ items }: { items: DraftDiffItem[] }) {
   const t = useT();
   if (items.length === 0) {
-    return <Text fz="sm" c="dimmed">Taslak yayındaki programla birebir aynı.</Text>;
+    return <Text fz="sm" c="dimmed">{t.publishing.identical}</Text>;
   }
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
@@ -655,9 +666,9 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
         const kimlik = sinav
           ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
             + (i.exam_type === "MIDTERM" && i.exam_index > 1 ? ` ${i.exam_index}` : "")
-          : `${i.course_code} · Şube ${i.section_no}`;
-        const once = sinav ? examPlacementText(i.before) : placementText(i.before, t);
-        const sonra = sinav ? examPlacementText(i.after) : placementText(i.after, t);
+          : t.publishing.sectionOf(i.course_code, i.section_no);
+        const once = sinav ? examPlacementText(i.before, t) : placementText(i.before, t);
+        const sonra = sinav ? examPlacementText(i.after, t) : placementText(i.after, t);
         const detay = i.kind === "ADDED" ? sonra : i.kind === "REMOVED" ? once : `${once} → ${sonra}`;
         return (
           <Group key={`${i.entity}-${kimlik}-${i.kind}-${ix}`} gap={9} align="flex-start" wrap="nowrap"
@@ -676,7 +687,7 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
               )}
             </div>
             <Text fz={10} fw={700} c={`${m.color}.7`} style={{ flex: "none", letterSpacing: ".3px" }}>
-              {m.tag}
+              {t.publishing[i.kind === "ADDED" ? "chAdded" : i.kind === "MOVED" ? "chMoved" : "chRemoved"]}
             </Text>
           </Group>
         );
@@ -686,6 +697,7 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
 }
 
 function ConflictList({ scan, blockers }: { scan: ConflictScan; blockers: ConflictResult[] | null }) {
+  const t = useT();
   const rows: { c: ConflictResult; hard: boolean }[] = [
     ...(blockers ?? []).map((c) => ({ c, hard: true })),
     ...scan.hard.map((c) => ({ c, hard: true })),
@@ -697,14 +709,14 @@ function ConflictList({ scan, blockers }: { scan: ConflictScan; blockers: Confli
         border: "1px solid var(--mantine-color-green-3)", borderRadius: 6,
         background: "var(--mantine-color-green-light)" }}>
         <IconCircleCheck size={16} color="var(--mantine-color-green-7)" />
-        <Text fz={13} c="green.8">Engelleyici çakışma yok — yayınlanabilir.</Text>
+        <Text fz={13} c="green.8">{t.publishing.noBlockers}</Text>
       </Group>
     );
   }
   return (
     <Stack gap={7}>
       {blockers && (
-        <Text fz={11} c="red.7" fw={600}>Onaylanamadı — talep güncel programla çakışıyor:</Text>
+        <Text fz={11} c="red.7" fw={600}>{t.publishing.rejectedByConflict}</Text>
       )}
       {rows.map(({ c, hard }, i) => (
         <Group key={i} gap={9} align="flex-start" wrap="nowrap" p="9px 11px"
@@ -722,6 +734,7 @@ function ConflictList({ scan, blockers }: { scan: ConflictScan; blockers: Confli
 }
 
 function DeciderCard({ draft }: { draft: ScheduleDraft }) {
+  const t = useT();
   const decided = draft.status === "APPROVED" || draft.status === "REJECTED";
   const rejected = draft.status === "REJECTED";
   const note = rejected ? draft.review_note : draft.applied_summary;
@@ -731,7 +744,7 @@ function DeciderCard({ draft }: { draft: ScheduleDraft }) {
         <Group gap={10} wrap="nowrap">
           <Badge size="lg" circle variant="light" color="blue"><IconSend size={15} /></Badge>
           <div style={{ minWidth: 0 }}>
-            <Text fz={11} fw={600} c={TEXT_MUTED}>GÖNDEREN</Text>
+            <Text fz={11} fw={600} c={TEXT_MUTED}>{t.publishing.senderCaps}</Text>
             <Text fz={13} fw={600} truncate>{draft.owner.name}</Text>
             <Text fz={11} c="dimmed">{tarih(draft.submitted_at ?? draft.created_at)}</Text>
           </div>
@@ -745,13 +758,14 @@ function DeciderCard({ draft }: { draft: ScheduleDraft }) {
           </Badge>
           <div style={{ minWidth: 0 }}>
             <Text fz={11} fw={600} c={TEXT_MUTED}>
-              {decided ? (rejected ? "REDDEDEN" : "ONAYLAYAN") : "KARAR"}
+              {decided ? (rejected ? t.publishing.decidedByReject : t.publishing.decidedByApprove)
+                     : t.publishing.decision}
             </Text>
             <Text fz={13} fw={600} truncate>
-              {decided ? (draft.reviewer?.name ?? "—") : "Henüz karar verilmedi"}
+              {decided ? (draft.reviewer?.name ?? "—") : t.publishing.notDecided}
             </Text>
             <Text fz={11} c="dimmed">
-              {decided ? tarih(draft.reviewed_at) : "onay bekliyor"}
+              {decided ? tarih(draft.reviewed_at) : t.publishing.awaitingApproval}
             </Text>
           </div>
         </Group>
@@ -770,28 +784,29 @@ function DeciderCard({ draft }: { draft: ScheduleDraft }) {
 function RejectPanel({ draftId, onDone, onCancel }: {
   draftId: number; onDone: () => void; onCancel: () => void;
 }) {
+  const t = useT();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const reddet = async () => {
     setBusy(true);
     try {
       await api.post(`/schedule-approvals/${draftId}/reject`, { note: note.trim() });
-      notifications.show({ color: "gray", message: "Talep reddedildi — gerekçe gönderene iletildi" });
+      notifications.show({ color: "gray", message: t.publishing.rejected });
       onDone();
     } catch (e) {
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "Reddedilemedi" });
+      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.publishing.rejectFailed });
     } finally { setBusy(false); }
   };
   return (
     <Paper radius="md" p="md" mt="md" style={{
       border: "1px solid var(--mantine-color-red-3)", background: "var(--mantine-color-red-light)" }}>
-      <Text fz={12} fw={600} c="red.7" mb={7}>RET GEREKÇESİ</Text>
-      <Textarea placeholder="Sahibine iletilecek not" autosize minRows={3} maxRows={6}
+      <Text fz={12} fw={600} c="red.7" mb={7}>{t.publishing.rejectReason}</Text>
+      <Textarea placeholder={t.publishing.rejectPlaceholder} autosize minRows={3} maxRows={6}
         value={note} onChange={(e) => setNote(e.currentTarget.value)} />
       <Group gap={8} mt={9}>
         <Button color="red" loading={busy} disabled={!note.trim()}
-          leftSection={<IconSend size={15} />} onClick={reddet}>Reddet ve bildir</Button>
-        <Button variant="default" onClick={onCancel}>Vazgeç</Button>
+          leftSection={<IconSend size={15} />} onClick={reddet}>{t.publishing.rejectAndNotify}</Button>
+        <Button variant="default" onClick={onCancel}>{t.common.dismiss}</Button>
       </Group>
     </Paper>
   );
@@ -800,36 +815,37 @@ function RejectPanel({ draftId, onDone, onCancel }: {
 function SubmitModal({ draftId, onClose, onDone }: {
   draftId: number; onClose: () => void; onDone: () => void;
 }) {
+  const t = useT();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const gonder = async () => {
     setBusy(true);
     try {
       await api.post(`/schedule-drafts/${draftId}/submit`, { note: note.trim() || null });
-      notifications.show({ color: "green", message: "Onaya gönderildi" });
+      notifications.show({ color: "green", message: t.publishing.submitted });
       onDone();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.body as { conflicts?: ConflictResult[]; detail?: string } | null;
         const msg = body?.conflicts?.length
-          ? `Hard çakışma nedeniyle gönderilemedi: ${body.conflicts.map((c) => c.rule_id).join(", ")}`
+          ? t.publishing.submitBlocked(body.conflicts.map((c) => c.rule_id).join(", "))
           : (body?.detail ?? e.message);
         notifications.show({ color: "red", message: msg });
         return;
       }
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "Gönderilemedi" });
+      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.publishing.submitFailed });
     } finally { setBusy(false); }
   };
   return (
-    <Modal opened onClose={onClose} radius="md" title="Onaya gönder">
+    <Modal opened onClose={onClose} radius="md" title={t.publishing.submitTitle}>
       <Stack gap="sm">
-        <Textarea label="Açıklama (opsiyonel)"
-          description="Onaylayıcı bu notu görecek — neyi neden değiştirdiğinizi kısaca yazabilirsiniz"
-          placeholder="Örn. CENG2030 iki şubeye bölündü, ikinci şubeye Can Demir atandı"
+        <Textarea label={t.publishing.noteLabel}
+          description={t.publishing.noteHelp}
+          placeholder={t.publishing.notePlaceholder}
           autosize minRows={3} maxRows={6}
           value={note} onChange={(e) => setNote(e.currentTarget.value)} />
         <Group justify="flex-end" gap="xs">
-          <Button variant="default" onClick={onClose}>Vazgeç</Button>
+          <Button variant="default" onClick={onClose}>{t.common.dismiss}</Button>
           <Button loading={busy} leftSection={<IconSend size={15} />} onClick={gonder}>
             Onaya gönder
           </Button>

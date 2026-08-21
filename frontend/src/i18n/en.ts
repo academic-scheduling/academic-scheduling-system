@@ -37,6 +37,7 @@ export const en: Dict = {
   },
 
   common: {
+    diffKind: { ADDED: "Added", REMOVED: "Removed", MOVED: "Moved" },
     save: "Save",
     cancel: "Cancel",
     delete: "Delete",
@@ -708,14 +709,358 @@ export const en: Dict = {
   },
 
   weekly: {
+    relevantCohort: "the relevant cohort",
+    commonCourses: "Common courses",
+
+    title: "Weekly Schedule",
+    loadFailed: "The schedule could not be loaded",
+    notLoaded: "Could not be loaded",
+
+    session: { THEORY: "Theory", PRACTICE: "Practice", LAB: "Lab" },
+    delivery: {
+      FACE_TO_FACE: "In person",
+      ONLINE_SYNC: "Online (synchronous)",
+      ONLINE_ASYNC: "Online (asynchronous)",
+    },
+
+    highlightTitle: (rule: string) => `Conflicting Courses Highlighted (${rule})`,
+    highlightBody: (codes: string, gorunum: string) =>
+      `${codes} — on the PUBLISHED schedule, switched to the ${gorunum} view.`,
+    yearN: (y: number) => `Year ${y}`,
+    conflict: "Conflict",
+    highlightNotFound: "No record to highlight was found.",
+
+    draftOpened: (n: number) =>
+      `Draft opened — a copy of the published schedule (${n} placements). ` +
+      `Your changes are visible only to you and go live once approved.`,
+    draftFailed: "The draft could not be opened",
+    undone: (etiket: string) => `Undone: ${etiket}`,
+    noConflictFor: (baslik: string) => `${baslik} — no conflict`,
+    conflictList: (n: number, kurallar: string) => `${n} conflicts: ${kurallar}`,
+
+    sharedCourseTitle: (kod: string) => `${kod} is a COMMON course.`,
+    sharedCourseBody: (fiil: string) =>
+      `${fiil} this course also affects the schedules of the other departments taking it:`,
+    sharedCourseAsk: "Continue? (The change does not go live until approved.)",
+    verbMove: "Moving",
+    verbRemove: "Removing",
+    moveLabel: (kod: string, sube: number) => `moving ${kod}-${sube}`,
+    moved: "Entry moved",
+    moveFailed: "Could not be moved",
+    deleteConfirm: (kod: string, sube: number) => `Delete the ${kod}-${sube} entry?`,
+    deleted: "Entry deleted",
+
+    undoTip: (n: number) => `Undo the last draft change${n ? ` (${n})` : ""}`,
+    undo: "Undo",
+    searchCourse: "Search course",
+    noCourseInYear: "No course in this year.",
+    noMatch: "No matching course.",
+    noSections: "no sections",
+    noSectionsTitle: (kod: string) => `${kod} — no sections`,
+    noSectionsBody:
+      "To add it to the schedule, first add a section to this course from the Courses tab.",
+    elective: "Elective",
+
+    conflictsTitle: "Conflicts",
+    conflictsDraftHint:
+      "Conflicts touching your draft's rows — the other side may be another " +
+      "year's published course.",
+    conflictsPublishedHint: "Conflicts in the published schedule.",
+    noConflicts: "No conflict in the weekly schedule.",
+
+    sectionOption: (no: number, hoca: string, ogrenci: number) =>
+      `Section ${no} — ${hoca} · ${ogrenci} students`,
+    saved: "Entry saved (draft)",
+    editLabel: (kod: string, sube: number) => `editing ${kod}-${sube}`,
+    updated: "Entry updated",
+
+    sectionsCount: (n: number) => `${n} sections`,
+    roomsCount: (n: number) => ` · ${n} classrooms`,
+    online: "online",
+    parallelSections: (n: number) => `${n} parallel sections — click to list`,
+    cardEditable: "Click to edit, drag to move",
+    deleteEntry: "Delete entry",
+    hardTip: "Blocking conflict — click to go to the Conflicts section",
+    warnTip: "Warning — click to go to the Conflicts section",
+    groupTitle: (kod: string, gun: string, saat: string, n: number) =>
+      `${kod} · ${gun} ${saat} · ${n} sections`,
+
+    course: "Course",
+    pickCourse: "Select a course",
+    noCourse: "No course",
+    section: "Section",
+    pickSection: "Select a section",
+    pickCourseFirst: "Select a course first",
+    onlyOneSection: "This course has a single section",
+    noSectionOption: "No section",
+    sessionType: "Session type (T/P/L)",
+    deliveryType: "Delivery type",
+    classroom: "Classroom",
+    pickClassroom: "Select a classroom",
+    noClassroom: "No classroom",
+    slotCount: "Slot count",
+    addEntry: (gun: string, saat: string) => `Add course · ${gun} ${saat}`,
     blockersShort: "blocking",
     warningsShort: "warnings",
   },
 
   days: {
+    weekdayShort: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    minutesShort: "min",
     short: { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri" } as Record<number, string>,
     long: { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday" } as Record<number, string>,
   },
+
+  draft: {
+    identical: "The draft is identical to the published schedule.",
+    colChange: "Change",
+    colCourse: "Course",
+    colBefore: "Before",
+    colAfter: "After",
+    sectionOf: (kod: string, sube: number) => `${kod} · Section ${sube}`,
+    noExams: "No exam in the draft.",
+    movedTag: "moved",
+    noClassroom: "No classroom assigned",
+    undoFailed: "Could not be undone",
+    kind: { WEEKLY: "weekly schedule", EXAM: "exam schedule" },
+    row: { WEEKLY: "placement", EXAM: "exam" },
+    rowsPlural: { WEEKLY: "placements", EXAM: "exams" },
+    status: {
+      OPEN: "Draft", PENDING: "Pending approval",
+      APPROVED: "Approved", REJECTED: "Rejected",
+    },
+
+    publishedOf: (tur: string) => `Published ${tur}`,
+    publishInfo: "Publication info",
+    loading: "Loading…",
+    noApprovedChange: (tur: string) =>
+      `No approved change for this ${tur} yet. Open a draft to make changes.`,
+    editedBy: "Edited by:",
+    approvedBy: "Approved by:",
+    publishedAt: "Published:",
+
+    diffFailed: "The diff could not be loaded",
+    withdrawn: "Request withdrawn — the draft can be edited again",
+    withdrawFailed: "Could not be withdrawn",
+    deleteConfirm: (ad: string, tur: string) =>
+      `Delete the draft "${ad}"? The published ${tur} is not affected.`,
+    deleted: "Draft deleted",
+    deleteFailed: "Could not be deleted",
+    pickCohortFirst:
+      "Select a department and year first (no draft in the common-courses view)",
+    returnToDraftTip: (n: number) =>
+      `Returns to your open draft for this cohort (${n} changes)`,
+    openDraftTip: (tur: string) =>
+      `Opens a copy of the published ${tur}; visible only to you`,
+    returnToDraft: "Back to Draft",
+    openDraft: "Open Draft",
+    seeDiff: "See Diff",
+    emptyDraft: "Empty the draft",
+    clear: "Clear",
+    deleteDraft: "Delete draft",
+    withdraw: "Withdraw",
+    backToPublished: "Back to Published",
+    submitTip: "An approver will review it and publish",
+    submitDeniedTip: (tur: string) =>
+      `To submit for approval you need ${tur} permission and membership in this department`,
+    submit: "Submit for Approval",
+
+    clearBody: (satirlar: string, tur: string) =>
+      `All ${satirlar} in the draft will be deleted. The published ${tur} is not affected.`,
+    clearShared: "Also delete common courses",
+    clearSharedHelp:
+      "Common (service) courses in this cohort will be deleted too — this may also " +
+      "affect the drafts of other departments taking them. If unchecked, they are kept.",
+    empty: "Empty",
+    cleared: (n: number, satir: string) => `${n} ${satir} deleted`,
+    preservedShared: (n: number) => ` · ${n} common courses kept`,
+    clearFailed: "Could not be cleared",
+
+    diffTitle: (tur: string) => `Diff against the published ${tur}`,
+    submitted: "Submitted for approval",
+    submittedWarnings: (n: number) =>
+      `${n} warnings, but they do not block — the approver will see them`,
+    submittedOk: "An approver will review it and publish",
+    submitFailed: "Could not be sent",
+    submitTitle: "Submit for approval",
+    noteLabel: "Note (optional)",
+    noteHelp: "The approver will see this — explain why you changed it",
+    notePlaceholder: "e.g. moved because the 3rd-year lab is closed on Wednesday",
+    submitBlockedTitle: "Could not be sent — blocking conflict",
+    retry: "Try again",
+    send: "Send",
+
+    pendingNote:
+      "Pending approval — the draft is locked while under review. Withdraw it to edit.",
+    rejected: "Rejected",
+  },
+
+  publishing: {
+    title: "Publishing Center",
+    loadFailed: "The Publishing Center could not be loaded",
+    cohortName: (bolum: string, yil: number, donem: string) =>
+      `${bolum} · Year ${yil} · ${donem}`,
+
+    groups: {
+      PENDING: "Pending approval",
+      OPEN: "Drafts",
+      REJECTED: "Rejected",
+      APPROVED: "Published",
+    },
+    noMatch: "No matching record.",
+    emptyGroup: "No record in this group.",
+    changeCount: (n: number) => `${n} changes`,
+    yourRequest: "your request",
+    pickOne: "Select a record on the left to review it.",
+    loading: "Loading…",
+    detailFailed: "The review could not be loaded",
+
+    published: "Published",
+    appliedN: (n: number) => `${n} changes applied`,
+    warningsRemain: (n: number) => ` · ${n} warnings remain visible`,
+    approveFailed: "Could not be approved",
+    withdrawn: "Request withdrawn — the draft can be edited again",
+    withdrawFailed: "Could not be withdrawn",
+    deleteConfirm: (ad: string) =>
+      `Delete the draft "${ad}"? The published schedule is not affected.`,
+
+    examSchedule: "Exam schedule",
+    weeklySchedule: "Weekly schedule",
+    sentBy: "sent by",
+
+    appliedTitle: "This change is published",
+    appliedFallback: "The changes have been published.",
+    staleTitle: "This draft may be out of date",
+    staleBody: (tarih: string, tur: string) =>
+      `The draft was opened on ${tarih}; the published ${tur} has since been`,
+    staleTimes: (n: number) => `${n} times`,
+    staleUpdated: "updated",
+    staleLastBy: (kim: string) => ` (last: ${kim})`,
+    staleTail: "If approved, the list below may also contain changes that would be",
+    staleWillRevert: "reverted",
+    staleTail2: ".",
+
+    statChange: "CHANGES",
+    statSemester: "SEMESTER",
+    gridTitle: "SCHEDULE PREVIEW",
+    legendAdded: "added",
+    legendExisting: "existing",
+    changesTitle: "CHANGES",
+    conflictCheck: "CONFLICT CHECK",
+    senderAndDecision: "SENDER AND DECISION",
+
+    hardBlocks: "Cannot be approved until the blocking conflict is resolved",
+    approveTip: "Publish the changes",
+    approve: "Approve and publish",
+    reject: "Reject",
+    withdraw: "Withdraw",
+    selfApprove: "You cannot approve your own request — another approver must review it.",
+    editInSchedule: "Edit in the schedule",
+    submitForApproval: "Submit for approval",
+    viewInSchedule: "View in the schedule",
+
+    steps: ["Draft", "In review", "Published"],
+    noteRejected: "rejected — can be fixed and resubmitted",
+    noteAwaitingYou: "awaiting your decision",
+    noteAwaitingAdmin: "awaiting the administrator's decision",
+    notePublished: "visible to students, locked",
+    noteDraft: "not visible to students",
+
+    chAdded: "ADDED",
+    chMoved: "MOVED",
+    chRemoved: "REMOVED",
+    identical: "The draft is identical to the published schedule.",
+    sectionOf: (kod: string, sube: number) => `${kod} · Section ${sube}`,
+
+    noBlockers: "No blocking conflict — ready to publish.",
+    rejectedByConflict: "Could not be approved — the request conflicts with the current schedule:",
+
+    senderCaps: "SENDER",
+    decidedByReject: "REJECTED BY",
+    decidedByApprove: "APPROVED BY",
+    decision: "DECISION",
+    notDecided: "No decision yet",
+    awaitingApproval: "awaiting approval",
+
+    rejectReason: "REASON FOR REJECTION",
+    rejectPlaceholder: "Note to be sent to the owner",
+    rejectAndNotify: "Reject and notify",
+    rejected: "Request rejected — the reason was sent to the owner",
+    rejectFailed: "Could not be rejected",
+
+    submitted: "Submitted for approval",
+    submitBlocked: (kurallar: string) =>
+      `Could not be sent because of blocking conflicts: ${kurallar}`,
+    submitFailed: "Could not be sent",
+    submitTitle: "Submit for approval",
+    noteLabel: "Description (optional)",
+    noteHelp:
+      "The approver will see this note — briefly describe what you changed and why",
+    notePlaceholder:
+      "e.g. CENG2030 was split into two sections; the second was assigned to Jane Doe",
+  },
+
+  changeFeed: {
+    title: "Recent changes affecting your department",
+    open: "Open",
+    examSchedule: "exam schedule",
+    weeklySchedule: "weekly schedule",
+  },
+
+  courseInfo: {
+    commonCourseHours: (T: number, U: number, L: number) =>
+      `Common course · T${T}+P${U}+L${L}`,
+    hoursOf: (T: number, U: number, L: number) => `T${T}+P${U}+L${L}`,
+    ectsOf: (n: number) => ` · ${n} ECTS`,
+    required: "Required",
+    sectionsCount: (n: number) => `Sections (${n})`,
+    sharedCourseDepts: (n: number) => `common course — ${n} departments`,
+    yearSemester: (yil: number, donem: string) => `Year ${yil} · ${donem} · `,
+    elective: "Elective",
+    common: "Common",
+    exams: "Exams",
+    noExams: "No exam added.",
+    noSections: "No sections — add one from Courses.",
+  },
+
+  import: {
+    title: "Import Courses from Bologna",
+    pickTitle: "Select Courses and Import",
+    doneTitle: "Import Complete",
+    done: (ders: number, sube: number) =>
+      `${ders} courses added, ${sube} sections created`,
+    failed: "Import failed",
+    alreadySectioned: (n: number) => ` · ${n} already have sections`,
+    duplicateNamed: (n: number) => ` · ${n} with the same name (below)`,
+    selectAll: "Select all",
+    code: "Code",
+    name: "Name",
+    classYear: "Year",
+    semester: "Semester",
+    type: "Type",
+    lecturerSection: "Lecturer / Section",
+    targetDepartment: "Target department",
+    targetHelp:
+      "Courses of the Bologna department are added to this department. If there " +
+      "is no match, create it under Departments first.",
+    pickDepartment: "Select a department",
+    urlLabel: "Bologna page address",
+    urlHelp: "Paste the URL of the department's course info page (must contain …curSunit=…).",
+    pickRow: (kod: string) => `select ${kod}`,
+    editRow: (kod: string) => `edit ${kod}`,
+    sectioned: "has sections",
+    registeredNoSection: "registered · no sections",
+    elective: "Elective",
+    required: "Required",
+    common: "Common",
+    alreadySectionedTag: "already has sections",
+    midterm: "Midterm",
+    commonCourse: "Common course",
+    lecturerNotFound: "lecturer not found",
+    unmatched: "no match — select a lecturer",
+  },
+
+  miniWeek: { empty: "No course in the schedule." },
 
   home: {
     title: "Home",

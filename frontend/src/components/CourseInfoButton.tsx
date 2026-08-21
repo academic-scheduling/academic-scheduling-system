@@ -70,17 +70,19 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
           </div>
           <Text fz="xs">
             {course.is_common
-              ? `Ortak ders · T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`
-              : `${course.year}. sınıf · ${t.enums.semester[course.semester]} · `
-                + `T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`}
-            {course.ects != null ? ` · ${course.ects} AKTS` : ""}
+              ? t.courseInfo.commonCourseHours(course.hours_theory,
+                                               course.hours_practice, course.hours_lab)
+              : t.courseInfo.yearSemester(course.year, t.enums.semester[course.semester])
+                + t.courseInfo.hoursOf(course.hours_theory,
+                                       course.hours_practice, course.hours_lab)}
+            {course.ects != null ? t.courseInfo.ectsOf(course.ects) : ""}
           </Text>
           <Group gap={4}>
             <Badge size="xs" variant="light" color={course.is_elective ? "grape" : "blue"}>
-              {course.is_elective ? "Seçmeli" : "Zorunlu"}
+              {course.is_elective ? t.courseInfo.elective : t.courseInfo.required}
             </Badge>
             {course.is_common && (
-              <Badge size="xs" variant="light" color="teal">Ortak</Badge>
+              <Badge size="xs" variant="light" color="teal">{t.courseInfo.common}</Badge>
             )}
           </Group>
 
@@ -88,9 +90,9 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
               başlık + kompakt satırlar — ders kod/adından baskın görünmesin. */}
           {exams !== undefined ? (
             <div>
-              <Text fz={10} fw={700} c="dimmed" tt="uppercase" mb={2}>Sınavlar</Text>
+              <Text fz={10} fw={700} c="dimmed" tt="uppercase" mb={2}>{t.courseInfo.exams}</Text>
               {exams.length === 0 ? (
-                <Text fz={11} c="dimmed">Sınav eklenmedi.</Text>
+                <Text fz={11} c="dimmed">{t.courseInfo.noExams}</Text>
               ) : (
                 <Stack gap={1}>
                   {exams.map((ex, i) => (
@@ -105,10 +107,10 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
           ) : (
             <div>
               <Text fz={10} fw={700} c="dimmed" tt="uppercase" mb={2}>
-                Şubeler ({sections.length})
+                {t.courseInfo.sectionsCount(sections.length)}
               </Text>
               {sections.length === 0 ? (
-                <Text fz={11} c="dimmed">Şube yok — Dersler'den ekleyin.</Text>
+                <Text fz={11} c="dimmed">{t.courseInfo.noSections}</Text>
               ) : (
                 <Stack gap={1}>
                   {sections.map((s) => (

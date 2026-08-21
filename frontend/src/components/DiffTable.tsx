@@ -1,5 +1,5 @@
 import { Badge, ScrollArea, Table, Text } from "@mantine/core";
-import { DIFF_KIND_COLORS, DIFF_KIND_LABELS } from "../api/types";
+import { DIFF_KIND_COLORS } from "../api/types";
 import type {
   DraftDiffItem, DraftExamPlacement, DraftPlacement,
 } from "../api/types";
@@ -14,15 +14,12 @@ export function placementText(p: DraftPlacement | null, t: Dict): string {
   return `${gun} ${p.start_slot}${bitis}${p.classroom_label ? ` · ${p.classroom_label}` : ""}`;
 }
 
-const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
-            "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-
 /** Sınav yerleşiminin okunur konumu: "15 Eyl 09:00 (90 dk) · B Blok 202". */
-export function examPlacementText(p: DraftExamPlacement | null): string {
+export function examPlacementText(p: DraftExamPlacement | null, t: Dict): string {
   if (!p) return "—";
   const [, a, g] = p.exam_date.split("-").map(Number);
   const saat = p.start_time.slice(0, 5);
-  return `${g} ${AY[a - 1] ?? a} ${saat} (${p.duration_minutes} dk)`
+  return `${g} ${t.exams.monthsShort[a - 1] ?? a} ${saat} (${p.duration_minutes} ${t.days.minutesShort})`
     + (p.classroom_label ? ` · ${p.classroom_label}` : "");
 }
 
@@ -43,17 +40,17 @@ export default function DiffTable({ items, maxHeight = 460 }: {
 }) {
   const t = useT();
   if (items.length === 0) {
-    return <Text size="sm" c="dimmed">Taslak yayındaki programla birebir aynı.</Text>;
+    return <Text size="sm" c="dimmed">{t.draft.identical}</Text>;
   }
   return (
     <ScrollArea.Autosize mah={maxHeight}>
       <Table striped highlightOnHover verticalSpacing={6} fz="sm">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th w={104}>Değişim</Table.Th>
-            <Table.Th>Ders</Table.Th>
-            <Table.Th>Önce</Table.Th>
-            <Table.Th>Sonra</Table.Th>
+            <Table.Th w={104}>{t.draft.colChange}</Table.Th>
+            <Table.Th>{t.draft.colCourse}</Table.Th>
+            <Table.Th>{t.draft.colBefore}</Table.Th>
+            <Table.Th>{t.draft.colAfter}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -63,14 +60,14 @@ export default function DiffTable({ items, maxHeight = 460 }: {
               // Vizede kaçıncısı anlamlı; final/büt'te sıra her zaman 1 (K-46).
               ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
                 + (i.exam_type === "MIDTERM" ? ` ${i.exam_index}` : "")
-              : `${i.course_code} · Şube ${i.section_no}`;
-            const once = sinav ? examPlacementText(i.before) : placementText(i.before, t);
-            const sonra = sinav ? examPlacementText(i.after) : placementText(i.after, t);
+              : t.draft.sectionOf(i.course_code, i.section_no);
+            const once = sinav ? examPlacementText(i.before, t) : placementText(i.before, t);
+            const sonra = sinav ? examPlacementText(i.after, t) : placementText(i.after, t);
             return (
               <Table.Tr key={`${i.entity}-${kimlik}-${i.kind}-${ix}`}>
                 <Table.Td>
                   <Badge size="sm" variant="light" color={DIFF_KIND_COLORS[i.kind]}>
-                    {DIFF_KIND_LABELS[i.kind]}
+                    {t.common.diffKind[i.kind]}
                   </Badge>
                 </Table.Td>
                 <Table.Td>

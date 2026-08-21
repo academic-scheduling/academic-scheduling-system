@@ -4,25 +4,23 @@ import { lecturerLabel } from "../api/types";
 import type { DraftDiffItem, Exam, WeeklyEntry } from "../api/types";
 import { BORDER, GRID_CELL_BG, HEADER_BG, TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /** Onay/inceleme ekranlarının "önerilen program" görüntüsü (K-60).
  *
  *  K-77'de Yayın Merkezi de aynı görüntüyü kullanıyor; bu yüzden ApprovalsPage
  *  içinde gömülü olan iki bileşen buraya taşındı — tek kaynak, iki tüketici.
  *  Vurgu YERLEŞİME bağlanır (şubeye/derse değil): aynı şubenin/dersin değişmeyen
- *  öteki satırı yanlışlıkla "taşındı" görünmesin (K-59 hatası). */
+ *  öteki satırı yanlışlıkla t.draft.movedTag görünmesin (K-59 hatası). */
 
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
 
-const AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
-                 "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-const GUN_KISA = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
-
-function gunBasligi(iso: string): string {
+function gunBasligi(iso: string, t: Dict): string {
   const d = new Date(`${iso}T00:00:00`);
-  return `${d.getDate()} ${AY_KISA[d.getMonth()]} ${d.getFullYear()} · ${GUN_KISA[d.getDay()]}`;
+  return `${d.getDate()} ${t.exams.monthsShort[d.getMonth()]} ${d.getFullYear()}`
+    + ` · ${t.days.weekdayShort[d.getDay()]}`;
 }
 
 /** Önerilen sınav takviminin salt-okunur listesi (K-60): sınav bir döneme
@@ -53,7 +51,7 @@ export function ProposedExamList({ exams, changed }: {
   }, [exams]);
 
   if (gunler.length === 0) {
-    return <Text size="sm" c="dimmed">Taslakta hiç sınav yok.</Text>;
+    return <Text size="sm" c="dimmed">{t.draft.noExams}</Text>;
   }
 
   return (
@@ -63,7 +61,7 @@ export function ProposedExamList({ exams, changed }: {
           <div key={gun}>
             <Text fz={12} fw={600} c={TEXT_MUTED} mb={4}
               style={{ letterSpacing: "0.02em" }}>
-              {gunBasligi(gun)}
+              {gunBasligi(gun, t)}
             </Text>
             <Stack gap={4}>
               {liste.map((e) => {
@@ -95,13 +93,13 @@ export function ProposedExamList({ exams, changed }: {
                         </Badge>
                         {degisen && (
                           <Badge size="xs" variant="light" color="blue">
-                            {k === "ADDED" ? "eklendi" : "taşındı"}
+                            {k === "ADDED" ? "eklendi" : t.draft.movedTag}
                           </Badge>
                         )}
                       </Group>
                       <Text fz={12} c={TEXT_MUTED} truncate>
                         {e.classrooms.map((c) => `${c.building.name} ${c.room_code}`)
-                          .join(", ") || "Derslik atanmadı"}
+                          .join(", ") || t.draft.noClassroom}
                         {" · "}{lecturerLabel(e.lecturer)}
                         {" · "}{e.total_expected_students} öğrenci
                       </Text>

@@ -41,6 +41,7 @@ export const tr = {
   },
 
   common: {
+    diffKind: { ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı" },
     save: "Kaydet",
     cancel: "İptal",
     delete: "Sil",
@@ -732,14 +733,360 @@ export const tr = {
   },
 
   weekly: {
+    relevantCohort: "ilgili cohort",
+    commonCourses: "Ortak dersler",
+
+    title: "Haftalık Program",
+    loadFailed: "Program yüklenemedi",
+    notLoaded: "Yüklenemedi",
+
+    session: { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" },
+    delivery: {
+      FACE_TO_FACE: "Yüz yüze",
+      ONLINE_SYNC: "Online (eşzamanlı)",
+      ONLINE_ASYNC: "Online (asenkron)",
+    },
+
+    highlightTitle: (rule: string) => `Çakışan Dersler Vurgulandı (${rule})`,
+    highlightBody: (codes: string, gorunum: string) =>
+      `${codes} — YAYINDAKİ programda, ${gorunum} görünümüne geçildi.`,
+    yearN: (y: number) => `${y}. sınıf`,
+    conflict: "Çakışma",
+    highlightNotFound: "Vurgulanacak kayıt bulunamadı.",
+
+    draftOpened: (n: number) =>
+      `Taslak açıldı — yayındaki programın kopyası (${n} yerleşim). ` +
+      `Değişiklikleriniz yalnız size görünür, onaylanınca yayına geçer.`,
+    draftFailed: "Taslak açılamadı",
+    undone: (etiket: string) => `Geri alındı: ${etiket}`,
+    noConflictFor: (baslik: string) => `${baslik} — çakışma yok`,
+    conflictList: (n: number, kurallar: string) => `${n} çakışma: ${kurallar}`,
+
+    sharedCourseTitle: (kod: string) => `${kod} ORTAK bir derstir.`,
+    sharedCourseBody: (fiil: string) =>
+      `Bu dersi ${fiil}, onu alan diğer bölümlerin programını da etkiler:`,
+    sharedCourseAsk: "Devam edilsin mi? (Değişiklik onaylanana kadar yayına geçmez.)",
+    verbMove: "taşımak",
+    verbRemove: "kaldırmak",
+    moveLabel: (kod: string, sube: number) => `${kod}-${sube} taşıma`,
+    moved: "Giriş taşındı",
+    moveFailed: "Taşınamadı",
+    deleteConfirm: (kod: string, sube: number) => `${kod}-${sube} girişi silinsin mi?`,
+    deleted: "Giriş silindi",
+
+    undoTip: (n: number) => `Son taslak değişikliğini geri al${n ? ` (${n})` : ""}`,
+    undo: "Geri Al",
+    searchCourse: "Ders ara",
+    noCourseInYear: "Bu sınıfta ders yok.",
+    noMatch: "Eşleşen ders yok.",
+    noSections: "şube yok",
+    noSectionsTitle: (kod: string) => `${kod} — şube yok`,
+    noSectionsBody:
+      "Programa eklemek için önce Dersler sekmesinden bu derse şube ekleyin.",
+    elective: "Seçmeli",
+
+    conflictsTitle: "Çakışmalar",
+    conflictsDraftHint:
+      "Taslağınızın satırlarına dokunan çakışmalar — karşı taraf başka bir " +
+      "sınıfın yayındaki dersi olabilir.",
+    conflictsPublishedHint: "Yayındaki programın çakışmaları.",
+    noConflicts: "Haftalık programda çakışma yok.",
+
+    sectionOption: (no: number, hoca: string, ogrenci: number) =>
+      `Şube ${no} — ${hoca} · ${ogrenci} öğrenci`,
+    saved: "Giriş kaydedildi (taslak)",
+    editLabel: (kod: string, sube: number) => `${kod}-${sube} düzenleme`,
+    updated: "Giriş güncellendi",
+
+    sectionsCount: (n: number) => `${n} şube`,
+    roomsCount: (n: number) => ` · ${n} derslik`,
+    online: "online",
+    parallelSections: (n: number) => `${n} paralel şube — listelemek için tıkla`,
+    cardEditable: "Düzenlemek için tıkla, taşımak için sürükle",
+    deleteEntry: "Girişi sil",
+    hardTip: "Engelleyici çakışma — Çakışmalar bölümüne gitmek için tıklayın",
+    warnTip: "Uyarı — Çakışmalar bölümüne gitmek için tıklayın",
+    groupTitle: (kod: string, gun: string, saat: string, n: number) =>
+      `${kod} · ${gun} ${saat} · ${n} şube`,
+
+    course: "Ders",
+    pickCourse: "Ders seç",
+    noCourse: "Ders yok",
+    section: "Şube",
+    pickSection: "Şube seç",
+    pickCourseFirst: "Önce ders seçin",
+    onlyOneSection: "Bu dersin tek şubesi var",
+    noSectionOption: "Şube yok",
+    sessionType: "Oturum türü (T/U/L)",
+    deliveryType: "Çevrimiçi türü",
+    classroom: "Derslik",
+    pickClassroom: "Derslik seç",
+    noClassroom: "Derslik yok",
+    slotCount: "Slot sayısı",
+    addEntry: (gun: string, saat: string) => `Ders ekle · ${gun} ${saat}`,
     blockersShort: "engel",
     warningsShort: "uyarı",
   },
 
   days: {
+    weekdayShort: ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"],
+    minutesShort: "dk",
     short: { 1: "Pzt", 2: "Sal", 3: "Çar", 4: "Per", 5: "Cum" } as Record<number, string>,
     long: { 1: "Pazartesi", 2: "Salı", 3: "Çarşamba", 4: "Perşembe", 5: "Cuma" } as Record<number, string>,
   },
+
+  draft: {
+    identical: "Taslak yayındaki programla birebir aynı.",
+    colChange: "Değişim",
+    colCourse: "Ders",
+    colBefore: "Önce",
+    colAfter: "Sonra",
+    sectionOf: (kod: string, sube: number) => `${kod} · Şube ${sube}`,
+    noExams: "Taslakta hiç sınav yok.",
+    movedTag: "taşındı",
+    noClassroom: "Derslik atanmadı",
+    undoFailed: "Geri alınamadı",
+    // Taslak türü / satır adı. `rowsPlural` AYRI bir girdi: Türkçede
+    // "{satırAdı}lar" diye ek getiriliyordu, İngilizcede çoğul öyle çalışmıyor.
+    kind: { WEEKLY: "haftalık program", EXAM: "sınav takvimi" },
+    row: { WEEKLY: "yerleşim", EXAM: "sınav" },
+    rowsPlural: { WEEKLY: "yerleşimler", EXAM: "sınavlar" },
+    status: {
+      OPEN: "Taslak", PENDING: "Onay bekliyor",
+      APPROVED: "Onaylandı", REJECTED: "Reddedildi",
+    },
+
+    publishedOf: (tur: string) => `Yayındaki ${tur}`,
+    publishInfo: "Yayın bilgisi",
+    loading: "Yükleniyor…",
+    noApprovedChange: (tur: string) =>
+      `Bu ${tur} için henüz onaylı bir değişiklik yok. Değişiklik için taslak açın.`,
+    editedBy: "Düzenleyen:",
+    approvedBy: "Onaylayan:",
+    publishedAt: "Yayınlanma:",
+
+    diffFailed: "Fark alınamadı",
+    withdrawn: "Talep geri çekildi — taslak yeniden düzenlenebilir",
+    withdrawFailed: "Geri çekilemedi",
+    deleteConfirm: (ad: string, tur: string) =>
+      `"${ad}" taslağı silinsin mi? Yayındaki ${tur} etkilenmez.`,
+    deleted: "Taslak silindi",
+    deleteFailed: "Silinemedi",
+    pickCohortFirst:
+      "Önce bölüm ve sınıf seçin (ortak dersler görünümünde taslak açılmaz)",
+    returnToDraftTip: (n: number) =>
+      `Bu cohort için açık taslağınıza döner (${n} değişiklik)`,
+    openDraftTip: (tur: string) =>
+      `Yayındaki ${tur} kopyalanarak açılır; yalnız siz görürsünüz`,
+    returnToDraft: "Taslağa Dön",
+    openDraft: "Taslak Aç",
+    seeDiff: "Farkı Gör",
+    emptyDraft: "Taslağı boşalt",
+    clear: "Temizle",
+    deleteDraft: "Taslağı sil",
+    withdraw: "Geri Çek",
+    backToPublished: "Yayına Dön",
+    submitTip: "Onay yetkilisi inceleyip yayına alacak",
+    submitDeniedTip: (tur: string) =>
+      `Onaya göndermek için ${tur} yetkisi ve bu bölümde üyelik gerekir`,
+    submit: "Onaya Gönder",
+
+    clearBody: (satirlar: string, tur: string) =>
+      `Taslaktaki tüm ${satirlar} silinecek. Yayındaki ${tur} etkilenmez.`,
+    clearShared: "Ortak dersleri de sil",
+    clearSharedHelp:
+      "Bu cohort'taki ortak (servis) dersler de silinsin — onları alan diğer " +
+      "bölümlerin taslağını da etkileyebilir. İşaretlemezseniz ortak dersler korunur.",
+    empty: "Boşalt",
+    cleared: (n: number, satir: string) => `${n} ${satir} silindi`,
+    preservedShared: (n: number) => ` · ${n} ortak ders korundu`,
+    clearFailed: "Temizlenemedi",
+
+    diffTitle: (tur: string) => `Yayındaki ${tur} ile fark`,
+    submitted: "Onaya gönderildi",
+    submittedWarnings: (n: number) =>
+      `${n} uyarı var ama engellemiyor — onaylayıcı görecek`,
+    submittedOk: "Bir onay yetkilisi inceleyip yayına alacak",
+    submitFailed: "Gönderilemedi",
+    submitTitle: "Onaya gönder",
+    noteLabel: "Not (isteğe bağlı)",
+    noteHelp: "Onaylayıcı bunu görecek — neden değiştirdiğinizi yazın",
+    notePlaceholder: "Örn. 3. sınıf laboratuvarı Çarşamba kapalı olduğu için kaydırıldı",
+    submitBlockedTitle: "Gönderilemedi — hard çakışma",
+    retry: "Tekrar dene",
+    send: "Gönder",
+
+    pendingNote:
+      "Onay bekliyor — inceleme sürerken taslak kilitlidir. Düzenlemek için geri çekin.",
+    rejected: "Reddedildi",
+  },
+
+  publishing: {
+    title: "Yayın Merkezi",
+    loadFailed: "Yayın Merkezi yüklenemedi",
+    cohortName: (bolum: string, yil: number, donem: string) =>
+      `${bolum} · ${yil}. sınıf · ${donem}`,
+
+    groups: {
+      PENDING: "Onay bekleyenler",
+      OPEN: "Taslaklar",
+      REJECTED: "Reddedilenler",
+      APPROVED: "Yayında",
+    },
+    noMatch: "Eşleşen kayıt yok.",
+    emptyGroup: "Bu grupta kayıt yok.",
+    changeCount: (n: number) => `${n} değişiklik`,
+    yourRequest: "kendi talebiniz",
+    pickOne: "İncelemek için soldan bir kayıt seçin.",
+    loading: "Yükleniyor…",
+    detailFailed: "İnceleme yüklenemedi",
+
+    published: "Yayına alındı",
+    appliedN: (n: number) => `${n} değişiklik uygulandı`,
+    warningsRemain: (n: number) => ` · ${n} uyarı görünür kaldı`,
+    approveFailed: "Onaylanamadı",
+    withdrawn: "Talep geri çekildi — taslak yeniden düzenlenebilir",
+    withdrawFailed: "Geri çekilemedi",
+    deleteConfirm: (ad: string) =>
+      `"${ad}" taslağı silinsin mi? Yayındaki program etkilenmez.`,
+
+    examSchedule: "Sınav takvimi",
+    weeklySchedule: "Haftalık ders programı",
+    sentBy: "gönderen",
+
+    appliedTitle: "Bu değişiklik yayında",
+    appliedFallback: "Değişiklikler yayına alındı.",
+    staleTitle: "Bu taslak güncel olmayabilir",
+    staleBody: (tarih: string, tur: string) =>
+      `Taslak ${tarih} tarihinde açıldı; yayındaki ${tur} o tarihten sonra`,
+    staleTimes: (n: number) => `${n} kez`,
+    staleUpdated: "güncellendi",
+    staleLastBy: (kim: string) => ` (son: ${kim})`,
+    staleTail: "Aşağıdaki listede onaylanırsa",
+    staleWillRevert: "geri alınacak",
+    staleTail2: "değişiklikler de olabilir.",
+
+    statChange: "DEĞİŞİKLİK",
+    statSemester: "DÖNEM",
+    gridTitle: "PROGRAM GÖRÜNTÜSÜ",
+    legendAdded: "eklenen",
+    legendExisting: "mevcut",
+    changesTitle: "DEĞİŞİKLİKLER",
+    conflictCheck: "ÇAKIŞMA KONTROLÜ",
+    senderAndDecision: "GÖNDEREN VE KARAR",
+
+    hardBlocks: "Hard çakışma çözülmeden onaylanamaz",
+    approveTip: "Değişiklikleri yayına al",
+    approve: "Onayla ve yayınla",
+    reject: "Reddet",
+    withdraw: "Geri çek",
+    selfApprove: "Kendi talebinizi onaylayamazsınız — başka bir onay yetkilisi incelemeli.",
+    editInSchedule: "Programda düzenle",
+    submitForApproval: "Onaya gönder",
+    viewInSchedule: "Programda gör",
+
+    steps: ["Taslak", "Onayda", "Yayında"],
+    noteRejected: "reddedildi — düzeltip yeniden gönderilebilir",
+    noteAwaitingYou: "kararınızı bekliyor",
+    noteAwaitingAdmin: "yöneticinin kararını bekliyor",
+    notePublished: "öğrenciye görünür, kilitli",
+    noteDraft: "öğrenciye görünmez",
+
+    chAdded: "EKLENDİ",
+    chMoved: "TAŞINDI",
+    chRemoved: "KALDIRILDI",
+    identical: "Taslak yayındaki programla birebir aynı.",
+    sectionOf: (kod: string, sube: number) => `${kod} · Şube ${sube}`,
+
+    noBlockers: "Engelleyici çakışma yok — yayınlanabilir.",
+    rejectedByConflict: "Onaylanamadı — talep güncel programla çakışıyor:",
+
+    senderCaps: "GÖNDEREN",
+    decidedByReject: "REDDEDEN",
+    decidedByApprove: "ONAYLAYAN",
+    decision: "KARAR",
+    notDecided: "Henüz karar verilmedi",
+    awaitingApproval: "onay bekliyor",
+
+    rejectReason: "RET GEREKÇESİ",
+    rejectPlaceholder: "Sahibine iletilecek not",
+    rejectAndNotify: "Reddet ve bildir",
+    rejected: "Talep reddedildi — gerekçe gönderene iletildi",
+    rejectFailed: "Reddedilemedi",
+
+    submitted: "Onaya gönderildi",
+    submitBlocked: (kurallar: string) =>
+      `Hard çakışma nedeniyle gönderilemedi: ${kurallar}`,
+    submitFailed: "Gönderilemedi",
+    submitTitle: "Onaya gönder",
+    noteLabel: "Açıklama (opsiyonel)",
+    noteHelp:
+      "Onaylayıcı bu notu görecek — neyi neden değiştirdiğinizi kısaca yazabilirsiniz",
+    notePlaceholder:
+      "Örn. CENG2030 iki şubeye bölündü, ikinci şubeye Can Demir atandı",
+  },
+
+  changeFeed: {
+    title: "Bölümünüzü etkileyen son değişiklikler",
+    open: "Aç",
+    examSchedule: "sınav takvimi",
+    weeklySchedule: "ders programı",
+  },
+
+  courseInfo: {
+    commonCourseHours: (T: number, U: number, L: number) =>
+      `Ortak ders · T${T}+U${U}+L${L}`,
+    hoursOf: (T: number, U: number, L: number) => `T${T}+U${U}+L${L}`,
+    ectsOf: (n: number) => ` · ${n} AKTS`,
+    required: "Zorunlu",
+    sectionsCount: (n: number) => `Şubeler (${n})`,
+    sharedCourseDepts: (n: number) => `ortak ders — ${n} bölüm`,
+    yearSemester: (yil: number, donem: string) => `${yil}. sınıf · ${donem} · `,
+    elective: "Seçmeli",
+    common: "Ortak",
+    exams: "Sınavlar",
+    noExams: "Sınav eklenmedi.",
+    noSections: "Şube yok — Dersler'den ekleyin.",
+  },
+
+  import: {
+    title: "Bologna'dan Ders İçe Aktar",
+    pickTitle: "Dersleri Seç ve İçe Aktar",
+    doneTitle: "İçe Aktarma Tamamlandı",
+    done: (ders: number, sube: number) =>
+      `${ders} ders eklendi, ${sube} şube açıldı`,
+    failed: "İçe aktarma başarısız",
+    alreadySectioned: (n: number) => ` · ${n} tanesi zaten şubeli`,
+    duplicateNamed: (n: number) => ` · ${n} aynı adlı (aşağıda)`,
+    selectAll: "Tümünü seç",
+    code: "Kod",
+    name: "Ad",
+    classYear: "Sınıf",
+    semester: "Dönem",
+    type: "Tür",
+    lecturerSection: "Hoca / Şube",
+    targetDepartment: "Hedef bölüm",
+    targetHelp:
+      "Bologna'daki bölümün dersleri bu bölüme eklenir. Karşılığı yoksa önce " +
+      "Bölümler'den oluşturun.",
+    pickDepartment: "Bölüm seçin",
+    urlLabel: "Bologna sayfası adresi",
+    urlHelp: "Bölümün bilgi paketi ders sayfasının URL'ini yapıştırın (…curSunit=… içermeli).",
+    pickRow: (kod: string) => `${kod} seç`,
+    editRow: (kod: string) => `${kod} düzenle`,
+    sectioned: "şubeli",
+    registeredNoSection: "kayıtlı · şubesiz",
+    elective: "Seçmeli",
+    required: "Zorunlu",
+    common: "Ortak",
+    alreadySectionedTag: "zaten şubeli",
+    midterm: "Vize",
+    commonCourse: "Ortak ders",
+    lecturerNotFound: "hoca bulunamadı",
+    unmatched: "eşleşmedi — hoca seç",
+  },
+
+  miniWeek: { empty: "Programda ders yok." },
 
   home: {
     title: "Ana Sayfa",

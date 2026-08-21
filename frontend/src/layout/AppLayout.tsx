@@ -37,9 +37,14 @@ import { useEffect, useState, type ComponentType } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import type { ScheduleDraft } from "../api/types";
+import { useLang, useT } from "../i18n";
+import { tr } from "../i18n/tr";
 
 type MenuItem = {
-  label: string;
+  /** K-79: sabit metin değil SÖZLÜK ANAHTARI — menü modül düzeyinde kurulduğu
+   *  için (hook çağıramaz) etiket, render sırasında `t.nav[key]` ile çözülür.
+   *  `keyof` sayesinde olmayan bir anahtar derlemede yakalanır. */
+  key: keyof typeof tr.nav;
   path: string;
   icon: ComponentType<IconProps>;
   adminOnly?: boolean;
@@ -50,18 +55,18 @@ type MenuItem = {
 };
 
 const MENU: MenuItem[] = [
-  { label: "Ana Sayfa", path: "/", icon: IconHome2 },
-  { label: "Dashboard", path: "/dashboard", icon: IconLayoutDashboard, adminOnly: true },
-  { label: "Bölümler", path: "/departments", icon: IconBuildingBank },
-  { label: "Dersler", path: "/courses", icon: IconBook2 },
-  { label: "Derslikler", path: "/classrooms", icon: IconDoor },
-  { label: "Öğretim Üyeleri", path: "/lecturers", icon: IconUsers },
-  { label: "Haftalık Program", path: "/weekly", icon: IconCalendarWeek },
-  { label: "Sınavlar", path: "/exams", icon: IconPencil },
+  { key: "home", path: "/", icon: IconHome2 },
+  { key: "dashboard", path: "/dashboard", icon: IconLayoutDashboard, adminOnly: true },
+  { key: "departments", path: "/departments", icon: IconBuildingBank },
+  { key: "courses", path: "/courses", icon: IconBook2 },
+  { key: "classrooms", path: "/classrooms", icon: IconDoor },
+  { key: "lecturers", path: "/lecturers", icon: IconUsers },
+  { key: "weekly", path: "/weekly", icon: IconCalendarWeek },
+  { key: "exams", path: "/exams", icon: IconPencil },
   // K-77: "Taslaklarım" + "Onay Bekleyenler" tek "Yayın Merkezi"nde birleşti.
   // Herkeste görünür (herkesin taslağı olabilir); rozet bekleyen sayısını verir.
-  { label: "Yayın Merkezi", path: "/publishing", icon: IconInbox },
-  { label: "Çakışma Raporu", path: "/conflicts", icon: IconAlertTriangle },
+  { key: "publishing", path: "/publishing", icon: IconInbox },
+  { key: "conflicts", path: "/conflicts", icon: IconAlertTriangle },
 ];
 
 const EXPANDED_WIDTH = 240;
@@ -69,6 +74,8 @@ const COLLAPSED_WIDTH = 72;
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const t = useT();
+  const { lang, setLang } = useLang();
   // Tema: "auto"yu gerçek görünen şemaya (light/dark) çözer; düğme onu ters çevirir.
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true });
@@ -86,9 +93,17 @@ export default function AppLayout() {
     (!m.adminOnly || user?.role === "ADMIN")
     && (!m.approverOnly || !!user?.can_approve_schedule));
 
-  const themeLabel = scheme === "dark" ? "Aydınlık moda geç" : "Karanlık moda geç";
+  const themeLabel = scheme === "dark" ? t.layout.toLightMode : t.layout.toDarkMode;
   const ThemeIcon = scheme === "dark" ? IconSun : IconMoon;
   const toggleTheme = () => setColorScheme(scheme === "dark" ? "light" : "dark");
+
+  // K-79: dil düğmesi tema düğmesinin ikizi — tek tıkla diğer dile geçer.
+  // İki dil olduğu için açılır liste yerine değiştirici; etiket HEDEF dilde
+  // yazılı ("Switch to English"), böylece yanlış dile düşen kullanıcı da
+  // çıkış yolunu okuyabilir.
+  const otherLang = lang === "tr" ? "en" : "tr";
+  const langLabel = lang === "tr" ? t.layout.switchToEnglish : t.layout.switchToTurkish;
+  const toggleLang = () => setLang(otherLang);
 
   return (
     // Üst bar KALDIRILDI (eski AppShell.Header): başlık, tema, rol ve çıkış artık
@@ -108,16 +123,16 @@ export default function AppLayout() {
           <Group gap="xs" wrap="nowrap" justify={collapsed ? "center" : "space-between"}>
             {!collapsed && (
               <Text fw={600} size="sm" style={{ lineHeight: 1.2 }}>
-                Akademik Program Yönetimi
+                {t.layout.appName}
               </Text>
             )}
-            <Tooltip label={collapsed ? "Menüyü genişlet" : "Menüyü daralt"} position="right">
+            <Tooltip label={collapsed ? t.layout.expand : t.layout.collapse} position="right">
               <ActionIcon
                 variant="subtle"
                 color="gray"
                 size="lg"
                 onClick={() => setCollapsed((c) => !c)}
-                aria-label="Menüyü daralt/genişlet"
+                aria-label={collapsed ? t.layout.expand : t.layout.collapse}
               >
                 {collapsed ? (
                   <IconLayoutSidebarLeftExpand size={20} />
@@ -136,6 +151,7 @@ export default function AppLayout() {
           {items.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.path;
+            const label = t.nav[item.key];
             // K-77: Yayın Merkezi'nde bekleyen onay sayısı rozeti.
             const badge = item.path === "/publishing" && pending > 0
               ? <Badge size="sm" circle variant="filled" color="blue">{pending}</Badge>
@@ -144,7 +160,7 @@ export default function AppLayout() {
               <NavLink
                 component={Link}
                 to={item.path}
-                label={collapsed ? undefined : item.label}
+                label={collapsed ? undefined : label}
                 leftSection={<Icon size={20} stroke={1.5} />}
                 rightSection={!collapsed ? badge : undefined}
                 active={active}
@@ -162,7 +178,7 @@ export default function AppLayout() {
             );
             // Daraltılmışken etiket ikonun yanında yok → hover'da tooltip göster.
             return collapsed ? (
-              <Tooltip key={item.path} label={item.label} position="right" withArrow>
+              <Tooltip key={item.path} label={label} position="right" withArrow>
                 {link}
               </Tooltip>
             ) : (
@@ -179,19 +195,28 @@ export default function AppLayout() {
           <SessionCountdown collapsed={collapsed} />
           {collapsed ? (
             <Stack gap="xs" align="center">
+              <Tooltip label={langLabel} position="right" withArrow>
+                {/* Daraltılmışken ikon yerine dil KODU: bayrak kullanmıyoruz
+                    (bayrak dili değil ülkeyi gösterir) ve iki harf ikondan
+                    daha okunur. */}
+                <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleLang}
+                  aria-label={langLabel}>
+                  <Text size="xs" fw={700}>{otherLang.toUpperCase()}</Text>
+                </ActionIcon>
+              </Tooltip>
               <Tooltip label={themeLabel} position="right" withArrow>
                 <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleTheme}
-                  aria-label="Temayı değiştir">
+                  aria-label={themeLabel}>
                   <ThemeIcon size={20} />
                 </ActionIcon>
               </Tooltip>
               <Tooltip
-                label={`${user?.name} (${user?.role}) — Çıkış`}
+                label={`${user?.name} (${user?.role}) — ${t.layout.logout}`}
                 position="right"
                 withArrow
               >
                 <ActionIcon variant="subtle" color="red" size="lg" onClick={logout}
-                  aria-label="Çıkış">
+                  aria-label={t.layout.logout}>
                   <IconLogout size={20} />
                 </ActionIcon>
               </Tooltip>
@@ -203,12 +228,20 @@ export default function AppLayout() {
                   <Text size="sm" truncate>{user?.name}</Text>
                   <Badge variant="light" size="sm">{user?.role}</Badge>
                 </div>
-                <Tooltip label={themeLabel}>
-                  <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleTheme}
-                    aria-label="Temayı değiştir">
-                    <ThemeIcon size={20} />
-                  </ActionIcon>
-                </Tooltip>
+                <Group gap={4} wrap="nowrap">
+                  <Tooltip label={langLabel}>
+                    <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleLang}
+                      aria-label={langLabel}>
+                      <Text size="xs" fw={700}>{otherLang.toUpperCase()}</Text>
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label={themeLabel}>
+                    <ActionIcon variant="subtle" color="gray" size="lg" onClick={toggleTheme}
+                      aria-label={themeLabel}>
+                      <ThemeIcon size={20} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </Group>
               <Button
                 variant="subtle"

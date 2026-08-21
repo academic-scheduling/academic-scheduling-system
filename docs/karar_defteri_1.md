@@ -2894,3 +2894,67 @@ ortak yardımcıdan kurulabiliyor.
 
 **Doğrulama.** Yeni dosya 74 test yeşil; tüm paket 604 → **678 yeşil**, regresyon
 yok. Üründe görünür değişiklik yok — bu bir kanıt/sertleştirme turu.
+
+## K-79 · Dil seçeneği (TR/EN): arayüz + sunucu mesajları + export [S+E]
+Kullanıcı: sisteme Türkçe/İngilizce dil seçeneği eklensin.
+
+**Kapsam kararı (kullanıcı).** Üç katman ölçüldü: (1) arayüz metinleri — 13,5k
+satırlık frontend'e gömülü, i18n kütüphanesi yok; (2) sunucu mesajları — 107
+`HTTPException detail` + motorun 22 çakışma cümlesi kurucusu; (3) kullanıcı
+verisi — bölüm/ders/hoca adları. Kullanıcı **(1)+(2)** dedi; (3) kapsam DIŞI:
+ders/hoca adlarının İngilizcesi DB'de yok (yalnız `Department.name_en`, resmî
+sınav başlığı için) ve elle veri girişi ister. Veri Türkçe kalır, arayüz dili
+değişir.
+
+**Tercih CİHAZDA (localStorage), hesapta değil (kullanıcı kararı).** Tema
+(açık/koyu) tercihiyle aynı desen — sunucu turu yok, anında geçiş, DB migration
+gerekmez. Bedeli kabul edildi: aynı kullanıcı başka bilgisayarda dili tekrar
+seçer. Sunucuya `Accept-Language` başlığıyla taşınır; başlık ortak API
+istemcisinde TEK yerde eklenir (`request()` + `download()`), böylece export
+istekleri de dili taşır.
+
+**Sunucu hata mesajları KENARDA çevrilir — 107 raise yerine dokunulmaz.**
+İki yol vardı: her `raise` yerini anahtara çevirmek (107 dokunuş; testlerde
+Türkçe metne dayanan 23 iddia kırılır; büyük ve riskli diff) ya da tek bir
+`HTTPException` handler'ının cevabı çıkışta TR→EN kataloğundan geçirmesi.
+İkincisi seçildi: Türkçe metin KODDA KANONİK kalır, katalog tek dosyada durur,
+mevcut testler varsayılan `tr` ile aynen geçer.
+- Zayıf noktası: Türkçe metin anahtar olduğu için biri mesajı düzenlerse
+  İngilizcesi sessizce Türkçeye düşer. **Bekçi testiyle kapatıldı** (K-78
+  deseninin aynısı): koddaki her `detail=` metnini süpürüp katalogda karşılığı
+  var mı diye bakan test. Katalog eksikse test kırılır.
+- 16 dinamik (f-string) mesaj için katalogda desen (regex) girdileri var; sabit
+  91 mesaj birebir eşleşir.
+
+**Çakışma motoru: dil CONTEXTVAR ile taşınır — motor imzaları değişmez.**
+Mesajlar motorun derininde kuruluyor: `build_result` orchestrator'da 12 yerden
+çağrılıyor, `build_message` tek yerden. `lang` parametresini oraya kadar geçirmek
+5 orchestrator imzası + 4 conflict_service girişi + Intern C'nin sahibi olduğu
+motor sözleşmesi + 71 motor testi demekti. Bunun yerine dil, isteğe özgü AMBIENT
+bir değer olarak `contextvars` ile taşınır: HTTP middleware başlıktan okuyup
+bir kez set eder, `message.py` okur. Motorda tek satır imza değişmez.
+- **Neden middleware, neden Depends DEĞİL:** FastAPI senkron `def` uçları ve
+  senkron bağımlılıkları threadpool'da koşar; bir bağımlılıkta `set()` edilen
+  contextvar o worker'ın kopyasında kalır, uca ULAŞMAZ. Async middleware'de
+  set edilen değer ise threadpool'a kopyalanır (anyio context kopyası) —
+  uçtan motora kadar görünür. Bu ayrım tuzaktır, bu yüzden yazıldı.
+- Varsayılan `"tr"`: motor testleri (istek bağlamı olmadan) aynen çalışır.
+
+**Nerede parametre, nerede ambient (kural).** Çağrı zinciri kısaysa AÇIK
+parametre (export_service ← router: `lang` argümanı); zincir uzun ve sözleşme
+başkasınınsa ambient (motor). Ambient'i "kolay" olduğu için değil, alternatifi
+başkasının sözleşmesini kirlettiği için seçtik.
+
+**Export dili takip eder (kullanıcı kararı).** Excel başlık/sütun adları seçili
+dile göre üretilir. Not: resmî sınav programı başlığı `name_en`/`faculty_en`
+alanlarını kullanmaya devam eder (K-09 formatı) — dil düğmesi ŞABLONU değil
+ETİKETLERİ çevirir.
+
+**Frontend mekanizması: kütüphane YOK, tipli sözlük.** İki dil için Context +
+sözlük yeterli; `en` sözlüğü `typeof tr`'yi sağlamak zorunda, böylece eksik
+anahtar DERLEME anında yakalanır (`tsc --noEmit` zaten doğrulama adımı).
+Dil düğmesi sol raydaki tema düğmesinin yanında.
+
+**Fazlar:** 1) mekanizma (frontend i18n iskeleti + backend katalog/middleware +
+bekçi testi), 2) çakışma motoru mesajları, 3) arayüz metinleri (en büyük parça,
+sayfa sayfa), 4) export başlıkları.

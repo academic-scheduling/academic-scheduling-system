@@ -51,6 +51,7 @@ def sub_headers(
     can_manage_weekly: bool = False,
     can_manage_exams: bool = False,
     can_manage_lecturers: bool = False,
+    can_approve_schedule: bool = False,
 ):
     """Ana workgroup'ta SUB_ACCOUNT yaratır, login olur, header döndürür.
 
@@ -71,6 +72,7 @@ def sub_headers(
         can_manage_weekly=can_manage_weekly,
         can_manage_exams=can_manage_exams,
         can_manage_lecturers=can_manage_lecturers,
+        can_approve_schedule=can_approve_schedule,
     )
     db.add(user)
     db.flush()

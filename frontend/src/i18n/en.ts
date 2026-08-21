@@ -363,6 +363,108 @@ export const en: Dict = {
     downloadSchedule: "Download Schedule",
   },
 
+  conflicts: {
+    title: "Conflict Report",
+    loadFailed: "Conflicts could not be loaded",
+    hardBadge: (n: number) => `${n} HARD blocking`,
+    warnBadge: (n: number) => `${n} WARNING`,
+    department: "Department",
+    allDepartments: "All departments",
+    classYear: "Year",
+    allYears: "All years",
+    yearN: (y: number) => `Year ${y}`,
+    clearFilter: "Clear filter",
+    tabHard: "HARD Blockers (Prevent Publishing)",
+    tabWarn: "WARNING Notices (Informational)",
+    emptyHardFiltered: "No blocking (HARD) conflict matches this filter.",
+    emptyHard: "No unresolved blocking (HARD) conflict. The schedule is ready to publish!",
+    emptyWarnFiltered: "No warning (WARNING) conflict matches this filter.",
+    emptyWarn: "No unresolved warning (WARNING) level conflict.",
+    blocking: "BLOCKING",
+    warning: "WARNING",
+    rule: "Rule",
+    examConflict: "Exam Conflict",
+    weeklyConflict: "Weekly Schedule Conflict",
+    exam: "Exam",
+    course: "Course",
+    none: "No conflicts found.",
+  },
+
+  dashboard: {
+    loadFailed: "Dashboard could not be loaded",
+    departments: "Departments",
+    classrooms: "Classrooms",
+    lecturers: "Lecturers",
+    courses: "Courses",
+    admins: "Admins",
+    subAccounts: "Sub-accounts",
+    exams: "Exams",
+    conflictCard: "Conflicts (blocking / warning)",
+    conflictsTitle: "Conflicts",
+    seeAll: (n: number) => `See all (${n})`,
+  },
+
+  users: {
+    title: "Users",
+    invite: "+ Invite User",
+    inviteTitle: "Invite User",
+    editNamed: (name: string) => `Edit: ${name}`,
+    searchPlaceholder: "Search name or email",
+    allRoles: "All roles",
+    allStatuses: "All statuses",
+    roleAdmin: "Admin",
+    roleSub: "Sub-account",
+    status: { PENDING: "Invited", ACTIVE: "Active", DISABLED: "Inactive" },
+    readOnly: "read only",
+
+    resendInvite: "Resend invitation",
+    cancelInvite: "Cancel invitation",
+    disableAccess: "Disable access",
+    enableAccess: "Enable access",
+
+    fullName: "Full Name",
+    emailPlaceholder: "name.surname@muh.example.edu.tr",
+    role: "Role",
+    cannotChangeOwnRole:
+      "You cannot change your own role — another admin must do this",
+    departments: "Departments",
+    pick: "Select",
+    approvePermission: "Approval permission",
+    approveDescription:
+      "Can review others' drafts and publish them. Cannot approve their own request.",
+    sendInvite: "Send Invitation",
+
+    nameRequired: "Name cannot be empty",
+    emailRequired: "Email cannot be empty",
+    loadFailed: "Users could not be loaded",
+    updated: "User updated",
+    invited: "Invitation sent — the user will complete their account from the link",
+    resent: (email: string) => `Invitation resent: ${email}`,
+    sendFailed: "Could not be sent",
+    accessDisabled: "Access disabled",
+    accessEnabled: "Access re-enabled",
+
+    deleteInviteBody: (name: string, email: string) =>
+      `The invitation sent to ${name} (${email}) will be deleted.`,
+    deleteInviteHint:
+      "The invitation link will stop working. Since the person has not signed " +
+      "in yet, no record of them remains.",
+    deleteInviteCta: "Delete Invitation",
+    disableBody: (name: string) => `${name} will not be able to sign in.`,
+    disableHint:
+      "Takes effect immediately: an open session drops on its next request. " +
+      "The account is not deleted — its trail in the audit log is kept and it " +
+      "can be re-enabled at any time.",
+    disableCta: "Disable Access",
+  },
+
+  audit: {
+    loadFailed: "Records could not be loaded",
+    allUsers: "All users",
+    allActions: "All actions",
+    allTypes: "All types",
+  },
+
   home: {
     title: "Home",
     subtitle: "Choose a section from the menu on the left.",

@@ -386,6 +386,107 @@ export const tr = {
     downloadSchedule: "Programı İndir",
   },
 
+  conflicts: {
+    title: "Çakışma Raporu",
+    loadFailed: "Çakışmalar yüklenemedi",
+    hardBadge: (n: number) => `${n} HARD Engel`,
+    warnBadge: (n: number) => `${n} WARNING Uyarı`,
+    department: "Bölüm",
+    allDepartments: "Tüm bölümler",
+    classYear: "Sınıf",
+    allYears: "Tüm sınıflar",
+    yearN: (y: number) => `${y}. Sınıf`,
+    clearFilter: "Filtreyi temizle",
+    tabHard: "HARD Engeller (Yayınlamayı Engeller)",
+    tabWarn: "WARNING Uyarılar (Bilgilendirme)",
+    emptyHardFiltered: "Bu filtreye uyan engelleyici (HARD) çakışma yok.",
+    emptyHard: "Çözülmemiş engelleyici (HARD) çakışma bulunamadı. Program yayınlanmaya hazır!",
+    emptyWarnFiltered: "Bu filtreye uyan uyarı (WARNING) çakışma yok.",
+    emptyWarn: "Çözülmemiş uyarı (WARNING) seviyesinde çakışma bulunamadı.",
+    blocking: "ENGEL",
+    warning: "UYARI",
+    rule: "Kural",
+    examConflict: "Sınav Çakışması",
+    weeklyConflict: "Ders Programı Çakışması",
+    exam: "Sınav",
+    course: "Ders",
+    none: "Çakışma bulunamadı.",
+  },
+
+  dashboard: {
+    loadFailed: "Dashboard yüklenemedi",
+    departments: "Bölümler",
+    classrooms: "Derslikler",
+    lecturers: "Öğretim Üyeleri",
+    courses: "Dersler",
+    admins: "Admin",
+    subAccounts: "Alt Hesap",
+    exams: "Sınavlar",
+    conflictCard: "Çakışma (engel / uyarı)",
+    conflictsTitle: "Çakışmalar",
+    seeAll: (n: number) => `Tümünü gör (${n})`,
+  },
+
+  users: {
+    title: "Kullanıcılar",
+    invite: "+ Kullanıcı Davet Et",
+    inviteTitle: "Kullanıcı Davet Et",
+    editNamed: (name: string) => `Düzenle: ${name}`,
+    searchPlaceholder: "Ad veya e-posta ara",
+    allRoles: "Tüm roller",
+    allStatuses: "Tüm durumlar",
+    roleAdmin: "Admin",
+    roleSub: "Alt hesap",
+    status: { PENDING: "Davetli", ACTIVE: "Aktif", DISABLED: "Pasif" },
+    readOnly: "sadece okuma",
+
+    resendInvite: "Daveti yeniden gönder",
+    cancelInvite: "Daveti iptal et",
+    disableAccess: "Erişimi kapat",
+    enableAccess: "Erişimi aç",
+
+    fullName: "Ad Soyad",
+    emailPlaceholder: "ad.soyad@muh.example.edu.tr",
+    role: "Rol",
+    cannotChangeOwnRole:
+      "Kendi rolünüzü değiştiremezsiniz — bunu başka bir admin yapmalı",
+    departments: "Bölümler",
+    pick: "Seçin",
+    approvePermission: "Onay yetkisi",
+    approveDescription:
+      "Başkalarının taslaklarını inceleyip yayına alabilir. Kendi talebini onaylayamaz.",
+    sendInvite: "Daveti Gönder",
+
+    nameRequired: "Ad boş olamaz",
+    emailRequired: "E-posta boş olamaz",
+    loadFailed: "Kullanıcılar yüklenemedi",
+    updated: "Kullanıcı güncellendi",
+    invited: "Davet gönderildi — kullanıcı bağlantıdan hesabını tamamlayacak",
+    resent: (email: string) => `Davet yeniden gönderildi: ${email}`,
+    sendFailed: "Gönderilemedi",
+    accessDisabled: "Erişim kapatıldı",
+    accessEnabled: "Erişim yeniden açıldı",
+
+    deleteInviteBody: (name: string, email: string) =>
+      `${name} (${email}) için gönderilen davet silinecek.`,
+    deleteInviteHint:
+      "Davet bağlantısı çalışmaz hale gelir. Kişi henüz giriş yapmadığı için " +
+      "geriye hiçbir kaydı kalmaz.",
+    deleteInviteCta: "Daveti Sil",
+    disableBody: (name: string) => `${name} sisteme giremeyecek.`,
+    disableHint:
+      "Etki anında: açık oturumu varsa ilk isteğinde düşer. Hesap silinmez — " +
+      "işlem kayıtlarındaki izi korunur, istendiğinde yeniden açılabilir.",
+    disableCta: "Erişimi Kapat",
+  },
+
+  audit: {
+    loadFailed: "Kayıtlar yüklenemedi",
+    allUsers: "Tüm kullanıcılar",
+    allActions: "Tüm eylemler",
+    allTypes: "Tüm türler",
+  },
+
   home: {
     title: "Ana Sayfa",
     subtitle: "Sol menüden bir bölüm seçin.",

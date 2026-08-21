@@ -8,6 +8,7 @@ import { api, ApiError } from "../api/client";
 import UsersSection from "./UsersSection";
 import AuditLogSection from "./AuditLogSection";
 import type { ConflictResult, ConflictScan, DashboardSummary } from "../api/types";
+import { useT } from "../i18n";
 
 /** Dashboard'da gösterilecek en fazla çakışma satırı.
  *
@@ -61,6 +62,7 @@ function ConflictRow({ conflict }: { conflict: ConflictResult }) {
 }
 
 export default function DashboardPage() {
+  const t = useT();
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [scan, setScan] = useState<ConflictScan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +75,7 @@ export default function DashboardPage() {
       api.get<ConflictScan>("/conflicts"),
     ])
       .then(([ozet, tarama]) => { setData(ozet); setScan(tarama); })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Dashboard yüklenemedi"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.dashboard.loadFailed));
   }, []);
 
   if (error) return <Alert color="red" mt="md">{error}</Alert>;
@@ -103,14 +105,14 @@ export default function DashboardPage() {
           kalıyor. Daha dar bir sınır etiketleri iki satıra kırıp kart
           yüksekliklerini eşitsizleştiriyor. */}
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" maw={1000} mx="auto">
-        <StatCard label="Bölümler" value={data.departments} />
-        <StatCard label="Derslikler" value={data.classrooms} />
-        <StatCard label="Öğretim Üyeleri" value={data.lecturers} />
-        <StatCard label="Dersler" value={data.courses} />
+        <StatCard label={t.dashboard.departments} value={data.departments} />
+        <StatCard label={t.dashboard.classrooms} value={data.classrooms} />
+        <StatCard label={t.dashboard.lecturers} value={data.lecturers} />
+        <StatCard label={t.dashboard.courses} value={data.courses} />
 
-        <StatCard label="Admin" value={data.admins} />
-        <StatCard label="Alt Hesap" value={data.sub_accounts} />
-        <StatCard label="Sınavlar" value={data.exams} />
+        <StatCard label={t.dashboard.admins} value={data.admins} />
+        <StatCard label={t.dashboard.subAccounts} value={data.sub_accounts} />
+        <StatCard label={t.dashboard.exams} value={data.exams} />
 
         {/* Çakışma tek kart ama iki sayı: hard submit'i engeller, warning
             engellemez (K-05). Kartın kendisine tıklanınca Çakışma Raporu'na gider. */}
@@ -134,22 +136,22 @@ export default function DashboardPage() {
               </Text>
             </Group>
           </Text>
-          <Text size="sm" c="dimmed" mt={6}>Çakışma (engel / uyarı)</Text>
+          <Text size="sm" c="dimmed" mt={6}>{t.dashboard.conflictCard}</Text>
         </Paper>
       </SimpleGrid>
 
       <Group justify="space-between" align="baseline" mt="xl" mb="sm">
-        <Title order={4}>Çakışmalar</Title>
+        <Title order={4}>{t.dashboard.conflictsTitle}</Title>
         {tumu.length > MAX_ROWS && (
           <Anchor component={Link} to="/conflicts" size="sm">
-            Tümünü gör ({tumu.length})
+            {t.dashboard.seeAll(tumu.length)}
           </Anchor>
         )}
       </Group>
 
       <Paper withBorder radius="md">
         {gosterilen.length === 0 ? (
-          <Text c="dimmed" size="sm" p="md">Çakışma bulunamadı.</Text>
+          <Text c="dimmed" size="sm" p="md">{t.conflicts.none}</Text>
         ) : (
           <Table verticalSpacing="xs" highlightOnHover>
             <Table.Tbody>

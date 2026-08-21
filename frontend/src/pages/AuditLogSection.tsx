@@ -63,7 +63,7 @@ export default function AuditLogSection() {
 
     api.get<AuditLogPage>(`/audit-logs?${params}`)
       .then((d) => { setData(d); setError(null); })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Kayıtlar yüklenemedi"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.audit.loadFailed));
   }, [page, actionFilter, entityFilter, userFilter]);
 
   // Fail filtresi için kullanıcı listesi bir kez çekilir.
@@ -92,7 +92,7 @@ export default function AuditLogSection() {
 
       <Group mb="sm">
         <Select
-          data={[{ value: ALL, label: "Tüm kullanıcılar" }, ...userOptions]}
+          data={[{ value: ALL, label: t.audit.allUsers }, ...userOptions]}
           value={userFilter}
           onChange={filtreDegistir(setUserFilter)}
           allowDeselect={false}
@@ -101,7 +101,7 @@ export default function AuditLogSection() {
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm eylemler" },
+            { value: ALL, label: t.audit.allActions },
             ...(Object.keys(AUDIT_ACTION_LABELS) as AuditAction[]).map((a) => ({
               value: a, label: AUDIT_ACTION_LABELS[a].label,
             })),
@@ -113,7 +113,7 @@ export default function AuditLogSection() {
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm türler" },
+            { value: ALL, label: t.audit.allTypes },
             ...(Object.keys(t.enums.auditEntity) as AuditEntityType[]).map((tur) => ({
               value: tur, label: t.enums.auditEntity[tur],
             })),

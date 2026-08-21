@@ -6,12 +6,14 @@ import {
 import { IconAlertTriangle, IconArrowRight, IconShieldX } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { ConflictResult, ConflictScan, Department } from "../api/types";
+import { useT } from "../i18n";
 
 // "Filtre yok" için sabit sentinel: Mantine Select value'su null olamayacağı
 // yerlerde "hepsi" seçeneği listede görünsün diye (× ikonu fark edilmiyor).
 const ALL = "__all__";
 
 export default function ConflictsPage() {
+  const t = useT();
   const [scan, setScan] = useState<ConflictScan | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +41,7 @@ export default function ConflictsPage() {
       setScan(conflictsRes);
       setDepartments(deps);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Çakışmalar yüklenemedi");
+      setError(e instanceof ApiError ? e.message : t.conflicts.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -95,14 +97,14 @@ export default function ConflictsPage() {
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-        <Title order={2} fw={500}>Çakışma Raporu</Title>
+        <Title order={2} fw={500}>{t.conflicts.title}</Title>
 
         <Group gap="xs">
           <Badge size="lg" color="red" variant="light" leftSection={<IconShieldX size={14} />}>
-            {hardConflicts.length} HARD Engel
+            {t.conflicts.hardBadge(hardConflicts.length)}
           </Badge>
           <Badge size="lg" color="orange" variant="light" leftSection={<IconAlertTriangle size={14} />}>
-            {warningConflicts.length} WARNING Uyarı
+            {t.conflicts.warnBadge(warningConflicts.length)}
           </Badge>
         </Group>
       </Group>
@@ -110,10 +112,10 @@ export default function ConflictsPage() {
       {/* --- Filtre çubuğu --- */}
       <Group gap="sm" align="flex-end" wrap="wrap">
         <Select
-          label="Bölüm"
+          label={t.conflicts.department}
           w={260}
           data={[
-            { value: ALL, label: "Tüm bölümler" },
+            { value: ALL, label: t.conflicts.allDepartments },
             ...departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` })),
           ]}
           value={deptFilter ?? ALL}
@@ -121,11 +123,11 @@ export default function ConflictsPage() {
           allowDeselect={false}
         />
         <Select
-          label="Sınıf"
+          label={t.conflicts.classYear}
           w={160}
           data={[
-            { value: ALL, label: "Tüm sınıflar" },
-            ...yearOptions.map((y) => ({ value: String(y), label: `${y}. Sınıf` })),
+            { value: ALL, label: t.conflicts.allYears },
+            ...yearOptions.map((y) => ({ value: String(y), label: t.conflicts.yearN(y) })),
           ]}
           value={yearFilter ?? ALL}
           onChange={(v) => setYearFilter(v === ALL || v === null ? null : v)}
@@ -133,7 +135,7 @@ export default function ConflictsPage() {
         />
         {filtered && (
           <Button variant="subtle" color="gray" onClick={() => { setDeptFilter(null); setYearFilter(null); }}>
-            Filtreyi temizle
+            {t.conflicts.clearFilter}
           </Button>
         )}
       </Group>
@@ -148,7 +150,7 @@ export default function ConflictsPage() {
               </Badge>
             }
           >
-            HARD Engeller (Yayınlamayı Engeller)
+            {t.conflicts.tabHard}
           </Tabs.Tab>
           <Tabs.Tab
             value="warnings"
@@ -158,7 +160,7 @@ export default function ConflictsPage() {
               </Badge>
             }
           >
-            WARNING Uyarılar (Bilgilendirme)
+            {t.conflicts.tabWarn}
           </Tabs.Tab>
         </Tabs.List>
 
@@ -167,8 +169,8 @@ export default function ConflictsPage() {
             conflicts={hardConflicts}
             severity="HARD"
             emptyMessage={filtered
-              ? "Bu filtreye uyan engelleyici (HARD) çakışma yok."
-              : "Çözülmemiş engelleyici (HARD) çakışma bulunamadı. Program yayınlanmaya hazır!"}
+              ? t.conflicts.emptyHardFiltered
+              : t.conflicts.emptyHard}
           />
         </Tabs.Panel>
 
@@ -177,8 +179,8 @@ export default function ConflictsPage() {
             conflicts={warningConflicts}
             severity="WARNING"
             emptyMessage={filtered
-              ? "Bu filtreye uyan uyarı (WARNING) çakışma yok."
-              : "Çözülmemiş uyarı (WARNING) seviyesinde çakışma bulunamadı."}
+              ? t.conflicts.emptyWarnFiltered
+              : t.conflicts.emptyWarn}
           />
         </Tabs.Panel>
       </Tabs>
@@ -195,6 +197,7 @@ function ConflictList({
   severity: "HARD" | "WARNING";
   emptyMessage: string;
 }) {
+  const t = useT();
   if (conflicts.length === 0) {
     return (
       <Paper p="lg" withBorder radius="md">
@@ -214,13 +217,13 @@ function ConflictList({
               <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
                 <Group gap="xs">
                   <Badge color={severity === "HARD" ? "red" : "orange"} size="sm">
-                    {severity === "HARD" ? "ENGEL" : "UYARI"}
+                    {severity === "HARD" ? t.conflicts.blocking : t.conflicts.warning}
                   </Badge>
                   <Badge variant="outline" color="gray" size="sm">
-                    Kural {c.rule_id}
+                    {t.conflicts.rule} {c.rule_id}
                   </Badge>
                   <Badge variant="dot" color={isExam ? "violet" : "blue"} size="sm">
-                    {isExam ? "Sınav Çakışması" : "Ders Programı Çakışması"}
+                    {isExam ? t.conflicts.examConflict : t.conflicts.weeklyConflict}
                   </Badge>
                 </Group>
                 <Text size="sm" fw={500}>{c.message}</Text>
@@ -232,7 +235,7 @@ function ConflictList({
                   {c.affected.map((item, idx) => {
                     const itemIsExam = item.type === "exam";
                     const itemPath = `${itemIsExam ? "/exams" : "/weekly"}?highlight=${item.id}&rule=${c.rule_id}`;
-                    const label = item.course_code ?? `${itemIsExam ? "Sınav" : "Ders"} #${item.id}`;
+                    const label = item.course_code ?? `${itemIsExam ? t.conflicts.exam : t.conflicts.course} #${item.id}`;
 
                     return (
                       <Button

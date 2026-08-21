@@ -2958,3 +2958,31 @@ Dil düğmesi sol raydaki tema düğmesinin yanında.
 **Fazlar:** 1) mekanizma (frontend i18n iskeleti + backend katalog/middleware +
 bekçi testi), 2) çakışma motoru mesajları, 3) arayüz metinleri (en büyük parça,
 sayfa sayfa), 4) export başlıkları.
+
+### K-79 tamamlanma notu (Faz 2-4)
+
+**Faz 2 — çakışma motoru.** 22 kural + gün adları + bölüm etiketi çift dilli.
+Dil `get_lang()` ile okunuyor, imzalara `lang` EKLENMEDİ. `_pick(tr, en)`
+deseni: şablon sözlüğü yerine iki dil YAN YANA — eksik çeviri gözle görülür.
+Bekçi testi 22 kuralın hepsi için TR ≠ EN doğruluyor; olmasa yeni bir kural
+yalnız Türkçe mesajla eklenir ve `_pick` sessizce Türkçe dönerdi. Türkçe çıktı
+BİREBİR korundu.
+
+**Faz 4 — export.** Liste çıktıları (CSV + düz XLSX) tamamen çevrildi. Resmî
+ızgaralar (üniversite formatındaki sınav programı + haftalık ızgara) K-09
+şablonlarıdır, DOKUNULMADI — dil düğmesi kuruma giden belgeyi değiştirmemeli.
+Test bu sınırı da koruyor. `lang` açık parametre (router → servis).
+
+**Faz 3 — arayüz.** Tüm sayfalar ve bileşenler çevrildi. Yol boyunca üç kural
+çıktı:
+- **Kaçak ölçütü ALFABE DEĞİL KONUM.** "Türkçe harf ara" yaklaşımı `Derslik
+  Ekle`, `Laboratuvar`, `Ortak`, `336 ders` gibi salt-ASCII Türkçe metinleri
+  tamamen kaçırıyordu. Doğru ölçüt: UI prop'u + JSX iç metni + şablon dizesi.
+- **Modül düzeyi sözlük okuyamaz** (bir kez çalışır, hook çağıramaz). Etiket
+  haritaları sözlüğe taşındı; düz yardımcılar `(…, t: Dict)` parametresi aldı.
+  Parametre VARSAYILANI da olmaz.
+- **Renk/ikon modülde kalır, etiket sözlüğe gider** — renk dile bağlı değil.
+
+**Çevrilmeyenler (bilinçli):** akademik unvanlar (backend CANONICAL_TITLES ile
+eş tutulan VERİ), bölüm/ders/hoca adları (K-79 kapsam kararı), resmî XLSX
+şablonları (K-09).

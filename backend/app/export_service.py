@@ -29,6 +29,27 @@ SEMESTER_TR = {"FALL": "Güz", "SPRING": "Bahar", "SUMMER": "Yaz"}
 SESSION_TR = {"THEORY": "Teori", "PRACTICE": "Uygulama", "LAB": "Lab"}
 EXAMTYPE_TR = {"MIDTERM": "Vize", "FINAL": "Final", "MAKEUP": "Bütünleme"}
 
+# --- K-79: liste export'larinin ikinci dili -------------------------------
+# NOT: burasi LISTE (veri) ciktilarini ilgilendirir. Universite formatindaki
+# RESMI izgaralar (build_exam_schedule_xlsx / build_weekly_grid_xlsx) K-09'da
+# sabitlenmis sablonlardir ve zaten Ingilizce basliklidir -> dil dugmesi onlarin
+# SABLONUNU degistirmez (K-79 karari).
+DAY_FULL_EN = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday"}
+SEMESTER_EN = {"FALL": "Fall", "SPRING": "Spring", "SUMMER": "Summer"}
+SESSION_EN = {"THEORY": "Theory", "PRACTICE": "Practice", "LAB": "Lab"}
+EXAMTYPE_EN = {"MIDTERM": "Midterm", "FINAL": "Final", "MAKEUP": "Make-up"}
+
+
+def _maps(lang: str):
+    """Bir dilin dort sozlugunu birlikte dondurur.
+
+    Dordu her zaman birlikte kullaniliyor; ayri ayri secmek satir uretiminde
+    "birini cevirmeyi unutma" hatasina davetiye cikariyordu.
+    """
+    if lang == "en":
+        return DAY_FULL_EN, SEMESTER_EN, SESSION_EN, EXAMTYPE_EN
+    return DAY_FULL, SEMESTER_TR, SESSION_TR, EXAMTYPE_TR
+
 
 def slot_range(start_slot: int, slot_count: int) -> str:
     """'10:30 - 12:15' — cok slotlu ders son slotun bitisinde biter (slots.ts)."""
@@ -40,34 +61,51 @@ def slot_range(start_slot: int, slot_count: int) -> str:
     return f"{start[0]} - {end[1]}"
 
 
-def _classroom_label(entry) -> str:
+def _classroom_label(entry, lang: str = "tr") -> str:
     c = entry.classroom
-    return f"{c.building.name} {c.room_code}" if c else "Çevrimiçi"
+    if c:
+        return f"{c.building.name} {c.room_code}"
+    return "Online" if lang == "en" else "Çevrimiçi"
 
 
 WEEKLY_HEADERS = [
     "Bölüm", "Yıl", "Dönem", "Ders Kodu", "Ders Adı", "Şube",
     "Öğretim Üyesi", "Gün", "Saat", "Derslik", "Tür",
 ]
+WEEKLY_HEADERS_EN = [
+    "Department", "Year", "Semester", "Course Code", "Course Name", "Section",
+    "Lecturer", "Day", "Time", "Classroom", "Type",
+]
 
 
-def weekly_rows(entries) -> list[list]:
-    """Haftalik girisler -> duz satirlar (CSV ve XLSX liste sayfasi ortak)."""
+def weekly_headers(lang: str = "tr") -> list[str]:
+    return WEEKLY_HEADERS_EN if lang == "en" else WEEKLY_HEADERS
+
+
+def weekly_rows(entries, lang: str = "tr") -> list[list]:
+    """Haftalik girisler -> duz satirlar (CSV ve XLSX liste sayfasi ortak).
+
+    `lang` ACIK parametre, contextvar DEGIL (K-79 kurali: cagri zinciri kisaysa
+    -- router -> servis -- acik parametre). Boylece servis bir istek baglami
+    olmadan da test edilebilir. Varsayilan "tr": mevcut cagri yerleri ve testler
+    degismeden calisir.
+    """
+    gunler, donemler, turler, _ = _maps(lang)
     rows = []
     for e in entries:
         course = e.section.course
         rows.append([
             course.department.name,
             course.year,
-            SEMESTER_TR.get(course.semester.value, course.semester.value),
+            donemler.get(course.semester.value, course.semester.value),
             course.code,
             course.name,
             e.section.section_no,
             e.section.lecturer.full_name,
-            DAY_FULL.get(e.day_of_week, "?"),
+            gunler.get(e.day_of_week, "?"),
             slot_range(e.start_slot, e.slot_count),
-            _classroom_label(e),
-            SESSION_TR.get(e.session_type.value, e.session_type.value),
+            _classroom_label(e, lang),
+            turler.get(e.session_type.value, e.session_type.value),
         ])
     return rows
 
@@ -118,20 +156,30 @@ EXAM_HEADERS = [
     "Tarih", "Başlangıç", "Süre (dk)", "Öğretim Üyesi", "Derslikler",
     "Öğrenci", "Durum",
 ]
+EXAM_HEADERS_EN = [
+    "Department", "Year", "Semester", "Course Code", "Course Name", "Exam Type",
+    "Date", "Start", "Duration (min)", "Lecturer", "Classrooms",
+    "Students", "Status",
+]
 
 
-def exams_rows(exams) -> list[list]:
+def exam_headers(lang: str = "tr") -> list[str]:
+    return EXAM_HEADERS_EN if lang == "en" else EXAM_HEADERS
+
+
+def exams_rows(exams, lang: str = "tr") -> list[list]:
     """Sinav kayitlari -> duz satirlar (CSV + XLSX ortak)."""
+    _, donemler, _, sinav_turleri = _maps(lang)
     rows = []
     for x in exams:
         course = x.course
         rows.append([
             course.department.name,
             course.year,
-            SEMESTER_TR.get(course.semester.value, course.semester.value),
+            donemler.get(course.semester.value, course.semester.value),
             course.code,
             course.name,
-            EXAMTYPE_TR.get(x.exam_type.value, x.exam_type.value),
+            sinav_turleri.get(x.exam_type.value, x.exam_type.value),
             x.exam_date.strftime("%d.%m.%Y"),
             x.start_time.strftime("%H:%M"),
             x.duration_minutes,
@@ -146,28 +194,32 @@ def exams_rows(exams) -> list[list]:
 DAYS = [1, 2, 3, 4, 5]  # Pzt–Cum (DAY_FULL anahtarlari)
 
 
-def _cell_text(cell_entries) -> str:
+def _cell_text(cell_entries, lang: str = "tr") -> str:
     """Bir slottaki ders(ler): kod + ad + hoca, cok satirli."""
+    sube = "Section" if lang == "en" else "Şube"
     parts = []
     for e in cell_entries:
         c = e.section.course
         parts.append(
-            f"{c.code} · Şube {e.section.section_no}\n"
+            f"{c.code} · {sube} {e.section.section_no}\n"
             f"{c.name}\n{e.section.lecturer.full_name}"
         )
     return "\n––\n".join(parts)  # ayni slotta birden fazla ders olursa ayirici
 
 
-def build_classrooms_xlsx(entries) -> bytes:
+def build_classrooms_xlsx(entries, lang: str = "tr") -> bytes:
     """Her derslik icin ayri izgara (UI ile ayni yon: satir=slot, sutun=gun).
 
     Ust satir derslik adi; dolu slotta ders kodu+adi+hoca. Cevrimici girisler
     (derslik yok) zaten sorguda inner join ile elenmis olarak gelir.
     Cok slotlu ders baslangic slotunda gorunur.
     """
+    gunler, _, _, _ = _maps(lang)
+    saat_basligi = "Time" if lang == "en" else "Saat"
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "Derslik Programı"
+    ws.title = "Classroom Schedule" if lang == "en" else "Derslik Programı"
 
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -190,7 +242,7 @@ def build_classrooms_xlsx(entries) -> bytes:
         row += 1
 
         # 2) Sutun basliklari: Saat + 5 gun
-        for col, text in enumerate(["Saat"] + [DAY_FULL[d] for d in DAYS], start=1):
+        for col, text in enumerate([saat_basligi] + [gunler[d] for d in DAYS], start=1):
             cell = ws.cell(row=row, column=col, value=text)
             cell.font, cell.fill, cell.alignment, cell.border = head_font, head_fill, center, border
         row += 1
@@ -213,7 +265,7 @@ def build_classrooms_xlsx(entries) -> bytes:
                 cell = ws.cell(row=row, column=2 + i)
                 cell.alignment, cell.border = center, border
                 if (day, slot) in occ:
-                    cell.value = _cell_text(occ[(day, slot)])
+                    cell.value = _cell_text(occ[(day, slot)], lang)
             row += 1
 
         row += 1  # bloklar arasi bos satir
@@ -231,10 +283,19 @@ CLASSROOM_HEADERS = [
     "Derslik", "Gün", "Saat", "Ders Kodu", "Ders Adı",
     "Şube", "Öğretim Üyesi", "Tür",
 ]
+CLASSROOM_HEADERS_EN = [
+    "Classroom", "Day", "Time", "Course Code", "Course Name",
+    "Section", "Lecturer", "Type",
+]
 
 
-def classrooms_rows(entries) -> list[list]:
+def classroom_headers(lang: str = "tr") -> list[str]:
+    return CLASSROOM_HEADERS_EN if lang == "en" else CLASSROOM_HEADERS
+
+
+def classrooms_rows(entries, lang: str = "tr") -> list[list]:
     """Derslik programi CSV (minimum): derslik -> gun -> saat sirali duz liste."""
+    gunler, _, turler, _ = _maps(lang)
     rows = []
     for e in sorted(entries, key=lambda e: (
         e.classroom.building.name, e.classroom.room_code,
@@ -243,13 +304,13 @@ def classrooms_rows(entries) -> list[list]:
         c = e.section.course
         rows.append([
             f"{e.classroom.building.name} {e.classroom.room_code}",
-            DAY_FULL.get(e.day_of_week, "?"),
+            gunler.get(e.day_of_week, "?"),
             slot_range(e.start_slot, e.slot_count),
             c.code,
             c.name,
             e.section.section_no,
             e.section.lecturer.full_name,
-            SESSION_TR.get(e.session_type.value, e.session_type.value),
+            turler.get(e.session_type.value, e.session_type.value),
         ])
     return rows
 

@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_current_user
 from app.export_service import (
-    CLASSROOM_HEADERS, EXAM_HEADERS, WEEKLY_HEADERS,
     build_classrooms_xlsx, build_exam_schedule_xlsx, build_weekly_grid_xlsx,
-    classrooms_rows, exams_rows, to_csv_bytes, to_xlsx_bytes, weekly_rows,
+    classroom_headers, classrooms_rows, exam_headers, exams_rows,
+    to_csv_bytes, to_xlsx_bytes, weekly_headers, weekly_rows,
 )
+from app.i18n import get_lang
 from app.models import (
     Classroom, Course, CourseSection, Department, Exam, ExamType, SemesterType,
     User, WeeklyScheduleEntry,
@@ -76,6 +77,9 @@ def export_weekly(
 
     # Cohort (bolum + sinif + donem birlikte) + xlsx -> RESMI IZGARA programi.
     # Aksi halde (derslik/hoca mercegi ya da csv) duz liste doner.
+    # K-79: dil isteğin bağlamından okunur (middleware koydu), servise AÇIK
+    # parametre olarak geçer — servis bir istek bağlamı olmadan da test edilsin.
+    lang = get_lang()
     is_cohort = department_id is not None and year is not None and semester is not None
     if format == "xlsx" and is_cohort:
         dep_en = ""
@@ -93,8 +97,9 @@ def export_weekly(
         )
 
     return _spreadsheet_response(
-        format, WEEKLY_HEADERS, weekly_rows(entries),
-        "haftalik_program", "Haftalık Program",
+        format, weekly_headers(lang), weekly_rows(entries, lang),
+        "weekly_schedule" if lang == "en" else "haftalik_program",
+        "Weekly Schedule" if lang == "en" else "Haftalık Program",
     )
 
 @router.get("/export/exams")
@@ -130,12 +135,16 @@ def export_exams(
             dep_en = dep.name_en or dep.name
             faculty_en = dep.faculty_en or ""
     sem_value = semester.value if semester is not None else ""
-    fname = "final_butunleme_programi" if schedule == "final" else "vize_programi"
+    lang = get_lang()
+    if lang == "en":
+        fname = "final_makeup_schedule" if schedule == "final" else "midterm_schedule"
+    else:
+        fname = "final_butunleme_programi" if schedule == "final" else "vize_programi"
 
     if format == "csv":
         # CSV: resmi izgara CSV'ye sigmaz; duz liste (veri) doner.
         return Response(
-            content=to_csv_bytes(EXAM_HEADERS, exams_rows(exams)),
+            content=to_csv_bytes(exam_headers(lang), exams_rows(exams, lang)),
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
         )
@@ -171,17 +180,19 @@ def export_classrooms(
         # Tek derslik: "bu dersligin programi" gorunumunden indirme icin.
         q = q.filter(Classroom.id == classroom_id)
     entries = q.all()
+    lang = get_lang()
+    fname = "classroom_schedule" if lang == "en" else "derslik_programi"
 
     if format == "csv":
         return Response(
-            content=to_csv_bytes(CLASSROOM_HEADERS, classrooms_rows(entries)),
+            content=to_csv_bytes(classroom_headers(lang), classrooms_rows(entries, lang)),
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="derslik_programi.csv"'},
+            headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
         )
     if format == "xlsx":
         return Response(
-            content=build_classrooms_xlsx(entries),
+            content=build_classrooms_xlsx(entries, lang),
             media_type=_XLSX_MIME,
-            headers={"Content-Disposition": 'attachment; filename="derslik_programi.xlsx"'},
+            headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'},
         )
     raise HTTPException(status_code=400, detail=f"Desteklenmeyen format: {format}")     

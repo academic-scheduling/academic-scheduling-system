@@ -2853,3 +2853,44 @@ karar sonrası tazelenir.
 DEĞİŞİKLİK/ENGEL/UYARI/DÖNEM + program ızgarası + W9 çakışma kartları + gönderen/
 karar + 3 butonlu footer), REJECTED (adım notu "düzeltip yeniden gönderilebilir"),
 APPROVED (applied_summary özeti + salt-okunur footer) teyit. tsc + vite build temiz.
+
+## K-78 · Yetki matrisi: sistematik regresyon testi (denetim + kanıt) [E] — brief §6.3/§10.2, yol haritası A-5
+Kullanıcı sorusu somuttu: "yetkisiz biri erişemeyeceği şeye erişebiliyor mu?"
+İki iş: (1) mimariyi statik DENETLE, (2) sonucu tek bir regresyon dosyasına kilitle.
+
+**Denetim sonucu — açık YOK.** Her ayrıcalıklı uç katmanlı korunuyor:
+kimlik (`get_current_user` → 401) · yetenek bayrağı (`require_admin`/`require_*`
+bağımlılığı → 403) · bölüm üyeliği (gövdede `_ensure_*_access` → 403) · workgroup
+izolasyonu (`_get_owned_*` id sorgusu workgroup'a bağlı → **404**, varlık sızmaz)
+· çapraz-FK (gövdedeki yabancı id → 400) · öz-onay (`_ensure_not_self` → 403) +
+PENDING kilidi (`_ensure_editable` → 409). Yazan uçların tamamı bir `require_*`
+kapısından geçiyor; çıplak `get_current_user` ile yazan tek grup taslak uçları,
+o da bilerek (K-59: özel taslak kum havuzu; yetki `submit`'te aranır). Geniş
+görünen okuma uçları (`/conflicts`, `/export/*`) bilinçli karar (K-04/K-26), açık
+değil.
+
+**Neden mevcut testler yetmiyordu (eksik olan neydi).** Yetki 33× 403 + 12
+dosyada `foreign_admin` ile ZATEN kanıtlıydı — ama DAĞINIK, özellik-başına. "Hangi
+rol hangi ucu açar" sorusunun tek bir cevabı yoktu. Yeni dosyanın değeri iki katlı:
+ileride bekçisiz bir uç eklenirse tek süpürme yakalar; beş saldırı sınıfı her uçta
+TEK BİÇİMDE iddia edilir.
+
+**`backend/tests/test_k78_authz_matrix.py` — beş sınıf (dıştan içe):**
+- **A · Kimliksiz → 401:** her ayrıcalıklı uç (parametrize, ~33 uç). Sahte id
+  yeter: yetki BAĞIMLILIK katmanında, id çözülmeden patlar.
+- **B · Yanlış rol / bayrak yok → 403:** ADMIN-only uçlar tüm-bayraklı alt hesabı
+  bile reddeder; ders/derslik/hoca/onay uçları bayraksız alt hesabı reddeder.
+- **C · Bayrak var, bölüm değil:** ders yazma → 403, onaya gönderme → 403,
+  ONAYLAMA → **404** (kapsam dışı taslağın varlığı onay yetkisiyle bile sızmaz).
+- **D · Yabancı workgroup admini + gerçek id → 404 (IDOR / URL id değiştirme):**
+  bölüm/ders/şube/hoca/derslik/bina/kullanıcı/taslak/onay — hepsi 404.
+- **E · Taslak yaşam döngüsü:** öz-onay 403 (ADMIN dahil) · PENDING'e yazma 409 ·
+  başkasının taslağı 404.
+
+**Yan düzeltme.** `helpers.sub_headers` `can_approve_schedule` bayrağını bilmiyordu
+(K-25 öncesi imza; k59 testleri kendi `make_account`'uyla aşmıştı). Bayrak
+`sub_headers`'a eklendi (geriye-uyumlu, varsayılan False) — onay senaryoları artık
+ortak yardımcıdan kurulabiliyor.
+
+**Doğrulama.** Yeni dosya 74 test yeşil; tüm paket 604 → **678 yeşil**, regresyon
+yok. Üründe görünür değişiklik yok — bu bir kanıt/sertleştirme turu.

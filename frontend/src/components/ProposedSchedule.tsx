@@ -2,7 +2,6 @@ import { Fragment, useMemo } from "react";
 import { Badge, Group, ScrollArea, Stack, Text } from "@mantine/core";
 import { lecturerLabel } from "../api/types";
 import type { DraftDiffItem, Exam, WeeklyEntry } from "../api/types";
-import { DAY_SHORT } from "../utils/slots";
 import { BORDER, GRID_CELL_BG, HEADER_BG, TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 
@@ -157,7 +156,7 @@ export function ProposedGrid({ entries, changed }: {
               background: HEADER_BG, padding: "4px 6px", fontSize: 11,
               fontWeight: 600, textAlign: "center", letterSpacing: "0.04em",
             }}>
-              {DAY_SHORT[d]}
+              {t.days.short[d]}
             </div>
           ))}
           {SLOTS.map((s) => (

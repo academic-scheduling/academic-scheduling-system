@@ -608,6 +608,115 @@ export const en: Dict = {
     deleteSection: "Delete section",
   },
 
+  exams: {
+    commonCourses: "Common courses",
+    title: "Exam Schedule",
+    loadFailed: "Exams could not be loaded",
+
+    monthsShort: ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    monthsLong: ["January", "February", "March", "April", "May", "June",
+                 "July", "August", "September", "October", "November", "December"],
+
+    highlightTitle: (rule: string) => `Conflicting Exams Highlighted (${rule})`,
+    highlightBody: (codes: string) =>
+      `${codes} — shown on the PUBLISHED exam schedule.`,
+    conflict: "Conflict",
+    highlightNotFound: "No exam to highlight was found.",
+
+    noConflictFor: (baslik: string) => `${baslik} — no conflict`,
+    conflictList: (n: number, kurallar: string) => `${n} conflicts: ${kurallar}`,
+    undone: (etiket: string) => `Undone: ${etiket}`,
+
+    removeConfirm: (kod: string, tur: string) =>
+      `Remove the ${kod} ${tur} exam from the draft?\n\n` +
+      `It only leaves the published schedule once approved.`,
+    removeLabel: (kod: string, tur: string) => `removing ${kod} ${tur}`,
+    removed: "Exam removed from the draft",
+    removeFailed: "Could not be removed",
+    moveLabel: (kod: string, tur: string) => `moving ${kod} ${tur}`,
+    moved: "Exam moved",
+    moveFailed: "Could not be moved",
+    editLabel: (kod: string, tur: string) => `editing ${kod} ${tur}`,
+
+    draftOpened: (n: number) =>
+      `Draft opened — a copy of the published exam schedule (${n} exams). ` +
+      `Your changes are visible only to you and go live once approved.`,
+    draftFailed: "The draft could not be opened",
+
+    yearN: (y: number) => `Year ${y}`,
+    prevWeek: "Previous week",
+    nextWeek: "Next week",
+    thisWeek: "This Week",
+    undoTip: (n: number) => `Undo the last draft change${n ? ` (${n})` : ""}`,
+    undo: "Undo",
+    exportMidterm: "Midterm Schedule (Excel)",
+    exportFinal: "Final + Make-up (Excel)",
+    searchCourse: "Search course",
+    noCourseInYear: "No course in this year.",
+    elective: "Elective",
+
+    conflictsTitle: "Exam conflicts",
+    noConflicts: "No conflict in the exam schedule.",
+
+    prevMonth: "Previous month",
+    nextMonth: "Next month",
+    hasExamThisWeek: "There is an exam this week",
+
+    cardEditable: (kod: string, bas: string, bit: string) =>
+      `${kod} · ${bas}-${bit} · click to edit, drag to move`,
+    cardReadOnly: (kod: string, bas: string, bit: string, ogrenci: number) =>
+      `${kod} · ${bas}-${bit} · ${ogrenci} students`,
+    publishedSuffix: " · published — open a draft to change it",
+    deleteExam: "Delete exam",
+    noClassroom: "No classroom assigned",
+    hardTip: "Blocking conflict — click to go to the Conflicts section",
+    warnTip: "Warning — click to go to the Conflicts section",
+
+    updated: "Exam updated",
+    added: "Exam added to the draft",
+    addTitle: "Add exam",
+    course: "Course",
+    pickCourse: "Select a course",
+    noCourse: "No course",
+    examType: "Exam type",
+    whichMidterm: "Which midterm",
+    registered: " · registered",
+    date: "Date",
+    weekendError: "Weekends (Saturday/Sunday) cannot be selected as exam days",
+    start: "Start",
+    duration: "Duration (min)",
+    classrooms: "Classrooms",
+    pickClassrooms: "Select classrooms (more than one allowed)",
+    capacityOf: (n: number) => ` · ${n} seats`,
+    supervisor: "Supervisor",
+    pickLecturer: "Select a lecturer",
+    note: "Note",
+    optional: "optional",
+
+    publishTitle: "Publish exams",
+    publishBody: (n: number) =>
+      `${n} draft exams will be published. Published exams are locked; ` +
+      `to edit them you must turn them back into a draft.`,
+    publishRejected: "Publishing rejected",
+    publishBlocked:
+      "There are blocking conflicts — no exam was published. Fix them and try again.",
+    noClassroomShort: " · no classroom",
+    publishFailed: "Could not be published",
+    retry: "Try again",
+    publish: "Publish",
+  },
+
+  weekly: {
+    blockersShort: "blocking",
+    warningsShort: "warnings",
+  },
+
+  days: {
+    short: { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri" } as Record<number, string>,
+    long: { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday" } as Record<number, string>,
+  },
+
   home: {
     title: "Home",
     subtitle: "Choose a section from the menu on the left.",

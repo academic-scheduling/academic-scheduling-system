@@ -656,8 +656,8 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
           ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
             + (i.exam_type === "MIDTERM" && i.exam_index > 1 ? ` ${i.exam_index}` : "")
           : `${i.course_code} · Şube ${i.section_no}`;
-        const once = sinav ? examPlacementText(i.before) : placementText(i.before);
-        const sonra = sinav ? examPlacementText(i.after) : placementText(i.after);
+        const once = sinav ? examPlacementText(i.before) : placementText(i.before, t);
+        const sonra = sinav ? examPlacementText(i.after) : placementText(i.after, t);
         const detay = i.kind === "ADDED" ? sonra : i.kind === "REMOVED" ? once : `${once} → ${sonra}`;
         return (
           <Group key={`${i.entity}-${kimlik}-${i.kind}-${ix}`} gap={9} align="flex-start" wrap="nowrap"

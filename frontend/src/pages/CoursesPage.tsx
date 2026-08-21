@@ -1253,7 +1253,7 @@ function CourseDrawerBody({
                         <Group gap={4}>
                           {entries.map((e) => (
                             <Badge key={e.id} variant="light" size="sm" color="green">
-                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
+                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short", t)}
                             </Badge>
                           ))}
                         </Group>

@@ -630,6 +630,117 @@ export const tr = {
     deleteSection: "Şubeyi sil",
   },
 
+  exams: {
+    commonCourses: "Ortak dersler",
+    title: "Sınav Takvimi",
+    loadFailed: "Sınavlar yüklenemedi",
+
+    // Ay adları — tarih biçimleme (JS Intl yerine sabit liste: mevcut davranış korunuyor)
+    monthsShort: ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
+                  "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"],
+    monthsLong: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                 "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
+
+    // Vurgulama (derin bağlantı)
+    highlightTitle: (rule: string) => `Çakışan Sınavlar Vurgulandı (${rule})`,
+    highlightBody: (codes: string) =>
+      `${codes} — YAYINDAKİ sınav takviminde gösteriliyor.`,
+    conflict: "Çakışma",
+    highlightNotFound: "Vurgulanacak sınav bulunamadı.",
+
+    noConflictFor: (baslik: string) => `${baslik} — çakışma yok`,
+    conflictList: (n: number, kurallar: string) => `${n} çakışma: ${kurallar}`,
+    undone: (etiket: string) => `Geri alındı: ${etiket}`,
+
+    removeConfirm: (kod: string, tur: string) =>
+      `${kod} ${tur} sınavı taslaktan çıkarılsın mı?\n\n` +
+      `Yayındaki takvimden ancak onaylandığında düşer.`,
+    removeLabel: (kod: string, tur: string) => `${kod} ${tur} çıkarma`,
+    removed: "Sınav taslaktan çıkarıldı",
+    removeFailed: "Çıkarılamadı",
+    moveLabel: (kod: string, tur: string) => `${kod} ${tur} taşıma`,
+    moved: "Sınav taşındı",
+    moveFailed: "Taşınamadı",
+    editLabel: (kod: string, tur: string) => `${kod} ${tur} düzenleme`,
+
+    draftOpened: (n: number) =>
+      `Taslak açıldı — yayındaki sınav takviminin kopyası (${n} sınav). ` +
+      `Değişiklikleriniz yalnız size görünür, onaylanınca yayına geçer.`,
+    draftFailed: "Taslak açılamadı",
+
+    yearN: (y: number) => `${y}. sınıf`,
+    prevWeek: "Önceki hafta",
+    nextWeek: "Sonraki hafta",
+    thisWeek: "Bu Hafta",
+    undoTip: (n: number) => `Son taslak değişikliğini geri al${n ? ` (${n})` : ""}`,
+    undo: "Geri Al",
+    exportMidterm: "Vize Programı (Excel)",
+    exportFinal: "Final + Bütünleme (Excel)",
+    searchCourse: "Ders ara",
+    noCourseInYear: "Bu sınıfta ders yok.",
+    elective: "Seçmeli",
+
+    conflictsTitle: "Sınav çakışmaları",
+    noConflicts: "Sınav takviminde çakışma yok.",
+
+    prevMonth: "Önceki ay",
+    nextMonth: "Sonraki ay",
+    hasExamThisWeek: "Bu haftada sınav var",
+
+    cardEditable: (kod: string, bas: string, bit: string) =>
+      `${kod} · ${bas}-${bit} · düzenlemek için tıkla, taşımak için sürükle`,
+    cardReadOnly: (kod: string, bas: string, bit: string, ogrenci: number) =>
+      `${kod} · ${bas}-${bit} · ${ogrenci} öğrenci`,
+    publishedSuffix: " · yayında — değiştirmek için taslak açın",
+    deleteExam: "Sınavı sil",
+    noClassroom: "Derslik atanmadı",
+    hardTip: "Engelleyici çakışma — Çakışmalar bölümüne gitmek için tıklayın",
+    warnTip: "Uyarı — Çakışmalar bölümüne gitmek için tıklayın",
+
+    updated: "Sınav güncellendi",
+    added: "Sınav taslağa eklendi",
+    addTitle: "Sınav ekle",
+    course: "Ders",
+    pickCourse: "Ders seç",
+    noCourse: "Ders yok",
+    examType: "Sınav türü",
+    whichMidterm: "Kaçıncı vize",
+    registered: " · kayıtlı",
+    date: "Tarih",
+    weekendError: "Hafta sonu (Cumartesi/Pazar) sınav günü olarak seçilemez (K-06)",
+    start: "Başlangıç",
+    duration: "Süre (dk)",
+    classrooms: "Derslikler",
+    pickClassrooms: "Derslik seç (birden çok olabilir)",
+    capacityOf: (n: number) => ` · ${n} kişi`,
+    supervisor: "Sorumlu",
+    pickLecturer: "Öğretim üyesi seç",
+    note: "Not",
+    optional: "isteğe bağlı",
+
+    publishTitle: "Sınavları yayınla",
+    publishBody: (n: number) =>
+      `${n} taslak sınav yayınlanacak. Yayınlananlar kilitlenir; ` +
+      `düzenlemek için tekrar taslağa çevirmen gerekir.`,
+    publishRejected: "Yayınlama reddedildi",
+    publishBlocked:
+      "Engelleyici çakışmalar var — hiçbir sınav yayınlanmadı. Düzeltip tekrar dene.",
+    noClassroomShort: " · derslik yok",
+    publishFailed: "Yayınlanamadı",
+    retry: "Tekrar dene",
+    publish: "Yayınla",
+  },
+
+  weekly: {
+    blockersShort: "engel",
+    warningsShort: "uyarı",
+  },
+
+  days: {
+    short: { 1: "Pzt", 2: "Sal", 3: "Çar", 4: "Per", 5: "Cum" } as Record<number, string>,
+    long: { 1: "Pazartesi", 2: "Salı", 3: "Çarşamba", 4: "Perşembe", 5: "Cuma" } as Record<number, string>,
+  },
+
   home: {
     title: "Ana Sayfa",
     subtitle: "Sol menüden bir bölüm seçin.",

@@ -3,13 +3,13 @@ import { DIFF_KIND_COLORS, DIFF_KIND_LABELS } from "../api/types";
 import type {
   DraftDiffItem, DraftExamPlacement, DraftPlacement,
 } from "../api/types";
-import { DAY_SHORT } from "../utils/slots";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /** Haftalık yerleşimin okunur konumu: "Çar 5 · A Blok 101". */
-export function placementText(p: DraftPlacement | null): string {
+export function placementText(p: DraftPlacement | null, t: Dict): string {
   if (!p) return "—";
-  const gun = DAY_SHORT[p.day_of_week] ?? String(p.day_of_week);
+  const gun = t.days.short[p.day_of_week] ?? String(p.day_of_week);
   const bitis = p.slot_count > 1 ? `-${p.start_slot + p.slot_count - 1}` : "";
   return `${gun} ${p.start_slot}${bitis}${p.classroom_label ? ` · ${p.classroom_label}` : ""}`;
 }
@@ -64,8 +64,8 @@ export default function DiffTable({ items, maxHeight = 460 }: {
               ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
                 + (i.exam_type === "MIDTERM" ? ` ${i.exam_index}` : "")
               : `${i.course_code} · Şube ${i.section_no}`;
-            const once = sinav ? examPlacementText(i.before) : placementText(i.before);
-            const sonra = sinav ? examPlacementText(i.after) : placementText(i.after);
+            const once = sinav ? examPlacementText(i.before) : placementText(i.before, t);
+            const sonra = sinav ? examPlacementText(i.after) : placementText(i.after, t);
             return (
               <Table.Tr key={`${i.entity}-${kimlik}-${i.kind}-${ix}`}>
                 <Table.Td>

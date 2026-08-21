@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Box, Text } from "@mantine/core";
-import { DAY_SHORT, SLOT_TIMES } from "../utils/slots";
+import { SLOT_TIMES } from "../utils/slots";
+import { useT } from "../i18n";
 
 /** Izgaraya yerleştirilecek tek blok. day: 1-5 (Pzt-Cum), startSlot: 1-9. */
 export type WeekPlacement = {
@@ -28,6 +29,7 @@ export default function MiniWeekGrid({
   placements: WeekPlacement[];
   emptyLabel?: string;
 }) {
+  const t = useT();
   if (placements.length === 0) {
     return <Text size="sm" c="dimmed">{emptyLabel}</Text>;
   }
@@ -45,7 +47,7 @@ export default function MiniWeekGrid({
     <Box style={{ display: "grid", gridTemplateColumns: "42px repeat(5, 1fr)", gap: 3, alignItems: "center" }}>
       <span />
       {DAYS.map((d) => (
-        <Text key={d} fz={10} fw={600} c="dimmed" ta="center">{DAY_SHORT[d]}</Text>
+        <Text key={d} fz={10} fw={600} c="dimmed" ta="center">{t.days.short[d]}</Text>
       ))}
       {SLOTS.map((slot) => (
         <Fragment key={slot}>

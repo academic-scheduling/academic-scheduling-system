@@ -7,7 +7,7 @@ import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import MiniWeekGrid, { type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { formatSlotRange, SLOT_TIMES, DAY_SHORT } from "../utils/slots";
+import { formatSlotRange, SLOT_TIMES } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
 import type {
   Building, Classroom, Course, CourseSection, RoomType, WeeklyEntry,
@@ -22,7 +22,10 @@ const EXTERNAL_ONLY = "__external__";
 
 /** Haftada yerleştirilebilir toplam slot = gün × slot (slots.ts'ten türetilir,
  *  tablo değişirse burası da). Doluluk yüzdesinin paydası. */
-const WEEK_SLOTS = Object.keys(SLOT_TIMES).length * Object.keys(DAY_SHORT).length;
+// K-79: gün sayısı artık sözlükte (dile göre değişmez, 5 iş günü) —
+// modül düzeyinde sözlük okunamayacağı için sabit yazıldı.
+const GUN_SAYISI = 5;
+const WEEK_SLOTS = Object.keys(SLOT_TIMES).length * GUN_SAYISI;
 
 /** Tür rozetinin rengi (K-31). Amfi indigo, Lab teal, Sınıf gri. */
 function typeColor(t: RoomType): string {
@@ -768,7 +771,7 @@ function ClassroomDrawerBody({
                         </Text>
                       </div>
                       <Badge variant="light" size="sm" color="green" style={{ flex: "none" }}>
-                        {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
+                        {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short", t)}
                       </Badge>
                     </Group>
                   </Paper>

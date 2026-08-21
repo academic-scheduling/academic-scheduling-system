@@ -16,7 +16,6 @@ import { DraftStatus, DraftActions, DraftNotes } from "../components/DraftBar";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
   courseCommonForDept, courseInCohort, lecturerLabel, } from "../api/types";
-import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
@@ -964,7 +963,7 @@ export default function WeeklyPage() {
                     fontSize: 11, fontWeight: 500, letterSpacing: "0.06em",
                     textTransform: "uppercase", color: TEXT_MUTED,
                     background: HEADER_BG, borderTop: `1px solid ${LINE}`,
-                  }}>{DAY_SHORT[d]}</div>
+                  }}>{t.days.short[d]}</div>
                   {/* Gün sütununun TAMAMI tek bırakma katmanı: slot imleç konumundan
                       hesaplanır. Böylece kartlar tıklanabilir/sürüklenebilir kalır
                       (drag olayları köpürüp buraya ulaşır). */}
@@ -1185,8 +1184,8 @@ export default function WeeklyPage() {
         return (
         <EntryModal
           title={birakilan
-            ? `${birakilan.code} → ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`
-            : `Ders ekle · ${DAY_SHORT[placing.day]} ${SLOT_START[placing.slot]}`}
+            ? `${birakilan.code} → ${t.days.short[placing.day]} ${SLOT_START[placing.slot]}`
+            : `Ders ekle · ${t.days.short[placing.day]} ${SLOT_START[placing.slot]}`}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
           courses={dersler}
@@ -1228,7 +1227,7 @@ export default function WeeklyPage() {
 
       {editing && (
         <EntryModal
-          title={`${editing.section.course.code}-${editing.section.section_no} · ${DAY_SHORT[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
+          title={`${editing.section.course.code}-${editing.section.section_no} · ${t.days.short[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
           onlineBySection={onlineBySection}
           fixedSectionId={editing.section.id}
@@ -1425,10 +1424,11 @@ function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete }: {
   cluster: Cluster; canWrite: boolean; onClose: () => void;
   onEdit: (e: WeeklyEntry) => void; onDelete: (e: WeeklyEntry) => void;
 }) {
+  const t = useT();
   const first = cluster.entries[0];
   return (
     <Modal opened onClose={onClose} size="md"
-      title={`${first.section.course.code} · ${DAY_SHORT[first.day_of_week]} ${SLOT_START[cluster.start_slot]} · ${cluster.entries.length} şube`}>
+      title={`${first.section.course.code} · ${t.days.short[first.day_of_week]} ${SLOT_START[cluster.start_slot]} · ${cluster.entries.length} şube`}>
       <Stack gap={6}>
         <Text size="xs" c="dimmed">{first.section.course.name}</Text>
         {cluster.entries.map((e) => (

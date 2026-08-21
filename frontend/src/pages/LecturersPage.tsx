@@ -1086,7 +1086,7 @@ function LecturerDrawerBody({
                         <Stack gap={4} align="flex-end" style={{ flex: "none" }}>
                           {entries.map((e) => (
                             <Badge key={e.id} variant="light" size="sm" color="green">
-                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
+                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short", t)}
                             </Badge>
                           ))}
                         </Stack>

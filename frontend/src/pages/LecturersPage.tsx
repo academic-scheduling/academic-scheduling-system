@@ -515,7 +515,7 @@ export default function LecturersPage() {
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" wrap="nowrap" align="center">
           <TextInput
-            placeholder="Ad, soyad veya e-posta ara"
+            placeholder={t.lecturers.searchPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
@@ -557,7 +557,7 @@ export default function LecturersPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="Unvan"
+                  label={t.lecturers.titleLabel}
                   data={[{ value: ALL, label: t.lecturers.allTitles },
                     ...TITLES.map((t) => ({ value: t, label: t }))]}
                   value={titleFilter ?? ALL}
@@ -574,7 +574,7 @@ export default function LecturersPage() {
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.currentTarget.checked)}
                 />
-                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>Kapat</Button>
+                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>{t.common.close}</Button>
               </Group>
             </Popover.Dropdown>
           </Popover>
@@ -615,7 +615,7 @@ export default function LecturersPage() {
                 {sortTh("Ad Soyad", "name", 280)}
                 {sortTh("Unvan", "title", 150)}
                 {sortTh("Kadro birimi", "dep", 200)}
-                <Table.Th w={220}>E-posta</Table.Th>
+                <Table.Th w={220}>{t.auth.email}</Table.Th>
                 {sortTh("Ders", "courses", 110, "center")}
                 <Table.Th w={40} />
               </Table.Tr>
@@ -670,17 +670,17 @@ export default function LecturersPage() {
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
-            <Select label="Unvan" placeholder={t.lecturers.optional}
+            <Select label={t.lecturers.titleLabel} placeholder={t.lecturers.optional}
               // Kanonik listede olmayan bir unvan da (eski/import kaydı) seçili
               // görünsün — aksi halde Select boş kalırdı.
               data={form.values.title && !TITLES.includes(form.values.title)
                 ? [form.values.title, ...TITLES] : TITLES}
               clearable
               searchable filter={turkishOptionsFilter} {...form.getInputProps("title")} />
-            <TextInput label="Ad Soyad" placeholder={t.lecturers.namePlaceholder} {...form.getInputProps("full_name")} />
-            <TextInput label="E-posta" placeholder="ayse.kaya@mu.edu.tr (opsiyonel)" {...form.getInputProps("email")} />
+            <TextInput label={t.lecturers.fullName} placeholder={t.lecturers.namePlaceholder} {...form.getInputProps("full_name")} />
+            <TextInput label={t.auth.email} placeholder={t.lecturers.emailPlaceholder} {...form.getInputProps("email")} />
             <Select
-              label="Kadro birimi"
+              label={t.lecturers.homeUnit}
               placeholder={t.lecturers.pickUnitLong}
               data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
               searchable clearable filter={turkishOptionsFilter}
@@ -787,9 +787,9 @@ export default function LecturersPage() {
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th w={36} />
-                            <Table.Th>Unvan</Table.Th>
-                            <Table.Th>Ad Soyad</Table.Th>
-                            <Table.Th>Kadro Birimi</Table.Th>
+                            <Table.Th>{t.lecturers.titleLabel}</Table.Th>
+                            <Table.Th>{t.lecturers.fullName}</Table.Th>
+                            <Table.Th>{t.lecturers.homeUnitCaps}</Table.Th>
                             <Table.Th w={230}>{t.lecturers.department}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
@@ -918,7 +918,7 @@ const LecturerRow = memo(function LecturerRow({
               <Badge variant="light" color="orange" size="xs" style={{ flex: "none" }}>40/a</Badge>
             </Tooltip>
           )}
-          {!l.active && <Badge size="xs" color="gray" style={{ flex: "none" }}>Pasif</Badge>}
+          {!l.active && <Badge size="xs" color="gray" style={{ flex: "none" }}>{t.lecturers.inactive}</Badge>}
         </Group>
       </Table.Td>
       <Table.Td>
@@ -1012,7 +1012,7 @@ function LecturerDrawerBody({
                 </Badge>
               )}
               {l.is_external && <Badge variant="light" color="orange" size="sm">40/a</Badge>}
-              {!l.active && <Badge color="gray" size="sm">Pasif</Badge>}
+              {!l.active && <Badge color="gray" size="sm">{t.lecturers.inactive}</Badge>}
             </Group>
             {/* K-71: bölüm adı burada değil, aşağıdaki "Kadro birimi" stat'ında —
                 iki yerde yazmasın. Alt satırda yalnız e-posta. */}
@@ -1021,7 +1021,7 @@ function LecturerDrawerBody({
             )}
           </div>
         </Group>
-        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
+        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label={t.common.close}>
           <IconX size={18} />
         </ActionIcon>
       </Group>
@@ -1030,9 +1030,9 @@ function LecturerDrawerBody({
       <Box style={{ flex: 1, overflowY: "auto" }} p="md">
         <Stack gap="lg">
           <SimpleGrid cols={4} spacing="xs">
-            <Stat label="Ders" value={String(courseCount)} />
+            <Stat label={t.lecturers.course} value={String(courseCount)} />
             {/* K-71: Şube sayacı yerine kadro birimi (asli bölüm adı). */}
-            <Stat label="Kadro birimi" value={depLabel} />
+            <Stat label={t.lecturers.homeUnit} value={depLabel} />
             <Stat label={t.lecturers.weeklyHours} value={`${hours} sa`} />
             {/* K-71: Öğrenci sayacı yerine akademik personel sayfası linki. */}
             <Stat label={t.lecturers.detailPage} value={
@@ -1128,9 +1128,9 @@ function LecturerDrawerBody({
           </Tooltip>
         )}
         {canWrite && (
-          <Tooltip label="Sil">
+          <Tooltip label={t.common.delete}>
             <ActionIcon variant="subtle" size="lg" color="red"
-              onClick={() => onDelete(l)} aria-label="Sil">
+              onClick={() => onDelete(l)} aria-label={t.common.delete}>
               <IconTrash size={18} />
             </ActionIcon>
           </Tooltip>

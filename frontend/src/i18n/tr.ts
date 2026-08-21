@@ -195,6 +195,11 @@ export const tr = {
   },
 
   departments: {
+    role: "Rol",
+    permissions: "Yetkiler",
+    inactive: "Pasif",
+    addCourse: "Ders Ekle",
+    courses: "Dersler",
     title: "Bölümler",
     add: "Bölüm Ekle",
     edit: "Bölümü Düzenle",
@@ -228,6 +233,10 @@ export const tr = {
   },
 
   classrooms: {
+    closed: "Kapalı",
+    weeklyUsageCaps: "HAFTALIK KULLANIM",
+    weeklyScheduleCaps: "HAFTALIK PROGRAM",
+    externalCaps: "Fakülte dışı",
     title: "Derslikler",
     add: "Derslik Ekle",
     searchPlaceholder: "Derslik kodu ara",
@@ -310,6 +319,14 @@ export const tr = {
   },
 
   lecturers: {
+    searchPlaceholder: "Ad, soyad veya e-posta ara",
+    titleLabel: "Unvan",
+    fullName: "Ad Soyad",
+    emailPlaceholder: "ayse.kaya@mu.edu.tr (opsiyonel)",
+    homeUnit: "Kadro birimi",
+    homeUnitCaps: "Kadro Birimi",
+    inactive: "Pasif",
+    course: "Ders",
     title: "Öğretim Üyeleri",
     add: "Öğretim Üyesi Ekle",
     edit: "Öğretim Üyesini Düzenle",
@@ -428,6 +445,12 @@ export const tr = {
   },
 
   users: {
+    name: "Ad",
+    statusCol: "Durum",
+    permissions: "Yetkiler",
+    you: "(siz)",
+    allShort: "tümü",
+    noMatch: "Filtreye uyan kullanıcı yok.",
     title: "Kullanıcılar",
     invite: "+ Kullanıcı Davet Et",
     inviteTitle: "Kullanıcı Davet Et",
@@ -481,10 +504,130 @@ export const tr = {
   },
 
   audit: {
+    title: "İşlem Kayıtları",
+    time: "Zaman",
+    who: "Kim",
+    action: "Eylem",
+    entityType: "Tür",
+    record: "Kayıt",
+    change: "Değişiklik",
+    noMatch: "Filtreye uyan işlem kaydı yok.",
     loadFailed: "Kayıtlar yüklenemedi",
     allUsers: "Tüm kullanıcılar",
     allActions: "Tüm eylemler",
     allTypes: "Tüm türler",
+  },
+
+  courses: {
+    title: "Dersler",
+    add: "Ders Ekle",
+    importCta: "İçe Aktar",
+    edit: "Dersi Düzenle",
+    editShort: "Dersi düzenle",
+    deleteModal: "Dersi sil",
+    empty: "Henüz ders yok.",
+    noMatch: "Filtreye uyan ders yok.",
+    searchPlaceholder: "Kod veya ders adı ara",
+    filter: "Filtre",
+    clear: "Temizle",
+    courseCount: (n: number) => `${n} ders`,
+
+    // Süzgeçler
+    yearN: (y: number) => `${y}. sınıf`,
+    department: "Bölüm",
+    allDepartments: "Tüm bölümler",
+    lecturer: "Öğretim üyesi",
+    allLecturers: "Tüm öğretim üyeleri",
+    courseType: "Ders türü",
+    allTypes: "Tüm türler",
+    semester: "Dönem",
+    allSemesters: "Tüm dönemler",
+    hideInactive: "Pasif dersleri gizle",
+    common: "Ortak",
+    hideInactiveCourses: "Pasif dersleri gizle",
+    inactive: "Pasif",
+    onlineComponents: "Online bileşenler",
+    takenBy: "ALDIĞI GRUPLAR",
+    sectionsTitle: "ŞUBELER",
+    notScheduled: "programda değil",
+    required: "Zorunlu",
+    elective: "Seçmeli",
+
+    // Tablo
+    code: "Kod",
+    name: "Ders Adı",
+    type: "Tür",
+    ects: "AKTS",
+    hours: "T+U+L",
+    classYear: "Sınıf",
+    sections: "Şube",
+    noSections: "şube yok",
+    sectionCount: (n: number) => `${n} şube`,
+
+    // Form
+    pick: "Seçin",
+    codeRequired: "Ders kodu boş olamaz",
+    nameRequired: "Ders adı boş olamaz",
+    pickDepartment: "Bölüm seçin",
+    identityLocked: "Dersin kimliği — değiştirilemez (kontrat §6)",
+    codeLabel: "Ders Kodu",
+    nameLabel: "Ders Adı",
+    namePlaceholder: "İstatistik",
+    typeLabel: "Ders Türü",
+    typeHelp: "Seçmelide cohort çakışması uyarıdır, zorunluda submit engeli (K-05)",
+    theory: "Teori (T)",
+    practice: "Uygulama (U)",
+    lab: "Lab (L)",
+    ectsHelp: "Dersin AKTS/ECTS kredisi (opsiyonel).",
+    midtermCount: "Vize sayısı",
+    midtermHelp: "Bir dersin 1-3 vizesi olabilir. Final ve bütünleme her zaman tektir.",
+    theoryOnline: "Teori online",
+    practiceOnline: "Uygulama online",
+    labOnline: "Lab online",
+    commonCourse: "Ortak ders",
+
+    commonAddHint:
+      "Aynı kodlu bir ortak ders varsa bu kayıt onun altında toplanır. " +
+      "Aldığı diğer grupları kaydettikten sonra Düzenle'den ekleyebilirsiniz.",
+    cohortHint:
+      "Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi bölümünü " +
+      "eklemeye gerek yok — zaten kapsanıyor.",
+    cohortDup:
+      "Bu grup zaten ekli (bölüm + sınıf + dönem). Farklı bir sınıf/dönem ya da " +
+      "bölüm seçin.",
+    addCohort: "+ Cohort ekle",
+    removeCohort: "Cohort'u kaldır",
+    duplicateCohort:
+      "Aynı grup (bölüm + sınıf + dönem) birden çok kez eklenmiş — tekrarları kaldırın.",
+
+    updated: "Ders güncellendi",
+    updatedReset:
+      "Ders güncellendi — programa etki eden alan değiştiği için haftalık ve " +
+      "sınav yerleşimleri sıfırlandı. Yeniden yerleştirin.",
+    created: "Ders eklendi — şimdi şube ekleyin",
+    commonSaved: "Ortak ders kaydedildi",
+
+    // Drawer / şubeler
+    yearSemester: "Sınıf / Dönem",
+    multiCohort: "çok gruplu",
+    midterm: "Vize",
+    midtermN: (n: number) => `${n} vize`,
+    onlineComponent: (parcalar: string) => `Online bileşen: ${parcalar}`,
+    addSection: "Şube ekle",
+    noSectionsYet: "Henüz şube yok — ders programa girmeden şube eklenmeli.",
+    editSectionNamed: (no: number) => `Düzenle: Şube ${no}`,
+    newSection: "Yeni şube",
+    sectionNo: "Şube No",
+    expectedStudents: "Beklenen Öğrenci",
+    lecturerLabel: "Öğretim Üyesi",
+    notFound: "Bulunamadı",
+    pickLecturer: "Öğretim üyesi seçin",
+    sectionNoPositive: "Şube no 0'dan büyük olmalı",
+    expectedPositive: "Beklenen öğrenci 0'dan büyük olmalı",
+    sectionUpdated: "Şube güncellendi",
+    sectionCreated: "Şube eklendi",
+    sectionDeleted: "Şube silindi",
+    deleteSection: "Şubeyi sil",
   },
 
   home: {

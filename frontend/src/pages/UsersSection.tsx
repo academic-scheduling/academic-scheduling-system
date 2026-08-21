@@ -384,12 +384,12 @@ export default function UsersSection() {
         <Table verticalSpacing="xs" highlightOnHover layout="fixed">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th w={COL.ad}>Ad</Table.Th>
-              <Table.Th w={COL.eposta}>E-posta</Table.Th>
-              <Table.Th w={COL.rol}>Rol</Table.Th>
-              <Table.Th w={COL.durum}>Durum</Table.Th>
-              <Table.Th w={COL.bolumler}>Bölümler</Table.Th>
-              <Table.Th w={COL.yetkiler}>Yetkiler</Table.Th>
+              <Table.Th w={COL.ad}>{t.users.name}</Table.Th>
+              <Table.Th w={COL.eposta}>{t.auth.email}</Table.Th>
+              <Table.Th w={COL.rol}>{t.users.role}</Table.Th>
+              <Table.Th w={COL.durum}>{t.users.statusCol}</Table.Th>
+              <Table.Th w={COL.bolumler}>{t.users.departments}</Table.Th>
+              <Table.Th w={COL.yetkiler}>{t.users.permissions}</Table.Th>
               <Table.Th w={COL.eylem} />
             </Table.Tr>
           </Table.Thead>
@@ -405,7 +405,7 @@ export default function UsersSection() {
                   <Table.Td>
                     <Text size="sm" truncate>
                       {u.name}
-                      {kendisi && <Text span size="xs" c="dimmed"> (siz)</Text>}
+                      {kendisi && <Text span size="xs" c="dimmed"> {t.users.you}</Text>}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -422,7 +422,7 @@ export default function UsersSection() {
                   <Table.Td>
                     {/* ADMIN'in ataması olmaz, her bölümde yetkilidir (K-34). */}
                     {u.role === "ADMIN" ? (
-                      <Text size="sm" c="dimmed">tümü</Text>
+                      <Text size="sm" c="dimmed">{t.users.allShort}</Text>
                     ) : (
                       <DepartmentCell ids={u.department_ids} depById={depById} />
                     )}
@@ -431,7 +431,7 @@ export default function UsersSection() {
                     {/* ADMIN'de bayrak listelenmez: rol muafiyeti zaten hepsini
                         veriyor, beş rozet basmak gürültü olurdu (K-25). */}
                     {u.role === "ADMIN" ? (
-                      <Text size="sm" c="dimmed">tümü</Text>
+                      <Text size="sm" c="dimmed">{t.users.allShort}</Text>
                     ) : (
                       <Group gap={4}>
                         {CAPABILITIES.filter((c) => u[c.key]).map((c) => (
@@ -496,7 +496,7 @@ export default function UsersSection() {
         </Table>
         </Table.ScrollContainer>
         {gorunen.length === 0 && (
-          <Text c="dimmed" size="sm" p="md">Filtreye uyan kullanıcı yok.</Text>
+          <Text c="dimmed" size="sm" p="md">{t.users.noMatch}</Text>
         )}
       </Paper>
 
@@ -561,7 +561,7 @@ export default function UsersSection() {
                 hepsini veriyor, sunucu da gönderileni yok sayıyor (K-25). */}
             {form.values.role !== "ADMIN" && (
               <Stack gap={6}>
-                <Text size="sm" fw={500}>Yetkiler</Text>
+                <Text size="sm" fw={500}>{t.users.permissions}</Text>
                 {CAPABILITIES.filter((c) => c.group === "write").map((c) => (
                   <Checkbox
                     key={c.key}

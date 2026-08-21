@@ -177,6 +177,11 @@ export const en: Dict = {
   },
 
   departments: {
+    role: "Role",
+    permissions: "Permissions",
+    inactive: "Inactive",
+    addCourse: "Add Course",
+    courses: "Courses",
     title: "Departments",
     add: "Add Department",
     edit: "Edit Department",
@@ -210,6 +215,10 @@ export const en: Dict = {
   },
 
   classrooms: {
+    closed: "Inactive",
+    weeklyUsageCaps: "WEEKLY USAGE",
+    weeklyScheduleCaps: "WEEKLY SCHEDULE",
+    externalCaps: "External",
     title: "Classrooms",
     add: "Add Classroom",
     searchPlaceholder: "Search room code",
@@ -287,6 +296,14 @@ export const en: Dict = {
   },
 
   lecturers: {
+    searchPlaceholder: "Search name, surname or email",
+    titleLabel: "Title",
+    fullName: "Full Name",
+    emailPlaceholder: "jane.doe@mu.edu.tr (optional)",
+    homeUnit: "Home unit",
+    homeUnitCaps: "Home Unit",
+    inactive: "Inactive",
+    course: "Course",
     title: "Lecturers",
     add: "Add Lecturer",
     edit: "Edit Lecturer",
@@ -405,6 +422,12 @@ export const en: Dict = {
   },
 
   users: {
+    name: "Name",
+    statusCol: "Status",
+    permissions: "Permissions",
+    you: "(you)",
+    allShort: "all",
+    noMatch: "No user matches the filter.",
     title: "Users",
     invite: "+ Invite User",
     inviteTitle: "Invite User",
@@ -459,10 +482,130 @@ export const en: Dict = {
   },
 
   audit: {
+    title: "Audit Log",
+    time: "Time",
+    who: "Who",
+    action: "Action",
+    entityType: "Type",
+    record: "Record",
+    change: "Change",
+    noMatch: "No audit record matches the filter.",
     loadFailed: "Records could not be loaded",
     allUsers: "All users",
     allActions: "All actions",
     allTypes: "All types",
+  },
+
+  courses: {
+    title: "Courses",
+    add: "Add Course",
+    importCta: "Import",
+    edit: "Edit Course",
+    editShort: "Edit course",
+    deleteModal: "Delete course",
+    empty: "No courses yet.",
+    noMatch: "No course matches the filter.",
+    searchPlaceholder: "Search code or course name",
+    filter: "Filter",
+    clear: "Clear",
+    courseCount: (n: number) => `${n} courses`,
+
+    yearN: (y: number) => `Year ${y}`,
+    department: "Department",
+    allDepartments: "All departments",
+    lecturer: "Lecturer",
+    allLecturers: "All lecturers",
+    courseType: "Course type",
+    allTypes: "All types",
+    semester: "Semester",
+    allSemesters: "All semesters",
+    hideInactive: "Hide inactive courses",
+    common: "Common",
+    hideInactiveCourses: "Hide inactive courses",
+    inactive: "Inactive",
+    onlineComponents: "Online components",
+    takenBy: "TAKEN BY",
+    sectionsTitle: "SECTIONS",
+    notScheduled: "not scheduled",
+    required: "Required",
+    elective: "Elective",
+
+    code: "Code",
+    name: "Course Name",
+    type: "Type",
+    ects: "ECTS",
+    hours: "T+P+L",
+    classYear: "Year",
+    sections: "Sections",
+    noSections: "no sections",
+    sectionCount: (n: number) => `${n} sections`,
+
+    pick: "Select",
+    codeRequired: "Course code cannot be empty",
+    nameRequired: "Course name cannot be empty",
+    pickDepartment: "Select a department",
+    identityLocked: "The course's identity — cannot be changed",
+    codeLabel: "Course Code",
+    nameLabel: "Course Name",
+    namePlaceholder: "Statistics",
+    typeLabel: "Course Type",
+    typeHelp:
+      "For electives a cohort clash is a warning; for required courses it blocks submission",
+    theory: "Theory (T)",
+    practice: "Practice (P)",
+    lab: "Lab (L)",
+    ectsHelp: "The course's ECTS credit (optional).",
+    midtermCount: "Midterm count",
+    midtermHelp:
+      "A course can have 1-3 midterms. Final and make-up are always single.",
+    theoryOnline: "Theory online",
+    practiceOnline: "Practice online",
+    labOnline: "Lab online",
+    commonCourse: "Common course",
+
+    commonAddHint:
+      "If a common course with the same code exists, this record is merged under " +
+      "it. You can add its other cohorts from Edit after saving.",
+    cohortHint:
+      "Other department/year/semester groups taking this course. There is no need " +
+      "to add the course's own department — it is already covered.",
+    cohortDup:
+      "This group is already added (department + year + semester). Choose a " +
+      "different year/semester or department.",
+    addCohort: "+ Add cohort",
+    removeCohort: "Remove cohort",
+    duplicateCohort:
+      "The same group (department + year + semester) was added more than once — " +
+      "remove the duplicates.",
+
+    updated: "Course updated",
+    updatedReset:
+      "Course updated — a field affecting the schedule changed, so weekly and " +
+      "exam placements were reset. Please place them again.",
+    created: "Course added — now add sections",
+    commonSaved: "Common course saved",
+
+    yearSemester: "Year / Semester",
+    multiCohort: "multi-cohort",
+    midterm: "Midterm",
+    midtermN: (n: number) => `${n} midterms`,
+    onlineComponent: (parcalar: string) => `Online component: ${parcalar}`,
+    addSection: "Add section",
+    noSectionsYet:
+      "No sections yet — a section must be added before the course enters the schedule.",
+    editSectionNamed: (no: number) => `Edit: Section ${no}`,
+    newSection: "New section",
+    sectionNo: "Section No",
+    expectedStudents: "Expected Students",
+    lecturerLabel: "Lecturer",
+    notFound: "Not found",
+    pickLecturer: "Select a lecturer",
+    sectionNoPositive: "Section number must be greater than 0",
+    expectedPositive: "Expected students must be greater than 0",
+    sectionUpdated: "Section updated",
+    sectionCreated: "Section added",
+    sectionDeleted: "Section deleted",
+    deleteSection: "Delete section",
   },
 
   home: {

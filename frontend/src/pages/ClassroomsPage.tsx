@@ -440,7 +440,7 @@ export default function ClassroomsPage() {
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.currentTarget.checked)}
                 />
-                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>Kapat</Button>
+                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>{t.common.close}</Button>
               </Group>
             </Popover.Dropdown>
           </Popover>
@@ -588,7 +588,7 @@ export default function ClassroomsPage() {
         </Text>
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={() => setDeletingRoom(null)}>{t.common.dismiss}</Button>
-          <Button color="red" loading={deleteBusy} onClick={handleDeleteRoom}>Sil</Button>
+          <Button color="red" loading={deleteBusy} onClick={handleDeleteRoom}>{t.common.delete}</Button>
         </Group>
       </Modal>
 
@@ -625,7 +625,7 @@ const ClassroomRow = memo(function ClassroomRow({
       <Table.Td>
         <Group gap={4} wrap="nowrap">
           <Badge variant="light" color={typeColor(c.room_type)} size="sm">{t.enums.roomType[c.room_type]}</Badge>
-          {!c.active && <Badge size="xs" color="gray">Kapalı</Badge>}
+          {!c.active && <Badge size="xs" color="gray">{t.classrooms.closed}</Badge>}
         </Group>
       </Table.Td>
       <Table.Td>
@@ -727,7 +727,7 @@ function ClassroomDrawerBody({
           {/* Doluluk çubuğu — tablodakiyle aynı, drawer'da geniş */}
           <div>
             <Group justify="space-between" mb={6}>
-              <Text size="xs" fw={600} c="dimmed">HAFTALIK KULLANIM</Text>
+              <Text size="xs" fw={600} c="dimmed">{t.classrooms.weeklyUsageCaps}</Text>
               <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
                 %{usePct} · {slots}/{WEEK_SLOTS} slot
               </Text>
@@ -737,7 +737,7 @@ function ClassroomDrawerBody({
 
           {/* Haftalık program ızgarası */}
           <div>
-            <Text size="xs" fw={600} c="dimmed" mb={8}>HAFTALIK PROGRAM</Text>
+            <Text size="xs" fw={600} c="dimmed" mb={8}>{t.classrooms.weeklyScheduleCaps}</Text>
             <MiniWeekGrid placements={placements} emptyLabel={t.classrooms.noCourses} />
           </div>
 
@@ -894,7 +894,7 @@ function BuildingsModal({
                   <Table.Td>
                     <Group gap={6}>
                       <Text size="sm">{b.name}</Text>
-                      {b.is_external && <Badge variant="light" color="grape" size="sm">Fakülte dışı</Badge>}
+                      {b.is_external && <Badge variant="light" color="grape" size="sm">{t.classrooms.externalCaps}</Badge>}
                     </Group>
                   </Table.Td>
                   <Table.Td w={110}>
@@ -928,7 +928,7 @@ function BuildingsModal({
               <Checkbox label={t.classrooms.externalBuilding} {...form.getInputProps("is_external", { type: "checkbox" })} />
               <Group>
                 <Button type="submit" size="xs" loading={busy}>{editing ? "Kaydet" : "Ekle"}</Button>
-                {editing && <Button size="xs" variant="default" onClick={reset}>Vazgeç</Button>}
+                {editing && <Button size="xs" variant="default" onClick={reset}>{t.common.dismiss}</Button>}
               </Group>
             </Stack>
           </form>

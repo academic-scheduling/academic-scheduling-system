@@ -121,13 +121,13 @@ const CourseRow = memo(function CourseRow({ course: c, selected, onSelect }: {
       <Table.Td>
         <Group gap={4} wrap="nowrap">
           {c.is_common ? (
-            <Badge size="xs" variant="light" color="teal">Ortak</Badge>
+            <Badge size="xs" variant="light" color="teal">{t.courses.common}</Badge>
           ) : c.is_elective ? (
-            <Badge size="xs" variant="light" color="orange">Seçmeli</Badge>
+            <Badge size="xs" variant="light" color="orange">{t.courses.elective}</Badge>
           ) : (
-            <Badge size="xs" variant="light" color="gray">Zorunlu</Badge>
+            <Badge size="xs" variant="light" color="gray">{t.courses.required}</Badge>
           )}
-          {!c.active && <Badge size="xs" color="gray">Pasif</Badge>}
+          {!c.active && <Badge size="xs" color="gray">{t.courses.inactive}</Badge>}
         </Group>
       </Table.Td>
       <Table.Td ta="center" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -139,7 +139,8 @@ const CourseRow = memo(function CourseRow({ course: c, selected, onSelect }: {
       <Table.Td ta="center" c="dimmed">{c.is_common ? "—" : `${c.year}.`}</Table.Td>
       <Table.Td c="dimmed">{c.is_common ? "—" : t.enums.semester[c.semester]}</Table.Td>
       <Table.Td ta="center" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
-        {c.sections.length === 0 ? "şube yok" : `${c.sections.length} şube`}
+        {c.sections.length === 0 ? t.courses.noSections
+          : t.courses.sectionCount(c.sections.length)}
       </Table.Td>
       <Table.Td ta="right">
         <IconChevronRight size={15} style={{ color: "var(--mantine-color-gray-5)" }} />
@@ -201,9 +202,9 @@ export default function CoursesPage() {
       midterm_count: 1,
     },
     validate: {
-      department_id: (v) => (v ? null : "Bölüm seçin"),
-      code: (v) => (v.trim() ? null : "Ders kodu boş olamaz"),
-      name: (v) => (v.trim() ? null : "Ders adı boş olamaz"),
+      department_id: (v) => (v ? null : t.courses.pickDepartment),
+      code: (v) => (v.trim() ? null : t.courses.codeRequired),
+      name: (v) => (v.trim() ? null : t.courses.nameRequired),
     },
   });
 
@@ -241,7 +242,7 @@ export default function CoursesPage() {
         setCourses(await api.get<Course[]>(`/courses${qs ? `?${qs}` : ""}`));
       }
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
+      setLoadError(e instanceof ApiError ? e.message : t.common.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -317,7 +318,7 @@ export default function CoursesPage() {
     });
   }, [visible, seg, typeFilter, onlyActive, sortKey, sortDir]);
 
-  const countLabel = `${rows.length} ders`;
+  const countLabel = t.courses.courseCount(rows.length);
 
   // Drawer içeriği: tam listeden okunur (süzgeç değişse de açık ders kaybolmasın).
   const selected = useMemo(
@@ -341,16 +342,16 @@ export default function CoursesPage() {
     const out: { key: string; label: string; clear: () => void }[] = [];
     if (depFilter) {
       const d = depById[Number(depFilter)];
-      out.push({ key: "dep", label: d ? `${d.code} — ${d.name}` : "Bölüm",
+      out.push({ key: "dep", label: d ? `${d.code} — ${d.name}` : t.courses.department,
         clear: () => setDepFilter(null) });
     }
     if (lecFilter) {
       const l = lecturers.find((x) => String(x.id) === lecFilter);
-      out.push({ key: "lec", label: l ? lecturerLabel(l) : "Öğretim üyesi",
+      out.push({ key: "lec", label: l ? lecturerLabel(l) : t.courses.lecturer,
         clear: () => setLecFilter(null) });
     }
     if (typeFilter !== "all") out.push({ key: "type",
-      label: typeFilter === "required" ? "Zorunlu" : "Seçmeli",
+      label: typeFilter === "required" ? t.courses.required : t.courses.elective,
       clear: () => setTypeFilter("all") });
     if (semFilter) out.push({ key: "sem", label: t.enums.semester[semFilter as SemesterType],
       clear: () => setSemFilter(null) });
@@ -426,7 +427,7 @@ export default function CoursesPage() {
         if (seen.has(key)) {
           notifications.show({
             color: "red",
-            message: "Aynı grup (bölüm + sınıf + dönem) birden çok kez eklenmiş — tekrarları kaldırın.",
+            message: t.courses.duplicateCohort,
           });
           return;
         }
@@ -465,8 +466,8 @@ export default function CoursesPage() {
         // cohorts PATCH'te tam listeyle değişir (K-48).
         await api.patch<Course>(`/courses/${editingCourse.id}`, { ...ortak, cohorts: cohortsPayload });
         notifications.show({ color: "green", message: scheduleChanged
-          ? "Ders güncellendi — programa etki eden alan değiştiği için haftalık ve sınav yerleşimleri sıfırlandı. Yeniden yerleştirin."
-          : "Ders güncellendi" });
+          ? t.courses.updatedReset
+          : t.courses.updated });
       } else {
         // K-48: ortak dersse backend aynı kodlu mevcut ortak derse cohort ekleyip
         // onu döner (birleştirme); değilse yeni kayıt. Ek cohort'lar DÜZENLE'den
@@ -477,7 +478,7 @@ export default function CoursesPage() {
         });
         notifications.show({
           color: "green",
-          message: v.is_common ? "Ortak ders kaydedildi" : "Ders eklendi — şimdi şube ekleyin",
+          message: v.is_common ? t.courses.commonSaved : t.courses.created,
         });
         yeniDersId = created.id;
       }
@@ -492,7 +493,7 @@ export default function CoursesPage() {
       if (e instanceof ApiError && e.status === 409) {
         notifications.show({ color: "red", message: e.message, autoClose: 8000 });
       } else {
-        notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+        notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
       }
     } finally {
       setBusy(false);
@@ -512,7 +513,7 @@ export default function CoursesPage() {
     } catch (e) {
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDeletingCourse(null);
@@ -553,7 +554,7 @@ export default function CoursesPage() {
       {/* --- Başlık: ders/şube/ortak sayacı + İçe Aktar / Ders Ekle --- */}
       <Group justify="space-between" align="baseline" mb="md">
         <Group align="baseline" gap="xs">
-          <Title order={3}>Dersler</Title>
+          <Title order={3}>{t.courses.title}</Title>
           <Text size="sm" c="dimmed">{countLabel}</Text>
         </Group>
         {writableDepartments.length > 0 && (
@@ -563,10 +564,10 @@ export default function CoursesPage() {
               leftSection={<IconDownload size={16} />}
               onClick={() => setImportOpen(true)}
             >
-              İçe Aktar
+              {t.courses.importCta}
             </Button>
             <Button leftSection={<IconPlus size={16} />} onClick={() => openAddCourse()}>
-              Ders Ekle
+              {t.courses.add}
             </Button>
           </Group>
         )}
@@ -584,7 +585,7 @@ export default function CoursesPage() {
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" wrap="nowrap" align="center">
           <TextInput
-            placeholder="Kod veya ders adı ara"
+            placeholder={t.courses.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
@@ -596,12 +597,9 @@ export default function CoursesPage() {
             value={seg}
             onChange={(v) => setSeg(v as Seg)}
             data={[
-              { label: "Tümü", value: "all" },
-              { label: "Ortak", value: "common" },
-              { label: "1. sınıf", value: "1" },
-              { label: "2. sınıf", value: "2" },
-              { label: "3. sınıf", value: "3" },
-              { label: "4. sınıf", value: "4" },
+              { label: t.common.all, value: "all" },
+              { label: t.courses.common, value: "common" },
+              ...[1, 2, 3, 4].map((y) => ({ label: t.courses.yearN(y), value: String(y) })),
             ]}
             size="sm"
             style={{ flex: "none" }}
@@ -622,7 +620,7 @@ export default function CoursesPage() {
                 leftSection={<IconFilter size={16} />}
                 style={{ flex: "none" }}
               >
-                Filtre
+                {t.courses.filter}
                 {hasFilters && (
                   <Badge size="sm" circle ml={6} variant="filled">{chips.length}</Badge>
                 )}
@@ -631,8 +629,8 @@ export default function CoursesPage() {
             <Popover.Dropdown>
               <SimpleGrid cols={2} spacing="sm">
                 <Select
-                  label="Bölüm"
-                  data={[{ value: ALL, label: "Tüm bölümler" },
+                  label={t.courses.department}
+                  data={[{ value: ALL, label: t.courses.allDepartments },
                     ...departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))]}
                   value={depFilter ?? ALL}
                   onChange={(v) => setDepFilter(v === ALL || v === null ? null : v)}
@@ -641,8 +639,8 @@ export default function CoursesPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="Öğretim üyesi"
-                  data={[{ value: ALL, label: "Tüm öğretim üyeleri" },
+                  label={t.courses.lecturer}
+                  data={[{ value: ALL, label: t.courses.allLecturers },
                     ...lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))]}
                   value={lecFilter ?? ALL}
                   onChange={(v) => setLecFilter(v === ALL || v === null ? null : v)}
@@ -651,19 +649,19 @@ export default function CoursesPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="Ders türü"
+                  label={t.courses.courseType}
                   data={[
-                    { value: "all", label: "Tüm türler" },
-                    { value: "required", label: "Zorunlu" },
-                    { value: "elective", label: "Seçmeli" },
+                    { value: "all", label: t.courses.allTypes },
+                    { value: "required", label: t.courses.required },
+                    { value: "elective", label: t.courses.elective },
                   ]}
                   value={typeFilter}
                   onChange={(v) => setTypeFilter((v ?? "all") as TypeFilter)}
                   allowDeselect={false}
                 />
                 <Select
-                  label="Dönem"
-                  data={[{ value: ALL, label: "Tüm dönemler" },
+                  label={t.courses.semester}
+                  data={[{ value: ALL, label: t.courses.allSemesters },
                     ...(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
                       value: s, label: t.enums.semester[s],
                     }))]}
@@ -674,11 +672,11 @@ export default function CoursesPage() {
               </SimpleGrid>
               <Group justify="space-between" mt="md" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
                 <Checkbox
-                  label="Pasif dersleri gizle"
+                  label={t.courses.hideInactiveCourses}
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.currentTarget.checked)}
                 />
-                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>Kapat</Button>
+                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>{t.common.close}</Button>
               </Group>
             </Popover.Dropdown>
           </Popover>
@@ -700,7 +698,7 @@ export default function CoursesPage() {
             ))}
             {hasFilters && (
               <Button variant="subtle" size="compact-xs" onClick={clearAllFilters} style={{ flex: "none" }}>
-                Temizle
+                {t.courses.clear}
               </Button>
             )}
           </Group>
@@ -712,21 +710,21 @@ export default function CoursesPage() {
         <Text c="dimmed" mt="xl" ta="center">
           {search || hasFilters || seg !== "all"
             ? "Filtreye uyan ders yok."
-            : "Henüz ders yok."}
+            : t.courses.empty}
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={900} mt="sm">
         <Table striped highlightOnHover verticalSpacing="xs" withTableBorder layout="fixed">
           <Table.Thead>
             <Table.Tr>
-              {sortTh("Kod", "code", 104)}
-              {sortTh("Ders Adı", "name")}
-              {sortTh("Tür", "type", 116)}
-              {sortTh("AKTS", "ects", 70, "center")}
-              <Table.Th w={88} ta="center">T+U+L</Table.Th>
-              {sortTh("Sınıf", "year", 72, "center")}
-              {sortTh("Dönem", "sem", 84)}
-              {sortTh("Şube", "sections", 96, "center")}
+              {sortTh(t.courses.code, "code", 104)}
+              {sortTh(t.courses.name, "name")}
+              {sortTh(t.courses.type, "type", 116)}
+              {sortTh(t.courses.ects, "ects", 70, "center")}
+              <Table.Th w={88} ta="center">{t.courses.hours}</Table.Th>
+              {sortTh(t.courses.classYear, "year", 72, "center")}
+              {sortTh(t.courses.semester, "sem", 84)}
+              {sortTh(t.courses.sections, "sections", 96, "center")}
               <Table.Th w={34} />
             </Table.Tr>
           </Table.Thead>
@@ -773,31 +771,31 @@ export default function CoursesPage() {
       <Modal
         opened={courseModal}
         onClose={() => setCourseModal(false)}
-        title={editingCourse ? "Dersi Düzenle" : "Yeni Ders"}
+        title={editingCourse ? t.courses.edit : "Yeni Ders"}
       >
         <form onSubmit={courseForm.onSubmit(submitCourse)}>
           <Stack>
             <Select
-              label="Bölüm"
-              placeholder="Seçin"
+              label={t.courses.department}
+              placeholder={t.courses.pick}
               data={writableDepartments.map((d) => ({
                 value: String(d.id), label: `${d.code} — ${d.name}`,
               }))}
               disabled={!!editingCourse}
-              description={editingCourse ? "Dersin kimliği — değiştirilemez (kontrat §6)" : undefined}
+              description={editingCourse ? t.courses.identityLocked : undefined}
               {...courseForm.getInputProps("department_id")}
             />
             <Group grow>
               <Select
-                label="Sınıf"
-                data={YEARS.map((y) => ({ value: String(y), label: `${y}. sınıf` }))}
+                label={t.courses.classYear}
+                data={YEARS.map((y) => ({ value: String(y), label: t.courses.yearN(y) }))}
                 value={String(courseForm.values.year)}
                 onChange={(v) => courseForm.setFieldValue("year", Number(v))}
                 disabled={!!editingCourse}
                 allowDeselect={false}
               />
               <Select
-                label="Dönem"
+                label={t.courses.semester}
                 data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
                   value: s, label: t.enums.semester[s],
                 }))}
@@ -807,28 +805,28 @@ export default function CoursesPage() {
                 allowDeselect={false}
               />
             </Group>
-            <TextInput label="Ders Kodu" placeholder="CENG2001" {...courseForm.getInputProps("code")} />
-            <TextInput label="Ders Adı" placeholder="İstatistik" {...courseForm.getInputProps("name")} />
+            <TextInput label={t.courses.codeLabel} placeholder="CENG2001" {...courseForm.getInputProps("code")} />
+            <TextInput label={t.courses.nameLabel} placeholder={t.courses.namePlaceholder} {...courseForm.getInputProps("name")} />
             <Select
-              label="Ders Türü"
-              description="Seçmelide cohort çakışması uyarıdır, zorunluda submit engeli (K-05)"
+              label={t.courses.typeLabel}
+              description={t.courses.typeHelp}
               data={[
-                { value: "false", label: "Zorunlu" },
-                { value: "true", label: "Seçmeli" },
+                { value: "false", label: t.courses.required },
+                { value: "true", label: t.courses.elective },
               ]}
               allowDeselect={false}
               {...courseForm.getInputProps("is_elective")}
             />
             <Group grow>
-              <NumberInput label="Teori (T)" min={0} {...courseForm.getInputProps("hours_theory")} />
-              <NumberInput label="Uygulama (U)" min={0} {...courseForm.getInputProps("hours_practice")} />
-              <NumberInput label="Lab (L)" min={0} {...courseForm.getInputProps("hours_lab")} />
+              <NumberInput label={t.courses.theory} min={0} {...courseForm.getInputProps("hours_theory")} />
+              <NumberInput label={t.courses.practice} min={0} {...courseForm.getInputProps("hours_practice")} />
+              <NumberInput label={t.courses.lab} min={0} {...courseForm.getInputProps("hours_lab")} />
             </Group>
             {/* K-55: AKTS/ECTS kredisi. Opsiyonel — boş bırakılabilir (eski dersler
                 ve elle eklemede zorunlu değil; Bologna import'u doldurur). */}
             <NumberInput
-              label="AKTS"
-              description="Dersin AKTS/ECTS kredisi (opsiyonel)."
+              label={t.courses.ects}
+              description={t.courses.ectsHelp}
               min={0}
               placeholder="—"
               {...courseForm.getInputProps("ects")}
@@ -836,8 +834,8 @@ export default function CoursesPage() {
             {/* K-46: dersin vize sayısı. Birden fazlaysa sınav eklerken
                 "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
             <NumberInput
-              label="Vize sayısı"
-              description="Bir dersin 1-3 vizesi olabilir. Final ve bütünleme her zaman tektir."
+              label={t.courses.midtermCount}
+              description={t.courses.midtermHelp}
               min={1} max={3} clampBehavior="strict"
               {...courseForm.getInputProps("midterm_count")}
             />
@@ -848,18 +846,18 @@ export default function CoursesPage() {
               || courseForm.values.hours_practice > 0
               || courseForm.values.hours_lab > 0) && (
               <Stack gap={6}>
-                <Text size="xs" c="dimmed">Online bileşenler</Text>
+                <Text size="xs" c="dimmed">{t.courses.onlineComponents}</Text>
                 <Group gap="lg">
                   {courseForm.values.hours_theory > 0 && (
-                    <Checkbox size="xs" label="Teori online"
+                    <Checkbox size="xs" label={t.courses.theoryOnline}
                       {...courseForm.getInputProps("theory_online", { type: "checkbox" })} />
                   )}
                   {courseForm.values.hours_practice > 0 && (
-                    <Checkbox size="xs" label="Uygulama online"
+                    <Checkbox size="xs" label={t.courses.practiceOnline}
                       {...courseForm.getInputProps("practice_online", { type: "checkbox" })} />
                   )}
                   {courseForm.values.hours_lab > 0 && (
-                    <Checkbox size="xs" label="Lab online"
+                    <Checkbox size="xs" label={t.courses.labOnline}
                       {...courseForm.getInputProps("lab_online", { type: "checkbox" })} />
                   )}
                 </Group>
@@ -868,9 +866,9 @@ export default function CoursesPage() {
             {/* K-48: ortak (servis) ders — Fizik/Matematik gibi birden çok
                 bölümün aldığı ders. Açılınca aldığı diğer cohort'lar (bölüm+
                 sınıf+dönem) girilir; motor çakışmayı bu cohort'lara karşı da bakar. */}
-            <Divider label="Ortak ders" labelPosition="left" mt="xs" />
+            <Divider label={t.courses.commonCourse} labelPosition="left" mt="xs" />
             <Switch
-              label="Ortak ders"
+              label={t.courses.commonCourse}
               checked={courseForm.values.is_common}
               onChange={(e) => courseForm.setFieldValue("is_common", e.currentTarget.checked)}
             />
@@ -879,15 +877,13 @@ export default function CoursesPage() {
                 kaydettikten sonra Düzenle'den yönetilir. */}
             {!editingCourse && courseForm.values.is_common && (
               <Text size="xs" c="dimmed">
-                Aynı kodlu bir ortak ders varsa bu kayıt onun altında toplanır.
-                Aldığı diğer grupları kaydettikten sonra Düzenle'den ekleyebilirsiniz.
+                {t.courses.commonAddHint}
               </Text>
             )}
             {editingCourse && courseForm.values.is_common && (
               <Stack gap="xs">
                 <Text size="xs" c="dimmed">
-                  Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi
-                  bölümünü eklemeye gerek yok — zaten kapsanıyor.
+                  {t.courses.cohortHint}
                 </Text>
                 {courseForm.values.cohorts.map((row, i) => {
                   // K-48: benzersizlik (bölüm+yıl+dönem) ÜÇLÜSÜ üzerinde. Tüm
@@ -909,8 +905,8 @@ export default function CoursesPage() {
                   <div key={i}>
                   <Group gap="xs" wrap="nowrap" align="flex-end">
                     <Select
-                      label={i === 0 ? "Bölüm" : undefined}
-                      placeholder="Bölüm"
+                      label={i === 0 ? t.courses.department : undefined}
+                      placeholder={t.courses.department}
                       style={{ flex: 1 }}
                       searchable
                       error={dup}
@@ -921,7 +917,7 @@ export default function CoursesPage() {
                         courseForm.setFieldValue(`cohorts.${i}.department_id`, val ?? "")}
                     />
                     <Select
-                      label={i === 0 ? "Sınıf" : undefined}
+                      label={i === 0 ? t.courses.classYear : undefined}
                       w={90}
                       error={dup}
                       data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
@@ -931,7 +927,7 @@ export default function CoursesPage() {
                       allowDeselect={false}
                     />
                     <Select
-                      label={i === 0 ? "Dönem" : undefined}
+                      label={i === 0 ? t.courses.semester : undefined}
                       w={100}
                       error={dup}
                       data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
@@ -945,15 +941,14 @@ export default function CoursesPage() {
                     <ActionIcon
                       variant="subtle" color="red" mb={4}
                       onClick={() => courseForm.removeListItem("cohorts", i)}
-                      aria-label="Cohort'u kaldır"
+                      aria-label={t.courses.removeCohort}
                     >
                       <IconTrash size={16} />
                     </ActionIcon>
                   </Group>
                   {dup && (
                     <Text size="xs" c="orange" mt={4}>
-                      Bu grup zaten ekli (bölüm + sınıf + dönem). Farklı bir
-                      sınıf/dönem ya da bölüm seçin.
+                      {t.courses.cohortDup}
                     </Text>
                   )}
                   </div>
@@ -965,7 +960,7 @@ export default function CoursesPage() {
                     department_id: "", year: 1, semester: "FALL" as SemesterType,
                   })}
                 >
-                  + Cohort ekle
+                  {t.courses.addCohort}
                 </Button>
               </Stack>
             )}
@@ -977,7 +972,7 @@ export default function CoursesPage() {
       </Modal>
 
       {/* --- Ders silme onayı --- */}
-      <Modal opened={deletingCourse !== null} onClose={() => setDeletingCourse(null)} title="Dersi sil">
+      <Modal opened={deletingCourse !== null} onClose={() => setDeletingCourse(null)} title={t.courses.deleteModal}>
         <Text>
           <b>{deletingCourse?.code}</b> — {deletingCourse?.name} kalıcı olarak silinecek.
         </Text>
@@ -985,8 +980,8 @@ export default function CoursesPage() {
           Şubesi veya sınavı olan ders silinemez; onun yerine düzenleyip pasife alın.
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeletingCourse(null)}>Vazgeç</Button>
-          <Button color="red" loading={busy} onClick={deleteCourse}>Sil</Button>
+          <Button variant="default" onClick={() => setDeletingCourse(null)}>{t.common.dismiss}</Button>
+          <Button color="red" loading={busy} onClick={deleteCourse}>{t.common.delete}</Button>
         </Group>
       </Modal>
     </>
@@ -1037,9 +1032,9 @@ function CourseDrawerBody({
       section_no: 1, lecturer_id: "", expected_students: 30,
     },
     validate: {
-      lecturer_id: (v) => (v ? null : "Öğretim üyesi seçin"),
-      section_no: (v) => (v > 0 ? null : "Şube no 0'dan büyük olmalı"),
-      expected_students: (v) => (v > 0 ? null : "Beklenen öğrenci 0'dan büyük olmalı"),
+      lecturer_id: (v) => (v ? null : t.courses.pickLecturer),
+      section_no: (v) => (v > 0 ? null : t.courses.sectionNoPositive),
+      expected_students: (v) => (v > 0 ? null : t.courses.expectedPositive),
     },
   });
 
@@ -1090,16 +1085,16 @@ function CourseDrawerBody({
     try {
       if (editing) {
         await api.patch<CourseSection>(`/course-sections/${editing.id}`, payload);
-        notifications.show({ color: "green", message: "Şube güncellendi" });
+        notifications.show({ color: "green", message: t.courses.sectionUpdated });
       } else {
         await api.post<CourseSection>(`/courses/${course.id}/sections`, payload);
-        notifications.show({ color: "green", message: "Şube eklendi" });
+        notifications.show({ color: "green", message: t.courses.sectionCreated });
       }
       closeForm();
       await onChanged();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) form.setFieldError("section_no", e.message);
-      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     } finally {
       setBusy(false);
     }
@@ -1110,14 +1105,14 @@ function CourseDrawerBody({
     setBusy(true);
     try {
       await api.delete(`/course-sections/${deleting.id}`);
-      notifications.show({ color: "green", message: "Şube silindi" });
+      notifications.show({ color: "green", message: t.courses.sectionDeleted });
       setDeleting(null);
       await onChanged();
     } catch (e) {
       // 409 = şubenin haftalık program girişi var
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDeleting(null);
@@ -1135,10 +1130,10 @@ function CourseDrawerBody({
   if (course.lab_online) online.push("Lab");
 
   const typeBadge = course.is_common
-    ? <Badge variant="light" color="teal" size="sm">Ortak</Badge>
+    ? <Badge variant="light" color="teal" size="sm">{t.courses.common}</Badge>
     : course.is_elective
-      ? <Badge variant="light" color="orange" size="sm">Seçmeli</Badge>
-      : <Badge variant="light" color="gray" size="sm">Zorunlu</Badge>;
+      ? <Badge variant="light" color="orange" size="sm">{t.courses.elective}</Badge>
+      : <Badge variant="light" color="gray" size="sm">{t.courses.required}</Badge>;
 
   return (
     <Stack gap={0} h="100%">
@@ -1149,11 +1144,11 @@ function CourseDrawerBody({
           <Group gap="xs" align="center">
             <Text fw={700} size="lg" style={{ fontVariantNumeric: "tabular-nums" }}>{course.code}</Text>
             {typeBadge}
-            {!course.active && <Badge color="gray" size="sm">Pasif</Badge>}
+            {!course.active && <Badge color="gray" size="sm">{t.courses.inactive}</Badge>}
           </Group>
           <Text size="sm" mt={2}>{course.name}</Text>
         </div>
-        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
+        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label={t.common.close}>
           <IconX size={18} />
         </ActionIcon>
       </Group>
@@ -1162,26 +1157,26 @@ function CourseDrawerBody({
       <Box style={{ flex: 1, overflowY: "auto" }} p="md">
         <Stack gap="lg">
           <SimpleGrid cols={4} spacing="xs">
-            <Stat label="AKTS" value={course.ects == null ? "—" : String(course.ects)} />
-            <Stat label="T+U+L" value={`${course.hours_theory}+${course.hours_practice}+${course.hours_lab}`} />
+            <Stat label={t.courses.ects} value={course.ects == null ? "—" : String(course.ects)} />
+            <Stat label={t.courses.hours} value={`${course.hours_theory}+${course.hours_practice}+${course.hours_lab}`} />
             <Stat
-              label="Sınıf / Dönem"
-              value={course.is_common ? "çok gruplu" : `${course.year}. / ${t.enums.semester[course.semester]}`}
+              label={t.courses.yearSemester}
+              value={course.is_common ? t.courses.multiCohort : `${course.year}. / ${t.enums.semester[course.semester]}`}
             />
-            <Stat label="Vize" value={`${course.midterm_count} vize`} />
+            <Stat label={t.courses.midterm} value={t.courses.midtermN(course.midterm_count)} />
           </SimpleGrid>
 
           {online.length > 0 && (
             <Group gap={8} c="dimmed">
               <IconWifi size={16} />
-              <Text size="sm">Online bileşen: {online.join(", ")}</Text>
+              <Text size="sm">{t.courses.onlineComponent(online.join(", "))}</Text>
             </Group>
           )}
 
           {/* K-48: ortak dersin ait olduğu TÜM cohort'lar (birincil + ek). */}
           {course.is_common && (
             <div>
-              <Text size="xs" fw={600} c="dimmed" mb={8}>ALDIĞI GRUPLAR</Text>
+              <Text size="xs" fw={600} c="dimmed" mb={8}>{t.courses.takenBy}</Text>
               <Group gap={6}>
                 <Badge size="sm" variant="light" color="teal" style={{ textTransform: "none" }}>
                   {depName ? `${depName} · ` : ""}{course.year}. sınıf · {t.enums.semester[course.semester]}
@@ -1198,11 +1193,11 @@ function CourseDrawerBody({
           {/* Şubeler */}
           <div>
             <Group justify="space-between" mb={8}>
-              <Text size="xs" fw={600} c="dimmed">ŞUBELER</Text>
+              <Text size="xs" fw={600} c="dimmed">{t.courses.sectionsTitle}</Text>
               {canEdit && !formOpen && (
                 <Button size="compact-xs" variant="light" leftSection={<IconPlus size={14} />}
                   onClick={openNew}>
-                  Şube ekle
+                  {t.courses.addSection}
                 </Button>
               )}
             </Group>
@@ -1226,12 +1221,12 @@ function CourseDrawerBody({
                       </Group>
                       {canEdit && (
                         <Group gap={2} wrap="nowrap">
-                          <Tooltip label="Düzenle">
+                          <Tooltip label={t.common.edit}>
                             <ActionIcon variant="subtle" size="sm" onClick={() => startEdit(s)}>
                               <IconPencil size={15} />
                             </ActionIcon>
                           </Tooltip>
-                          <Tooltip label="Sil">
+                          <Tooltip label={t.common.delete}>
                             <ActionIcon variant="subtle" size="sm" color="red" onClick={() => setDeleting(s)}>
                               <IconTrash size={15} />
                             </ActionIcon>
@@ -1253,7 +1248,7 @@ function CourseDrawerBody({
                       {/* K-59: bu liste GET /weekly-entries'ten gelir; o uç yalnız
                           yayındakileri döner — hepsi yayındadır (yeşil rozet). */}
                       {entries.length === 0 ? (
-                        <Text size="xs" c="orange.7">programda değil</Text>
+                        <Text size="xs" c="orange.7">{t.courses.notScheduled}</Text>
                       ) : (
                         <Group gap={4}>
                           {entries.map((e) => (
@@ -1271,7 +1266,7 @@ function CourseDrawerBody({
               {sections.length === 0 && !formOpen && (
                 <Paper withBorder radius="md" p="md" style={{ borderStyle: "dashed" }}>
                   <Text size="sm" c="dimmed" ta="center">
-                    Henüz şube yok — ders programa girmeden şube eklenmeli.
+                    {t.courses.noSectionsYet}
                   </Text>
                 </Paper>
               )}
@@ -1282,19 +1277,19 @@ function CourseDrawerBody({
                   <form onSubmit={form.onSubmit(submit)}>
                     <Stack gap="xs">
                       <Text fw={600} size="sm">
-                        {editing ? `Düzenle: Şube ${editing.section_no}` : "Yeni şube"}
+                        {editing ? t.courses.editSectionNamed(editing.section_no) : t.courses.newSection}
                       </Text>
                       <Group grow>
-                        <NumberInput label="Şube No" min={1} {...form.getInputProps("section_no")} />
-                        <NumberInput label="Beklenen Öğrenci" min={1}
+                        <NumberInput label={t.courses.sectionNo} min={1} {...form.getInputProps("section_no")} />
+                        <NumberInput label={t.courses.expectedStudents} min={1}
                           {...form.getInputProps("expected_students")} />
                       </Group>
                       <Select
-                        label="Öğretim Üyesi"
-                        placeholder="Seçin"
+                        label={t.courses.lecturerLabel}
+                        placeholder={t.courses.pick}
                         searchable
                         filter={turkishOptionsFilter}
-                        nothingFoundMessage="Bulunamadı"
+                        nothingFoundMessage={t.courses.notFound}
                         data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))}
                         {...form.getInputProps("lecturer_id")}
                       />
@@ -1304,7 +1299,7 @@ function CourseDrawerBody({
                         <Button type="submit" size="xs" loading={busy}>
                           {editing ? "Kaydet" : "Ekle"}
                         </Button>
-                        <Button size="xs" variant="default" onClick={closeForm}>Vazgeç</Button>
+                        <Button size="xs" variant="default" onClick={closeForm}>{t.common.dismiss}</Button>
                       </Group>
                     </Stack>
                   </form>
@@ -1320,20 +1315,20 @@ function CourseDrawerBody({
         {canEdit && (
           <Button size="sm" leftSection={<IconPencil size={15} />}
             onClick={() => onEditCourse(course)}>
-            Dersi düzenle
+            {t.courses.editShort}
           </Button>
         )}
         <Box style={{ flex: 1 }} />
         {canEdit && (
           <Button size="sm" variant="subtle" color="red" leftSection={<IconTrash size={15} />}
             onClick={() => onDeleteCourse(course)}>
-            Sil
+            {t.common.delete}
           </Button>
         )}
       </Group>
 
       {/* Şube silme onayı */}
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Şubeyi sil">
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title={t.courses.deleteSection}>
         <Text>
           <b>Şube {deleting?.section_no}</b> ({deleting && lecturerLabel(deleting.lecturer)}) silinecek.
         </Text>
@@ -1341,8 +1336,8 @@ function CourseDrawerBody({
           Haftalık program girişi olan şube silinemez; önce girişleri kaldırın.
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeleting(null)}>Vazgeç</Button>
-          <Button color="red" loading={busy} onClick={remove}>Sil</Button>
+          <Button variant="default" onClick={() => setDeleting(null)}>{t.common.dismiss}</Button>
+          <Button color="red" loading={busy} onClick={remove}>{t.common.delete}</Button>
         </Group>
       </Modal>
     </Stack>

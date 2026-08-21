@@ -350,7 +350,7 @@ export default function DepartmentsPage() {
                 <div>
                   <Text fw={600} mb="sm">{t.departments.overview}</Text>
                   <Grid gutter="md">
-                    <KpiCard icon={IconBook2} label="Dersler" value={st?.courses ?? 0}
+                    <KpiCard icon={IconBook2} label={t.departments.courses} value={st?.courses ?? 0}
                       onClick={() => navigate(`/courses?department_id=${selected.id}`)} />
                     <KpiCard icon={IconSchool} label={t.departments.lecturers} value={st?.lecturers ?? 0}
                       onClick={() => navigate(`/lecturers?department_id=${selected.id}`)} />
@@ -391,8 +391,8 @@ export default function DepartmentsPage() {
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th>{t.common.name}</Table.Th>
-                            <Table.Th>Rol</Table.Th>
-                            <Table.Th>Yetkiler</Table.Th>
+                            <Table.Th>{t.departments.role}</Table.Th>
+                            <Table.Th>{t.departments.permissions}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
@@ -405,7 +405,7 @@ export default function DepartmentsPage() {
                                   <Group gap={6} wrap="nowrap">
                                     <Text size="sm" fw={500} lineClamp={1}>{m.name}</Text>
                                     {m.status !== "ACTIVE" && (
-                                      <Badge size="xs" variant="light" color="gray">Pasif</Badge>
+                                      <Badge size="xs" variant="light" color="gray">{t.departments.inactive}</Badge>
                                     )}
                                   </Group>
                                 </Table.Td>
@@ -454,7 +454,7 @@ export default function DepartmentsPage() {
                       allowed={canWriteIn(user, "can_manage_courses", selected.id)}
                       tip={t.departments.addCourseDenied}
                       icon={<IconBook2 size={16} />}
-                      label="Ders Ekle"
+                      label={t.departments.addCourse}
                       onClick={() => navigate(`/courses?add=1&department_id=${selected.id}`)}
                     />
                     <LockedAction

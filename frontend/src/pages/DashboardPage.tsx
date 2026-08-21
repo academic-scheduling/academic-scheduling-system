@@ -90,7 +90,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <Title order={3} mb="md">Dashboard</Title>
+      <Title order={3} mb="md">{t.nav.dashboard}</Title>
 
       {/* 4×2 grid: üst sıra "ne var" (kaynaklar), alt sıra "kim ve ne oluyor".
           Dar ekranda 2 sütuna düşer — kart içeriği tek satır olduğu için

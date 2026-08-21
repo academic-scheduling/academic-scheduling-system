@@ -88,7 +88,7 @@ export default function AuditLogSection() {
 
   return (
     <>
-      <Title order={4} mt="xl" mb="sm">İşlem Kayıtları</Title>
+      <Title order={4} mt="xl" mb="sm">{t.audit.title}</Title>
 
       <Group mb="sm">
         <Select
@@ -136,12 +136,12 @@ export default function AuditLogSection() {
               <Table verticalSpacing="xs" highlightOnHover layout="fixed">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th w={COL.zaman}>Zaman</Table.Th>
-                    <Table.Th w={COL.kim}>Kim</Table.Th>
-                    <Table.Th w={COL.eylem}>Eylem</Table.Th>
-                    <Table.Th w={COL.tur}>Tür</Table.Th>
-                    <Table.Th w={COL.kayit}>Kayıt</Table.Th>
-                    <Table.Th w={COL.degisiklik}>Değişiklik</Table.Th>
+                    <Table.Th w={COL.zaman}>{t.audit.time}</Table.Th>
+                    <Table.Th w={COL.kim}>{t.audit.who}</Table.Th>
+                    <Table.Th w={COL.eylem}>{t.audit.action}</Table.Th>
+                    <Table.Th w={COL.tur}>{t.audit.entityType}</Table.Th>
+                    <Table.Th w={COL.kayit}>{t.audit.record}</Table.Th>
+                    <Table.Th w={COL.degisiklik}>{t.audit.change}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -202,7 +202,7 @@ export default function AuditLogSection() {
               </Table>
             </Table.ScrollContainer>
             {data.items.length === 0 && (
-              <Text c="dimmed" size="sm" p="md">Filtreye uyan işlem kaydı yok.</Text>
+              <Text c="dimmed" size="sm" p="md">{t.audit.noMatch}</Text>
             )}
           </Paper>
 

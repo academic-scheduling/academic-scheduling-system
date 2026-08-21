@@ -11,9 +11,20 @@
 // değil BOŞ STRING yapar; ?? yalnız null/undefined yakaladığı için adres boşa
 // düşer ve tüm istekler yanlış yola gider. Sondaki "/" da temizleniyor, yoksa
 // "https://api.x/" + "/courses" çift eğik çizgi üretir.
+import { readLang } from "../i18n/lang";
+
 const RAW_BASE = import.meta.env.VITE_API_BASE_URL?.trim();
 const BASE_URL = RAW_BASE ? RAW_BASE.replace(/\/+$/, "") : "/api";
 const TOKEN_KEY = "access_token";
+
+// K-79: sunucu metinlerinin dili (hata mesajları, çakışma cümleleri, export
+// başlıkları) bu başlıkla belirlenir. Tek yerde kuruluyor ki `request()` ve
+// `download()` birbirinden ayrışmasın — export'un dili sessizce Türkçe kalırdı.
+// localStorage'dan HER İSTEKTE okunuyor (modül yüklenirken bir kez değil):
+// kullanıcı dili değiştirdiği anda sonraki istek yeni dili taşısın.
+function langHeaders(): Record<string, string> {
+  return { "Accept-Language": readLang() };
+}
 
 // --- Token saklama ---
 // localStorage kararı SADECE bu üç fonksiyonda yaşıyor; sessionStorage'a
@@ -72,7 +83,7 @@ function normalizeDetail(body: unknown): string | null {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = langHeaders();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -127,7 +138,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 // Dosya adı sunucunun Content-Disposition başlığından alınır (tek kaynak).
 async function download(path: string): Promise<void> {
   const token = getToken();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = langHeaders();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   let response: Response;

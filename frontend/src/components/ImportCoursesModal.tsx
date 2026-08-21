@@ -8,9 +8,11 @@ import {
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api/client";
-import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
+import { lecturerLabel } from "../api/types";
 import { turkishOptionsFilter } from "../utils/selectSearch";
 import type { Department, Lecturer, SemesterType } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /** Bir dersin import edilebilir alanlari — parse ciktisi = commit girisi. */
 type CourseFields = {
@@ -62,9 +64,12 @@ type Props = {
   onImported: () => void;             // başarıda listeyi yenile
 };
 
-const SEMESTER_OPTIONS = (["FALL", "SPRING", "SUMMER"] as SemesterType[]).map(
-  (s) => ({ value: s, label: SEMESTER_LABELS[s] }),
-);
+/** K-79: modül düzeyinde SABİT olamaz — sözlük dile göre değişiyor, modül
+ *  düzeyi ise bir kez çalışır ve hook çağıramaz. Sözlüğü alan bir fonksiyon. */
+const semesterOptions = (t: Dict) =>
+  (["FALL", "SPRING", "SUMMER"] as SemesterType[]).map(
+    (s) => ({ value: s, label: t.enums.semester[s] }),
+  );
 
 /** Ad karşılaştırma anahtarı: DEĞİŞMEZ küçük harf + tek boşluk. Türkçe locale
  *  KULLANILMAZ: "I"→"ı" / "i"→"i" ayrımı İngilizce adları bozardı ("PRINCIPLES"
@@ -89,6 +94,7 @@ function duplicateNameSet(list: { name: string }[]): Set<string> {
 export default function ImportCoursesModal({
   opened, onClose, departments, defaultDepartmentId, onImported,
 }: Props) {
+  const t = useT();
   const [depId, setDepId] = useState<string | null>(defaultDepartmentId);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -427,6 +433,7 @@ function RowView({
   onPatch: (patch: Partial<CourseFields>) => void;
   onPick: (instructorIdx: number, lecturerId: number | null) => void;
 }) {
+  const t = useT();
   return (
     <>
       <Table.Tr opacity={c.has_sections ? 0.5 : 1}>
@@ -452,7 +459,7 @@ function RowView({
         <Table.Td>{c.code}</Table.Td>
         <Table.Td>{c.name}</Table.Td>
         <Table.Td>{c.year}. sınıf</Table.Td>
-        <Table.Td>{SEMESTER_LABELS[c.semester]}</Table.Td>
+        <Table.Td>{t.enums.semester[c.semester]}</Table.Td>
         <Table.Td>{c.hours_theory}+{c.hours_practice}+{c.hours_lab}</Table.Td>
         <Table.Td>
           <Group gap={4} wrap="nowrap">
@@ -504,7 +511,7 @@ function RowView({
               />
               <Select
                 label="Dönem" size="xs" w={100}
-                data={SEMESTER_OPTIONS}
+                data={semesterOptions(t)}
                 value={c.semester}
                 onChange={(v) => v && onPatch({ semester: v as SemesterType })}
                 allowDeselect={false}
@@ -565,6 +572,7 @@ function InstructorCell({
   lecturerOptions: { value: string; label: string }[];
   onPick: (instructorIdx: number, lecturerId: number | null) => void;
 }) {
+  const t = useT();
   if (instructors.length === 0) {
     return <Text size="xs" c="dimmed">hoca bulunamadı</Text>;
   }

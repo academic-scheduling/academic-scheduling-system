@@ -5,9 +5,9 @@ import {
 } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconHistory } from "@tabler/icons-react";
 import { api } from "../api/client";
-import { SEMESTER_LABELS } from "../api/types";
 import type { DraftKind, ScheduleChange } from "../api/types";
 import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
 
 function tarih(s: string | null): string {
   if (!s) return "";
@@ -37,6 +37,7 @@ export default function ChangeFeed({
    *  program sayfasına yönlendirilir (kind'e göre /weekly ya da /exams). */
   onShow?: (c: ScheduleChange) => void;
 }) {
+  const t = useT();
   const [items, setItems] = useState<ScheduleChange[] | null>(null);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -77,7 +78,7 @@ export default function ChangeFeed({
               style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 6 }}>
               <Group gap={8} wrap="wrap" style={{ minWidth: 0 }}>
                 <Text size="sm" fw={500}>
-                  {c.department_name} · {c.year}. sınıf · {SEMESTER_LABELS[c.semester]}
+                  {c.department_name} · {c.year}. sınıf · {t.enums.semester[c.semester]}
                 </Text>
                 <Badge size="xs" variant="light"
                   color={c.kind === "EXAM" ? "grape" : "teal"}>

@@ -3,10 +3,11 @@ import {
   Alert, Badge, Group, Loader, Pagination, Paper, Select, Table, Text, Title,
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
-import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_LABELS } from "../api/types";
+import { AUDIT_ACTION_LABELS } from "../api/types";
 import type {
   AuditAction, AuditEntityType, AuditLogPage, ManagedUser,
 } from "../api/types";
+import { useT } from "../i18n";
 
 const ALL = "__all__";
 const PAGE_SIZE = 7;
@@ -41,6 +42,7 @@ const bicimle = (iso: string) =>
  *  hepsini çekip istemcide dilimlemek kısa sürede taşardı.
  */
 export default function AuditLogSection() {
+  const t = useT();
   const [data, setData] = useState<AuditLogPage | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -112,8 +114,8 @@ export default function AuditLogSection() {
         <Select
           data={[
             { value: ALL, label: "Tüm türler" },
-            ...(Object.keys(AUDIT_ENTITY_LABELS) as AuditEntityType[]).map((t) => ({
-              value: t, label: AUDIT_ENTITY_LABELS[t],
+            ...(Object.keys(t.enums.auditEntity) as AuditEntityType[]).map((tur) => ({
+              value: tur, label: t.enums.auditEntity[tur],
             })),
           ]}
           value={entityFilter}
@@ -163,7 +165,7 @@ export default function AuditLogSection() {
                         </Table.Td>
                         <Table.Td>
                           <Text size="sm">
-                            {AUDIT_ENTITY_LABELS[k.entity_type as AuditEntityType]
+                            {t.enums.auditEntity[k.entity_type as AuditEntityType]
                               ?? k.entity_type}
                           </Text>
                         </Table.Td>

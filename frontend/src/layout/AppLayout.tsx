@@ -251,7 +251,7 @@ export default function AppLayout() {
                 onClick={logout}
                 justify="flex-start"
               >
-                Çıkış
+                {t.layout.logout}
               </Button>
             </Stack>
           )}

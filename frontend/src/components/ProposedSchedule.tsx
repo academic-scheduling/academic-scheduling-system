@@ -1,9 +1,10 @@
 import { Fragment, useMemo } from "react";
 import { Badge, Group, ScrollArea, Stack, Text } from "@mantine/core";
-import { EXAM_TYPE_LABELS, lecturerLabel } from "../api/types";
+import { lecturerLabel } from "../api/types";
 import type { DraftDiffItem, Exam, WeeklyEntry } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { BORDER, GRID_CELL_BG, HEADER_BG, TEXT_MUTED } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
 
 /** Onay/inceleme ekranlarının "önerilen program" görüntüsü (K-60).
  *
@@ -32,6 +33,7 @@ export function ProposedExamList({ exams, changed }: {
   exams: Exam[];
   changed: DraftDiffItem[];
 }) {
+  const t = useT();
   const vurgu = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of changed) {
@@ -88,7 +90,7 @@ export function ProposedExamList({ exams, changed }: {
                       <Group gap={6} wrap="nowrap">
                         <Text fz={13} fw={600} truncate>{e.course.code}</Text>
                         <Badge size="xs" variant="default">
-                          {EXAM_TYPE_LABELS[e.exam_type]}
+                          {t.enums.examType[e.exam_type]}
                           {e.exam_type === "MIDTERM" && e.exam_index > 1
                             ? ` ${e.exam_index}` : ""}
                         </Badge>
@@ -122,6 +124,7 @@ export function ProposedGrid({ entries, changed }: {
   entries: WeeklyEntry[];
   changed: DraftDiffItem[];
 }) {
+  const t = useT();
   // Vurgu YERLEŞİME bağlanır: şube + hedef gün + hedef slot.
   const vurgu = useMemo(() => {
     const m = new Map<string, string>();

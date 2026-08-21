@@ -144,11 +144,6 @@ export type BuildingRef = {
 /** K-31 · dersliğin fiziksel türü. Motor okumaz; bilgi + filtre. */
 export type RoomType = "CLASSROOM" | "AMPHI" | "LAB";
 
-export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
-  CLASSROOM: "Sınıf",          // ekranın adı "Derslikler" olduğu için tip "Sınıf"
-  AMPHI: "Amfi",
-  LAB: "Laboratuvar",
-};
 
 /** Kontrat §5 · GET /classrooms elemanı */
 export type Classroom = {
@@ -166,11 +161,6 @@ export type Classroom = {
 
 export type SemesterType = "FALL" | "SPRING" | "SUMMER";
 
-export const SEMESTER_LABELS: Record<SemesterType, string> = {
-  FALL: "Güz",
-  SPRING: "Bahar",
-  SUMMER: "Yaz",
-};
 
 export type SessionType = "THEORY" | "PRACTICE" | "LAB";
 export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
@@ -195,9 +185,6 @@ export type WeeklyEntry = {
 /** Kontrat §8 · Sınav türleri (K-16: sınav DERS düzeyindedir, şubeden bağımsız) */
 export type ExamType = "MIDTERM" | "FINAL" | "MAKEUP";
 
-export const EXAM_TYPE_LABELS: Record<ExamType, string> = {
-  MIDTERM: "Vize", FINAL: "Final", MAKEUP: "Bütünleme",
-};
 
 /** Sınav cevabının içine gömülen kısa ders gösterimi. */
 export type CourseRef = { id: number; code: string; name: string };
@@ -456,18 +443,6 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: st
   RESET_PASSWORD: { label: "Şifresini yeniledi", color: "grape" },
 };
 
-/** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */
-export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
-  department: "Bölüm",
-  building: "Bina",
-  classroom: "Derslik",
-  lecturer: "Öğretim üyesi",
-  course: "Ders",
-  course_section: "Şube",
-  exam: "Sınav",
-  weekly_entry: "Haftalık giriş",
-  user: "Kullanıcı",
-};
 
 
 /* ==================================================================

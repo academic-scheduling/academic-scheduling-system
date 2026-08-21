@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ActionIcon, Anchor, Badge, Group, Popover, Stack, Text } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
-import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
+import { lecturerLabel } from "../api/types";
 import type { Course } from "../api/types";
+import { useT } from "../i18n";
 
 /** Programdaki (haftalık/sınav) ders listelerinde dersin sağındaki "i" — tıklayınca
  *  dersin özetini + ŞUBE bilgisini pop-up'ta gösterir; ayrıntı için Dersler
@@ -24,6 +25,7 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
    *  ise (Haftalık) şube listesi gösterilir. */
   exams?: CourseInfoExam[];
 }) {
+  const t = useT();
   const sections = [...course.sections]
     .filter((s) => s.active)
     .sort((a, b) => a.section_no - b.section_no);
@@ -69,7 +71,7 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
           <Text fz="xs">
             {course.is_common
               ? `Ortak ders · T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`
-              : `${course.year}. sınıf · ${SEMESTER_LABELS[course.semester]} · `
+              : `${course.year}. sınıf · ${t.enums.semester[course.semester]} · `
                 + `T${course.hours_theory}+U${course.hours_practice}+L${course.hours_lab}`}
             {course.ects != null ? ` · ${course.ects} AKTS` : ""}
           </Text>

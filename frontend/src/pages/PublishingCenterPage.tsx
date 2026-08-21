@@ -17,14 +17,15 @@ import { useAuth } from "../auth/AuthContext";
 import { ProposedExamList, ProposedGrid } from "../components/ProposedSchedule";
 import { examPlacementText, placementText } from "../components/DiffTable";
 import {
-  DRAFT_KIND_LABELS, EXAM_TYPE_LABELS, SEMESTER_LABELS,
-} from "../api/types";
+  DRAFT_KIND_LABELS, } from "../api/types";
 import type {
   ConflictResult, ConflictScan, DraftApproveResponse, DraftDiffItem,
   DraftKind, DraftReview, DraftStaleness, DraftStatus, Exam, ScheduleDraft,
   SemesterType, WeeklyEntry,
 } from "../api/types";
 import { BORDER, TEXT_MUTED } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /* ==================================================================
  * K-77 · Yayın Merkezi — Taslaklarım + Onay Bekleyenler tek ekranda
@@ -87,8 +88,8 @@ function tarih(s: string | null): string {
   });
 }
 
-function cohortAdi(d: { department_name: string; year: number; semester: SemesterType }): string {
-  return `${d.department_name} · ${d.year}. sınıf · ${SEMESTER_LABELS[d.semester]}`;
+function cohortAdi(d: { department_name: string; year: number; semester: SemesterType }, t: Dict): string {
+  return `${d.department_name} · ${d.year}. sınıf · ${t.enums.semester[d.semester]}`;
 }
 
 /** Sıralama anahtarı: bekleyende gönderim, ötekilerde açılış zamanı. */
@@ -325,6 +326,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   draft: ScheduleDraft; isApprover: boolean; meId: number;
   onChanged: () => void; onNavigate: (to: string) => void;
 }) {
+  const t = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -430,7 +432,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
       {/* Başlık + durum + adım çubuğu */}
       <div style={{ paddingBottom: 12, marginBottom: 16, borderBottom: `1px solid ${BORDER}` }}>
         <Group gap={9} align="center">
-          <Text fz={20} fw={700} truncate>{cohortAdi(draft)}</Text>
+          <Text fz={20} fw={700} truncate>{cohortAdi(draft, t)}</Text>
           <Badge variant="light" color={meta.color} leftSection={<meta.Icon size={13} />}>
             {meta.label}
           </Badge>
@@ -477,7 +479,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 <StatCell label="DEĞİŞİKLİK" value={String(detail.items.length)} />
                 <StatCell label="ENGEL" value={String(hard)} color={hard ? "red.7" : undefined} border />
                 <StatCell label="UYARI" value={String(warn)} color={warn ? "orange.7" : undefined} border />
-                <StatCell label="DÖNEM" value={`${draft.year}. / ${SEMESTER_LABELS[draft.semester]}`} border />
+                <StatCell label="DÖNEM" value={`${draft.year}. / ${t.enums.semester[draft.semester]}`} border />
               </Group>
 
               {/* Program görüntüsü */}
@@ -641,6 +643,7 @@ const CH_META: Record<string, { Icon: ComponentType<IconProps>; tag: string; col
 };
 
 function ChangesList({ items }: { items: DraftDiffItem[] }) {
+  const t = useT();
   if (items.length === 0) {
     return <Text fz="sm" c="dimmed">Taslak yayındaki programla birebir aynı.</Text>;
   }
@@ -650,7 +653,7 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
         const m = CH_META[i.kind];
         const sinav = i.entity === "exam";
         const kimlik = sinav
-          ? `${i.course_code} · ${EXAM_TYPE_LABELS[i.exam_type]}`
+          ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
             + (i.exam_type === "MIDTERM" && i.exam_index > 1 ? ` ${i.exam_index}` : "")
           : `${i.course_code} · Şube ${i.section_no}`;
         const once = sinav ? examPlacementText(i.before) : placementText(i.before);

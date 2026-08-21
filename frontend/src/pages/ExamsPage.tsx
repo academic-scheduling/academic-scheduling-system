@@ -13,8 +13,7 @@ import {
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
-  courseCommonForDept, courseInCohort, EXAM_TYPE_LABELS, lecturerLabel, SEMESTER_LABELS,
-} from "../api/types";
+  courseCommonForDept, courseInCohort, lecturerLabel, } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
@@ -34,6 +33,8 @@ import type {
   Classroom, ConflictResult, ConflictScan, Course, Department, Exam, ExamType,
   Lecturer, ScheduleDraft, SemesterType,
 } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /* Haftalık programdan TEMEL FARK: burada slot yok, gerçek takvim var.
    Sınav herhangi bir saatte olabilir (K-06: 17:30 sonrası serbest), süresi
@@ -138,6 +139,7 @@ function dayWidth(exams: Placed[]): number {
 }
 
 export default function ExamsPage() {
+  const t = useT();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -381,7 +383,7 @@ export default function ExamsPage() {
     for (const e of [...exams].sort((a, b) =>
       a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time))) {
       const arr = m.get(e.course.id) ?? [];
-      arr.push({ label: examTypeLabel(e), date: fmtDate(e.exam_date), time: e.start_time.slice(0, 5) });
+      arr.push({ label: examTypeLabel(e, t), date: fmtDate(e.exam_date), time: e.start_time.slice(0, 5) });
       m.set(e.course.id, arr);
     }
     return m;
@@ -464,14 +466,14 @@ export default function ExamsPage() {
     // gerçekleşir. Metin bunu söylemeli, yoksa kullanıcı geri dönüşü olmayan
     // bir şey yaptığını sanır.
     if (!window.confirm(
-      `${e.course.code} ${examTypeLabel(e)} sınavı taslaktan çıkarılsın mı?\n\n`
+      `${e.course.code} ${examTypeLabel(e, t)} sınavı taslaktan çıkarılsın mı?\n\n`
       + "Yayındaki takvimden ancak onaylandığında düşer."
     )) return;
     try {
       await api.delete(`/${writeBase}/${e.id}`);
       // Geri al = aynı sınavı yeniden yarat (yeni id alır, remap yığında yapılır).
       recordUndo({
-        label: `${e.course.code} ${examTypeLabel(e)} çıkarma`,
+        label: `${e.course.code} ${examTypeLabel(e, t)} çıkarma`,
         entity: writeBase,
         action: { type: "create", restoreId: e.id, body: {
           course_id: e.course.id, exam_type: e.exam_type, exam_index: e.exam_index,
@@ -498,7 +500,7 @@ export default function ExamsPage() {
       const res = await api.patch<{ conflicts: ConflictResult[] }>(
         `/${writeBase}/${e.id}`, { exam_date: tarih, start_time: fmt(dk) });
       recordUndo({
-        label: `${e.course.code} ${examTypeLabel(e)} taşıma`,
+        label: `${e.course.code} ${examTypeLabel(e, t)} taşıma`,
         entity: writeBase,
         action: { type: "patch", id: e.id,
           body: { exam_date: prevDate, start_time: prevTime } },
@@ -639,8 +641,8 @@ export default function ExamsPage() {
               <Select size="xs" w={104} radius="md" value={sem}
                 onChange={(v) => v && setSem(v as SemesterType)}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                  value: s, label: SEMESTER_LABELS[s] }))} />
+                data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
+                  value: s, label: t.enums.semester[s] }))} />
             </Group>
             <DraftStatus
               departmentId={dep ? Number(dep) : null}
@@ -1033,14 +1035,14 @@ export default function ExamsPage() {
           onSaved={(info) => {
             if (info.created) {
               recordUndo({
-                label: `${info.created.course.code} ${examTypeLabel(info.created)} ekleme`,
+                label: `${info.created.course.code} ${examTypeLabel(info.created, t)} ekleme`,
                 entity: writeBase,
                 action: { type: "delete", id: info.created.id },
               });
             } else if (info.before) {
               const b = info.before;
               recordUndo({
-                label: `${b.course.code} ${examTypeLabel(b)} düzenleme`,
+                label: `${b.course.code} ${examTypeLabel(b, t)} düzenleme`,
                 entity: writeBase,
                 action: { type: "patch", id: b.id, body: {
                   exam_type: b.exam_type, exam_index: b.exam_index,
@@ -1202,6 +1204,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClic
   onDragStart: () => void; onDragEnd: () => void;
   onEdit: () => void; onDelete: () => void;
 }) {
+  const t = useT();
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (highlight && cardRef.current) {
@@ -1310,7 +1313,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClic
             <Badge size="xs" variant="default" radius="sm"
               style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
                        color: TEXT_MUTED, borderColor: BORDER, background: HEADER_BG }}>
-              {examTypeLabel(e)}
+              {examTypeLabel(e, t)}
             </Badge>
           )}
           {actionsVisible && (
@@ -1367,9 +1370,9 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClic
 
 // K-46: kart/başlık etiketi. Birden çok vizeli derste sırayı gösterir
 // ("2. Vize"); tek vize / final / büt için sade tür adı ("Vize", "Final").
-function examTypeLabel(e: { exam_type: ExamType; exam_index: number }): string {
+function examTypeLabel(e: { exam_type: ExamType; exam_index: number }, t: Dict): string {
   if (e.exam_type === "MIDTERM" && e.exam_index > 1) return `${e.exam_index}. Vize`;
-  return EXAM_TYPE_LABELS[e.exam_type];
+  return t.enums.examType[e.exam_type];
 }
 
 function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, classrooms, lecturers, exams, onClose, onDone, onSaved, writeBase }: {
@@ -1396,6 +1399,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
    *  yazmaya devam ediyordu ve taslak satırında 500 veriyordu.) */
   writeBase: string;
 }) {
+  const t = useT();
   const duzenle = exam != null;
   const [courseId, setCourseId] = useState<string | null>(
     exam ? String(exam.course.id) : initialCourseId != null ? String(initialCourseId) : null);
@@ -1457,7 +1461,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
 
   return (
     <Modal opened onClose={onClose} size="sm"
-      title={duzenle ? `${exam!.course.code} · ${examTypeLabel(exam!)}` : "Sınav ekle"}>
+      title={duzenle ? `${exam!.course.code} · ${examTypeLabel(exam!, t)}` : "Sınav ekle"}>
       <Stack gap="sm">
         {!duzenle && (
           <Select label="Ders" value={courseId} onChange={setCourseId} searchable
@@ -1465,8 +1469,8 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
             data={courses.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` }))} />
         )}
         <Select label="Sınav türü" value={tip} onChange={(v) => v && setTip(v as ExamType)}
-          data={(Object.keys(EXAM_TYPE_LABELS) as ExamType[]).map((k) => ({
-            value: k, label: EXAM_TYPE_LABELS[k] }))} />
+          data={(Object.keys(t.enums.examType) as ExamType[]).map((k) => ({
+            value: k, label: t.enums.examType[k] }))} />
         {/* K-46: ders birden fazla vize taşıyorsa hangisi olduğunu sor. Dolu
             sıralar devre dışı; ilk boş sıra otomatik seçilir. */}
         {showVizeNo && (

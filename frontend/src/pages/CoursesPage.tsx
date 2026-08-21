@@ -15,12 +15,13 @@ import {
 import { api, ApiError } from "../api/client";
 import ImportCoursesModal from "../components/ImportCoursesModal";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
-import { lecturerLabel, SEMESTER_LABELS } from "../api/types";
+import { lecturerLabel } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
 import type {
   Classroom, Course, CourseSection, Department, Lecturer, SemesterType, WeeklyEntry,
 } from "../api/types";
+import { useT } from "../i18n";
 
 const ALL = "__all__";
 
@@ -101,6 +102,7 @@ type SectionFormValues = {
 const CourseRow = memo(function CourseRow({ course: c, selected, onSelect }: {
   course: Course; selected: boolean; onSelect: (id: number) => void;
 }) {
+  const t = useT();
   return (
     <Table.Tr
       onClick={() => onSelect(c.id)}
@@ -135,7 +137,7 @@ const CourseRow = memo(function CourseRow({ course: c, selected, onSelect }: {
         {c.hours_theory}+{c.hours_practice}+{c.hours_lab}
       </Table.Td>
       <Table.Td ta="center" c="dimmed">{c.is_common ? "—" : `${c.year}.`}</Table.Td>
-      <Table.Td c="dimmed">{c.is_common ? "—" : SEMESTER_LABELS[c.semester]}</Table.Td>
+      <Table.Td c="dimmed">{c.is_common ? "—" : t.enums.semester[c.semester]}</Table.Td>
       <Table.Td ta="center" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
         {c.sections.length === 0 ? "şube yok" : `${c.sections.length} şube`}
       </Table.Td>
@@ -147,6 +149,7 @@ const CourseRow = memo(function CourseRow({ course: c, selected, onSelect }: {
 });
 
 export default function CoursesPage() {
+  const t = useT();
   const { user } = useAuth();
 
   const [courses, setCourses] = useState<Course[]>([]);
@@ -349,7 +352,7 @@ export default function CoursesPage() {
     if (typeFilter !== "all") out.push({ key: "type",
       label: typeFilter === "required" ? "Zorunlu" : "Seçmeli",
       clear: () => setTypeFilter("all") });
-    if (semFilter) out.push({ key: "sem", label: SEMESTER_LABELS[semFilter as SemesterType],
+    if (semFilter) out.push({ key: "sem", label: t.enums.semester[semFilter as SemesterType],
       clear: () => setSemFilter(null) });
     if (onlyActive) out.push({ key: "active", label: "Pasifler gizli",
       clear: () => setOnlyActive(false) });
@@ -661,8 +664,8 @@ export default function CoursesPage() {
                 <Select
                   label="Dönem"
                   data={[{ value: ALL, label: "Tüm dönemler" },
-                    ...(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                      value: s, label: SEMESTER_LABELS[s],
+                    ...(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
+                      value: s, label: t.enums.semester[s],
                     }))]}
                   value={semFilter ?? ALL}
                   onChange={(v) => setSemFilter(v === ALL || v === null ? null : v)}
@@ -795,8 +798,8 @@ export default function CoursesPage() {
               />
               <Select
                 label="Dönem"
-                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                  value: s, label: SEMESTER_LABELS[s],
+                data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
+                  value: s, label: t.enums.semester[s],
                 }))}
                 value={courseForm.values.semester}
                 onChange={(v) => courseForm.setFieldValue("semester", v as SemesterType)}
@@ -931,8 +934,8 @@ export default function CoursesPage() {
                       label={i === 0 ? "Dönem" : undefined}
                       w={100}
                       error={dup}
-                      data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({
-                        value: s, label: SEMESTER_LABELS[s],
+                      data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
+                        value: s, label: t.enums.semester[s],
                       }))}
                       value={row.semester}
                       onChange={(val) =>
@@ -1021,6 +1024,7 @@ function CourseDrawerBody({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState<CourseSection | null>(null);
   const [deleting, setDeleting] = useState<CourseSection | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1162,7 +1166,7 @@ function CourseDrawerBody({
             <Stat label="T+U+L" value={`${course.hours_theory}+${course.hours_practice}+${course.hours_lab}`} />
             <Stat
               label="Sınıf / Dönem"
-              value={course.is_common ? "çok gruplu" : `${course.year}. / ${SEMESTER_LABELS[course.semester]}`}
+              value={course.is_common ? "çok gruplu" : `${course.year}. / ${t.enums.semester[course.semester]}`}
             />
             <Stat label="Vize" value={`${course.midterm_count} vize`} />
           </SimpleGrid>
@@ -1180,11 +1184,11 @@ function CourseDrawerBody({
               <Text size="xs" fw={600} c="dimmed" mb={8}>ALDIĞI GRUPLAR</Text>
               <Group gap={6}>
                 <Badge size="sm" variant="light" color="teal" style={{ textTransform: "none" }}>
-                  {depName ? `${depName} · ` : ""}{course.year}. sınıf · {SEMESTER_LABELS[course.semester]}
+                  {depName ? `${depName} · ` : ""}{course.year}. sınıf · {t.enums.semester[course.semester]}
                 </Badge>
                 {course.extra_cohorts.map((ec) => (
                   <Badge key={ec.id} size="sm" variant="light" color="teal" style={{ textTransform: "none" }}>
-                    {ec.department_name} · {ec.year}. sınıf · {SEMESTER_LABELS[ec.semester]}
+                    {ec.department_name} · {ec.year}. sınıf · {t.enums.semester[ec.semester]}
                   </Badge>
                 ))}
               </Group>

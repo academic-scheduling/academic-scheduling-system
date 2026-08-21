@@ -15,8 +15,7 @@ import ExportMenu from "../components/ExportMenu";
 import { DraftStatus, DraftActions, DraftNotes } from "../components/DraftBar";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import {
-  courseCommonForDept, courseInCohort, lecturerLabel, SEMESTER_LABELS,
-} from "../api/types";
+  courseCommonForDept, courseInCohort, lecturerLabel, } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
 import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
@@ -35,6 +34,7 @@ import type {
   Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
   ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
+import { useT } from "../i18n";
 
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -140,6 +140,7 @@ function dayWidth(clusters: Cluster[]): number {
 }
 
 export default function WeeklyPage() {
+  const t = useT();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -752,7 +753,7 @@ export default function WeeklyPage() {
               <Select size="xs" w={104} radius="md" value={sem}
                 onChange={(v) => v && setSem(v as SemesterType)}
                 styles={{ input: { height: CONTROL_H, minHeight: CONTROL_H } }}
-                data={(Object.keys(SEMESTER_LABELS) as SemesterType[]).map((s) => ({ value: s, label: SEMESTER_LABELS[s] }))} />
+                data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({ value: s, label: t.enums.semester[s] }))} />
             </Group>
             {/* K-74: durum göstergesi cohort'un SAĞINDA (cohort'u tekrar yazmaz). */}
             <DraftStatus

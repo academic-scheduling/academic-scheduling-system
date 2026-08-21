@@ -1,16 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActionIcon, Alert, Badge, Box, Button, Checkbox, Drawer, Group, Loader, Modal,
-  NumberInput, Paper, Popover, Progress, SegmentedControl, Select, SimpleGrid, Stack,
-  Table, Text, TextInput, Title, Tooltip,
-} from "@mantine/core";
+import { ActionIcon, Alert, Badge, Box, Button, Checkbox, Drawer, Group, Loader, Modal, NumberInput, Paper, Popover, Progress, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import {
-  IconBuilding, IconChevronRight, IconEye, IconEyeOff,
-  IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
-  IconSortDescending, IconTrash, IconX,
-} from "@tabler/icons-react";
+import { IconBuilding, IconChevronRight, IconEye, IconEyeOff, IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending, IconSortDescending, IconTrash, IconX } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import MiniWeekGrid, { type WeekPlacement } from "../components/MiniWeekGrid";
@@ -20,7 +12,8 @@ import { turkishOptionsFilter } from "../utils/selectSearch";
 import type {
   Building, Classroom, Course, CourseSection, RoomType, WeeklyEntry,
 } from "../api/types";
-import { ROOM_TYPE_LABELS } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 type SortKey = "room" | "building" | "type" | "capacity" | "exam" | "use";
 
@@ -37,14 +30,14 @@ function typeColor(t: RoomType): string {
 }
 
 /** K-68: kat metni. 0 = zemin. null = girilmemiş → boş. */
-function floorText(floor: number | null): string {
+function floorText(floor: number | null, t: Dict): string {
   if (floor == null) return "";
-  return floor === 0 ? "Zemin kat" : `${floor}. kat`;
+  return floor === 0 ? t.classrooms.groundFloor : t.classrooms.floorNo(floor);
 }
 
 /** Konum: bina + (varsa) kat. Tabloda ve drawer stat'ında ortak. */
-function locationLabel(c: Classroom): string {
-  const f = floorText(c.floor);
+function locationLabel(c: Classroom, t: Dict): string {
+  const f = floorText(c.floor, t);
   return f ? `${c.building.name} · ${f}` : c.building.name;
 }
 
@@ -55,6 +48,7 @@ function useColor(pct: number): string {
 }
 
 export default function ClassroomsPage() {
+  const t = useT();
   const { user } = useAuth();
   // Derslik/bina workgroup geneli paylaşımlı kaynak: bölüm boyutu yok (K-25).
   const canWrite = canWriteIn(user, "can_manage_classrooms");
@@ -94,11 +88,11 @@ export default function ClassroomsPage() {
       capacity: 30, exam_capacity: null as number | null,
     },
     validate: {
-      building_id: (v) => (v ? null : "Bina seçin"),
-      room_code: (v) => (v.trim() ? null : "Oda kodu boş olamaz"),
-      capacity: (v) => (v > 0 ? null : "Kapasite 0'dan büyük olmalı"),
+      building_id: (v) => (v ? null : t.classrooms.pickBuilding),
+      room_code: (v) => (v.trim() ? null : t.classrooms.roomCodeRequired),
+      capacity: (v) => (v > 0 ? null : t.classrooms.capacityPositive),
       exam_capacity: (v, values) =>
-        v != null && v > values.capacity ? "Sınav kontenjanı kapasiteyi aşamaz (K-21)" : null,
+        v != null && v > values.capacity ? t.classrooms.examCapacityTooBig : null,
     },
   });
 
@@ -117,7 +111,7 @@ export default function ClassroomsPage() {
       setCourses(crs);
       setWeeklyEntries(entries);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
+      setLoadError(e instanceof ApiError ? e.message : t.common.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -166,7 +160,7 @@ export default function ClassroomsPage() {
   function sortValue(c: Classroom, key: SortKey): string | number {
     switch (key) {
       case "building": return c.building.name;
-      case "type": return ROOM_TYPE_LABELS[c.room_type];
+      case "type": return t.enums.roomType[c.room_type];
       case "capacity": return c.capacity;
       case "exam": return c.exam_capacity ?? -1;
       case "use": return usePctOf(c);
@@ -200,7 +194,7 @@ export default function ClassroomsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classrooms, query, seg, buildingFilter, minCap, onlyActive, sortBy, sortDir, usageByRoom]);
 
-  const countLabel = `${rows.length} derslik`;
+  const countLabel = t.classrooms.roomCount(rows.length);
 
   const selected = useMemo(
     () => classrooms.find((c) => c.id === selId) ?? null, [classrooms, selId]);
@@ -217,12 +211,12 @@ export default function ClassroomsPage() {
     const out: { key: string; label: string; clear: () => void }[] = [];
     if (buildingFilter) {
       const label = buildingFilter === EXTERNAL_ONLY
-        ? "Yalnız fakülte dışı"
-        : buildings.find((b) => String(b.id) === buildingFilter)?.name ?? "Bina";
+        ? t.classrooms.externalOnly
+        : buildings.find((b) => String(b.id) === buildingFilter)?.name ?? t.classrooms.building;
       out.push({ key: "bld", label, clear: () => setBuildingFilter(null) });
     }
-    if (minCap) out.push({ key: "cap", label: `${minCap}+ kişi`, clear: () => setMinCap(null) });
-    if (onlyActive) out.push({ key: "active", label: "Kapalılar gizli", clear: () => setOnlyActive(false) });
+    if (minCap) out.push({ key: "cap", label: t.classrooms.minPeople(Number(minCap)), clear: () => setMinCap(null) });
+    if (onlyActive) out.push({ key: "active", label: t.classrooms.closedHidden, clear: () => setOnlyActive(false) });
     return out;
   }, [buildingFilter, minCap, onlyActive, buildings]);
 
@@ -265,7 +259,7 @@ export default function ClassroomsPage() {
     try {
       if (editingRoom) {
         await api.patch<Classroom>(`/classrooms/${editingRoom.id}`, payload);
-        notifications.show({ color: "green", message: "Derslik güncellendi" });
+        notifications.show({ color: "green", message: t.classrooms.updated });
       } else {
         await api.post<Classroom>("/classrooms", payload);
         notifications.show({ color: "green", message: "Derslik eklendi" });
@@ -274,7 +268,7 @@ export default function ClassroomsPage() {
       await load();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) roomForm.setFieldError("room_code", e.message);
-      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     } finally {
       setSubmitting(false);
     }
@@ -285,11 +279,11 @@ export default function ClassroomsPage() {
       await api.patch<Classroom>(`/classrooms/${c.id}`, { active: !c.active });
       notifications.show({
         color: "green",
-        message: c.active ? "Derslik pasife alındı" : "Derslik aktifleştirildi",
+        message: c.active ? t.classrooms.disabled : t.classrooms.enabled,
       });
       await load();
     } catch (e) {
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     }
   }
 
@@ -305,7 +299,7 @@ export default function ClassroomsPage() {
     } catch (e) {
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDeletingRoom(null);
@@ -347,22 +341,20 @@ export default function ClassroomsPage() {
     <>
       <Group justify="space-between" align="baseline" mb="md">
         <Group align="baseline" gap="xs">
-          <Title order={3}>Derslikler</Title>
+          <Title order={3}>{t.classrooms.title}</Title>
           <Text size="sm" c="dimmed">{countLabel}</Text>
         </Group>
         <Group gap="xs">
-          <ExportMenu label="Derslik Programı" items={[
+          <ExportMenu label={t.classrooms.scheduleTitle} items={[
             { label: "Excel (.xlsx)", path: exportPath("xlsx") },
             { label: "CSV (.csv)", path: exportPath("csv") },
           ]} />
           {canWrite && (
             <>
               <Button variant="default" leftSection={<IconBuilding size={16} />}
-                onClick={() => setBuildingModal(true)}>
-                Binaları Yönet
-              </Button>
+                onClick={() => setBuildingModal(true)}>{t.classrooms.manageBuildings}</Button>
               <Button leftSection={<IconPlus size={16} />} onClick={openAddRoom} disabled={buildings.length === 0}>
-                Derslik Ekle
+                {t.classrooms.add}
               </Button>
             </>
           )}
@@ -371,8 +363,7 @@ export default function ClassroomsPage() {
 
       {buildings.length === 0 && (
         <Alert color="blue" mb="md">
-          Derslik eklemeden önce bir bina tanımlamalısınız — derslik bir binaya
-          bağlıdır (K-18). "Binaları Yönet" ile başlayın.
+          {t.classrooms.needBuilding}
         </Alert>
       )}
 
@@ -380,7 +371,7 @@ export default function ClassroomsPage() {
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" wrap="nowrap" align="center">
           <TextInput
-            placeholder="Derslik kodu ara"
+            placeholder={t.classrooms.searchPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
@@ -392,10 +383,10 @@ export default function ClassroomsPage() {
             value={seg}
             onChange={(v) => setSeg(v as RoomType | "all")}
             data={[
-              { label: "Tümü", value: "all" },
-              { label: ROOM_TYPE_LABELS.CLASSROOM, value: "CLASSROOM" },
-              { label: ROOM_TYPE_LABELS.LAB, value: "LAB" },
-              { label: ROOM_TYPE_LABELS.AMPHI, value: "AMPHI" },
+              { label: t.common.all, value: "all" },
+              { label: t.enums.roomType.CLASSROOM, value: "CLASSROOM" },
+              { label: t.enums.roomType.LAB, value: "LAB" },
+              { label: t.enums.roomType.AMPHI, value: "AMPHI" },
             ]}
             size="sm"
             style={{ flex: "none" }}
@@ -406,20 +397,20 @@ export default function ClassroomsPage() {
             <Popover.Target>
               <Button variant="default" onClick={() => setFiltersOpen((o) => !o)}
                 leftSection={<IconFilter size={16} />} style={{ flex: "none" }}>
-                Filtre
+                {t.classrooms.filter}
                 {hasFilters && <Badge size="sm" circle ml={6} variant="filled">{chips.length}</Badge>}
               </Button>
             </Popover.Target>
             <Popover.Dropdown>
               <SimpleGrid cols={2} spacing="sm">
                 <Select
-                  label="Bina"
+                  label={t.classrooms.building}
                   data={[
-                    { value: ALL, label: "Tüm binalar" },
-                    { value: EXTERNAL_ONLY, label: "Yalnız fakülte dışı" },
+                    { value: ALL, label: t.classrooms.allBuildings },
+                    { value: EXTERNAL_ONLY, label: t.classrooms.externalOnly },
                     ...buildings.map((b) => ({
                       value: String(b.id),
-                      label: b.is_external ? `${b.name} (fakülte dışı)` : b.name,
+                      label: b.is_external ? t.classrooms.externalParen(b.name) : b.name,
                     })),
                   ]}
                   value={buildingFilter ?? ALL}
@@ -429,13 +420,13 @@ export default function ClassroomsPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="En az kapasite"
+                  label={t.classrooms.minCapacity}
                   data={[
-                    { value: ALL, label: "Kapasite farketmez" },
-                    { value: "30", label: "30+ kişi" },
-                    { value: "60", label: "60+ kişi" },
-                    { value: "100", label: "100+ kişi" },
-                    { value: "150", label: "150+ kişi" },
+                    { value: ALL, label: t.classrooms.anyCapacity },
+                    { value: "30", label: t.classrooms.minPeople(30) },
+                    { value: "60", label: t.classrooms.minPeople(60) },
+                    { value: "100", label: t.classrooms.minPeople(100) },
+                    { value: "150", label: t.classrooms.minPeople(150) },
                   ]}
                   value={minCap ?? ALL}
                   onChange={(v) => setMinCap(v === ALL || v === null ? null : v)}
@@ -445,7 +436,7 @@ export default function ClassroomsPage() {
               <Group justify="space-between" mt="md" pt="sm"
                 style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
                 <Checkbox
-                  label="Kapalı derslikleri gizle"
+                  label={t.classrooms.hideClosed}
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.currentTarget.checked)}
                 />
@@ -465,7 +456,7 @@ export default function ClassroomsPage() {
             ))}
             {hasFilters && (
               <Button variant="subtle" size="compact-xs" onClick={clearAllFilters} style={{ flex: "none" }}>
-                Temizle
+                {t.classrooms.clear}
               </Button>
             )}
           </Group>
@@ -475,21 +466,21 @@ export default function ClassroomsPage() {
       {/* Tablo */}
       {rows.length === 0 ? (
         <Text c="dimmed" mt="xl" ta="center">
-          {query || hasFilters || seg !== "all" ? "Filtreye uyan derslik yok." : "Henüz derslik yok."}
+          {query || hasFilters || seg !== "all" ? t.classrooms.noMatch : t.classrooms.empty}
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={860} mt="sm">
           <Table striped highlightOnHover verticalSpacing="xs" withTableBorder layout="fixed">
             <Table.Thead>
               <Table.Tr>
-                {sortTh("Kod", "room", 120)}
-                {sortTh("Tür", "type", 130)}
+                {sortTh(t.classrooms.code, "room", 120)}
+                {sortTh(t.classrooms.type, "type", 130)}
                 {/* K-71: Bina'ya da genişlik verildi. Eskiden tek genişliksiz
                     sütun olduğu için tüm boşluğu yutup orantısız genişliyordu. */}
-                {sortTh("Bina", "building", 240)}
-                {sortTh("Kapasite", "capacity", 100, "center")}
-                {sortTh("Sınav Kont.", "exam", 110, "center")}
-                {sortTh("Haftalık Kullanım", "use", 180, "left")}
+                {sortTh(t.classrooms.building, "building", 240)}
+                {sortTh(t.classrooms.capacity, "capacity", 100, "center")}
+                {sortTh(t.classrooms.examCapacity, "exam", 110, "center")}
+                {sortTh(t.classrooms.weeklyUsage, "use", 180, "left")}
                 <Table.Th w={40} />
               </Table.Tr>
             </Table.Thead>
@@ -537,45 +528,45 @@ export default function ClassroomsPage() {
       <Modal
         opened={roomModal}
         onClose={() => setRoomModal(false)}
-        title={editingRoom ? "Dersliği Düzenle" : "Yeni Derslik"}
+        title={editingRoom ? t.classrooms.edit : "Yeni Derslik"}
       >
         <form onSubmit={roomForm.onSubmit(handleRoomSubmit)}>
           <Stack>
             <Select
-              label="Bina"
-              placeholder="Ara veya seç"
+              label={t.classrooms.building}
+              placeholder={t.classrooms.searchOrPick}
               searchable
               filter={turkishOptionsFilter}
-              nothingFoundMessage="Bina bulunamadı"
+              nothingFoundMessage={t.classrooms.buildingNotFound}
               data={buildings.map((b) => ({
                 value: String(b.id),
-                label: b.is_external ? `${b.name} (fakülte dışı)` : b.name,
+                label: b.is_external ? t.classrooms.externalParen(b.name) : b.name,
               }))}
               {...roomForm.getInputProps("building_id")}
             />
             <Group grow align="flex-start">
-              <TextInput label="Derslik" placeholder="B-201" {...roomForm.getInputProps("room_code")} />
+              <TextInput label={t.classrooms.roomLabel} placeholder="B-201" {...roomForm.getInputProps("room_code")} />
               <NumberInput
-                label="Kat"
+                label={t.classrooms.floor}
                 placeholder="—"
                 allowDecimal={false}
                 {...roomForm.getInputProps("floor")}
               />
             </Group>
             <Select
-              label="Tür"
+              label={t.classrooms.type}
               data={[
-                { value: "CLASSROOM", label: "Sınıf" },
+                { value: "CLASSROOM", label: t.classrooms.classLevel },
                 { value: "AMPHI", label: "Amfi" },
                 { value: "LAB", label: "Laboratuvar" },
               ]}
               allowDeselect={false}
               {...roomForm.getInputProps("room_type")}
             />
-            <NumberInput label="Kapasite" min={1} {...roomForm.getInputProps("capacity")} />
+            <NumberInput label={t.classrooms.capacity} min={1} {...roomForm.getInputProps("capacity")} />
             <NumberInput
-              label="Sınav Kontenjanı"
-              description="Boşluklu oturma düzeni. Opsiyonel (K-21) — boş bırakılırsa sınav yerleşiminde uyarı çıkar."
+              label={t.classrooms.examCapacityLong}
+              description={t.classrooms.examCapacityHelp}
               min={1}
               {...roomForm.getInputProps("exam_capacity")}
             />
@@ -587,16 +578,16 @@ export default function ClassroomsPage() {
       </Modal>
 
       {/* Derslik silme onayı */}
-      <Modal opened={deletingRoom !== null} onClose={() => setDeletingRoom(null)} title="Dersliği sil">
+      <Modal opened={deletingRoom !== null} onClose={() => setDeletingRoom(null)} title={t.classrooms.deleteModal}>
         <Text>
-          <b>{deletingRoom?.building.name} {deletingRoom?.room_code}</b> kalıcı olarak
-          silinecek. Bu işlem geri alınamaz.
+          <b>{deletingRoom?.building.name} {deletingRoom?.room_code}</b>{" "}
+          {t.common.permanentDeleteWarning}
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Programa veya sınava girmiş bir derslik silinemez; onun yerine "Pasife al" kullanın.
+          {t.classrooms.deleteHint}
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeletingRoom(null)}>Vazgeç</Button>
+          <Button variant="default" onClick={() => setDeletingRoom(null)}>{t.common.dismiss}</Button>
           <Button color="red" loading={deleteBusy} onClick={handleDeleteRoom}>Sil</Button>
         </Group>
       </Modal>
@@ -618,6 +609,7 @@ const ClassroomRow = memo(function ClassroomRow({
 }: {
   room: Classroom; usePct: number; selected: boolean; onSelect: (id: number) => void;
 }) {
+  const t = useT();
   return (
     <Table.Tr
       onClick={() => onSelect(c.id)}
@@ -632,15 +624,15 @@ const ClassroomRow = memo(function ClassroomRow({
       </Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap">
-          <Badge variant="light" color={typeColor(c.room_type)} size="sm">{ROOM_TYPE_LABELS[c.room_type]}</Badge>
+          <Badge variant="light" color={typeColor(c.room_type)} size="sm">{t.enums.roomType[c.room_type]}</Badge>
           {!c.active && <Badge size="xs" color="gray">Kapalı</Badge>}
         </Group>
       </Table.Td>
       <Table.Td>
         <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-          <Text size="sm" c="dimmed" truncate>{locationLabel(c)}</Text>
+          <Text size="sm" c="dimmed" truncate>{locationLabel(c, t)}</Text>
           {c.building.is_external && (
-            <Badge variant="light" color="grape" size="xs" style={{ flex: "none" }}>fakülte dışı</Badge>
+            <Badge variant="light" color="grape" size="xs" style={{ flex: "none" }}>{t.classrooms.external}</Badge>
           )}
         </Group>
       </Table.Td>
@@ -691,6 +683,7 @@ function ClassroomDrawerBody({
   onDelete: (c: Classroom) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const entries = usage?.entries ?? [];
   const courseCount = usage?.courses.size ?? 0;
   const slots = usage?.slots ?? 0;
@@ -698,7 +691,7 @@ function ClassroomDrawerBody({
   // Haftalık ızgara: bu dersliğe düşen yayın yerleşimleri (gün-slot).
   const placements: WeekPlacement[] = entries.map((e) => ({
     day: e.day_of_week, startSlot: e.start_slot, slotCount: e.slot_count,
-    label: e.section.course.code, title: `${e.section.course.code} · Şube ${e.section.section_no}`,
+    label: e.section.course.code, title: `${e.section.course.code} · ${t.classrooms.section} ${e.section.section_no}`,
   }));
 
   return (
@@ -709,14 +702,14 @@ function ClassroomDrawerBody({
         <div style={{ minWidth: 0 }}>
           <Group gap="xs" align="center">
             <Text fw={700} size="lg" style={{ fontVariantNumeric: "tabular-nums" }}>{c.room_code}</Text>
-            <Badge variant="light" color={typeColor(c.room_type)} size="sm">{ROOM_TYPE_LABELS[c.room_type]}</Badge>
-            {c.building.is_external && <Badge variant="light" color="grape" size="sm">fakülte dışı</Badge>}
+            <Badge variant="light" color={typeColor(c.room_type)} size="sm">{t.enums.roomType[c.room_type]}</Badge>
+            {c.building.is_external && <Badge variant="light" color="grape" size="sm">{t.classrooms.external}</Badge>}
             {!c.active && <Badge color="gray" size="sm">Kapalı</Badge>}
           </Group>
           {/* K-68: bina + kapasite alt satırı kaldırıldı — ikisi de aşağıdaki
               stat ızgarasında (Konum / Kapasite) zaten var. */}
         </div>
-        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
+        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label={t.common.close}>
           <IconX size={18} />
         </ActionIcon>
       </Group>
@@ -725,10 +718,10 @@ function ClassroomDrawerBody({
       <Box style={{ flex: 1, overflowY: "auto" }} p="md">
         <Stack gap="lg">
           <SimpleGrid cols={4} spacing="xs">
-            <Stat label="Kapasite" value={String(c.capacity)} />
-            <Stat label="Sınav kont." value={c.exam_capacity == null ? "—" : String(c.exam_capacity)} />
-            <Stat label="Haftalık ders" value={String(courseCount)} />
-            <Stat label="Konum" value={locationLabel(c)} />
+            <Stat label={t.classrooms.capacity} value={String(c.capacity)} />
+            <Stat label={t.classrooms.examCapShort} value={c.exam_capacity == null ? "—" : String(c.exam_capacity)} />
+            <Stat label={t.classrooms.weeklyCourse} value={String(courseCount)} />
+            <Stat label={t.classrooms.location} value={locationLabel(c, t)} />
           </SimpleGrid>
 
           {/* Doluluk çubuğu — tablodakiyle aynı, drawer'da geniş */}
@@ -745,12 +738,12 @@ function ClassroomDrawerBody({
           {/* Haftalık program ızgarası */}
           <div>
             <Text size="xs" fw={600} c="dimmed" mb={8}>HAFTALIK PROGRAM</Text>
-            <MiniWeekGrid placements={placements} emptyLabel="Bu derslikte planlanmış ders yok." />
+            <MiniWeekGrid placements={placements} emptyLabel={t.classrooms.noCourses} />
           </div>
 
           {/* Yerleştirilen dersler */}
           <div>
-            <Text size="xs" fw={600} c="dimmed" mb={8}>YERLEŞTİRİLEN DERSLER</Text>
+            <Text size="xs" fw={600} c="dimmed" mb={8}>{t.classrooms.placedCourses}</Text>
             <Stack gap="xs">
               {entries.map((e) => {
                 const info = sectionById[e.section.id];
@@ -768,10 +761,10 @@ function ClassroomDrawerBody({
                           {" · "}{e.section.course.name}
                         </Text>
                         <Text size="xs" c="dimmed" mt={2} truncate>
-                          Şube {e.section.section_no}
+                          {t.classrooms.section} {e.section.section_no}
                           {lecturer ? ` · ${lecturer}` : ""}
-                          {students != null ? ` · ${students} öğrenci` : ""}
-                          {over ? " · kapasite aşımı" : ""}
+                          {students != null ? t.classrooms.studentCount(students) : ""}
+                          {over ? t.classrooms.overCapacity : ""}
                         </Text>
                       </div>
                       <Badge variant="light" size="sm" color="green" style={{ flex: "none" }}>
@@ -783,7 +776,7 @@ function ClassroomDrawerBody({
               })}
               {entries.length === 0 && (
                 <Paper withBorder radius="md" p="md" style={{ borderStyle: "dashed" }}>
-                  <Text size="sm" c="dimmed" ta="center">Bu derslikte planlanmış ders yok.</Text>
+                  <Text size="sm" c="dimmed" ta="center">{t.classrooms.noCourses}</Text>
                 </Paper>
               )}
             </Stack>
@@ -794,29 +787,27 @@ function ClassroomDrawerBody({
       {/* Alt eylem çubuğu */}
       <Group gap="xs" p="md" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
         {canWrite && (
-          <Button size="sm" leftSection={<IconPencil size={15} />} onClick={() => onEdit(c)}>
-            Dersliği düzenle
-          </Button>
+          <Button size="sm" leftSection={<IconPencil size={15} />} onClick={() => onEdit(c)}>{t.classrooms.editShort}</Button>
         )}
         {/* K-67: dersliğin haftalık programı burada; export'u da burada
             (/export/classrooms classroom_id ile tek dersliğe daralır). */}
-        <ExportMenu label="Programı İndir" items={[
+        <ExportMenu label={t.classrooms.downloadSchedule} items={[
           { label: "Excel (.xlsx)", path: `/export/classrooms?classroom_id=${c.id}&format=xlsx` },
           { label: "CSV (.csv)", path: `/export/classrooms?classroom_id=${c.id}&format=csv` },
         ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
-          <Tooltip label={c.active ? "Pasife al" : "Aktifleştir"}>
+          <Tooltip label={c.active ? "Pasife al" : t.classrooms.activate}>
             <ActionIcon variant="subtle" size="lg" color={c.active ? "orange" : "green"}
-              onClick={() => onToggleActive(c)} aria-label={c.active ? "Pasife al" : "Aktifleştir"}>
+              onClick={() => onToggleActive(c)} aria-label={c.active ? "Pasife al" : t.classrooms.activate}>
               {c.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>
         )}
         {canWrite && (
-          <Tooltip label="Sil">
+          <Tooltip label={t.common.delete}>
             <ActionIcon variant="subtle" size="lg" color="red"
-              onClick={() => onDelete(c)} aria-label="Sil">
+              onClick={() => onDelete(c)} aria-label={t.common.delete}>
               <IconTrash size={18} />
             </ActionIcon>
           </Tooltip>
@@ -837,12 +828,13 @@ function BuildingsModal({
   roomCounts: Record<number, number>;
   onChanged: () => Promise<void>;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState<Building | null>(null);
   const [busy, setBusy] = useState(false);
 
   const form = useForm({
     initialValues: { name: "", is_external: false },
-    validate: { name: (v) => (v.trim() ? null : "Bina adı boş olamaz") },
+    validate: { name: (v) => (v.trim() ? null : t.classrooms.buildingNameRequired) },
   });
 
   function startEdit(b: Building) {
@@ -860,16 +852,16 @@ function BuildingsModal({
     try {
       if (editing) {
         await api.patch<Building>(`/buildings/${editing.id}`, values);
-        notifications.show({ color: "green", message: "Bina güncellendi" });
+        notifications.show({ color: "green", message: t.classrooms.buildingUpdated });
       } else {
         await api.post<Building>("/buildings", values);
-        notifications.show({ color: "green", message: "Bina eklendi" });
+        notifications.show({ color: "green", message: t.classrooms.buildingAdded });
       }
       reset();
       await onChanged();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) form.setFieldError("name", e.message);
-      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     } finally {
       setBusy(false);
     }
@@ -878,22 +870,22 @@ function BuildingsModal({
   async function remove(b: Building) {
     try {
       await api.delete(`/buildings/${b.id}`);
-      notifications.show({ color: "green", message: "Bina silindi" });
+      notifications.show({ color: "green", message: t.classrooms.buildingDeleted });
       await onChanged();
     } catch (e) {
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
     }
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Binalar" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t.classrooms.buildingsTitle} size="lg">
       <Stack>
         {buildings.length === 0 ? (
-          <Text c="dimmed" size="sm">Henüz bina yok.</Text>
+          <Text c="dimmed" size="sm">{t.classrooms.noBuildings}</Text>
         ) : (
           <Table>
             <Table.Tbody>
@@ -910,12 +902,12 @@ function BuildingsModal({
                   </Table.Td>
                   <Table.Td w={90}>
                     <Group gap={4} wrap="nowrap">
-                      <Tooltip label="Düzenle">
+                      <Tooltip label={t.common.edit}>
                         <ActionIcon variant="subtle" onClick={() => startEdit(b)}>
                           <IconPencil size={16} />
                         </ActionIcon>
                       </Tooltip>
-                      <Tooltip label="Sil">
+                      <Tooltip label={t.common.delete}>
                         <ActionIcon variant="subtle" color="red" onClick={() => remove(b)}>
                           <IconTrash size={16} />
                         </ActionIcon>
@@ -931,9 +923,9 @@ function BuildingsModal({
         <Paper withBorder p="sm">
           <form onSubmit={form.onSubmit(submit)}>
             <Stack gap="xs">
-              <Text fw={600} size="sm">{editing ? `Düzenle: ${editing.name}` : "Yeni bina"}</Text>
+              <Text fw={600} size="sm">{editing ? t.classrooms.editNamed(editing.name) : "Yeni bina"}</Text>
               <TextInput placeholder="B Blok" {...form.getInputProps("name")} />
-              <Checkbox label="Fakülte dışı bina" {...form.getInputProps("is_external", { type: "checkbox" })} />
+              <Checkbox label={t.classrooms.externalBuilding} {...form.getInputProps("is_external", { type: "checkbox" })} />
               <Group>
                 <Button type="submit" size="xs" loading={busy}>{editing ? "Kaydet" : "Ekle"}</Button>
                 {editing && <Button size="xs" variant="default" onClick={reset}>Vazgeç</Button>}

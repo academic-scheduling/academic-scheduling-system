@@ -1,9 +1,10 @@
 import { Badge, ScrollArea, Table, Text } from "@mantine/core";
-import { DIFF_KIND_COLORS, DIFF_KIND_LABELS, EXAM_TYPE_LABELS } from "../api/types";
+import { DIFF_KIND_COLORS, DIFF_KIND_LABELS } from "../api/types";
 import type {
   DraftDiffItem, DraftExamPlacement, DraftPlacement,
 } from "../api/types";
 import { DAY_SHORT } from "../utils/slots";
+import { useT } from "../i18n";
 
 /** Haftalık yerleşimin okunur konumu: "Çar 5 · A Blok 101". */
 export function placementText(p: DraftPlacement | null): string {
@@ -40,6 +41,7 @@ export default function DiffTable({ items, maxHeight = 460 }: {
   items: DraftDiffItem[];
   maxHeight?: number;
 }) {
+  const t = useT();
   if (items.length === 0) {
     return <Text size="sm" c="dimmed">Taslak yayındaki programla birebir aynı.</Text>;
   }
@@ -59,7 +61,7 @@ export default function DiffTable({ items, maxHeight = 460 }: {
             const sinav = i.entity === "exam";
             const kimlik = sinav
               // Vizede kaçıncısı anlamlı; final/büt'te sıra her zaman 1 (K-46).
-              ? `${i.course_code} · ${EXAM_TYPE_LABELS[i.exam_type]}`
+              ? `${i.course_code} · ${t.enums.examType[i.exam_type]}`
                 + (i.exam_type === "MIDTERM" ? ` ${i.exam_index}` : "")
               : `${i.course_code} · Şube ${i.section_no}`;
             const once = sinav ? examPlacementText(i.before) : placementText(i.before);

@@ -68,6 +68,80 @@ export const tr = {
     password: "Şifre",
     login: "Giriş yap",
     forgotPassword: "Şifremi unuttum",
+
+    title: "Akademik Program Yönetimi",
+    emailPlaceholder: "ad@muh.example.edu.tr",
+    loginButton: "Giriş",
+    invalidEmail: "Geçerli bir e-posta adresi girin",
+    passwordRequired: "Şifre boş olamaz",
+    unexpectedError: "Beklenmeyen bir hata oluştu",
+
+    // Şifre sıfırlama (K-43/K-44)
+    forgotTitle: "Şifremi Unuttum",
+    forgotHelp:
+      "Hesabınızın e-posta adresini girin; şifrenizi yenilemeniz için bir " +
+      "bağlantı gönderelim.",
+    forgotSubmit: "Sıfırlama Bağlantısı Gönder",
+    sentTitle: "Bağlantı Gönderildi",
+    sentAlert: "E-posta kayıtlıysa şifre sıfırlama bağlantısı gönderildi.",
+    sentDetail:
+      "Gelen kutunuzu kontrol edin. Bağlantı kısa süre geçerlidir ve yalnızca " +
+      "bir kez kullanılabilir.",
+    backToLogin: "Girişe dön",
+
+    resetTitle: "Yeni Şifre Belirleyin",
+    newPassword: "Yeni şifre",
+    newPasswordAgain: "Yeni şifre (tekrar)",
+    resetSubmit: "Şifreyi Güncelle",
+    resetDone: "Şifreniz güncellendi. Şimdi giriş yapabilirsiniz.",
+    resetLinkDeadTitle: "Sıfırlama bağlantısı geçersiz",
+    resetLinkDeadDetail:
+      "Bağlantılar kısa süre geçerlidir ve bir kez kullanılır. Yeni bir " +
+      "bağlantı isteyebilirsiniz.",
+    requestNewLink: "Yeni bağlantı iste",
+    noResetCode: "Bağlantıda sıfırlama kodu yok.",
+    resetLinkUnverified: "Bağlantı doğrulanamadı.",
+
+    passwordsDoNotMatch: "Şifreler eşleşmiyor",
+    passwordTooShort: (min: number) => `Şifre en az ${min} karakter olmalı`,
+
+    // Davet ile hesap açma
+    activateTitle: "Hesabınızı Tamamlayın",
+    activateSubmit: "Hesabı Aktifleştir",
+    activateDone: "Hesabınız aktifleştirildi. Şimdi giriş yapabilirsiniz.",
+    inviteLinkDeadTitle: "Davet bağlantısı geçersiz",
+    inviteLinkDeadDetail: "Yöneticinizden daveti yeniden göndermesini isteyin.",
+    noInviteCode: "Bağlantıda davet kodu yok.",
+    inviteUnverified: "Davet doğrulanamadı.",
+    passwordAgain: "Şifre (tekrar)",
+
+    captchaFailed:
+      "Doğrulama bileşeni yüklenemedi. Reklam/gizlilik engelleyicisi ya da ağ " +
+      "kısıtı Google'a erişimi kesiyor olabilir; kontrol edip sayfayı yenileyin.",
+  },
+
+  // Boşta-kalma uyarısı (K-47). Cümle üç parçaya bölük çünkü ORTADAKİ sayaç
+  // kalın yazılıyor ve iki dilde cümlenin dizilişi farklı:
+  //   TR: "... oturumunuz **30 saniye** içinde kapatılacak."
+  //   EN: "... will be closed in **30 seconds**."
+  // `idleTail`'in başındaki boşluk/nokta farkı BİLEREK: JSX'te araya boşluk
+  // konmuyor, her dil kendi bağlacını taşıyor.
+  session: {
+    idleTitle: "Oturumunuz sürüyor mu?",
+    idleBody: (minutes: number) =>
+      `${minutes} dakikadır işlem yapılmadı. Güvenlik için oturumunuz`,
+    idleSeconds: (seconds: number) => `${seconds} saniye`,
+    idleTail: " içinde kapatılacak. Devam etmek istiyor musunuz?",
+    extend: "Oturumu uzat",
+    countdown: "Oturum uyarısı",
+  },
+
+  home: {
+    title: "Ana Sayfa",
+    subtitle: "Sol menüden bir bölüm seçin.",
+    backend: "Backend",
+    backendUnreachable: "erişilemiyor",
+    backendChecking: "kontrol ediliyor...",
   },
 };
 

@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import type { MessageResponse, PasswordResetPreview } from "../api/types";
+import { useT } from "../i18n";
 
 // ActivatePage ile aynı üç durum: ölü linkte kullanıcı yeni şifresini
 // YAZMADAN ÖNCE hatayı görmeli (K-24'ün K-43'e taşınan gerekçesi).
@@ -17,6 +18,7 @@ type PreviewState =
   | { phase: "dead"; reason: string };
 
 export default function ResetPasswordPage() {
+  const t = useT();
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const navigate = useNavigate();
@@ -28,22 +30,22 @@ export default function ResetPasswordPage() {
   const form = useForm({
     initialValues: { password: "", confirm: "" },
     validate: {
-      password: (v) => (v.length >= 8 ? null : "Şifre en az 8 karakter olmalı"),
-      confirm: (v, values) => (v === values.password ? null : "Şifreler eşleşmiyor"),
+      password: (v) => (v.length >= 8 ? null : t.auth.passwordTooShort(8)),
+      confirm: (v, values) => (v === values.password ? null : t.auth.passwordsDoNotMatch),
     },
   });
 
   // Açılış ön-doğrulaması. Token'ı TÜKETMEZ — yakan tek uç reset-password.
   useEffect(() => {
     if (!token) {
-      setState({ phase: "dead", reason: "Bağlantıda sıfırlama kodu yok." });
+      setState({ phase: "dead", reason: t.auth.noResetCode });
       return;
     }
     api
       .get<PasswordResetPreview>(`/auth/reset/${token}`)
       .then((preview) => setState({ phase: "valid", email: preview.email }))
       .catch((e) => {
-        const reason = e instanceof ApiError ? e.message : "Bağlantı doğrulanamadı.";
+        const reason = e instanceof ApiError ? e.message : t.auth.resetLinkUnverified;
         setState({ phase: "dead", reason });
       });
   }, [token]);
@@ -58,13 +60,13 @@ export default function ResetPasswordPage() {
       });
       notifications.show({
         color: "green",
-        message: "Şifreniz güncellendi. Şimdi giriş yapabilirsiniz.",
+        message: t.auth.resetDone,
       });
       navigate("/login", { replace: true });
     } catch (e) {
       // GET geçerli demiş olsa bile POST başarısız olabilir: token bu arada
       // dolabilir/kullanılabilir, hesap kapatılmış olabilir (TOCTOU).
-      setSubmitError(e instanceof ApiError ? e.message : "Beklenmeyen bir hata oluştu");
+      setSubmitError(e instanceof ApiError ? e.message : t.auth.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -81,14 +83,13 @@ export default function ResetPasswordPage() {
   if (state.phase === "dead") {
     return (
       <Container size={420} py="xl">
-        <Alert color="red" title="Sıfırlama bağlantısı geçersiz" mt="xl">
+        <Alert color="red" title={t.auth.resetLinkDeadTitle} mt="xl">
           {state.reason}
           <Text mt="sm" size="sm">
-            Bağlantılar kısa süre geçerlidir ve bir kez kullanılır. Yeni bir
-            bağlantı isteyebilirsiniz.
+            {t.auth.resetLinkDeadDetail}
           </Text>
           <Anchor component={Link} to="/forgot-password" size="sm" mt="sm" display="block">
-            Yeni bağlantı iste
+            {t.auth.requestNewLink}
           </Anchor>
         </Alert>
       </Container>
@@ -99,14 +100,14 @@ export default function ResetPasswordPage() {
   return (
     <Container size={420} py="xl">
       <Title order={2} ta="center" mt="xl">
-        Yeni Şifre Belirleyin
+        {t.auth.resetTitle}
       </Title>
       <Paper withBorder shadow="sm" p="lg" radius="md" mt="lg">
         <form onSubmit={form.onSubmit(handleSubmit)}>
-          <TextInput label="E-posta" value={state.email} readOnly disabled />
-          <PasswordInput label="Yeni şifre" mt="md" {...form.getInputProps("password")} />
+          <TextInput label={t.auth.email} value={state.email} readOnly disabled />
+          <PasswordInput label={t.auth.newPassword} mt="md" {...form.getInputProps("password")} />
           <PasswordInput
-            label="Yeni şifre (tekrar)"
+            label={t.auth.newPasswordAgain}
             mt="md"
             {...form.getInputProps("confirm")}
           />
@@ -116,7 +117,7 @@ export default function ResetPasswordPage() {
             </Alert>
           )}
           <Button type="submit" fullWidth mt="lg" loading={submitting}>
-            Şifreyi Güncelle
+            {t.auth.resetSubmit}
           </Button>
         </form>
       </Paper>

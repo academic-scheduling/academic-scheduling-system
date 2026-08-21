@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Badge, Group, Stack, Text, Title } from "@mantine/core";
 import { api } from "../api/client";
 import ChangeFeed from "../components/ChangeFeed";
+import { useT } from "../i18n";
 
 type Health = { status: string; database: string };
 
 export default function HomePage() {
+  const t = useT();
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState(false);
 
@@ -18,9 +20,9 @@ export default function HomePage() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={3}>Ana Sayfa</Title>
+        <Title order={3}>{t.home.title}</Title>
         <Text c="dimmed" mt="xs">
-          Sol menüden bir bölüm seçin.
+          {t.home.subtitle}
         </Text>
       </div>
 
@@ -31,7 +33,8 @@ export default function HomePage() {
 
       <Group>
         <Badge color={health ? "green" : error ? "red" : "gray"}>
-          Backend: {health ? health.status : error ? "erişilemiyor" : "kontrol ediliyor..."}
+          {t.home.backend}: {health ? health.status
+            : error ? t.home.backendUnreachable : t.home.backendChecking}
         </Badge>
       </Group>
     </Stack>

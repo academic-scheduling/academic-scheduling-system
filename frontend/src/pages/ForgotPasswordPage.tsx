@@ -7,6 +7,7 @@ import {
 import { api, ApiError } from "../api/client";
 import type { MessageResponse } from "../api/types";
 import Recaptcha, { captchaEnabled } from "../auth/Recaptcha";
+import { useT } from "../i18n";
 
 /**
  * Şifremi unuttum — sıfırlama linki talebi (K-43, kontrat §1).
@@ -17,6 +18,7 @@ import Recaptcha, { captchaEnabled } from "../auth/Recaptcha";
  * Sunucu da zaten ayrım yapmıyor; UI onunla tutarlı kalır.
  */
 export default function ForgotPasswordPage() {
+  const t = useT();
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +28,7 @@ export default function ForgotPasswordPage() {
   const form = useForm({
     initialValues: { email: "" },
     validate: {
-      email: (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : "Geçerli bir e-posta girin"),
+      email: (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : t.auth.invalidEmail),
     },
   });
 
@@ -43,7 +45,7 @@ export default function ForgotPasswordPage() {
     } catch (e) {
       // Sunucu bu uçta e-posta bilinmese bile 200 döner; buraya ancak
       // gerçek bir arıza (ağ/500) veya CAPTCHA reddi (400) düşer.
-      setError(e instanceof ApiError ? e.message : "Beklenmeyen bir hata oluştu");
+      setError(e instanceof ApiError ? e.message : t.auth.unexpectedError);
       // Kullanılan/başarısız token bir daha geçerli değil: kullanıcı kutuyu
       // yeniden işaretlemeli, yoksa aynı ölü token'la tekrar 400 alır.
       setCaptchaToken(null);
@@ -57,18 +59,17 @@ export default function ForgotPasswordPage() {
     return (
       <Container size={420} py="xl">
         <Title order={2} ta="center" mt="xl">
-          Bağlantı Gönderildi
+          {t.auth.sentTitle}
         </Title>
         <Paper withBorder shadow="sm" p="lg" radius="md" mt="lg">
           <Alert color="green">
-            E-posta kayıtlıysa şifre sıfırlama bağlantısı gönderildi.
+            {t.auth.sentAlert}
             <Text mt="sm" size="sm">
-              Gelen kutunuzu kontrol edin. Bağlantı kısa süre geçerlidir ve
-              yalnızca bir kez kullanılabilir.
+              {t.auth.sentDetail}
             </Text>
           </Alert>
           <Anchor component={Link} to="/login" size="sm" mt="md" display="block">
-            Girişe dön
+            {t.auth.backToLogin}
           </Anchor>
         </Paper>
       </Container>
@@ -78,17 +79,16 @@ export default function ForgotPasswordPage() {
   return (
     <Container size={420} py="xl">
       <Title order={2} ta="center" mt="xl">
-        Şifremi Unuttum
+        {t.auth.forgotTitle}
       </Title>
       <Text c="dimmed" size="sm" ta="center" mt="sm">
-        Hesabınızın e-posta adresini girin; şifrenizi yenilemeniz için bir
-        bağlantı gönderelim.
+        {t.auth.forgotHelp}
       </Text>
       <Paper withBorder shadow="sm" p="lg" radius="md" mt="lg">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <TextInput
-            label="E-posta"
-            placeholder="ad@muh.example.edu.tr"
+            label={t.auth.email}
+            placeholder={t.auth.emailPlaceholder}
             {...form.getInputProps("email")}
           />
           <Recaptcha onChange={setCaptchaToken} />
@@ -107,10 +107,10 @@ export default function ForgotPasswordPage() {
             loading={submitting}
             disabled={captchaEnabled() && !captchaToken}
           >
-            Sıfırlama Bağlantısı Gönder
+            {t.auth.forgotSubmit}
           </Button>
           <Anchor component={Link} to="/login" size="sm" mt="md" display="block">
-            Girişe dön
+            {t.auth.backToLogin}
           </Anchor>
         </form>
       </Paper>

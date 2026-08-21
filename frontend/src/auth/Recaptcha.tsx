@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Text } from "@mantine/core";
+import { useT } from "../i18n";
 
 /** Google reCAPTCHA v2 site anahtarı. Tanımsızsa CAPTCHA kapalıdır (K-44). */
 export const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY?.trim() || "";
@@ -72,6 +73,7 @@ type Props = {
  * yerel geliştirme ile demo makinesi internetsiz de çalışsın diye.
  */
 export default function Recaptcha({ onChange }: Props) {
+  const t = useT();
   const holder = useRef<HTMLDivElement>(null);
   const rendered = useRef(false);
   const [failed, setFailed] = useState(false);
@@ -113,8 +115,7 @@ export default function Recaptcha({ onChange }: Props) {
   if (failed) {
     return (
       <Text c="red" size="sm" mt="md">
-        Doğrulama bileşeni yüklenemedi. Reklam/gizlilik engelleyicisi ya da ağ
-        kısıtı Google'a erişimi kesiyor olabilir; kontrol edip sayfayı yenileyin.
+        {t.auth.captchaFailed}
       </Text>
     );
   }

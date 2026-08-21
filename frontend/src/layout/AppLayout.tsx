@@ -299,6 +299,7 @@ function usePendingCount(pathname: string): number {
  *  Her saniye AuthContext'teki gerçek sayacı okur; fare/klavye hareketiyle
  *  lastActivity sıfırlanınca 15:00'e döner (idle mekanizması böyle doğrulanır). */
 function SessionCountdown({ collapsed }: { collapsed: boolean }) {
+  const t = useT();
   const { user, idleWarningRemainingMs } = useAuth();
   const [ms, setMs] = useState(0);
 
@@ -316,7 +317,7 @@ function SessionCountdown({ collapsed }: { collapsed: boolean }) {
 
   if (collapsed) {
     return (
-      <Tooltip label={`Oturum uyarısına ${label}`} position="right" withArrow>
+      <Tooltip label={`${t.session.countdown}: ${label}`} position="right" withArrow>
         <Text ta="center" size="xs" mb="xs" c={warn ? "orange" : "dimmed"}
           style={{ fontVariantNumeric: "tabular-nums", cursor: "default" }}>
           {label}
@@ -326,7 +327,7 @@ function SessionCountdown({ collapsed }: { collapsed: boolean }) {
   }
   return (
     <Text ta="center" size="xs" mb="xs" c={warn ? "orange" : "dimmed"}>
-      Oturum uyarısı:{" "}
+      {t.session.countdown}:{" "}
       <b style={{ fontVariantNumeric: "tabular-nums" }}>{label}</b>
     </Text>
   );

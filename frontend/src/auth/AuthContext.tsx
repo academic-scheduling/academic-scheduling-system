@@ -4,6 +4,7 @@ import {
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { api, getToken, setToken, clearToken } from "../api/client";
 import type { LoginResponse, User } from "../api/types";
+import { useT } from "../i18n";
 
 type AuthState = {
   /** null = girişli değil. loading true iken bu değere GÜVENME. */
@@ -30,6 +31,8 @@ const TICK_MS = 30 * 1000;                // boşta/keepalive denetim sıklığ�
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"] as const;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // I18nProvider bunun DIŞINDA (main.tsx) — oturum uyarısı da çevrilebilsin.
+  const t = useT();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -145,16 +148,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         closeOnClickOutside={false}
         closeOnEscape={false}
         centered
-        title="Oturumunuz sürüyor mu?"
+        title={t.session.idleTitle}
       >
         <Stack>
           <Text size="sm">
-            15 dakikadır işlem yapılmadı. Güvenlik için oturumunuz{" "}
-            <b>{grace} saniye</b> içinde kapatılacak. Devam etmek istiyor musunuz?
+            {t.session.idleBody(15)}{" "}
+            <b>{t.session.idleSeconds(grace)}</b>{t.session.idleTail}
           </Text>
           <Group justify="flex-end">
-            <Button variant="default" onClick={logout}>Çıkış yap</Button>
-            <Button onClick={extend}>Oturumu uzat</Button>
+            <Button variant="default" onClick={logout}>{t.layout.logout}</Button>
+            <Button onClick={extend}>{t.session.extend}</Button>
           </Group>
         </Stack>
       </Modal>

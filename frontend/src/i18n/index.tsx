@@ -43,8 +43,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // <html lang="..."> ekran okuyucular ve tarayıcı çevirisi için doğru olmalı;
   // ayrıca CSS'te :lang() seçicisi kullanılabilir hâle gelir.
+  //
+  // Sekme başlığı da burada: index.html'deki sabit <title> dil değişince
+  // Türkçe kalıyordu — kullanıcının pencere listesinde gördüğü ilk metin o.
   useEffect(() => {
     document.documentElement.lang = lang;
+    document.title = DICTS[lang].layout.appName;
   }, [lang]);
 
   const setLang = useCallback((next: Lang) => {

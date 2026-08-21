@@ -1,7 +1,27 @@
-# messages.py — çakışma sonuçları için insan-okur Türkçe açıklamalar
+# messages.py — çakışma sonuçları için insan-okur açıklamalar (TR/EN, K-79)
+#
+# **Dil nereden geliyor (K-79).** `get_lang()` isteğe özgü AMBIENT bir değer
+# okur (contextvar); imzalara `lang` parametresi EKLENMEDİ. Sebebi: `build_result`
+# orchestrator'da 12 yerden çağrılıyor, parametre geçirmek 5 orchestrator imzası
+# + 4 conflict_service girişi + motor sözleşmesi + 71 motor testi demekti.
+# İstek bağlamı yokken (motor testleri, betikler) varsayılan "tr" — yani mevcut
+# Türkçe çıktı BİREBİR korunur.
 from app.conflicts.slots import slot_range_to_times
+from app.i18n import get_lang
 
 DAY_NAMES = {1: "Pazartesi", 2: "Salı", 3: "Çarşamba", 4: "Perşembe", 5: "Cuma"}
+DAY_NAMES_EN = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday"}
+
+
+def _pick(tr_text: str, en_text: str) -> str:
+    """Dile göre iki hazır metinden birini seçer.
+
+    Şablon sözlüğü + parametre sözlüğü yerine bu desen bilinçli: iki dil YAN
+    YANA duruyor, bir kuralın çevirisi eksik kalırsa gözle görülür ve her mesaj
+    kendi f-string'ini okunur biçimde yazabilir (kuralların parametreleri
+    birbirinden çok farklı — ortak şablon sözlüğü hepsini eğip bükerdi).
+    """
+    return en_text if get_lang() == "en" else tr_text
 
 
 # ---------- ortak etiket yardımcıları ----------
@@ -29,13 +49,16 @@ def dept_label(obj):
     de anlaşılır kalsın diye tolere ediyoruz.
     """
     name = obj.get("department_name")
-    return name if name else f"{obj['department_id']}. bölüm"
+    if name:
+        return name          # bölüm ADI veri; çevrilmez (K-79 kapsam dışı)
+    return _pick(f"{obj['department_id']}. bölüm", f"department {obj['department_id']}")
 
 
 def weekly_time_label(session):
-    # "Pazartesi 10:30-12:15"
+    # "Pazartesi 10:30-12:15" / "Monday 10:30-12:15"
     start, end = slot_range_to_times(session["start_slot"], session["slot_count"])
-    return f"{DAY_NAMES[session['day_of_week']]} {start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+    gunler = DAY_NAMES_EN if get_lang() == "en" else DAY_NAMES
+    return f"{gunler[session['day_of_week']]} {start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
 
 
 def exam_time_label(exam):
@@ -50,109 +73,178 @@ def exam_time_label(exam):
 # ---------- haftalık dersler kural mesajları ----------
 
 def _msg_w1(a, b):
-    return (f"Derslik çakışması: {course_label(a)} ve {course_label(b)}, "
-            f"{weekly_time_label(a)}'te aynı dersliği kullanıyor.")
+    A, B, T = course_label(a), course_label(b), weekly_time_label(a)
+    return _pick(
+        f"Derslik çakışması: {A} ve {B}, {T}'te aynı dersliği kullanıyor.",
+        f"Classroom conflict: {A} and {B} use the same classroom at {T}.")
 
 
 def _msg_w2(a, b):
-    return (f"Hoca çakışması: {course_label(a)} ve {course_label(b)}, "
-            f"{weekly_time_label(a)}'te aynı hocaya sahip.")
+    A, B, T = course_label(a), course_label(b), weekly_time_label(a)
+    return _pick(
+        f"Hoca çakışması: {A} ve {B}, {T}'te aynı hocaya sahip.",
+        f"Lecturer conflict: {A} and {B} have the same lecturer at {T}.")
 
 
 def _msg_w3(a, b):
-    return (f"Cohort çakışması: {dept_label(a)} {a['year']}. sınıf {a['semester']} "
-            f"zorunlu dersleri {course_label(a)} ve {course_label(b)}, "
-            f"{weekly_time_label(a)}'te çakışıyor.")
+    D, Y, S = dept_label(a), a["year"], a["semester"]
+    A, B, T = course_label(a), course_label(b), weekly_time_label(a)
+    return _pick(
+        f"Cohort çakışması: {D} {Y}. sınıf {S} zorunlu dersleri {A} ve {B}, "
+        f"{T}'te çakışıyor.",
+        f"Cohort conflict: required courses {A} and {B} of {D} year {Y} {S} "
+        f"overlap at {T}.")
 
 def _msg_w4(a, b):
-    return (f"Cohort uyarısı: {dept_label(a)} {a['year']}. sınıf {a['semester']} "
-            f"dersleri {course_label(a)} ve {course_label(b)} (en az biri seçmeli), "
-            f"{weekly_time_label(a)}'te çakışıyor.")
+    D, Y, S = dept_label(a), a["year"], a["semester"]
+    A, B, T = course_label(a), course_label(b), weekly_time_label(a)
+    return _pick(
+        f"Cohort uyarısı: {D} {Y}. sınıf {S} dersleri {A} ve {B} "
+        f"(en az biri seçmeli), {T}'te çakışıyor.",
+        f"Cohort warning: courses {A} and {B} of {D} year {Y} {S} "
+        f"(at least one elective) overlap at {T}.")
 
 def _msg_w5(a, b):
-    return (f"Tekrarlayan ders çakışması: {course_label(a)} ve {course_label(b)}, "
-            f"{weekly_time_label(a)}'te aynı dersi içeriyor.")
+    A, B, T = course_label(a), course_label(b), weekly_time_label(a)
+    return _pick(
+        f"Tekrarlayan ders çakışması: {A} ve {B}, {T}'te aynı dersi içeriyor.",
+        f"Repeated course conflict: {A} and {B} contain the same course at {T}.")
 
 def _msg_w6(a, b):
-    return (f"Pencere dışı: {course_label(a)} geçerli gün/saat dışında planlanmış "
-            f"(gün {a['day_of_week']}, slot {a['start_slot']}, {a['slot_count']} slot).")
+    A, G, SL, N = course_label(a), a["day_of_week"], a["start_slot"], a["slot_count"]
+    return _pick(
+        f"Pencere dışı: {A} geçerli gün/saat dışında planlanmış "
+        f"(gün {G}, slot {SL}, {N} slot).",
+        f"Outside the window: {A} is scheduled outside valid days/hours "
+        f"(day {G}, slot {SL}, {N} slot(s)).")
 
 def _msg_w7(a, b):
-    return (f"Kapasite aşımı: {course_label(a)} beklenen öğrenci sayısı "
-            f"({a['expected_students']}) derslik kapasitesini aşıyor.")
+    A, N = course_label(a), a["expected_students"]
+    return _pick(
+        f"Kapasite aşımı: {A} beklenen öğrenci sayısı ({N}) derslik kapasitesini "
+        f"aşıyor.",
+        f"Capacity exceeded: the expected number of students for {A} ({N}) "
+        f"exceeds the classroom capacity.")
 
 def _msg_w8(a, b):
-    return (f"Ders saati tamlığı: {course_label(a)} şubesinin yerleşen slot toplamı "
-            f"dersin T+U+L değeriyle uyuşmuyor (eksik veya fazla).")
+    A = course_label(a)
+    return _pick(
+        f"Ders saati tamlığı: {A} şubesinin yerleşen slot toplamı dersin T+U+L "
+        f"değeriyle uyuşmuyor (eksik veya fazla).",
+        f"Course hour completeness: the total placed slots for section {A} do not "
+        f"match the course's T+P+L value (too few or too many).")
 
 def _msg_w9(a, b):
-    return (f"Derslik girilmemiş: {course_label(a)} yüz yüze dersine "
-            f"({weekly_time_label(a)}) derslik atanmamış.")
+    A, T = course_label(a), weekly_time_label(a)
+    return _pick(
+        f"Derslik girilmemiş: {A} yüz yüze dersine ({T}) derslik atanmamış.",
+        f"No classroom assigned: the face-to-face session {A} ({T}) has no "
+        f"classroom.")
      
 # ------------------------------------sınav kuralları mesajları --------------------------------------------
 
 def _msg_e1(a, b):
-    return (f"Sınav çakışması: {exam_label(a)} ve {exam_label(b)} sınavları, "
-            f"{exam_time_label(a)}'te ortak derslik kullanıyor.")
+    A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
+    return _pick(
+        f"Sınav çakışması: {A} ve {B} sınavları, {T}'te ortak derslik kullanıyor.",
+        f"Exam conflict: the {A} and {B} exams share a classroom at {T}.")
 
 def _msg_e2(a, b):
-    return (f"Mükerrer sınav: {exam_label(a)} dersinin "
-            f"{a['exam_type']} sınavı zaten tanımlı.")
+    A, TIP = exam_label(a), a["exam_type"]
+    return _pick(
+        f"Mükerrer sınav: {A} dersinin {TIP} sınavı zaten tanımlı.",
+        f"Duplicate exam: a {TIP} exam is already defined for {A}.")
 
 def _msg_e3(a, b):
-    return (f"Sınav hoca çakışması: {exam_label(a)} ve {exam_label(b)} sınavları, "
-            f"{exam_time_label(a)}'te aynı sorumluya sahip.")
+    A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
+    return _pick(
+        f"Sınav hoca çakışması: {A} ve {B} sınavları, {T}'te aynı sorumluya sahip.",
+        f"Exam lecturer conflict: the {A} and {B} exams have the same supervisor "
+        f"at {T}.")
 
 def _msg_e4a(a, b):
-    return (f"Cohort sınav çakışması: {dept_label(a)} {a['year']}. sınıf "
-            f"{a['semester']} zorunlu dersleri {exam_label(a)} ve {exam_label(b)} "
-            f"sınavları {exam_time_label(a)}'te çakışıyor.")
+    D, Y, S = dept_label(a), a["year"], a["semester"]
+    A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
+    return _pick(
+        f"Cohort sınav çakışması: {D} {Y}. sınıf {S} zorunlu dersleri {A} ve {B} "
+        f"sınavları {T}'te çakışıyor.",
+        f"Cohort exam conflict: the {A} and {B} exams of required courses of "
+        f"{D} year {Y} {S} overlap at {T}.")
 
 def _msg_e4b(a, b):
-    return (f"Cohort sınav uyarısı: {dept_label(a)} {a['year']}. sınıf "
-            f"{a['semester']} sınavları {exam_label(a)} ve {exam_label(b)} "
-            f"(en az biri seçmeli), {exam_time_label(a)}'te çakışıyor.")
+    D, Y, S = dept_label(a), a["year"], a["semester"]
+    A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
+    return _pick(
+        f"Cohort sınav uyarısı: {D} {Y}. sınıf {S} sınavları {A} ve {B} "
+        f"(en az biri seçmeli), {T}'te çakışıyor.",
+        f"Cohort exam warning: the {A} and {B} exams of {D} year {Y} {S} "
+        f"(at least one elective) overlap at {T}.")
 
 def _msg_e5(a, b):
-    return (f"Sınav kontenjanı yetersiz: {exam_label(a)} sınavına girecek "
-            f"{a['expected_students']} öğrenci, seçili dersliklerin toplam sınav "
-            f"kontenjanını aşıyor — ek derslik seçin.")
+    A, N = exam_label(a), a["expected_students"]
+    return _pick(
+        f"Sınav kontenjanı yetersiz: {A} sınavına girecek {N} öğrenci, seçili "
+        f"dersliklerin toplam sınav kontenjanını aşıyor — ek derslik seçin.",
+        f"Insufficient exam capacity: the {N} students taking the {A} exam exceed "
+        f"the total exam capacity of the selected classrooms — add a classroom.")
 
 
 def _msg_e5a(a, b):
-    return (f"Sınav kontenjanı girilmemiş: {exam_label(a)} sınavı için seçili "
-            f"dersliklerden en az birinin sınav kontenjanı boş; önce derslik "
-            f"kaydına kontenjanı girin.")
+    A = exam_label(a)
+    return _pick(
+        f"Sınav kontenjanı girilmemiş: {A} sınavı için seçili dersliklerden en az "
+        f"birinin sınav kontenjanı boş; önce derslik kaydına kontenjanı girin.",
+        f"Exam capacity missing: at least one classroom selected for the {A} exam "
+        f"has no exam capacity; set it on the classroom record first.")
 
 
 def _msg_e6(a, b):
-    return (f"Hafta sonu sınavı: {exam_label(a)} sınavı {a['exam_date']} "
-            f"tarihinde hafta sonuna denk geliyor.")
+    A, TARIH = exam_label(a), a["exam_date"]
+    return _pick(
+        f"Hafta sonu sınavı: {A} sınavı {TARIH} tarihinde hafta sonuna denk geliyor.",
+        f"Weekend exam: the {A} exam falls on a weekend on {TARIH}.")
 
 
 def _msg_e7(a, b):
-    return (f"Gereksiz derslik: {exam_label(a)} sınavı için seçilen dersliklerden "
-            f"en küçüğü çıkarılsa da kalan kontenjan {a['expected_students']} "
-            f"öğrenciye yetiyor.")
+    A, N = exam_label(a), a["expected_students"]
+    return _pick(
+        f"Gereksiz derslik: {A} sınavı için seçilen dersliklerden en küçüğü "
+        f"çıkarılsa da kalan kontenjan {N} öğrenciye yetiyor.",
+        f"Redundant classroom: even if the smallest classroom selected for the {A} "
+        f"exam were removed, the remaining capacity would still fit {N} students.")
 
 def _msg_e8(a, b):
-    return (f"Derslik girilmemiş: {exam_label(a)} sınavına derslik atanmamış — "
-            f"önce bir derslik seçin.")
+    A = exam_label(a)
+    return _pick(
+        f"Derslik girilmemiş: {A} sınavına derslik atanmamış — önce bir derslik seçin.",
+        f"No classroom assigned: the {A} exam has no classroom — select one first.")
 
 # ---------- çapraz kural mesajları (sınav × ders) ----------
 
 def _msg_x1(exam, weekly):
-    return (f"Sınav-ders çakışması: {exam_label(exam)} sınavı ({exam_time_label(exam)}), "
-            f"aynı derslikteki {course_label(weekly)} dersiyle "
-            f"({weekly_time_label(weekly)}) çakışıyor.")
+    X, XT = exam_label(exam), exam_time_label(exam)
+    C, CT = course_label(weekly), weekly_time_label(weekly)
+    return _pick(
+        f"Sınav-ders çakışması: {X} sınavı ({XT}), aynı derslikteki {C} dersiyle "
+        f"({CT}) çakışıyor.",
+        f"Exam-course conflict: the {X} exam ({XT}) overlaps with the {C} session "
+        f"({CT}) in the same classroom.")
 
 def _msg_x2(exam, weekly):
-    return (f"Sınav-ders cohort uyarısı: {exam_label(exam)} sınavı, aynı grubun "
-            f"{course_label(weekly)} dersiyle ({weekly_time_label(weekly)}) çakışıyor.")
+    X, C, CT = exam_label(exam), course_label(weekly), weekly_time_label(weekly)
+    return _pick(
+        f"Sınav-ders cohort uyarısı: {X} sınavı, aynı grubun {C} dersiyle "
+        f"({CT}) çakışıyor.",
+        f"Exam-course cohort warning: the {X} exam overlaps with the same cohort's "
+        f"{C} session ({CT}).")
 
 def _msg_x3(exam, weekly):
-    return (f"Sınav-ders hoca uyarısı: {exam_label(exam)} sınav sorumlusu, "
-            f"{course_label(weekly)} dersinde ({weekly_time_label(weekly)}) aynı anda görünüyor.")
+    X, C, CT = exam_label(exam), course_label(weekly), weekly_time_label(weekly)
+    return _pick(
+        f"Sınav-ders hoca uyarısı: {X} sınav sorumlusu, {C} dersinde ({CT}) "
+        f"aynı anda görünüyor.",
+        f"Exam-course lecturer warning: the supervisor of the {X} exam is also "
+        f"in the {C} session ({CT}) at the same time.")
 
 
     
@@ -190,7 +282,7 @@ MESSAGE_BUILDERS = {
 def build_message(rule_id, a, b=None):
     builder = MESSAGE_BUILDERS.get(rule_id)
     if builder is None:
-        return f"Çakışma: {rule_id}"
+        return _pick(f"Çakışma: {rule_id}", f"Conflict: {rule_id}")
     return builder(a, b)
 
 def _affected_ref(obj):

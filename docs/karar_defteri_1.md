@@ -2986,3 +2986,11 @@ Test bu sınırı da koruyor. `lang` açık parametre (router → servis).
 **Çevrilmeyenler (bilinçli):** akademik unvanlar (backend CANONICAL_TITLES ile
 eş tutulan VERİ), bölüm/ders/hoca adları (K-79 kapsam kararı), resmî XLSX
 şablonları (K-09).
+
+**Ek (tarih locale'i).** Faz 3'ün ilk turunda ATLANAN bir yüzey: `toLocaleString`
+locale'i. Dört yerde `"tr-TR"` sabitti ve İngilizce arayüzde "15 Ağu 2026"
+basıyordu. Kaçmasının sebebi öğreticidir — kaçak tarayıcısı Türkçe metin arıyor,
+`"tr-TR"` ise Türkçe harf içermeyen bir KOD. Locale sözlüğe alındı (`t.locale`),
+tarih yardımcıları sözlüğü parametre alıyor. **Sıralama/arama locale'i
+(`localeCompare("tr")`) BİLEREK değişmedi:** veri Türkçe, sıralama verinin diline
+göre doğru olmalı — arayüz dilinin sıralamayı bozması hata olurdu.

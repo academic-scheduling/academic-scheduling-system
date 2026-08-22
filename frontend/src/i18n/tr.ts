@@ -828,6 +828,10 @@ export const tr = {
     warningsShort: "uyarı",
   },
 
+  // K-79: `toLocaleString` locale'i de dile bağlı — 4 yerde "tr-TR"
+  // sabitti, İngilizce arayüzde Türkçe ay adı basıyordu.
+  locale: "tr-TR",
+
   days: {
     weekdayShort: ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"],
     minutesShort: "dk",
@@ -922,6 +926,9 @@ export const tr = {
   },
 
   publishing: {
+    blockersCaps: "ENGEL",
+    warningsCaps: "UYARI",
+    yearSemester: (yil: number, donem: string) => `${yil}. / ${donem}`,
     title: "Yayın Merkezi",
     loadFailed: "Yayın Merkezi yüklenemedi",
     cohortName: (bolum: string, yil: number, donem: string) =>

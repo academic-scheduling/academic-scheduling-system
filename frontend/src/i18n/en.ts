@@ -804,6 +804,10 @@ export const en: Dict = {
     warningsShort: "warnings",
   },
 
+  // K-79: `toLocaleString` locale'i de dile bağlı — 4 yerde "tr-TR"
+  // sabitti, İngilizce arayüzde Türkçe ay adı basıyordu.
+  locale: "en-GB",
+
   days: {
     weekdayShort: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     minutesShort: "min",
@@ -896,6 +900,9 @@ export const en: Dict = {
   },
 
   publishing: {
+    blockersCaps: "BLOCKING",
+    warningsCaps: "WARNING",
+    yearSemester: (yil: number, donem: string) => `Y${yil} / ${donem}`,
     title: "Publishing Center",
     loadFailed: "The Publishing Center could not be loaded",
     cohortName: (bolum: string, yil: number, donem: string) =>

@@ -83,9 +83,9 @@ const CARD_STYLES = `
 }
 `;
 
-function tarih(s: string | null): string {
+function tarih(s: string | null, t: Dict): string {
   if (!s) return "—";
-  return new Date(s).toLocaleString("tr-TR", {
+  return new Date(s).toLocaleString(t.locale, {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -286,13 +286,13 @@ function QueueCard({ d, active, mine, onClick }: {
     <UnstyledButton className="pub-card" data-selected={active} onClick={onClick} p="md">
       <Group gap={8} wrap="nowrap" mb={5}>
         <KindIcon size={15} color="var(--mantine-color-dimmed)" style={{ flex: "none" }} />
-        <Text fz={13} fw={700} truncate>{d.department_name} · {d.year}. sınıf</Text>
+        <Text fz={13} fw={700} truncate>{d.department_name} · {t.courses.yearN(d.year)}</Text>
       </Group>
       <Group gap={6} wrap="nowrap" c={TEXT_MUTED} fz={11} mb={3}>
         <IconUser size={12} style={{ flex: "none" }} />
         <Text fz={11} truncate style={{ flex: 1, minWidth: 0 }}>{d.owner.name}</Text>
         <Text fz={11} style={{ flex: "none", whiteSpace: "nowrap" }}>
-          {tarih(d.submitted_at ?? d.created_at)}
+          {tarih(d.submitted_at ?? d.created_at, t)}
         </Text>
       </Group>
       <Group gap={6} wrap="nowrap" fz={11} c={TEXT_MUTED} mb={7}>
@@ -445,8 +445,8 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         </Group>
         <Text fz={13} c={TEXT_MUTED} mt={3}>
           {sinav ? t.publishing.examSchedule : t.publishing.weeklySchedule}{" · "}{t.publishing.sentBy} {draft.owner.name}
-          {" · "}{tarih(draft.submitted_at ?? draft.created_at)}
-          {" · "}{draft.change_count} değişiklik
+          {" · "}{tarih(draft.submitted_at ?? draft.created_at, t)}
+          {" · "}{t.publishing.changeCount(draft.change_count)}
         </Text>
         <StatusSteps status={draft.status} isApprover={isApprover} />
       </div>
@@ -469,7 +469,7 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 <Alert color="orange" variant="light" radius="md"
                   icon={<IconAlertTriangle size={18} />} title={t.publishing.staleTitle}>
                   <Text size="sm">
-                    {t.publishing.staleBody(tarih(detail.staleness.opened_at),
+                    {t.publishing.staleBody(tarih(detail.staleness.opened_at, t),
                                             t.draft.kind[draft.kind])}{" "}
                     <b>{t.publishing.staleTimes(detail.staleness.publications_since)}</b>{" "}
                     {t.publishing.staleUpdated}
@@ -485,9 +485,9 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
               <Group grow gap={0} style={{
                 border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden" }}>
                 <StatCell label={t.publishing.statChange} value={String(detail.items.length)} />
-                <StatCell label="ENGEL" value={String(hard)} color={hard ? "red.7" : undefined} border />
-                <StatCell label="UYARI" value={String(warn)} color={warn ? "orange.7" : undefined} border />
-                <StatCell label={t.publishing.statSemester} value={`${draft.year}. / ${t.enums.semester[draft.semester]}`} border />
+                <StatCell label={t.publishing.blockersCaps} value={String(hard)} color={hard ? "red.7" : undefined} border />
+                <StatCell label={t.publishing.warningsCaps} value={String(warn)} color={warn ? "orange.7" : undefined} border />
+                <StatCell label={t.publishing.statSemester} value={t.publishing.yearSemester(draft.year, t.enums.semester[draft.semester])} border />
               </Group>
 
               {/* Program görüntüsü */}
@@ -746,7 +746,7 @@ function DeciderCard({ draft }: { draft: ScheduleDraft }) {
           <div style={{ minWidth: 0 }}>
             <Text fz={11} fw={600} c={TEXT_MUTED}>{t.publishing.senderCaps}</Text>
             <Text fz={13} fw={600} truncate>{draft.owner.name}</Text>
-            <Text fz={11} c="dimmed">{tarih(draft.submitted_at ?? draft.created_at)}</Text>
+            <Text fz={11} c="dimmed">{tarih(draft.submitted_at ?? draft.created_at, t)}</Text>
           </div>
         </Group>
         <div style={{ height: 1, background: BORDER }} />
@@ -765,7 +765,7 @@ function DeciderCard({ draft }: { draft: ScheduleDraft }) {
               {decided ? (draft.reviewer?.name ?? "—") : t.publishing.notDecided}
             </Text>
             <Text fz={11} c="dimmed">
-              {decided ? tarih(draft.reviewed_at) : t.publishing.awaitingApproval}
+              {decided ? tarih(draft.reviewed_at, t) : t.publishing.awaitingApproval}
             </Text>
           </div>
         </Group>

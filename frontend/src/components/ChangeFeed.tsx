@@ -8,10 +8,11 @@ import { api } from "../api/client";
 import type { DraftKind, ScheduleChange } from "../api/types";
 import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
-function tarih(s: string | null): string {
+function tarih(s: string | null, t: Dict): string {
   if (!s) return "";
-  return new Date(s).toLocaleString("tr-TR", {
+  return new Date(s).toLocaleString(t.locale, {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -89,7 +90,7 @@ export default function ChangeFeed({
                     {t.courseInfo.sharedCourseDepts(c.affected_departments.length)}
                   </Badge>
                 )}
-                <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at)}</Text>
+                <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at, t)}</Text>
               </Group>
               <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }}
                 onClick={() => goster(c)}>

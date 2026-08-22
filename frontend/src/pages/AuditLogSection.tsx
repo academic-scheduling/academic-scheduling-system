@@ -8,6 +8,7 @@ import type {
   AuditAction, AuditEntityType, AuditLogPage, ManagedUser,
 } from "../api/types";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 const ALL = "__all__";
 const PAGE_SIZE = 7;
@@ -26,8 +27,8 @@ const COL = {
 const TABLE_MIN_WIDTH = 900;
 
 /** Tarih + saat, tek satırda okunur biçimde. */
-const bicimle = (iso: string) =>
-  new Date(iso).toLocaleString("tr-TR", {
+const bicimle = (iso: string, t: Dict) =>
+  new Date(iso).toLocaleString(t.locale, {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
@@ -150,7 +151,7 @@ export default function AuditLogSection() {
                     return (
                       <Table.Tr key={k.id}>
                         <Table.Td>
-                          <Text size="sm" c="dimmed">{bicimle(k.created_at)}</Text>
+                          <Text size="sm" c="dimmed">{bicimle(k.created_at, t)}</Text>
                         </Table.Td>
                         <Table.Td>
                           {/* user null yalnız teorik: PENDING hesap işlem

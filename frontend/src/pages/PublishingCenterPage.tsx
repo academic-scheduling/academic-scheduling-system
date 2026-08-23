@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Alert, Badge, Button, Grid, Group, Loader, Modal, Paper, ScrollArea,
+  Alert, Badge, Button, Grid, Group, Loader, Paper, ScrollArea,
   SegmentedControl, Stack, Text, Textarea, Title, Tooltip,
   UnstyledButton,
 } from "@mantine/core";
@@ -365,8 +365,11 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [submitOpen, setSubmitOpen] = useState(false);
   const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
+  /** K-80: onaya gönderirken onaylayıcıya iletilecek not (`submit_note`).
+   *  Eskiden bir modalın içindeydi; artık incelemenin parçası ve gönderildikten
+   *  sonra aynı yerde OKUNUR olarak duruyor. */
+  const [submitNote, setSubmitNote] = useState("");
   /** K-80: karar notu. Eskiden yalnız "Reddet"e basınca açılan bir paneldi;
    *  artık incelemenin parçası ve TEK alan iki karara birden hizmet ediyor —
    *  onayda isteğe bağlı, rette zorunlu (backend `review_note` ortak alan). */
@@ -427,10 +430,17 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const hata = (e: unknown, varsayilan: string) =>
     notifications.show({ color: "red", message: e instanceof ApiError ? e.message : varsayilan });
 
+  /** Program ekranına git. `edit` ise TASLAĞA, değilse YAYINA.
+   *
+   *  K-80: yayın yolunda `mode=pub` ZORUNLU. Eskiden yalnız cohort verilirdi ve
+   *  K-73'ün mod hafızası devreye girip o cohortta açık taslağım varsa ekranı
+   *  TASLAĞA düşürüyordu — "Programda gör" diyip taslağa varmak, hele
+   *  onaylanmış bir kayıttan gidilirken, doğrudan yanlış cevaptır. */
   const goProgram = (edit: boolean) => {
     const path = draft.kind === "EXAM" ? "/exams" : "/weekly";
     onNavigate(`${path}?department_id=${draft.department_id}&year=${draft.year}`
-      + `&semester=${draft.semester}` + (edit ? `&draft_id=${draft.id}` : ""));
+      + `&semester=${draft.semester}`
+      + (edit ? `&draft_id=${draft.id}` : "&mode=pub"));
   };
 
   const onayla = async () => {
@@ -448,6 +458,28 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         if (body?.conflicts?.length) { setBlockers(body.conflicts); return; }
       }
       hata(e, t.publishing.approveFailed);
+    } finally { setBusy(false); }
+  };
+
+  const onayaGonder = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/schedule-drafts/${draft.id}/submit`,
+        { note: submitNote.trim() || null });
+      notifications.show({ color: "green", message: t.publishing.submitted });
+      onChanged();
+    } catch (e) {
+      // HARD çakışma varsa sunucu talebi HİÇ oluşturmaz (K-59) — hangi
+      // kuralların engellediğini söylemek gerekir, yoksa kullanıcı ne
+      // düzelteceğini bilemez.
+      if (e instanceof ApiError && e.status === 409) {
+        const body = e.body as { conflicts?: ConflictResult[]; detail?: string } | null;
+        notifications.show({ color: "red", message: body?.conflicts?.length
+          ? t.publishing.submitBlocked(body.conflicts.map((c) => c.rule_id).join(", "))
+          : (body?.detail ?? e.message) });
+        return;
+      }
+      hata(e, t.publishing.submitFailed);
     } finally { setBusy(false); }
   };
 
@@ -483,12 +515,18 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const hard = detail?.conflicts.hard.length ?? 0;
   const warn = detail?.conflicts.warnings.length ?? 0;
   const sinav = draft.kind === "EXAM";
+  /** K-80: ızgarada gösterilemeyen değişiklikler — kaldırılan satırın artık bir
+   *  yeri yok. Sayısı başlıkta söylenir, dökümü değişiklik listesinde. */
+  const kaldirilan = detail?.items.filter((i) => i.kind === "REMOVED").length ?? 0;
 
-  /** Sağ sütunun varlık koşulu (K-80): karar bizdeyse not yazılır, karar
-   *  verilmişse kim/ne dedi okunur. İkisi de yoksa sütun HİÇ çizilmez. */
+  /** Sağ sütunun varlık koşulu (K-80): söyleyecek sözü olmadıkça çizilmez.
+   *  Dört hâli var — kendi taslağıma not yazarım, gönderilmiş not okunur,
+   *  karar bendeyse karar notu yazarım, karar verilmişse kim/ne dedi okunur. */
+  const duzenlenebilir = draft.status === "OPEN" || draft.status === "REJECTED";
   const kararBizde = reviewable && !isSelf;
   const kararVerildi = draft.status === "REJECTED";
-  const yanSutun = kararBizde || kararVerildi;
+  const yanSutun = kararBizde || kararVerildi
+    || (duzenlenebilir && isSelf) || (!duzenlenebilir && !!draft.submit_note);
 
   return (
     <>
@@ -586,15 +624,32 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
               <div>
                 <Group gap={14} mb={8} align="center">
                   <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.gridTitle}</Text>
+                  {/* K-80: KALDIRILAN satırlar ızgarada gösterilemez (artık bir
+                      yerleri yok). Sessizce yutmak yerine sayısı söyleniyor;
+                      dökümü aşağıdaki değişiklik listesinde. */}
+                  {kaldirilan > 0 && (
+                    <Text fz={11} c="red.7">{t.publishing.removedNotShown(kaldirilan)}</Text>
+                  )}
                   <div style={{ flex: 1 }} />
                   <Legend swatch="green" label={t.publishing.legendAdded} />
                   <Legend swatch="blue" label={t.publishing.legendMoved} />
                   <Legend swatch="gray" label={t.publishing.legendExisting} />
+                  {/* Çakışma belirteci ayrı bir KANAL: rozetin rengi değişikliği,
+                      sol çubuk çakışmayı taşıyor. */}
+                  {(hard > 0 || warn > 0) && (
+                    <>
+                      <span style={{ width: 1, height: 12, background: BORDER }} />
+                      {hard > 0 && <Legend swatch="bar-red" label={t.publishing.legendBlocking} />}
+                      {warn > 0 && <Legend swatch="bar-orange" label={t.publishing.legendWarning} />}
+                    </>
+                  )}
                 </Group>
                 <Paper withBorder radius="md" p="sm">
                   {sinav
-                    ? <ProposedExamList exams={detail.exams} changed={detail.items} />
-                    : <ProposedGrid entries={detail.entries} changed={detail.items} />}
+                    ? <ProposedExamList exams={detail.exams} changed={detail.items}
+                        scan={detail.conflicts} />
+                    : <ProposedGrid entries={detail.entries} changed={detail.items}
+                        scan={detail.conflicts} />}
                 </Paper>
               </div>
 
@@ -610,18 +665,46 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 gridTemplateColumns: yanSutun
                   ? "minmax(0,1.35fr) minmax(0,1fr)" : "minmax(0,1fr)" }}>
                 <div>
-                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.changesTitle}</Text>
+                  <Group gap={10} align="baseline" mb={8}>
+                    <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.changesTitle}</Text>
+                    {/* K-80: türe göre döküm. Tek "N değişiklik" sayısı
+                        kaldırılanları da içine katıyordu ve ızgarada
+                        görünmedikleri için sayı tutmuyormuş gibi duruyordu. */}
+                    {detail.items.length > 0 && (
+                      <Text fz={11} c={TEXT_MUTED}>
+                        {t.publishing.changeBreakdown(
+                          detail.items.filter((i) => i.kind === "ADDED").length,
+                          detail.items.filter((i) => i.kind === "MOVED").length,
+                          kaldirilan)}
+                      </Text>
+                    )}
+                  </Group>
                   <ChangesList items={detail.items} />
 
                   <Text fz={12} fw={600} c={TEXT_MUTED} mt={16} mb={8}>{t.publishing.conflictCheck}</Text>
                   <ConflictList scan={detail.conflicts} blockers={blockers} />
                 </div>
 
-                {kararBizde && (
-                  <DecisionNotePanel value={note} onChange={setNote} />
-                )}
-                {kararVerildi && (
-                  <div><DecisionCard draft={draft} /></div>
+                {yanSutun && (
+                  <Stack gap={14}>
+                    {/* Sahibi henüz göndermemişken NOTU YAZAR; gönderildikten
+                        sonra aynı not herkese OKUNUR olarak görünür. K-80'e
+                        kadar `submit_note` yazılıyordu ama hiçbir yerde
+                        gösterilmiyordu — onaylayıcı gönderenin ne dediğini
+                        göremiyordu. */}
+                    {duzenlenebilir && isSelf && (
+                      <NotePanel title={t.publishing.submitNoteOptional}
+                        value={submitNote} onChange={setSubmitNote} />
+                    )}
+                    {!duzenlenebilir && draft.submit_note && (
+                      <SenderNoteCard note={draft.submit_note} kim={draft.owner.name} />
+                    )}
+                    {kararBizde && (
+                      <NotePanel title={t.publishing.decisionNoteOptional}
+                        value={note} onChange={setNote} />
+                    )}
+                    {kararVerildi && <DecisionCard draft={draft} />}
+                  </Stack>
                 )}
               </div>
             </>
@@ -663,9 +746,14 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
           <Button variant="light" color="gray" leftSection={<IconArrowBackUp size={15} />}
             loading={busy} onClick={geriCek}>{t.publishing.withdraw}</Button>
         )}
-        {(draft.status === "OPEN" || draft.status === "REJECTED") && (
+        {duzenlenebilir && (
           <>
-            <Button leftSection={<IconSend size={15} />} onClick={() => setSubmitOpen(true)}>
+            {/* K-80: not artık MODALDA sorulmuyor — sağdaki kutuda duruyor ve
+                gönderim doğrudan onu kullanıyor. Onaya göndermek geri
+                alınabilir bir adım (withdraw), araya onay ekranı koymak
+                gereksiz bir tıklamaydı. */}
+            <Button leftSection={<IconSend size={15} />} loading={busy}
+              onClick={onayaGonder}>
               {t.publishing.submitForApproval}
             </Button>
             <Button variant="default" leftSection={<IconPencil size={15} />}
@@ -683,10 +771,6 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         )}
       </div>
 
-      {submitOpen && (
-        <SubmitModal draftId={draft.id} onClose={() => setSubmitOpen(false)}
-          onDone={() => { setSubmitOpen(false); onChanged(); }} />
-      )}
     </>
   );
 }
@@ -707,15 +791,25 @@ function StatCell({ label, value, color, border }: {
 }
 
 /** K-80: örnek renkler ızgaranın GERÇEK rozetleriyle eşleşir — eklenen ve
- *  taşınan `filled`, değişmeyen `light` (bkz. ProposedSchedule). */
-function Legend({ swatch, label }: { swatch: "green" | "blue" | "gray"; label: string }) {
+ *  taşınan `filled`, değişmeyen `light` (bkz. ProposedSchedule).
+ *
+ *  `bar-*` örnekleri ÇAKIŞMA belirtecini anlatır ve bilerek kare değil ÇUBUK:
+ *  ızgarada da rozetin sol kenarındaki ince dikey çizgidir, örnek ona benzemezse
+ *  okuyucu iki işareti eşleştiremez. */
+function Legend({ swatch, label }: {
+  swatch: "green" | "blue" | "gray" | "bar-red" | "bar-orange"; label: string;
+}) {
+  const cubuk = swatch.startsWith("bar-");
   const bg = swatch === "green" ? "var(--mantine-color-green-filled)"
     : swatch === "blue" ? "var(--mantine-color-blue-filled)"
+    : swatch === "bar-red" ? "var(--mantine-color-red-6)"
+    : swatch === "bar-orange" ? "var(--mantine-color-orange-6)"
     : "var(--mantine-color-gray-light)";
   return (
     <Group gap={6} wrap="nowrap">
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: bg,
-        border: `1px solid ${BORDER}` }} />
+      <span style={{ width: cubuk ? 3 : 11, height: cubuk ? 13 : 11,
+        borderRadius: cubuk ? 1 : 3, background: bg,
+        border: cubuk ? undefined : `1px solid ${BORDER}` }} />
       <Text fz={11} c={TEXT_MUTED}>{label}</Text>
     </Group>
   );
@@ -852,20 +946,19 @@ function DecisionCard({ draft }: { draft: ScheduleDraft }) {
   );
 }
 
-/** Karar sırası BİZDEYKEN duran not kutusu (K-80).
+/** Not yazma kutusu (K-80) — iki yerde, aynı biçimde.
  *
- *  Eskiden yalnız "Reddet"e basınca açılan bir paneldi; onaylarken not yazmanın
- *  yolu hiç yoktu. Tek kutu iki karara da hizmet ediyor: onayda isteğe bağlı,
- *  rette zorunlu (Reddet butonu boş notta kapalı). */
-function DecisionNotePanel({ value, onChange }: {
-  value: string; onChange: (s: string) => void;
+ *  Karar sırası bizdeyken KARAR notu, kendi taslağımızdayken ONAYLAYICIYA not.
+ *  İkisi de "gönderilecek bir cümle" olduğu için tek bileşen; başlık ayırıyor.
+ *  Karar notu eskiden yalnız "Reddet"e basınca açılan bir paneldi ve onaylarken
+ *  not yazmanın yolu yoktu; gönderim notu ise bir modalın içindeydi. */
+function NotePanel({ title, value, onChange }: {
+  title: string; value: string; onChange: (s: string) => void;
 }) {
   const t = useT();
   return (
     <div>
-      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>
-        {t.publishing.decisionNoteOptional}
-      </Text>
+      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{title}</Text>
       <Paper withBorder radius="md" p="md">
         <Textarea placeholder={t.publishing.decisionNotePlaceholder}
           autosize minRows={4} maxRows={9}
@@ -875,48 +968,27 @@ function DecisionNotePanel({ value, onChange }: {
   );
 }
 
-
-/* --- Karar formları ---------------------------------------------- */
-
-function SubmitModal({ draftId, onClose, onDone }: {
-  draftId: number; onClose: () => void; onDone: () => void;
-}) {
+/** Gönderenin onaya iletirken yazdığı not (K-80).
+ *
+ *  `submit_note` K-59'dan beri kaydediliyordu ama HİÇBİR YERDE gösterilmiyordu:
+ *  onaylayıcı, gönderenin "neden" dediğini göremiyordu. Kararı verecek kişinin
+ *  ilk okuması gereken şey bu. */
+function SenderNoteCard({ note, kim }: { note: string; kim: string }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const gonder = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/schedule-drafts/${draftId}/submit`, { note: note.trim() || null });
-      notifications.show({ color: "green", message: t.publishing.submitted });
-      onDone();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        const body = e.body as { conflicts?: ConflictResult[]; detail?: string } | null;
-        const msg = body?.conflicts?.length
-          ? t.publishing.submitBlocked(body.conflicts.map((c) => c.rule_id).join(", "))
-          : (body?.detail ?? e.message);
-        notifications.show({ color: "red", message: msg });
-        return;
-      }
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.publishing.submitFailed });
-    } finally { setBusy(false); }
-  };
   return (
-    <Modal opened onClose={onClose} radius="md" title={t.publishing.submitTitle}>
-      <Stack gap="sm">
-        <Textarea label={t.publishing.noteLabel}
-          description={t.publishing.noteHelp}
-          placeholder={t.publishing.notePlaceholder}
-          autosize minRows={3} maxRows={6}
-          value={note} onChange={(e) => setNote(e.currentTarget.value)} />
-        <Group justify="flex-end" gap="xs">
-          <Button variant="default" onClick={onClose}>{t.common.dismiss}</Button>
-          <Button loading={busy} leftSection={<IconSend size={15} />} onClick={gonder}>
-            {t.publishing.submitForApproval}
-          </Button>
+    <div>
+      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.submitNoteTitle}</Text>
+      <Paper withBorder radius="md" p="md">
+        <Group gap={9} wrap="nowrap" align="flex-start">
+          <Badge size="lg" circle variant="light" color="blue">
+            <IconSend size={14} />
+          </Badge>
+          <div style={{ minWidth: 0 }}>
+            <Text fz={12.5} lh={1.5}>{note}</Text>
+            <Text fz={11} c="dimmed" mt={4}>{t.publishing.noteBy(kim)}</Text>
+          </div>
         </Group>
-      </Stack>
-    </Modal>
+      </Paper>
+    </div>
   );
 }

@@ -824,6 +824,8 @@ export const en: Dict = {
     sectionOf: (kod: string, sube: number) => `${kod} · Section ${sube}`,
     noExams: "No exam in the draft.",
     movedTag: "moved",
+    addedTag: "added",
+    studentCount: (n: number) => `${n} students`,
     noClassroom: "No classroom assigned",
     undoFailed: "Could not be undone",
     kind: { WEEKLY: "weekly schedule", EXAM: "exam schedule" },
@@ -953,6 +955,11 @@ export const en: Dict = {
     legendAdded: "added",
     legendMoved: "moved",
     legendExisting: "unchanged",
+    legendBlocking: "blocking",
+    legendWarning: "warning",
+    removedNotShown: (n: number) => `${n} removed — not shown on the grid`,
+    changeBreakdown: (eklenen: number, tasinan: number, kaldirilan: number) =>
+      `${eklenen} added · ${tasinan} moved · ${kaldirilan} removed`,
     changesTitle: "CHANGES",
     conflictCheck: "CONFLICT CHECK",
 
@@ -988,6 +995,8 @@ export const en: Dict = {
 
     decisionNoteTitle: "DECISION NOTE",
     decisionNoteOptional: "DECISION NOTE (optional)",
+    submitNoteOptional: "NOTE TO THE APPROVER (optional)",
+    submitNoteTitle: "SENDER'S NOTE",
     decisionNotePlaceholder: "Note to be sent to the sender",
     rejectNeedsNote: "Write a reason in order to reject",
     noteBy: (kim: string) => `written by ${kim}`,
@@ -998,12 +1007,6 @@ export const en: Dict = {
     submitBlocked: (kurallar: string) =>
       `Could not be sent because of blocking conflicts: ${kurallar}`,
     submitFailed: "Could not be sent",
-    submitTitle: "Submit for approval",
-    noteLabel: "Description (optional)",
-    noteHelp:
-      "The approver will see this note — briefly describe what you changed and why",
-    notePlaceholder:
-      "e.g. CENG2030 was split into two sections; the second was assigned to Jane Doe",
   },
 
   changeFeed: {

@@ -848,6 +848,10 @@ export const tr = {
     sectionOf: (kod: string, sube: number) => `${kod} · Şube ${sube}`,
     noExams: "Taslakta hiç sınav yok.",
     movedTag: "taşındı",
+    // K-80: K-79'dan kaçmış iki metin — sınav listesindeki "eklendi"
+    // rozeti ve öğrenci sayısı ("120 öğrenci") sabit Türkçeydi.
+    addedTag: "eklendi",
+    studentCount: (n: number) => `${n} öğrenci`,
     noClassroom: "Derslik atanmadı",
     undoFailed: "Geri alınamadı",
     // Taslak türü / satır adı. `rowsPlural` AYRI bir girdi: Türkçede
@@ -996,6 +1000,13 @@ export const tr = {
     legendAdded: "eklenen",
     legendMoved: "taşınan",
     legendExisting: "değişmeyen",
+    legendBlocking: "engel",
+    legendWarning: "uyarı",
+    // K-80: kaldırılan satır ızgarada gösterilemez (artık bir yeri yok);
+    // sessizce yutmak yerine sayısı söyleniyor, dökümü listede.
+    removedNotShown: (n: number) => `${n} kaldırılan ızgarada görünmez`,
+    changeBreakdown: (eklenen: number, tasinan: number, kaldirilan: number) =>
+      `${eklenen} eklendi · ${tasinan} taşındı · ${kaldirilan} kaldırıldı`,
     changesTitle: "DEĞİŞİKLİKLER",
     conflictCheck: "ÇAKIŞMA KONTROLÜ",
 
@@ -1036,6 +1047,10 @@ export const tr = {
     // K-80: yardım cümlesi kutunun altından kalktı; "opsiyonel" başlığın
     // yanında duruyor — bilgi aynı yerde, satır kazanılıyor.
     decisionNoteOptional: "KARAR NOTU (opsiyonel)",
+    // K-80: gönderim notu artık modalda değil, incelemenin yanında —
+    // yazılırken ve gönderildikten sonra AYNI yerde duruyor.
+    submitNoteOptional: "ONAYLAYICIYA NOT (opsiyonel)",
+    submitNoteTitle: "GÖNDERENİN NOTU",
     decisionNotePlaceholder: "Gönderene iletilecek not",
     rejectNeedsNote: "Reddetmek için gerekçe yazın",
     noteBy: (kim: string) => `${kim} yazdı`,
@@ -1046,12 +1061,6 @@ export const tr = {
     submitBlocked: (kurallar: string) =>
       `Hard çakışma nedeniyle gönderilemedi: ${kurallar}`,
     submitFailed: "Gönderilemedi",
-    submitTitle: "Onaya gönder",
-    noteLabel: "Açıklama (opsiyonel)",
-    noteHelp:
-      "Onaylayıcı bu notu görecek — neyi neden değiştirdiğinizi kısaca yazabilirsiniz",
-    notePlaceholder:
-      "Örn. CENG2030 iki şubeye bölündü, ikinci şubeye Can Demir atandı",
   },
 
   changeFeed: {

@@ -20,6 +20,23 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+/** K-80 — sekmeler arası kimlik izi.
+ *
+ *  Token zaten localStorage'da ama KİMLİK sorusunu cevaplamıyor: her tazelemede
+ *  değeri değişir, oysa kullanıcı aynıdır. Yanına kullanıcı id'sini yazıyoruz;
+ *  `storage` dinleyicisi "kim" değişti mi diye buna bakar. Gizli bir bilgi
+ *  değildir (token'ın içinde zaten var), yalnız ucuz bir karşılaştırma anahtarı. */
+const UID_KEY = "auth_uid";
+const readUid = (): string | null => {
+  try { return localStorage.getItem(UID_KEY); } catch { return null; }
+};
+const writeUid = (id: number | null): void => {
+  try {
+    if (id === null) localStorage.removeItem(UID_KEY);
+    else localStorage.setItem(UID_KEY, String(id));
+  } catch { /* kota/gizli mod: iz tutulamazsa sekme senkronu çalışmaz, oturum çalışır */ }
+};
+
 // --- Oturum yönetimi (K-47) ---
 // Karar: MUTLAK 60 dk yerine BOŞTA-KALMA modeli. Aktif çalışırken token sessizce
 // tazelenir (kesinti yok); yalnız 15 dk hareketsizlikte "uzat/çık" sorulur.
@@ -39,6 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Oturum durumu: son etkinlik/tazeleme anları ref'te (render tetiklemesin).
   const lastActivity = useRef(Date.now());
   const lastRefresh = useRef(Date.now());
+  /** K-80: bu sekmenin bildiği son KİMLİK. Token'ın kendisi karşılaştırılamaz:
+   *  keepalive onu her 10 dakikada tazeliyor ve iki açık sekme birbirini
+   *  durmadan yenilerdi. Değişmesi anlamlı olan şey kullanıcının KİM olduğu. */
+  const sonGorulenUid = useRef<string | null>(readUid());
   const [promptOpen, setPromptOpen] = useState(false);   // boşta uyarı modalı açık mı
   const [grace, setGrace] = useState(GRACE_SEC);          // modaldaki geri sayım
 
@@ -51,7 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     api
       .get<User>("/auth/me")
-      .then(setUser)
+      .then((u) => {
+        // K-80: kimlik izini burada da tazele — K-80 öncesinden gelen açık
+        // oturumlarda `auth_uid` henüz yazılmamıştır.
+        writeUid(u.id);
+        sonGorulenUid.current = String(u.id);
+        setUser(u);
+      })
       .catch(() => {
         // 401 ise client.ts token'ı zaten sildi ve /login'e yönlendirdi.
         // Ağ hatasıysa (backend kapalı) token'a DOKUNMUYORUZ: kullanıcıyı
@@ -60,11 +87,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  /** K-80 — BAŞKA SEKMEDE kimlik değişirse bu sekme eski kullanıcıyı gösteremez.
+   *
+   *  Token localStorage'da durur ve tüm sekmeler onu PAYLAŞIR. Bir sekmede
+   *  başka bir hesapla giriş yapılınca bu sekmenin istekleri anında yeni
+   *  kimlikle gitmeye başlar — sunucu tarafında sızıntı YOKTUR, yeni kullanıcı
+   *  öncekinin taslağını çekemez (404). Kusur EKRANDA: React state hâlâ eski
+   *  kullanıcıyı ve onun yüklenmiş listelerini tutar. Paylaşılan bir
+   *  bilgisayarda bu, K-59'un "taslak sahibinden başkasına görünmez" kuralını
+   *  görsel olarak deler.
+   *
+   *  Çözüm sayfayı baştan yüklemek. Nokta atışı bir state tazelemesi yerine
+   *  reload seçildi: kimlik uygulamanın HER yerine dağılmış bir varsayımdır
+   *  (yüklenmiş listeler, açık drawer'lar, taslak modu), tek tek tazelemeye
+   *  çalışmak birini unutmak demektir. Kimlik değişimi ayrıca nadirdir.
+   *
+   *  `storage` olayı yalnız DİĞER sekmelerde tetiklenir; kendi login/logout
+   *  akışımız bu yüzden döngüye girmez. */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== UID_KEY) return;   // null = storage.clear()
+      const suanki = readUid();
+      if (suanki === sonGorulenUid.current) return;      // yalnız tazeleme yankısı
+      sonGorulenUid.current = suanki;
+      window.location.reload();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   async function login(email: string, password: string) {
     // Hata fırlatırsa (401 = şifre yanlış) bilerek yakalamıyoruz —
     // login formu ApiError'ı yakalayıp mesajı alanın altında gösterecek.
     const res = await api.post<LoginResponse>("/auth/login", { email, password });
     setToken(res.access_token);
+    writeUid(res.user.id);
+    sonGorulenUid.current = String(res.user.id);
     setUser(res.user);
     lastActivity.current = Date.now();
     lastRefresh.current = Date.now();
@@ -72,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    writeUid(null);              // K-80: diğer sekmeler de çıkışı görsün
+    sonGorulenUid.current = null;
     setUser(null);
     setPromptOpen(false);
   }, []);
@@ -81,6 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const res = await api.post<LoginResponse>("/auth/refresh");
     setToken(res.access_token);
+    writeUid(res.user.id);        // kimlik aynı; yankı `sonGorulenUid` ile susturulur
+    sonGorulenUid.current = String(res.user.id);
     setUser(res.user);
     lastRefresh.current = Date.now();
   }, []);

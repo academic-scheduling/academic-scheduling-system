@@ -3057,3 +3057,54 @@ bu taslağı düzeltip yeniden gönderecek, dolayısıyla güncel gerçeği gör
 — etkilenen", "Taslak silindi", "Silinemedi", "N engel giderilmeli") ve bir buton
 metni. Hepsi konum ölçütüne uyuyordu, yani tarayıcı doğruydu — uygulaması eksik
 kalmıştı. Kapatıldı.
+
+### K-80 eki · görünürlük, oturum ve iki yükleme kusuru
+
+**"Onaylananlar" grubu artık paylaşılıyor — kapsam SIFIRDAN tanımlanmadı.**
+Grup yalnız kendi kayıtlarımı gösteriyordu; başka birinin onayladığı, benim
+bölümümün programını değiştiren bir kayıt listede yoktu. K-59'un gizliliği
+HAZIRLIK evresini korur (OPEN/PENDING/REJECTED), sonucunu değil: onaylanan
+taslak yayına girmiş bir kayıttır ve yayındaki programı zaten görebilen birinin
+onu kimin değiştirdiğini görememesi için sebep yok.
+
+Kapsam sorusunun cevabı sistemde ZATEN vardı — Değişiklik Akışı
+(`/schedule-changes`). Yeni bir kural icat etmek yerine o kural ortak bir
+fonksiyona çıkarıldı (`approved_visibility_filter`): ADMIN workgroup'un
+tamamını, alt hesap üyesi olduğu bölümleri + ortak ders üzerinden etkilenenleri,
+üyeliksiz alt hesap hiçbirini. **İki yüzey aynı soruyu soruyorsa cevabın iki
+sürümü olmamalı** — kopyalansaydı biri gün gelip ötekinden ayrılır ve gizlilik
+sınırını kopya belirlerdi.
+
+Okuma uçları (`/entries`, `/exams`, `GET /schedule-drafts/{id}`) genişledi;
+yazma uçları ile `/diff` ve `/conflicts` sahiplik aramaya DEVAM ediyor: görme
+hakkı düzenleme hakkı değildir, canlı fark da geçmiş kayıtta anlamsızdır.
+Genişlemenin sınırını `test_unapproved_drafts_stay_private_even_from_admin`
+koruyor.
+
+**Sekmeler arası kimlik.** Bir sekmede admin açıkken başka sekmeden alt hesaba
+geçilince ilk sekme eski listeyi göstermeye devam ediyordu. Sunucu tarafında
+sızıntı YOK (token paylaşıldığı için istekler yeni kimlikle gidiyor ve 404
+alıyor); kusur ekranda — ve paylaşılan bir bilgisayarda K-59'u GÖRSEL olarak
+deliyor. `storage` dinleyicisi eklendi, kimlik değişiminde sayfa baştan
+yükleniyor. Nokta atışı state tazelemesi seçilmedi: kimlik uygulamanın her
+yerine dağılmış bir varsayımdır, tek tek tazelemek birini unutmaktır.
+**Karşılaştırılan şey token DEĞİL kimlik** (`auth_uid`): keepalive token'ı 10
+dakikada bir tazeliyor, token'a bakılsaydı iki açık sekme birbirini durmadan
+yenilerdi.
+
+**Mod sıçraması — düz bayrak yetmedi.** Taslak modundaki cohort'a dönünce ekran
+önce yayını çizip taslağa atlıyordu. İlk düzeltme bir boolean'dı ve İŞE
+YARAMADI: yükleme efekti taslak efektinden önce tanımlı, dolayısıyla cohort
+değiştiği render'da bayrak hâlâ önceki cohort'tan kalma `true` oluyor. Bayrağı
+cohort KİMLİĞİNE bağlamak (`modCozulen !== cohortKey`) yarışı kökten bitirdi;
+istek günlüğünde doğrulandı (artık `/weekly-entries` hiç atılmıyor).
+
+**Mantine'de `loading`, `disabled` görünümünü ezer.** "Değişiklikler"e basınca
+"Onaya Gönder" bir an aktif görünüyordu: buton `loading={busy}` alıyordu ve
+`busy` çubuğun ORTAK state'i. Bir butonun yüklenmesi başka bir butonu loading'e
+sokmamalı — o butonun kendi async işi zaten yoktu.
+
+**Izgara açıklaması gerçeğe uyduruldu.** `ProposedGrid` üç durum çiziyor (yeşil
+eklendi, MAVİ TAŞINDI, gri değişmedi) ama açıklama ikisini anlatıyordu; mavi
+rozetlerin ne demek olduğu okunamıyordu. Örnek renkler de gerçek rozetlerle
+eşitlendi (filled/light).

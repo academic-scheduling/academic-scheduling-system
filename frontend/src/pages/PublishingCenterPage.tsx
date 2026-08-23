@@ -118,6 +118,34 @@ type Detail = {
 
 const EMPTY_SCAN: ConflictScan = { hard: [], warnings: [] };
 
+/** Bu onaydan SONRA aynı cohort'u değiştiren bir onay geldi mi? (K-80)
+ *
+ *  Onaylanan kaydın ızgarası DONMUŞTUR; "Programda gör" ise CANLI yayına
+ *  götürür. Arada başka bir onay geçtiyse bu ikisi ayrışır ve kullanıcı,
+ *  baktığı görüntünün hâlâ yürürlükte olduğunu sanabilir. Uyarı bu ayrışmayı
+ *  söyler.
+ *
+ *  Ek sunucu turu YOK: "beni ilgilendiren onaylar" listesi zaten yüklü ve
+ *  görülemeyen bir onayın uyarısını vermek da anlamsız olurdu. Karşılaştırma
+ *  `kind`i de içerir — sınav onayı haftalık programı eskitmez (K-60). */
+function sonrakiOnay(
+  d: ScheduleDraft, hepsi: ScheduleDraft[],
+): ScheduleDraft | null {
+  if (d.status !== "APPROVED" || !d.reviewed_at) return null;
+  const sonra = hepsi.filter((o) =>
+    o.id !== d.id
+    && o.status === "APPROVED"
+    && o.kind === d.kind
+    && o.department_id === d.department_id
+    && o.year === d.year
+    && o.semester === d.semester
+    && !!o.reviewed_at
+    && new Date(o.reviewed_at) > new Date(d.reviewed_at!));
+  // En YENİSİ döner: uyarı "program o tarihten beri değişti" diyecek.
+  return sonra.sort((a, b) =>
+    new Date(b.reviewed_at!).getTime() - new Date(a.reviewed_at!).getTime())[0] ?? null;
+}
+
 
 export default function PublishingCenterPage() {
   const t = useT();
@@ -221,7 +249,8 @@ export default function PublishingCenterPage() {
         <Grid.Col span={{ base: 100, md: 66, lg: 74 }}>
           {cur
             ? <DetailPane key={cur.id} draft={cur} isApprover={isApprover}
-                meId={user?.id ?? -1} onChanged={load} onNavigate={navigate} />
+                meId={user?.id ?? -1} onChanged={load} onNavigate={navigate}
+                sonrakiOnay={sonrakiOnay(cur, approved)} />
             : <EmptyDetail loaded={loaded} />}
         </Grid.Col>
       </Grid>
@@ -357,9 +386,11 @@ function EmptyDetail({ loaded }: { loaded: boolean }) {
   );
 }
 
-function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
+function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOnay }: {
   draft: ScheduleDraft; isApprover: boolean; meId: number;
   onChanged: () => void; onNavigate: (to: string) => void;
+  /** K-80: bu onaydan sonra aynı cohort'u değiştiren onay (varsa). */
+  sonrakiOnay: ScheduleDraft | null;
 }) {
   const t = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -574,10 +605,13 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
           {detail?.approved && (
             <>
               <div>
-                <Group gap={10} mb={8} align="center">
-                  <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.approvedGridTitle}</Text>
-                  <Text fz={11} c={TEXT_MUTED}>{t.publishing.approvedGridNote}</Text>
-                </Group>
+                {/* K-80: baslik oteki gorunumlerle AYNI ("Program goruntusu")
+                    ve yanindaki "onay anindaki hali" aciklamasi kaldirildi —
+                    kaydin ONAYLANDIGI zaten durum rozetinde ve karar kartinda
+                    yaziyor, ucuncu kez soylemek gurultu. */}
+                <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>
+                  {t.publishing.gridTitle}
+                </Text>
                 {/* `changed={[]}`: vurgulanacak fark yok. Onaylanan görüntüde
                     "eklenen/mevcut" ayrımı anlamsızdır — hepsi yayına geçti. */}
                 <Paper withBorder radius="md" p="sm">
@@ -766,8 +800,24 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
         {/* Düzenlenebilir taslakta "Programda düzenle" zaten görüntülemeyi kapsar;
             "Programda gör" yalnız düzenlenemeyen (bekleyen/yayında) kayıtlarda. */}
         {draft.status !== "OPEN" && draft.status !== "REJECTED" && (
-          <Button variant="subtle" color="gray" leftSection={<IconCalendarWeek size={15} />}
-            onClick={() => goProgram(false)}>{t.publishing.viewInSchedule}</Button>
+          <Group gap={8} wrap="nowrap">
+            {/* K-80: yukarıdaki ızgara DONMUŞ, "Programda gör" ise CANLI yayına
+                götürür. Arada başka bir onay geçtiyse ikisi ayrışır; uyarı
+                olmadan kullanıcı baktığı görüntünün hâlâ yürürlükte olduğunu
+                sanar. Buton engellenmiyor — yayını görmek meşru bir istek. */}
+            {sonrakiOnay && (
+              <Tooltip multiline maw={300}
+                label={t.publishing.supersededTip(
+                  sonrakiOnay.owner.name, tarih(sonrakiOnay.reviewed_at, t))}>
+                <Group gap={5} wrap="nowrap" style={{ cursor: "help" }}>
+                  <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" />
+                  <Text fz={11} c="orange.7">{t.publishing.superseded}</Text>
+                </Group>
+              </Tooltip>
+            )}
+            <Button variant="subtle" color="gray" leftSection={<IconCalendarWeek size={15} />}
+              onClick={() => goProgram(false)}>{t.publishing.viewInSchedule}</Button>
+          </Group>
         )}
       </div>
 
@@ -938,7 +988,6 @@ function DecisionCard({ draft }: { draft: ScheduleDraft }) {
               {t.publishing.decisionNoteTitle}
             </Text>
             <Text fz={12.5} lh={1.5}>{draft.review_note}</Text>
-            <Text fz={11} c="dimmed" mt={4}>{t.publishing.noteBy(kim)}</Text>
           </div>
         )}
       </Stack>
@@ -985,7 +1034,6 @@ function SenderNoteCard({ note, kim }: { note: string; kim: string }) {
           </Badge>
           <div style={{ minWidth: 0 }}>
             <Text fz={12.5} lh={1.5}>{note}</Text>
-            <Text fz={11} c="dimmed" mt={4}>{t.publishing.noteBy(kim)}</Text>
           </div>
         </Group>
       </Paper>

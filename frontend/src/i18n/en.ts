@@ -967,8 +967,9 @@ export const en: Dict = {
     kindWeekly: "Weekly",
     kindExam: "Exams",
 
-    approvedGridTitle: "APPROVED SCHEDULE",
-    approvedGridNote: "As it stood at approval — later changes are not reflected.",
+    superseded: "this cohort was updated later",
+    supersededTip: (kim: string, ne_zaman: string) =>
+      `After this approval, another change for the same cohort was published by ${kim} (${ne_zaman}). The schedule above is this approval's snapshot; "View in the schedule" opens the current published one.`,
     appliedChangesTitle: "CHANGES PUBLISHED",
 
     hardBlocks: "Cannot be approved until the blocking conflict is resolved",
@@ -999,7 +1000,6 @@ export const en: Dict = {
     submitNoteTitle: "SENDER'S NOTE",
     decisionNotePlaceholder: "Note to be sent to the sender",
     rejectNeedsNote: "Write a reason in order to reject",
-    noteBy: (kim: string) => `written by ${kim}`,
     rejected: "Request rejected — the reason was sent to the owner",
     rejectFailed: "Could not be rejected",
 

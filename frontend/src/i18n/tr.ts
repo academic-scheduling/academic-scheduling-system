@@ -1016,8 +1016,11 @@ export const tr = {
     kindExam: "Sınav",
 
     // K-80 · onaylanan kaydın dondurulmuş görüntüsü
-    approvedGridTitle: "ONAYLANAN PROGRAM",
-    approvedGridNote: "Onay anındaki hâli — sonraki değişiklikler yansımaz.",
+    // K-80: onaylanan görüntü DONMUŞ, "Programda gör" ise canlı yayına
+    // götürür. Arada başka bir onay geçtiyse bu ikisi ayrışır.
+    superseded: "bu cohort sonradan güncellendi",
+    supersededTip: (kim: string, ne_zaman: string) =>
+      `Bu onaydan sonra aynı cohort için ${kim} tarafından hazırlanan bir değişiklik daha yayına alındı (${ne_zaman}). Yukarıdaki görüntü bu onayın anlık hâlidir; "Programda gör" güncel yayını açar.`,
     appliedChangesTitle: "YAYINA ALINAN DEĞİŞİKLİKLER",
 
     hardBlocks: "Hard çakışma çözülmeden onaylanamaz",
@@ -1053,7 +1056,6 @@ export const tr = {
     submitNoteTitle: "GÖNDERENİN NOTU",
     decisionNotePlaceholder: "Gönderene iletilecek not",
     rejectNeedsNote: "Reddetmek için gerekçe yazın",
-    noteBy: (kim: string) => `${kim} yazdı`,
     rejected: "Talep reddedildi — gerekçe gönderene iletildi",
     rejectFailed: "Reddedilemedi",
 

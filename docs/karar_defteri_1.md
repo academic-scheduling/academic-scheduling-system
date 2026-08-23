@@ -3172,3 +3172,18 @@ da aynı sebeple gitti: kim olduğu hemen üstteki kartta yazılı.
 
 **Kural olarak:** bir bilgi ekranda ikinci kez görünüyorsa, ikinci görünüm
 kendini savunmak zorundadır — farklı bir soruyu cevaplamıyorsa gürültüdür.
+
+### K-80 eki 4 · "Programda gör" yarışının kalıcı çözümü
+
+Önceki turda `mode=pub` niyetini tek seferlik `taslakSecimiAtla` ref'iyle
+taşımıştım; o cohort'ta KAYITLI taslak tercihi varken ekran yine taslağa
+düşüyordu. Sebep aynı sınıf yarış: `setDep/setYear/setSem` peş peşe render
+üretiyor, taslak-seçim efekti birden çok kez koşuyor, ref ilk koşuda tükenince
+ikincisi `readScheduleMode`'dan taslak id'sini okuyup taslağı seçiyor.
+
+**Kural: geçici niyeti ref ile taşımak, o niyeti okuyan efekt birden çok kez
+koşabiliyorsa güvenilmezdir.** Ya niyeti KALICI kıl (idempotent), ya da efektin
+son koşusuna kadar canlı tut. Burada kalıcı seçildi: `writeScheduleMode(...,
+"pub")` K-73'ün tercihine yazıyor; efekt kaç kez koşarsa koşsun `readScheduleMode`
+"pub" döndürüyor. Yan fayda: davranış doğru — kullanıcı yayını istedi, tercih
+yayın oldu; taslağına "Taslağa Dön" ile döner (o da tercihi taslağa yazar).

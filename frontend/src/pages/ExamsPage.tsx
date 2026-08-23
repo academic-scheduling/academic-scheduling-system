@@ -292,10 +292,11 @@ export default function ExamsPage() {
     const semParam = searchParams.get("semester");
     if (yearParam) setYear(yearParam);
     if (semParam) setSem(semParam as SemesterType);
-    // K-80: `mode=pub` ile gelindiyse YAYIN istenmiştir; mod hafızası devreye
-    // girip ekranı açık taslağa düşürmemeli (haftalıktaki eşinin ikizi).
-    if (searchParams.get("mode") === "pub") {
-      taslakSecimiAtla.current = true;
+    // K-80: `mode=pub` ile gelindiyse YAYIN istenmiştir. K-73 tercihine yazıyoruz
+    // (haftalıktaki eşinin ikizi) — tek seferlik ref yarışa açıktı, kalıcı "pub"
+    // tercihi taslak-seçim efekti kaç kez koşarsa koşsun aynı cevabı verir.
+    if (searchParams.get("mode") === "pub" && yearParam && semParam) {
+      writeScheduleMode("exam-mode", depParam, yearParam, semParam, "pub");
       setDraft(null);
     }
     const next = new URLSearchParams(searchParams);

@@ -314,11 +314,14 @@ export default function WeeklyPage() {
     if (yearParam) setYear(yearParam);
     if (semParam) setSem(semParam as SemesterType);
     // K-80: `mode=pub` ile gelindiyse YAYIN istenmiştir (Yayın Merkezi'ndeki
-    // "Programda gör"). K-73'ün mod hafızası burada devreye girmemeli, yoksa
-    // ekran o cohortun açık taslağına düşer ve kullanıcı istediğinden başka bir
-    // program görür. `taslakSecimiAtla` K-62'de tam bunun için yazılmıştı.
-    if (searchParams.get("mode") === "pub") {
-      taslakSecimiAtla.current = true;
+    // "Programda gör"). Bunu K-73'ün KALICI tercihine yazıyoruz — tek seferlik
+    // `taslakSecimiAtla` ref'i YETMEDİ: setDep/setYear/setSem birbirini izleyen
+    // render'lar üretiyor ve taslak-seçim efekti birden çok kez koşuyor; ref
+    // ilk koşuda tükenince ikincisi `readScheduleMode`'dan taslak id'sini okuyup
+    // ekranı taslağa düşürüyordu (bildirilen kusur). Kalıcı "pub" tercihi ise
+    // efekt kaç kez koşarsa koşsun aynı cevabı verir — yarış biter.
+    if (searchParams.get("mode") === "pub" && yearParam && semParam) {
+      writeScheduleMode("weekly-mode", depParam, yearParam, semParam, "pub");
       setDraft(null);
     }
     const next = new URLSearchParams(searchParams);

@@ -214,6 +214,10 @@ export default function ExamsPage() {
   // K-60: NULL = yayındaki sınav takvimi (salt-okunur). Dolu = kendi özel
   // taslağım; takvim, çakışma ve bütün yazma işlemleri onun içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  /** K-80: modu ÇÖZÜLMÜŞ cohort'un kimliği — düz boolean yetmez, gerekçe
+   *  WeeklyPage'deki eşinde (yükleme efekti taslak efektinden önce koşuyor). */
+  const [modCozulen, setModCozulen] = useState<string | null>(null);
+  const cohortKey = `${dep ?? ""}/${year}/${sem}`;
   // Ders bilgi "i" pop-up'ı: aynı anda tek pop-up açık kalsın diye paylaşılan state.
   const [openInfoId, setOpenInfoId] = useState<number | null>(null);
   /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır
@@ -236,6 +240,8 @@ export default function ExamsPage() {
     useUndoStack(draft ? `exams-undo-${draft.id}` : "exams-undo-none");
 
   const load = () => {
+    // K-80: bu cohortun modu çözülmeden yükleme yapma (gerekçe WeeklyPage'de).
+    if (modCozulen !== cohortKey) { setLoading(true); return; }
     setLoading(true);
     setError(null);
     // K-60: taslaktayken takvim TASLAĞIN kopyasını gösterir ve çakışma tablosu
@@ -272,7 +278,7 @@ export default function ExamsPage() {
   };
   // Taslağa girip çıkmak takvimin kaynağını değiştirir; durum değişimi de
   // (geri çekme / ret) yeniden yükleme ister — donmuş taslak salt-okunurdur.
-  useEffect(load, [draft?.id, draft?.status]);
+  useEffect(load, [draft?.id, draft?.status, modCozulen, cohortKey]);
 
   // Bölümler genel-bakışından ?department_id= ile gelindiğinde o bölümü seç;
   // parametreyi bir kez tüketip URL'den temizle. Yıl/dönem kullanıcıya bırakılır.
@@ -574,13 +580,17 @@ export default function ExamsPage() {
   /** Bu cohort için AÇIK sınav taslağım varsa çubuk onu hatırlatsın (sayfa
    *  yenilense de kaybolmasın). Yalnız kendi taslaklarım döner. */
   useEffect(() => {
-    if (!dep || year === COMMON_YEAR) return;
+    // K-80: haftalıktaki ile aynı — mod çözülene kadar takvim beklesin.
+    const cozuldu = () => setModCozulen(cohortKey);
+    if (!dep || year === COMMON_YEAR) { cozuldu(); return; }
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan sınavı ekrandan kaçırır. Bayrak tek seferliktir.
-    if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
+    if (taslakSecimiAtla.current) {
+      taslakSecimiAtla.current = false; cozuldu(); return;
+    }
     // K-73: en son YAYINDA bıraktıysam taslağa atlama; tercih belirli taslaksa onu seç.
     const pref = readScheduleMode("exam-mode", dep, year, sem);
-    if (pref === "pub") return;
+    if (pref === "pub") { cozuldu(); return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         const cohortDrafts = liste.filter((d) => d.kind === "EXAM"
@@ -591,8 +601,9 @@ export default function ExamsPage() {
           : cohortDrafts[0];
         if (eslesen) setDraft(eslesen);
       })
-      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
-  }, [dep, year, sem]);
+      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })
+      .finally(cozuldu);
+  }, [dep, year, sem, cohortKey]);
 
   const haftaEtiketi = () => {
     const son = addDays(weekStart, 4);

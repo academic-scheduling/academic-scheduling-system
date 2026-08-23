@@ -281,7 +281,12 @@ export function DraftActions({
             <Tooltip label={canSubmit
               ? t.draft.submitTip
               : t.draft.submitDeniedTip(turAdi)}>
-              <Button size="xs" radius="md" loading={busy}
+              {/* K-80: `loading={busy}` KALDIRILDI. `busy` çubuğun ORTAK
+                  state'i; "Değişiklikler" isteği onu true yapınca Mantine bu
+                  butonu da loading'e sokuyor ve loading görünümü `disabled`
+                  görünümünü ezdiği için buton bir an AKTİF görünüyordu. Bu
+                  butonun kendi async işi zaten yok — yalnız modal açıyor. */}
+              <Button size="xs" radius="md"
                 disabled={!canSubmit || draft.change_count === 0}
                 leftSection={<IconSend size={15} />} style={{ height: CONTROL_H }}
                 onClick={() => setSubmitOpen(true)}>

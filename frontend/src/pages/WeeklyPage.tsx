@@ -190,6 +190,19 @@ export default function WeeklyPage() {
   // K-59: NULL = yayındaki program (salt-okunur). Dolu = kendi özel taslağım;
   // ızgara, çakışma ve bütün yazma işlemleri o taslağın içine yönlenir.
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  /** K-80: modu (yayın mı taslak mı) ÇÖZÜLMÜŞ olan cohort'un kimliği.
+   *
+   *  Taslak seçimi bir sunucu turu gerektiriyor (`/schedule-drafts`), ızgara
+   *  yüklemesi ise `draft` state'ine bakıyor. İkisi yarışınca ekran önce
+   *  YAYINI çiziyor, cevap gelince taslağa atlıyordu — göze çarpan bir sıçrama.
+   *
+   *  DİKKAT — düz bir boolean YETMEZ. Yükleme efekti taslak efektinden önce
+   *  tanımlı, dolayısıyla cohort değiştiği render'da bayrak hâlâ ÖNCEKİ
+   *  cohort'tan kalma `true` olur ve yayın bir kez yüklenir. Cohort kimliğini
+   *  saklamak bu yarışı kökten bitirir: `dep/year/sem` değişir değişmez
+   *  karşılaştırma eşitsiz olur, beklemeye geçilir. */
+  const [modCozulen, setModCozulen] = useState<string | null>(null);
+  const cohortKey = `${dep ?? ""}/${year}/${sem}`;
   const [paletteSearch, setPaletteSearch] = useState("");
   // Ders bilgi "i" pop-up'ı: aynı anda yalnız BİRİ açık kalsın diye tek paylaşılan
   // state; başka bir "i"ye tıklanınca öncekinin `opened`'ı kendiliğinden false olur.
@@ -378,6 +391,9 @@ export default function WeeklyPage() {
     `/export/weekly?${activeQuery()}&format=${format}`;
 
   const reload = () => {
+    // K-80: bu cohortun modu çözülmeden yükleme yapma — yoksa önce yayın
+    // çizilir, sonra taslağa sıçranır. `loading` true kalır.
+    if (modCozulen !== cohortKey) { setLoading(true); return; }
     setLoading(true);
     setError(null);
     // K-59: taslaktayken ızgara TASLAĞIN kopyasını gösterir ve çakışma tablosu
@@ -402,7 +418,7 @@ export default function WeeklyPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : t.weekly.loadFailed))
       .finally(() => setLoading(false));
   };
-  useEffect(reload, [dep, year, sem, draft?.id, draft?.status]);
+  useEffect(reload, [dep, year, sem, draft?.id, draft?.status, modCozulen, cohortKey]);
 
   /** Taslak açma TEK yer (K-59): hem çubuktaki "Taslak Aç" düğmesi hem de
    *  ızgarada yayındaki bir karta dokunulduğunda çıkan "taslağa geçilsin mi?"
@@ -451,15 +467,20 @@ export default function WeeklyPage() {
    *  de kaybolmasın). Yalnız kendi taslaklarım döner — sunucu başkasınınkini
    *  hiçbir koşulda listelemez (K-59). */
   useEffect(() => {
-    if (!dep || year === COMMON_YEAR) return;
+    // K-80: her çıkış yolu modu ÇÖZÜLDÜ ilan etmeli — biri unutulursa ızgara
+    // sonsuza dek "yükleniyor"da kalır.
+    const cozuldu = () => setModCozulen(cohortKey);
+    if (!dep || year === COMMON_YEAR) { cozuldu(); return; }
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan satırı ekrandan kaçırır. Bayrak tek seferliktir.
-    if (taslakSecimiAtla.current) { taslakSecimiAtla.current = false; return; }
+    if (taslakSecimiAtla.current) {
+      taslakSecimiAtla.current = false; cozuldu(); return;
+    }
     // K-73: bu cohort'u en son YAYINDA bıraktıysam taslağa atlama — kullanıcı
     // bıraktığı moda dönmeli. Tercih yoksa (ilk ziyaret) eski davranış: açık
     // taslağı seç. Tercih belirli bir taslaksa onu seç.
     const pref = readScheduleMode("weekly-mode", dep, year, sem);
-    if (pref === "pub") return;
+    if (pref === "pub") { cozuldu(); return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         // K-62: `kind` süzgeci ZORUNLU. K-60'ta sınav taslakları eklendiğinde
@@ -474,8 +495,9 @@ export default function WeeklyPage() {
           : cohortDrafts[0];
         if (eslesen) setDraft(eslesen);
       })
-      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ });
-  }, [dep, year, sem]);
+      .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })
+      .finally(cozuldu);
+  }, [dep, year, sem, cohortKey]);
 
   const handleUndo = async () => {
     const res = await popUndo();

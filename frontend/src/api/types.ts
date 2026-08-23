@@ -469,6 +469,9 @@ export type ScheduleDraft = {
   id: number;
   department_id: number;
   department_name: string;
+  /** K-80: kuyrukta ve başlıkta bölüm KODU gösterilir — ad dar sütunda
+   *  kırpılıyor, kod ise kısa ve bölümü tekil olarak tanıtıyor. */
+  department_code: string;
   year: number;
   semester: SemesterType;
   kind: DraftKind;

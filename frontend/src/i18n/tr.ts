@@ -928,7 +928,6 @@ export const tr = {
   publishing: {
     blockersCaps: "ENGEL",
     warningsCaps: "UYARI",
-    yearSemester: (yil: number, donem: string) => `${yil}. / ${donem}`,
     title: "Yayın Merkezi",
     loadFailed: "Yayın Merkezi yüklenemedi",
     cohortName: (bolum: string, yil: number, donem: string) =>
@@ -936,12 +935,15 @@ export const tr = {
 
     groups: {
       PENDING: "Onay bekleyenler",
-      OPEN: "Taslaklar",
+      // K-80: bu grupta yalnız KENDİ taslaklarımız listeleniyor (K-59
+      // gizliliği) — başlık bunu söylesin.
+      OPEN: "Taslaklarınız",
       REJECTED: "Reddedilenler",
       APPROVED: "Yayında",
     },
+    // K-80: "Bu grupta kayıt yok." KALDIRILDI — boş grup zaten boş görünüyor.
+    // Arama sonuçsuz kaldığında ise cevap gerekir: kullanıcı bir şey yazdı.
     noMatch: "Eşleşen kayıt yok.",
-    emptyGroup: "Bu grupta kayıt yok.",
     changeCount: (n: number) => `${n} değişiklik`,
     yourRequest: "kendi talebiniz",
     pickOne: "İncelemek için soldan bir kayıt seçin.",
@@ -956,10 +958,20 @@ export const tr = {
     withdrawFailed: "Geri çekilemedi",
     deleteConfirm: (ad: string) =>
       `"${ad}" taslağı silinsin mi? Yayındaki program etkilenmez.`,
+    // K-80: K-79'dan kaçmış dört sabit metin. Dördü de kaçak tarayıcısının
+    // "konum" ölçütüne uyuyordu ama gözden kaçmıştı; katalog burada kapanıyor.
+    deleted: "Taslak silindi",
+    deleteFailed: "Silinemedi",
+    blockersToFix: (n: number) => `${n} engel giderilmeli`,
+    sharedAffected: (bolumler: string) => `Ortak ders — etkilenen: ${bolumler}`,
 
     examSchedule: "Sınav takvimi",
     weeklySchedule: "Haftalık ders programı",
-    sentBy: "gönderen",
+    // K-80: "kim, ne zaman" başlıkta vurgulanıyor. İsim ile fiilin sırası
+    // dile bağlı olduğu için (TR "Ali gönderdi", EN "Sent by Ali") parçalanmaz,
+    // tek şablon kalır ve vurgu satırın tamamına verilir.
+    sentByOn: (kim: string, ne_zaman: string) => `${kim} gönderdi · ${ne_zaman}`,
+    openedByOn: (kim: string, ne_zaman: string) => `${kim} açtı · ${ne_zaman}`,
 
     appliedTitle: "Bu değişiklik yayında",
     appliedFallback: "Değişiklikler yayına alındı.",
@@ -974,13 +986,24 @@ export const tr = {
     staleTail2: "değişiklikler de olabilir.",
 
     statChange: "DEĞİŞİKLİK",
-    statSemester: "DÖNEM",
+    // K-80: "DÖNEM" yerine BÖLÜM — dönem başlıkta zaten yazıyor, bölümün
+    // kodu ise kaydı tek başına tanıtan bilgi.
+    statDepartment: "BÖLÜM",
     gridTitle: "PROGRAM GÖRÜNTÜSÜ",
     legendAdded: "eklenen",
     legendExisting: "mevcut",
     changesTitle: "DEĞİŞİKLİKLER",
     conflictCheck: "ÇAKIŞMA KONTROLÜ",
-    senderAndDecision: "GÖNDEREN VE KARAR",
+
+    // K-80 · kuyruk tür süzgeci
+    kindAll: "Tümü",
+    kindWeekly: "Haftalık",
+    kindExam: "Sınav",
+
+    // K-80 · onaylanan kaydın dondurulmuş görüntüsü
+    approvedGridTitle: "ONAYLANAN PROGRAM",
+    approvedGridNote: "Onay anındaki hâli — sonraki değişiklikler yansımaz.",
+    appliedChangesTitle: "YAYINA ALINAN DEĞİŞİKLİKLER",
 
     hardBlocks: "Hard çakışma çözülmeden onaylanamaz",
     approveTip: "Değişiklikleri yayına al",
@@ -992,32 +1015,24 @@ export const tr = {
     submitForApproval: "Onaya gönder",
     viewInSchedule: "Programda gör",
 
-    steps: ["Taslak", "Onayda", "Yayında"],
-    noteRejected: "reddedildi — düzeltip yeniden gönderilebilir",
-    noteAwaitingYou: "kararınızı bekliyor",
-    noteAwaitingAdmin: "yöneticinin kararını bekliyor",
-    notePublished: "öğrenciye görünür, kilitli",
-    noteDraft: "öğrenciye görünmez",
-
     chAdded: "EKLENDİ",
     chMoved: "TAŞINDI",
     chRemoved: "KALDIRILDI",
     identical: "Taslak yayındaki programla birebir aynı.",
     sectionOf: (kod: string, sube: number) => `${kod} · Şube ${sube}`,
 
-    noBlockers: "Engelleyici çakışma yok — yayınlanabilir.",
+    noBlockers: "Engelleyici çakışma yok.",
     rejectedByConflict: "Onaylanamadı — talep güncel programla çakışıyor:",
 
-    senderCaps: "GÖNDEREN",
     decidedByReject: "REDDEDEN",
     decidedByApprove: "ONAYLAYAN",
-    decision: "KARAR",
-    notDecided: "Henüz karar verilmedi",
-    awaitingApproval: "onay bekliyor",
 
-    rejectReason: "RET GEREKÇESİ",
-    rejectPlaceholder: "Sahibine iletilecek not",
-    rejectAndNotify: "Reddet ve bildir",
+    // K-80 · karar notu: kutu artık kalıcı, onayda da reddetmede de aynı not.
+    decisionNoteTitle: "KARAR NOTU",
+    decisionNoteHelp: "Onaylarken isteğe bağlı, reddederken zorunludur.",
+    decisionNotePlaceholder: "Gönderene iletilecek not",
+    rejectNeedsNote: "Reddetmek için gerekçe yazın",
+    noteBy: (kim: string) => `${kim} yazdı`,
     rejected: "Talep reddedildi — gerekçe gönderene iletildi",
     rejectFailed: "Reddedilemedi",
 

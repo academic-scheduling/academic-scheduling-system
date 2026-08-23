@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert, Badge, Button, Grid, Group, Loader, Modal, Paper, ScrollArea,
-  Stack, Text, Textarea, TextInput, Title, Tooltip, UnstyledButton,
+  SegmentedControl, Stack, Text, Textarea, TextInput, Title, Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -16,8 +17,6 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { ProposedExamList, ProposedGrid } from "../components/ProposedSchedule";
 import { examPlacementText, placementText } from "../components/DiffTable";
-import {
-  } from "../api/types";
 import type {
   ConflictResult, ConflictScan, DraftApproveResponse, DraftDiffItem,
   DraftKind, DraftReview, DraftStaleness, DraftStatus, Exam, ScheduleDraft,
@@ -100,8 +99,14 @@ function ts(d: ScheduleDraft): number {
 }
 
 /** Detay panelinin tek biçimi — kaynağı (inceleme ucu / taslak uçları) ne olursa
- *  olsun aynı şekli doldurur; APPROVED'da satırlar yayına geçip silindiği için
- *  fark/ızgara yerine `applied_summary` gösterilir. */
+ *  olsun aynı şekli doldurur.
+ *
+ *  K-80: APPROVED artık ızgara da gösteriyor. Satırlar onaydan sonra korunuyor
+ *  (backend `apply_draft`), yani "bu taslak onaylandığında program neye
+ *  benziyordu" sorusu cevaplanabilir. Ama FARK ve ÇAKIŞMA çekilmez: ikisi de
+ *  O ANKİ yayına karşı hesaplanır ve sonraki onaylarla kayar — donmuş bir
+ *  görüntünün yanında canlı bir fark göstermek yanıltıcı olurdu. Onay anındaki
+ *  fark zaten `applied_summary`de dondurulmuştur. */
 type Detail = {
   approved: boolean;
   items: DraftDiffItem[];
@@ -127,6 +132,10 @@ export default function PublishingCenterPage() {
 
   const [group, setGroup] = useState<Group>("PENDING");
   const [search, setSearch] = useState("");
+  /** K-80: tür süzgeci. Haftalık program ve sınav takvimi aynı kuyrukta akıyor
+   *  (K-60 tek yaşam döngüsü) ama incelenirken ayrı işlerdir; süzgeç istemci
+   *  tarafında, çünkü liste zaten elimizde (K-69 deseni). */
+  const [kind, setKind] = useState<DraftKind | "ALL">("ALL");
   const [selId, setSelId] = useState<number | null>(
     params.get("draft_id") ? Number(params.get("draft_id")) : null);
 
@@ -162,10 +171,14 @@ export default function PublishingCenterPage() {
   const list = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("tr");
     return byGroup[group]
+      .filter((d) => kind === "ALL" || d.kind === kind)
+      // Arama bölüm KODUNU da kapsıyor (K-80): kod artık kartta görünen bilgi,
+      // görünen bir şeyin aranamaması tutarsız olurdu.
       .filter((d) => !q
-        || `${d.department_name} ${d.owner.name}`.toLocaleLowerCase("tr").includes(q))
+        || `${d.department_name} ${d.department_code} ${d.owner.name}`
+             .toLocaleLowerCase("tr").includes(q))
       .sort((a, b) => ts(b) - ts(a));      // sıralama seçici YOK — daima en yeni önce
-  }, [byGroup, group, search]);
+  }, [byGroup, group, search, kind]);
 
   const cur = useMemo(
     () => list.find((d) => d.id === selId) ?? list[0] ?? null,
@@ -193,6 +206,7 @@ export default function PublishingCenterPage() {
             counts={Object.fromEntries(
               GROUPS.map((g) => [g.key, byGroup[g.key].length])) as Record<Group, number>}
             search={search} onSearch={setSearch}
+            kind={kind} onKind={setKind}
             list={list} loaded={loaded} error={error}
             curId={cur?.id ?? null} onSelect={setSelId}
             meId={user?.id ?? -1}
@@ -217,10 +231,12 @@ export default function PublishingCenterPage() {
  * ================================================================== */
 
 function QueuePane({
-  group, onGroup, counts, search, onSearch, list, loaded, error, curId, onSelect, meId,
+  group, onGroup, counts, search, onSearch, kind, onKind,
+  list, loaded, error, curId, onSelect, meId,
 }: {
   group: Group; onGroup: (g: Group) => void; counts: Record<Group, number>;
   search: string; onSearch: (s: string) => void;
+  kind: DraftKind | "ALL"; onKind: (k: DraftKind | "ALL") => void;
   list: ScheduleDraft[]; loaded: boolean; error: string | null;
   curId: number | null; onSelect: (id: number) => void; meId: number;
 }) {
@@ -255,13 +271,26 @@ function QueuePane({
         onChange={(e) => onSearch(e.currentTarget.value)}
       />
 
+      {/* K-80: tür süzgeci aramanın hemen altında — ikisi de "listeyi daralt"
+          işidir, durum grupları ise "hangi kuyruk" işi (üstte kalır). */}
+      <SegmentedControl
+        fullWidth size="xs" radius="md"
+        value={kind}
+        onChange={(v: string) => onKind(v as DraftKind | "ALL")}
+        data={[
+          { value: "ALL", label: t.publishing.kindAll },
+          { value: "WEEKLY", label: t.publishing.kindWeekly },
+          { value: "EXAM", label: t.publishing.kindExam },
+        ]}
+      />
+
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
       {!loaded && !error && <Loader size="sm" />}
 
       {loaded && list.length === 0 ? (
-        <Text c="dimmed" size="sm" mt="xs">
-          {search ? t.publishing.noMatch : t.publishing.emptyGroup}
-        </Text>
+        // Boş grup zaten boş görünür; yalnız ARAMA sonuçsuzsa açıklama gerekir
+        // (kullanıcı bir şey yazdı, cevapsız kalmamalı).
+        search ? <Text c="dimmed" size="sm" mt="xs">{t.publishing.noMatch}</Text> : null
       ) : (
         <ScrollArea.Autosize mah="calc(100vh - 220px)" type="hover">
           <Stack gap="xs">
@@ -284,9 +313,12 @@ function QueueCard({ d, active, mine, onClick }: {
   const KindIcon = d.kind === "EXAM" ? IconPencil : IconCalendarWeek;
   return (
     <UnstyledButton className="pub-card" data-selected={active} onClick={onClick} p="md">
+      {/* K-80: başlıkta bölüm KODU. Ad dar sütunda kırpılıyordu ("Bilgisayar
+          Mühendis…"), kod ise kırpılmadan bölümü tekil olarak tanıtıyor; tam
+          ad detay panelinde zaten yazıyor. */}
       <Group gap={8} wrap="nowrap" mb={5}>
         <KindIcon size={15} color="var(--mantine-color-dimmed)" style={{ flex: "none" }} />
-        <Text fz={13} fw={700} truncate>{d.department_name} · {t.courses.yearN(d.year)}</Text>
+        <Text fz={13} fw={700} truncate>{d.department_code} · {t.courses.yearN(d.year)}</Text>
       </Group>
       <Group gap={6} wrap="nowrap" c={TEXT_MUTED} fz={11} mb={3}>
         <IconUser size={12} style={{ flex: "none" }} />
@@ -336,9 +368,12 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [rejectOpen, setRejectOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
+  /** K-80: karar notu. Eskiden yalnız "Reddet"e basınca açılan bir paneldi;
+   *  artık incelemenin parçası ve TEK alan iki karara birden hizmet ediyor —
+   *  onayda isteğe bağlı, rette zorunlu (backend `review_note` ortak alan). */
+  const [note, setNote] = useState("");
 
   const isSelf = draft.owner.id === meId;
   // İncelenebilir = onaylayıcı + PENDING (kuyruk kaydı; kendi bekleyenim de dahil).
@@ -354,9 +389,18 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
       !iptal && setDetailError(e instanceof ApiError ? e.message : t.publishing.detailFailed);
 
     if (draft.status === "APPROVED") {
-      // Satırlar yayına geçip silindi; canlı fark/ızgara yok, özet gösterilir.
-      setDetail({ approved: true, items: [], entries: [], exams: [], conflicts: EMPTY_SCAN, staleness: null });
-      return;
+      // K-80: yalnız SATIRLAR çekilir — fark/çakışma bilerek istenmiyor
+      // (yukarıdaki `Detail` notu). Görüntü donmuştur, özet `applied_summary`.
+      const rows = draft.kind === "EXAM"
+        ? api.get<Exam[]>(`/schedule-drafts/${draft.id}/exams`)
+            .then((exams) => ({ entries: [] as WeeklyEntry[], exams }))
+        : api.get<WeeklyEntry[]>(`/schedule-drafts/${draft.id}/entries`)
+            .then((entries) => ({ entries, exams: [] as Exam[] }));
+      rows.then((r) => {
+        if (!iptal) setDetail({ approved: true, items: [], entries: r.entries,
+          exams: r.exams, conflicts: EMPTY_SCAN, staleness: null });
+      }).catch(fail);
+      return () => { iptal = true; };
     }
     if (reviewable) {
       api.get<DraftReview>(`/schedule-approvals/${draft.id}`)
@@ -395,7 +439,8 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const onayla = async () => {
     setBusy(true); setBlockers(null);
     try {
-      const r = await api.post<DraftApproveResponse>(`/schedule-approvals/${draft.id}/approve`);
+      const r = await api.post<DraftApproveResponse>(
+        `/schedule-approvals/${draft.id}/approve`, { note: note.trim() || null });
       notifications.show({ color: "green", title: t.publishing.published,
         message: t.publishing.appliedN(r.applied.length)
           + (r.warnings.length ? t.publishing.warningsRemain(r.warnings.length) : "") });
@@ -407,6 +452,15 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
       }
       hata(e, t.publishing.approveFailed);
     } finally { setBusy(false); }
+  };
+
+  const reddet = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/schedule-approvals/${draft.id}/reject`, { note: note.trim() });
+      notifications.show({ color: "gray", message: t.publishing.rejected });
+      onChanged();
+    } catch (e) { hata(e, t.publishing.rejectFailed); } finally { setBusy(false); }
   };
 
   const geriCek = async () => {
@@ -423,9 +477,9 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
     setBusy(true);
     try {
       await api.delete(`/schedule-drafts/${draft.id}`);
-      notifications.show({ color: "gray", message: "Taslak silindi" });
+      notifications.show({ color: "gray", message: t.publishing.deleted });
       onChanged();
-    } catch (e) { hata(e, "Silinemedi"); } finally { setBusy(false); }
+    } catch (e) { hata(e, t.publishing.deleteFailed); } finally { setBusy(false); }
   };
 
   const meta = STATUS_META[draft.status];
@@ -433,9 +487,19 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
   const warn = detail?.conflicts.warnings.length ?? 0;
   const sinav = draft.kind === "EXAM";
 
+  /** Sağ sütunun varlık koşulu (K-80): karar bizdeyse not yazılır, karar
+   *  verilmişse kim/ne dedi okunur. İkisi de yoksa sütun HİÇ çizilmez. */
+  const kararBizde = reviewable && !isSelf;
+  const kararVerildi = draft.status === "REJECTED";
+  const yanSutun = kararBizde || kararVerildi;
+
   return (
     <>
-      {/* Başlık + durum + adım çubuğu */}
+      {/* Başlık + durum.
+          K-80: adım çubuğu ("1 Taslak — 2 Onayda — 3 Yayında" + açıklama)
+          KALDIRILDI. Durum rozeti aynı bilgiyi tek bakışta veriyordu; üç adımlık
+          şerit yer kaplayıp göz yoruyordu. Yerine VURGULANAN şey, incelerken
+          gerçekten aranan iki bilgi: hangi TÜR program, kim ne zaman gönderdi. */}
       <div style={{ paddingBottom: 12, marginBottom: 16, borderBottom: `1px solid ${BORDER}` }}>
         <Group gap={9} align="center">
           <Text fz={20} fw={700} truncate>{cohortAdi(draft, t)}</Text>
@@ -443,12 +507,19 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
             {t.draft.status[draft.status]}
           </Badge>
         </Group>
-        <Text fz={13} c={TEXT_MUTED} mt={3}>
-          {sinav ? t.publishing.examSchedule : t.publishing.weeklySchedule}{" · "}{t.publishing.sentBy} {draft.owner.name}
-          {" · "}{tarih(draft.submitted_at ?? draft.created_at, t)}
-          {" · "}{t.publishing.changeCount(draft.change_count)}
-        </Text>
-        <StatusSteps status={draft.status} isApprover={isApprover} />
+        <Group gap={10} align="center" mt={7} wrap="nowrap">
+          <Badge variant="light" color="gray" radius="sm"
+            leftSection={sinav ? <IconPencil size={12} /> : <IconCalendarWeek size={12} />}>
+            {sinav ? t.publishing.examSchedule : t.publishing.weeklySchedule}
+          </Badge>
+          {/* İsim ile fiilin sırası dile bağlı (K-79) — parçalanmaz, vurgu
+              satırın tamamına verilir. */}
+          <Text fz={13} fw={600} truncate>
+            {draft.submitted_at
+              ? t.publishing.sentByOn(draft.owner.name, tarih(draft.submitted_at, t))
+              : t.publishing.openedByOn(draft.owner.name, tarih(draft.created_at, t))}
+          </Text>
+        </Group>
       </div>
 
       <div>
@@ -456,11 +527,36 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
           {detailError && <Alert color="red" variant="light" radius="md">{detailError}</Alert>}
           {!detail && !detailError && <Loader size="sm" />}
 
+          {/* ---- Yayında: onay anında donmuş görüntü (K-80) ----
+              Fark ve çakışma YOK — ikisi de o anki yayına karşı hesaplanır ve
+              sonraki onaylarla kayar. Onay anındaki değişiklikler
+              `applied_summary`de dondurulmuştur, onu gösteriyoruz. */}
           {detail?.approved && (
-            <Alert color="green" variant="light" radius="md" icon={<IconCircleCheck size={18} />}
-              title={t.publishing.appliedTitle}>
-              <Text fz="sm">{draft.applied_summary || t.publishing.appliedFallback}</Text>
-            </Alert>
+            <>
+              <Alert color="green" variant="light" radius="md" icon={<IconCircleCheck size={18} />}
+                title={t.publishing.appliedTitle}>
+                <Text fz={12} fw={600} c={TEXT_MUTED} mb={4}>
+                  {t.publishing.appliedChangesTitle}
+                </Text>
+                <Text fz="sm">{draft.applied_summary || t.publishing.appliedFallback}</Text>
+              </Alert>
+
+              <div>
+                <Group gap={10} mb={8} align="center">
+                  <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.approvedGridTitle}</Text>
+                  <Text fz={11} c={TEXT_MUTED}>{t.publishing.approvedGridNote}</Text>
+                </Group>
+                {/* `changed={[]}`: vurgulanacak fark yok. Onaylanan görüntüde
+                    "eklenen/mevcut" ayrımı anlamsızdır — hepsi yayına geçti. */}
+                <Paper withBorder radius="md" p="sm">
+                  {sinav
+                    ? <ProposedExamList exams={detail.exams} changed={[]} />
+                    : <ProposedGrid entries={detail.entries} changed={[]} />}
+                </Paper>
+              </div>
+
+              <DecisionCard draft={draft} />
+            </>
           )}
 
           {detail && !detail.approved && (
@@ -487,7 +583,9 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 <StatCell label={t.publishing.statChange} value={String(detail.items.length)} />
                 <StatCell label={t.publishing.blockersCaps} value={String(hard)} color={hard ? "red.7" : undefined} border />
                 <StatCell label={t.publishing.warningsCaps} value={String(warn)} color={warn ? "orange.7" : undefined} border />
-                <StatCell label={t.publishing.statSemester} value={t.publishing.yearSemester(draft.year, t.enums.semester[draft.semester])} border />
+                {/* K-80: "DÖNEM" yerine BÖLÜM kodu — yıl/dönem başlıkta zaten
+                    yazıyor, kod ise kaydı tek başına tanıtan bilgi. */}
+                <StatCell label={t.publishing.statDepartment} value={draft.department_code} border />
               </Group>
 
               {/* Program görüntüsü */}
@@ -505,8 +603,17 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 </Paper>
               </div>
 
-              {/* Değişiklikler + çakışma / gönderen-karar */}
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)", gap: 18, alignItems: "start" }}>
+              {/* Değişiklikler + çakışma, yanında KARAR sütunu.
+                  K-80: eski "GÖNDEREN VE KARAR" kartı HER durumda duruyordu ve
+                  kararı verilmemiş kayıtlarda yarısı boştu ("Henüz karar
+                  verilmedi"). Gönderen bilgisi başlığa taşındı; sağ sütun artık
+                  yalnızca söyleyecek sözü olduğunda var:
+                    - karar sırası bizdeyse  -> not kutusu,
+                    - karar verilmişse       -> kim, ne zaman, notu ne.
+                  Sütun yoksa fark listesi tüm genişliği alır. */}
+              <div style={{ display: "grid", alignItems: "start", gap: 18,
+                gridTemplateColumns: yanSutun
+                  ? "minmax(0,1.35fr) minmax(0,1fr)" : "minmax(0,1fr)" }}>
                 <div>
                   <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.changesTitle}</Text>
                   <ChangesList items={detail.items} />
@@ -515,15 +622,12 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                   <ConflictList scan={detail.conflicts} blockers={blockers} />
                 </div>
 
-                <div>
-                  <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.senderAndDecision}</Text>
-                  <DeciderCard draft={draft} />
-                  {rejectOpen && (
-                    <RejectPanel draftId={draft.id}
-                      onDone={() => { setRejectOpen(false); onChanged(); }}
-                      onCancel={() => setRejectOpen(false)} />
-                  )}
-                </div>
+                {kararBizde && (
+                  <DecisionNotePanel value={note} onChange={setNote} />
+                )}
+                {kararVerildi && (
+                  <div><DecisionCard draft={draft} /></div>
+                )}
               </div>
             </>
           )}
@@ -538,12 +642,17 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
             <Tooltip label={hard ? t.publishing.hardBlocks : t.publishing.approveTip}>
               <Button leftSection={<IconCircleCheck size={16} />} loading={busy}
                 disabled={hard > 0} onClick={onayla}>
-                {hard > 0 ? `${hard} engel giderilmeli` : t.publishing.approve}
+                {hard > 0 ? t.publishing.blockersToFix(hard) : t.publishing.approve}
               </Button>
             </Tooltip>
-            <Button variant="default" color="red" leftSection={<IconX size={15} />}
-              onClick={() => setRejectOpen(true)}
-              style={{ color: "var(--mantine-color-red-7)" }}>{t.publishing.reject}</Button>
+            {/* K-80: ret artık ayrı bir panel AÇMIYOR — gerekçe kutusu zaten
+                sağda duruyor. Gerekçesiz ret backend'de de reddedilir
+                (`min_length=1`), buton boş notta kapalı kalır. */}
+            <Tooltip label={note.trim() ? t.publishing.reject : t.publishing.rejectNeedsNote}>
+              <Button variant="default" color="red" leftSection={<IconX size={15} />}
+                loading={busy} disabled={!note.trim()} onClick={reddet}
+                style={{ color: "var(--mantine-color-red-7)" }}>{t.publishing.reject}</Button>
+            </Tooltip>
           </>
         )}
         {reviewable && isSelf && (
@@ -614,38 +723,6 @@ function Legend({ swatch, label }: { swatch: "light-blue" | "gray"; label: strin
   );
 }
 
-function StatusSteps({ status, isApprover }: { status: DraftStatus; isApprover: boolean }) {
-  const t = useT();
-  // OPEN/REJECTED taslak evresinde, PENDING onayda, APPROVED yayında.
-  const at = status === "APPROVED" ? 2 : status === "PENDING" ? 1 : 0;
-  const note = status === "REJECTED" ? t.publishing.noteRejected
-    : status === "PENDING" ? (isApprover ? t.publishing.noteAwaitingYou
-                                         : t.publishing.noteAwaitingAdmin)
-    : status === "APPROVED" ? t.publishing.notePublished : t.publishing.noteDraft;
-  return (
-    <Group gap={0} mt={12} align="center" wrap="nowrap">
-      {t.publishing.steps.map((label, i) => {
-        const done = i < at, on = i === at;
-        const color = done ? "green" : on ? "blue" : "gray";
-        return (
-          <Group key={label} gap={0} wrap="nowrap" style={{ flex: "none" }}>
-            <Group gap={8} wrap="nowrap">
-              <Badge size="sm" circle variant={on || done ? "light" : "default"} color={color}>
-                {i + 1}
-              </Badge>
-              <Text fz={12} fw={on ? 700 : 500}
-                c={on ? "blue" : done ? undefined : "dimmed"}>{label}</Text>
-            </Group>
-            {i < 2 && <span style={{ width: 44, height: 2, margin: "0 10px",
-              background: i < at ? "var(--mantine-color-green-3)" : "var(--mantine-color-gray-3)" }} />}
-          </Group>
-        );
-      })}
-      <Text fz={12} c={TEXT_MUTED} ml={12}>{note}</Text>
-    </Group>
-  );
-}
-
 // K-79: `tag` sözlüğe taşındı (etiket); ikon ve renk dile bağlı değil.
 const CH_META: Record<string, { Icon: ComponentType<IconProps>; color: string }> = {
   ADDED:   { Icon: IconPlus,   color: "blue" },
@@ -682,7 +759,8 @@ function ChangesList({ items }: { items: DraftDiffItem[] }) {
               <Text fz={11} c={TEXT_MUTED} mt={2}>{detay}</Text>
               {i.is_shared && (
                 <Text fz={11} c="orange.7" mt={2}>
-                  Ortak ders — etkilenen: {i.affected_departments.map((d) => d.name).join(", ") || "—"}
+                  {t.publishing.sharedAffected(
+                    i.affected_departments.map((d) => d.name).join(", ") || "—")}
                 </Text>
               )}
             </div>
@@ -733,84 +811,73 @@ function ConflictList({ scan, blockers }: { scan: ConflictScan; blockers: Confli
   );
 }
 
-function DeciderCard({ draft }: { draft: ScheduleDraft }) {
+/** Kararı VERİLMİŞ kaydın kartı (K-80).
+ *
+ *  Yalnız karar verilmiş kayıtlarda çizilir; "Henüz karar verilmedi" gibi boş
+ *  bir yarısı yoktur. Gönderen bilgisi burada tekrarlanmaz — başlıkta duruyor.
+ *
+ *  Not hem retten hem ONAYDAN gelebilir (backend `review_note` ortak alan);
+ *  notu YAZANIN adı da yazılır, çünkü not bir kişinin sözüdür ve kimin
+ *  söylediğini bilmeden ne yapılacağı belirsiz kalır. */
+function DecisionCard({ draft }: { draft: ScheduleDraft }) {
   const t = useT();
-  const decided = draft.status === "APPROVED" || draft.status === "REJECTED";
   const rejected = draft.status === "REJECTED";
-  const note = rejected ? draft.review_note : draft.applied_summary;
+  const kim = draft.reviewer?.name ?? "—";
   return (
     <Paper withBorder radius="md" p="md">
-      <Stack gap={12}>
+      <Stack gap={11}>
         <Group gap={10} wrap="nowrap">
-          <Badge size="lg" circle variant="light" color="blue"><IconSend size={15} /></Badge>
-          <div style={{ minWidth: 0 }}>
-            <Text fz={11} fw={600} c={TEXT_MUTED}>{t.publishing.senderCaps}</Text>
-            <Text fz={13} fw={600} truncate>{draft.owner.name}</Text>
-            <Text fz={11} c="dimmed">{tarih(draft.submitted_at ?? draft.created_at, t)}</Text>
-          </div>
-        </Group>
-        <div style={{ height: 1, background: BORDER }} />
-        <Group gap={10} wrap="nowrap">
-          <Badge size="lg" circle variant="light"
-            color={decided ? (rejected ? "red" : "green") : "gray"}>
-            {decided ? (rejected ? <IconX size={15} /> : <IconCircleCheck size={15} />)
-              : <IconClockHour4 size={15} />}
+          <Badge size="lg" circle variant="light" color={rejected ? "red" : "green"}>
+            {rejected ? <IconX size={15} /> : <IconCircleCheck size={15} />}
           </Badge>
           <div style={{ minWidth: 0 }}>
             <Text fz={11} fw={600} c={TEXT_MUTED}>
-              {decided ? (rejected ? t.publishing.decidedByReject : t.publishing.decidedByApprove)
-                     : t.publishing.decision}
+              {rejected ? t.publishing.decidedByReject : t.publishing.decidedByApprove}
             </Text>
-            <Text fz={13} fw={600} truncate>
-              {decided ? (draft.reviewer?.name ?? "—") : t.publishing.notDecided}
-            </Text>
-            <Text fz={11} c="dimmed">
-              {decided ? tarih(draft.reviewed_at, t) : t.publishing.awaitingApproval}
-            </Text>
+            <Text fz={13} fw={600} truncate>{kim}</Text>
+            <Text fz={11} c="dimmed">{tarih(draft.reviewed_at, t)}</Text>
           </div>
         </Group>
-        {decided && note && (
-          <Text fz={12} c={TEXT_MUTED} p="8px 10px" style={{ borderRadius: 4,
-            background: "var(--mantine-color-default-hover)" }}>{note}</Text>
+        {draft.review_note && (
+          <div style={{ borderRadius: 4, padding: "8px 10px",
+            background: rejected ? "var(--mantine-color-red-light)"
+                                 : "var(--mantine-color-default-hover)" }}>
+            <Text fz={11} fw={600} c={TEXT_MUTED} mb={3}>
+              {t.publishing.decisionNoteTitle}
+            </Text>
+            <Text fz={12.5} lh={1.5}>{draft.review_note}</Text>
+            <Text fz={11} c="dimmed" mt={4}>{t.publishing.noteBy(kim)}</Text>
+          </div>
         )}
       </Stack>
     </Paper>
   );
 }
 
-
-/* --- Karar formları ---------------------------------------------- */
-
-function RejectPanel({ draftId, onDone, onCancel }: {
-  draftId: number; onDone: () => void; onCancel: () => void;
+/** Karar sırası BİZDEYKEN duran not kutusu (K-80).
+ *
+ *  Eskiden yalnız "Reddet"e basınca açılan bir paneldi; onaylarken not yazmanın
+ *  yolu hiç yoktu. Tek kutu iki karara da hizmet ediyor: onayda isteğe bağlı,
+ *  rette zorunlu (Reddet butonu boş notta kapalı). */
+function DecisionNotePanel({ value, onChange }: {
+  value: string; onChange: (s: string) => void;
 }) {
   const t = useT();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const reddet = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/schedule-approvals/${draftId}/reject`, { note: note.trim() });
-      notifications.show({ color: "gray", message: t.publishing.rejected });
-      onDone();
-    } catch (e) {
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.publishing.rejectFailed });
-    } finally { setBusy(false); }
-  };
   return (
-    <Paper radius="md" p="md" mt="md" style={{
-      border: "1px solid var(--mantine-color-red-3)", background: "var(--mantine-color-red-light)" }}>
-      <Text fz={12} fw={600} c="red.7" mb={7}>{t.publishing.rejectReason}</Text>
-      <Textarea placeholder={t.publishing.rejectPlaceholder} autosize minRows={3} maxRows={6}
-        value={note} onChange={(e) => setNote(e.currentTarget.value)} />
-      <Group gap={8} mt={9}>
-        <Button color="red" loading={busy} disabled={!note.trim()}
-          leftSection={<IconSend size={15} />} onClick={reddet}>{t.publishing.rejectAndNotify}</Button>
-        <Button variant="default" onClick={onCancel}>{t.common.dismiss}</Button>
-      </Group>
-    </Paper>
+    <div>
+      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.decisionNoteTitle}</Text>
+      <Paper withBorder radius="md" p="md">
+        <Textarea placeholder={t.publishing.decisionNotePlaceholder}
+          autosize minRows={4} maxRows={9}
+          value={value} onChange={(e) => onChange(e.currentTarget.value)} />
+        <Text fz={11} c={TEXT_MUTED} mt={7}>{t.publishing.decisionNoteHelp}</Text>
+      </Paper>
+    </div>
   );
 }
+
+
+/* --- Karar formları ---------------------------------------------- */
 
 function SubmitModal({ draftId, onClose, onDone }: {
   draftId: number; onClose: () => void; onDone: () => void;
@@ -847,7 +914,7 @@ function SubmitModal({ draftId, onClose, onDone }: {
         <Group justify="flex-end" gap="xs">
           <Button variant="default" onClick={onClose}>{t.common.dismiss}</Button>
           <Button loading={busy} leftSection={<IconSend size={15} />} onClick={gonder}>
-            Onaya gönder
+            {t.publishing.submitForApproval}
           </Button>
         </Group>
       </Stack>

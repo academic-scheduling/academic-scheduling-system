@@ -902,7 +902,6 @@ export const en: Dict = {
   publishing: {
     blockersCaps: "BLOCKING",
     warningsCaps: "WARNING",
-    yearSemester: (yil: number, donem: string) => `Y${yil} / ${donem}`,
     title: "Publishing Center",
     loadFailed: "The Publishing Center could not be loaded",
     cohortName: (bolum: string, yil: number, donem: string) =>
@@ -910,12 +909,11 @@ export const en: Dict = {
 
     groups: {
       PENDING: "Pending approval",
-      OPEN: "Drafts",
+      OPEN: "Your drafts",
       REJECTED: "Rejected",
       APPROVED: "Published",
     },
     noMatch: "No matching record.",
-    emptyGroup: "No record in this group.",
     changeCount: (n: number) => `${n} changes`,
     yourRequest: "your request",
     pickOne: "Select a record on the left to review it.",
@@ -930,10 +928,15 @@ export const en: Dict = {
     withdrawFailed: "Could not be withdrawn",
     deleteConfirm: (ad: string) =>
       `Delete the draft "${ad}"? The published schedule is not affected.`,
+    deleted: "Draft deleted",
+    deleteFailed: "Could not be deleted",
+    blockersToFix: (n: number) => `${n} blocking conflicts to resolve`,
+    sharedAffected: (bolumler: string) => `Shared course — affected: ${bolumler}`,
 
     examSchedule: "Exam schedule",
     weeklySchedule: "Weekly schedule",
-    sentBy: "sent by",
+    sentByOn: (kim: string, ne_zaman: string) => `Sent by ${kim} · ${ne_zaman}`,
+    openedByOn: (kim: string, ne_zaman: string) => `Opened by ${kim} · ${ne_zaman}`,
 
     appliedTitle: "This change is published",
     appliedFallback: "The changes have been published.",
@@ -948,13 +951,20 @@ export const en: Dict = {
     staleTail2: ".",
 
     statChange: "CHANGES",
-    statSemester: "SEMESTER",
+    statDepartment: "DEPARTMENT",
     gridTitle: "SCHEDULE PREVIEW",
     legendAdded: "added",
     legendExisting: "existing",
     changesTitle: "CHANGES",
     conflictCheck: "CONFLICT CHECK",
-    senderAndDecision: "SENDER AND DECISION",
+
+    kindAll: "All",
+    kindWeekly: "Weekly",
+    kindExam: "Exams",
+
+    approvedGridTitle: "APPROVED SCHEDULE",
+    approvedGridNote: "As it stood at approval — later changes are not reflected.",
+    appliedChangesTitle: "CHANGES PUBLISHED",
 
     hardBlocks: "Cannot be approved until the blocking conflict is resolved",
     approveTip: "Publish the changes",
@@ -966,32 +976,23 @@ export const en: Dict = {
     submitForApproval: "Submit for approval",
     viewInSchedule: "View in the schedule",
 
-    steps: ["Draft", "In review", "Published"],
-    noteRejected: "rejected — can be fixed and resubmitted",
-    noteAwaitingYou: "awaiting your decision",
-    noteAwaitingAdmin: "awaiting the administrator's decision",
-    notePublished: "visible to students, locked",
-    noteDraft: "not visible to students",
-
     chAdded: "ADDED",
     chMoved: "MOVED",
     chRemoved: "REMOVED",
     identical: "The draft is identical to the published schedule.",
     sectionOf: (kod: string, sube: number) => `${kod} · Section ${sube}`,
 
-    noBlockers: "No blocking conflict — ready to publish.",
+    noBlockers: "No blocking conflicts.",
     rejectedByConflict: "Could not be approved — the request conflicts with the current schedule:",
 
-    senderCaps: "SENDER",
     decidedByReject: "REJECTED BY",
     decidedByApprove: "APPROVED BY",
-    decision: "DECISION",
-    notDecided: "No decision yet",
-    awaitingApproval: "awaiting approval",
 
-    rejectReason: "REASON FOR REJECTION",
-    rejectPlaceholder: "Note to be sent to the owner",
-    rejectAndNotify: "Reject and notify",
+    decisionNoteTitle: "DECISION NOTE",
+    decisionNoteHelp: "Optional when approving, required when rejecting.",
+    decisionNotePlaceholder: "Note to be sent to the sender",
+    rejectNeedsNote: "Write a reason in order to reject",
+    noteBy: (kim: string) => `written by ${kim}`,
     rejected: "Request rejected — the reason was sent to the owner",
     rejectFailed: "Could not be rejected",
 

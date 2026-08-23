@@ -2994,3 +2994,66 @@ basıyordu. Kaçmasının sebebi öğreticidir — kaçak tarayıcısı Türkçe
 tarih yardımcıları sözlüğü parametre alıyor. **Sıralama/arama locale'i
 (`localeCompare("tr")`) BİLEREK değişmedi:** veri Türkçe, sıralama verinin diline
 göre doğru olmalı — arayüz dilinin sıralamayı bozması hata olurdu.
+
+---
+
+## K-80 · Yayın Merkezi: sadeleştirme + onaylanan programın görüntüsü
+
+**Sorun.** K-77'de kurulan Yayın Merkezi bilgiyi gösteriyordu ama ayıklamıyordu:
+adım çubuğu, her durumda duran "GÖNDEREN VE KARAR" kartı ve boş grup cümlesi yer
+kaplayıp göz yoruyordu; buna karşılık incelerken gerçekten aranan iki bilgi
+(hangi tür program, kim ne zaman gönderdi) sönük bir alt satırda kalıyordu. Ayrıca
+"Yayında" grubunda gösterilecek bir program yoktu.
+
+**Kaldırma ölçütü: her durumda mı duruyor, yoksa söyleyecek sözü olduğunda mı?**
+Adım çubuğu durum rozetinin söylediğini üç kutuda tekrar ediyordu. Karar kartının
+yarısı, kararı verilmemiş kayıtlarda "Henüz karar verilmedi" yazıyordu — yani en
+sık görülen durumda hiçbir şey söylemiyordu. İkisi de kaldırıldı; sağ sütun artık
+KOŞULLU: karar bizdeyse not kutusu, karar verilmişse kim/ne zaman/notu ne. Sütun
+yoksa fark listesi tüm genişliği alıyor. Boş grup cümlesi de gitti (boş grup zaten
+boş görünür), ama sonuçsuz ARAMA cevapsız bırakılmadı: kullanıcı bir şey yazdı.
+
+**Onaylanan taslağın satırları artık SİLİNMİYOR.** K-59'da `apply_draft` farkı
+yayına uyguladıktan sonra taslağın kopyalarını siliyordu; gerekçe "düzenlenebilir
+görünen donmuş bir kopya yanıltıcı olur" idi. Kullanıcı isteği bunu tersine
+çevirdi: "o taslağın onaylanmış hâlinin görüntülenmesi; o cohortta başka bir
+taslak onaylandığında bu değişmeyecek". Arayüz bu kaydı bilerek SALT GÖRÜNTÜ
+gösterdiği için eski gerekçe düştü.
+
+İki mekanizma vardı — satırları korumak ya da onay anında JSON snapshot yazmak.
+Satır koruma seçildi: migration yok, şema ikizi yok, ızgara mevcut tipleri aynen
+alıyor. **Güvenli olmasının sebebi tek bir değişmez:** sistemde "yayında" HER
+YERDE `draft_id IS NULL` demektir — kısmi UNIQUE indeksler dahil. Korunan satırlar
+`draft_id` dolu olduğu için hiçbir sorgunun evrenine sızmaz. Ve görüntü sonraki
+onaylardan ETKİLENMEZ: başka bir onay yayın satırlarına yazar, `draft_id` dolu
+kopyalara dokunmaz. `test_k80_approved_snapshot.py` bu sınırların dördünü de
+koruyor (kalıcılık, sızmama, yeni taslağın yalnız yayını kopyalaması, onaylanan
+taslağın hâlâ donmuş olması).
+
+**Onaylanan kayıtta fark ve çakışma BİLEREK gösterilmiyor.** İkisi de o anki
+yayına karşı hesaplanır; donmuş bir görüntünün yanında canlı bir fark göstermek
+"onaylandı ama 3 değişiklik var" gibi okunurdu. Onay anındaki fark zaten
+`applied_summary`de dondurulmuştu (K-36 deseni) — gösterilen o.
+
+**Karar notu tek alan, iki karar.** `/approve` ucu gövde alır oldu ve
+`review_note`'u onayda da doldurur. Ayrı bir "onay notu" sütunu açılmadı: soru
+ikisinde de aynı — kararı veren ne dedi? Durum hangisi olduğunu zaten söylüyor.
+Zorunluluk ayrışıyor ama: **ret gerekçesiz anlamsızdır** (gönderen neyi
+düzelteceğini bilemez), onay ise kendi başına yeterli bir cevaptır. Bu yüzden
+onayda opsiyonel, rette zorunlu; gövdesiz onay da geçerli kalır. Notun yanında
+NOTU YAZAN da gösteriliyor — not bir kişinin sözüdür.
+
+**"DÖNEM" hücresi "BÖLÜM" oldu.** Yıl ve dönem başlıkta zaten yazıyordu; hücre
+bilgiyi tekrar ediyordu. Bölüm kodu ise kaydı tek başına tanıtıyor ve dar kuyruk
+sütununda kırpılmıyor (`DraftOut.department_code` eklendi). Kuyruk kartları da
+koda geçti; **arama koda göre de çalışıyor** — görünen bir şeyin aranamaması
+tutarsız olurdu.
+
+**Reddedilende çakışma CANLI kalıyor (kullanıcı kararı).** Taslağın satırları
+reddedildiği hâlde duruyor, ama çakışmalar o anki yayına karşı taranıyor: sahibi
+bu taslağı düzeltip yeniden gönderecek, dolayısıyla güncel gerçeği görmesi doğru.
+
+**Yol boyunca:** K-79'un "sıfır kaçak" iddiasında dört boşluk çıktı ("Ortak ders
+— etkilenen", "Taslak silindi", "Silinemedi", "N engel giderilmeli") ve bir buton
+metni. Hepsi konum ölçütüne uyuyordu, yani tarayıcı doğruydu — uygulaması eksik
+kalmıştı. Kapatıldı.

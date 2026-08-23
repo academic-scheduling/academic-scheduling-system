@@ -3108,3 +3108,45 @@ sokmamalı — o butonun kendi async işi zaten yoktu.
 eklendi, MAVİ TAŞINDI, gri değişmedi) ama açıklama ikisini anlatıyordu; mavi
 rozetlerin ne demek olduğu okunamıyordu. Örnek renkler de gerçek rozetlerle
 eşitlendi (filled/light).
+
+### K-80 eki 2 · çakışma belirteci, kaldırılanlar, gönderim notu, iki kusur
+
+**Bir kapı eklemek yarış getirdi.** Önceki turda konan "mod çözülene kadar
+bekle" kapısı, Yayın Merkezi'nden "Programda düzenle" ile gelindiğinde ekranı
+sonsuza dek yüklemede bırakıyordu (F5 açıyordu). Sebep: mod çözümleme efekti
+bir sunucu turu içeriyor ve cohort her değiştiğinde yeniden koşuyor; URL
+parametreleri `dep/year/sem`'i arka arkaya değiştirdiği için iki koşu üst üste
+biniyor ve YENİSİ önce dönerse ESKİ cevabın `cozuldu`su kapıyı eski cohort'un
+anahtarıyla kapatıyor. **Kural: içinde async iş olan bir efekt, cohort/kimlik
+gibi bir anahtara bağlıysa `iptal` bayrağı ŞARTTIR** — kapının kendisi doğruydu,
+eksiği iptal korumasıydı.
+
+**"Programda gör" yanlış programa götürüyordu.** Yalnız cohort veriliyordu ve
+K-73'ün mod hafızası ekranı o cohort'un açık taslağına düşürüyordu. Onaylanmış
+bir kayıttan "Programda gör" deyip taslağa varmak doğrudan yanlış cevaptır.
+Yayın yolu artık `mode=pub` taşıyor; iki ekran da bunu K-62'nin
+`taslakSecimiAtla` bayrağıyla karşılıyor — yeni mekanizma icat edilmedi, aynı
+soruya (bu gidişte taslağa atlama) verilmiş cevap yeniden kullanıldı.
+
+**Çakışmalar program üzerinde işaretleniyor.** Liste zaten vardı ama "hangi
+ders" sorusunu metinden okumak gerekiyordu. Motor `affected[]` içinde satır
+id'sini veriyor; eşleşen rozetin sol kenarına ince dikey çizgi — hard kırmızı,
+uyarı turuncu. **İki bilgi iki ayrı KANALDA:** rozetin rengi değişikliği
+(yeşil/mavi), sol çubuk çakışmayı taşır. Aynı satır ikisine birden karışırsa
+HARD kazanır; daha ağırı gizlenirse kullanıcı turuncuyu görüp önemsiz sanar.
+
+**Kaldırılanlar ızgarada gösterilemez, o yüzden SAYILIR.** Tek "N değişiklik"
+sayısı onları da içine katıyordu ve ızgarada karşılığı görünmediği için sayı
+tutmuyormuş gibi duruyordu. Başlıkta "N kaldırılan ızgarada görünmez", listede
+tür dökümü.
+
+**Gönderim notu gösterilmiyordu.** `submit_note` K-59'dan beri kaydediliyordu
+ama hiçbir ekranda okunmuyordu — onaylayıcı gönderenin gerekçesini göremiyordu.
+Not artık modalın içinden çıkıp incelemenin yanına, karar notuyla simetrik bir
+kutuya taşındı ve gönderildikten sonra aynı yerde okunur hâle geliyor. Modal
+kaldırıldı: onaya göndermek geri alınabilir (withdraw), araya onay ekranı
+koymak fazladan tıklamaydı.
+
+**"1 değişiklik ama 3 mavi hücre" hata DEĞİL.** Bir yerleşim `slot_count` kadar
+hücreye yayılır ve vurgu `start_slot`'tan okunur; 3 saatlik bir dersin taşınması
+3 hücreyi birden boyar. Değişiklik sayısı yerleşimi sayar, hücreyi değil.

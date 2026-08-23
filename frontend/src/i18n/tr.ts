@@ -939,11 +939,13 @@ export const tr = {
       // gizliliği) — başlık bunu söylesin.
       OPEN: "Taslaklarınız",
       REJECTED: "Reddedilenler",
-      APPROVED: "Yayında",
+      // K-80: "Yayında" bir DURUM adıydı; grup ise artık "beni ilgilendiren
+      // onaylar"ı topluyor (başkalarınınki dahil), yani eylemin adı doğru.
+      APPROVED: "Onaylananlar",
     },
-    // K-80: "Bu grupta kayıt yok." KALDIRILDI — boş grup zaten boş görünüyor.
-    // Arama sonuçsuz kaldığında ise cevap gerekir: kullanıcı bir şey yazdı.
-    noMatch: "Eşleşen kayıt yok.",
+    // K-80: bu kuyrukta ARAMA YOK (neyin arandığı belirsizdi: bölüm mü,
+    // gönderen mi, tarih mi) ve boş grup cümlesi de kaldırıldı — boş grup
+    // zaten boş görünüyor. Daraltmayı tür süzgeci yapıyor.
     changeCount: (n: number) => `${n} değişiklik`,
     yourRequest: "kendi talebiniz",
     pickOne: "İncelemek için soldan bir kayıt seçin.",
@@ -973,8 +975,6 @@ export const tr = {
     sentByOn: (kim: string, ne_zaman: string) => `${kim} gönderdi · ${ne_zaman}`,
     openedByOn: (kim: string, ne_zaman: string) => `${kim} açtı · ${ne_zaman}`,
 
-    appliedTitle: "Bu değişiklik yayında",
-    appliedFallback: "Değişiklikler yayına alındı.",
     staleTitle: "Bu taslak güncel olmayabilir",
     staleBody: (tarih: string, tur: string) =>
       `Taslak ${tarih} tarihinde açıldı; yayındaki ${tur} o tarihten sonra`,
@@ -990,8 +990,12 @@ export const tr = {
     // kodu ise kaydı tek başına tanıtan bilgi.
     statDepartment: "BÖLÜM",
     gridTitle: "PROGRAM GÖRÜNTÜSÜ",
+    // K-80: ızgarada ÜÇ durum var (ProposedGrid: yeşil eklendi, mavi taşındı,
+    // gri değişmedi) ama açıklama ikisini anlatıyordu — mavi rozetlerin ne
+    // demek olduğu okunamıyordu.
     legendAdded: "eklenen",
-    legendExisting: "mevcut",
+    legendMoved: "taşınan",
+    legendExisting: "değişmeyen",
     changesTitle: "DEĞİŞİKLİKLER",
     conflictCheck: "ÇAKIŞMA KONTROLÜ",
 
@@ -1029,7 +1033,9 @@ export const tr = {
 
     // K-80 · karar notu: kutu artık kalıcı, onayda da reddetmede de aynı not.
     decisionNoteTitle: "KARAR NOTU",
-    decisionNoteHelp: "Onaylarken isteğe bağlı, reddederken zorunludur.",
+    // K-80: yardım cümlesi kutunun altından kalktı; "opsiyonel" başlığın
+    // yanında duruyor — bilgi aynı yerde, satır kazanılıyor.
+    decisionNoteOptional: "KARAR NOTU (opsiyonel)",
     decisionNotePlaceholder: "Gönderene iletilecek not",
     rejectNeedsNote: "Reddetmek için gerekçe yazın",
     noteBy: (kim: string) => `${kim} yazdı`,

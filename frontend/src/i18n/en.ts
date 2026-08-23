@@ -911,9 +911,8 @@ export const en: Dict = {
       PENDING: "Pending approval",
       OPEN: "Your drafts",
       REJECTED: "Rejected",
-      APPROVED: "Published",
+      APPROVED: "Approved",
     },
-    noMatch: "No matching record.",
     changeCount: (n: number) => `${n} changes`,
     yourRequest: "your request",
     pickOne: "Select a record on the left to review it.",
@@ -938,8 +937,6 @@ export const en: Dict = {
     sentByOn: (kim: string, ne_zaman: string) => `Sent by ${kim} · ${ne_zaman}`,
     openedByOn: (kim: string, ne_zaman: string) => `Opened by ${kim} · ${ne_zaman}`,
 
-    appliedTitle: "This change is published",
-    appliedFallback: "The changes have been published.",
     staleTitle: "This draft may be out of date",
     staleBody: (tarih: string, tur: string) =>
       `The draft was opened on ${tarih}; the published ${tur} has since been`,
@@ -954,7 +951,8 @@ export const en: Dict = {
     statDepartment: "DEPARTMENT",
     gridTitle: "SCHEDULE PREVIEW",
     legendAdded: "added",
-    legendExisting: "existing",
+    legendMoved: "moved",
+    legendExisting: "unchanged",
     changesTitle: "CHANGES",
     conflictCheck: "CONFLICT CHECK",
 
@@ -989,7 +987,7 @@ export const en: Dict = {
     decidedByApprove: "APPROVED BY",
 
     decisionNoteTitle: "DECISION NOTE",
-    decisionNoteHelp: "Optional when approving, required when rejecting.",
+    decisionNoteOptional: "DECISION NOTE (optional)",
     decisionNotePlaceholder: "Note to be sent to the sender",
     rejectNeedsNote: "Write a reason in order to reject",
     noteBy: (kim: string) => `written by ${kim}`,

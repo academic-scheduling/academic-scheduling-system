@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert, Badge, Button, Grid, Group, Loader, Modal, Paper, ScrollArea,
-  SegmentedControl, Stack, Text, Textarea, TextInput, Title, Tooltip,
+  SegmentedControl, Stack, Text, Textarea, Title, Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle, IconArrowBackUp, IconCalendarWeek,
   IconCircleCheck, IconClockHour4, IconFilePencil, IconGitCompare, IconInbox,
-  IconMinus, IconPencil, IconPlus, IconSearch, IconSend, IconTrash,
+  IconMinus, IconPencil, IconPlus, IconSend, IconTrash,
   IconUser, IconX, type IconProps,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
@@ -128,10 +128,12 @@ export default function PublishingCenterPage() {
 
   const [myDrafts, setMyDrafts] = useState<ScheduleDraft[] | null>(null);
   const [queue, setQueue] = useState<ScheduleDraft[]>([]);
+  /** K-80: onaylananlar ayrı kaynaktan — kapsamı "benimkiler" değil "beni
+   *  ilgilendirenler". Bu yüzden `myDrafts`ten türetilemez. */
+  const [approved, setApproved] = useState<ScheduleDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [group, setGroup] = useState<Group>("PENDING");
-  const [search, setSearch] = useState("");
   /** K-80: tür süzgeci. Haftalık program ve sınav takvimi aynı kuyrukta akıyor
    *  (K-60 tek yaşam döngüsü) ama incelenirken ayrı işlerdir; süzgeç istemci
    *  tarafında, çünkü liste zaten elimizde (K-69 deseni). */
@@ -141,8 +143,13 @@ export default function PublishingCenterPage() {
 
   const load = () => {
     const jobs: Promise<unknown>[] = [
-      api.get<ScheduleDraft[]>("/schedule-drafts?include_history=true")
-        .then(setMyDrafts),
+      api.get<ScheduleDraft[]>("/schedule-drafts").then(setMyDrafts),
+      // K-80: onaylananlar artık AYRI bir uçtan ve daha geniş bir kapsamdan
+      // gelir — yalnız benimkiler değil, beni ilgilendiren tüm onaylar
+      // (Değişiklik Akışı kapsamı: kendi bölümlerim + ortak ders etkisi;
+      // ADMIN'de workgroup'un tamamı). Onaylanan taslak artık özel bir çalışma
+      // değil, yayına girmiş bir kayıttır.
+      api.get<ScheduleDraft[]>("/schedule-approvals/history").then(setApproved),
     ];
     if (isApprover) {
       jobs.push(api.get<ScheduleDraft[]>("/schedule-approvals").then(setQueue));
@@ -155,8 +162,12 @@ export default function PublishingCenterPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [isApprover]);
 
-  /** Durum gruplarına ayrılmış havuz. PENDING onaylayıcıda kuyruktan, ötekiler
-   *  daima "benim taslaklarım"dan gelir (K-59 gizliliği). */
+  /** Durum gruplarına ayrılmış havuz — üç ayrı görünürlük kuralı bir arada:
+   *   - OPEN / REJECTED: yalnız BENİM taslaklarım (K-59 gizliliği; hazırlık
+   *     evresi sahibine özeldir, ADMIN dahil kimse göremez).
+   *   - PENDING: onaylayıcıysam kapsamımdaki tüm kuyruk, değilsem yalnız kendi
+   *     bekleyen taleplerim.
+   *   - APPROVED: beni ilgilendiren TÜM onaylar (K-80) — sonuç paylaşılır. */
   const byGroup = useMemo(() => {
     const mine = myDrafts ?? [];
     const pending = isApprover ? queue : mine.filter((d) => d.status === "PENDING");
@@ -164,21 +175,15 @@ export default function PublishingCenterPage() {
       PENDING: pending,
       OPEN: mine.filter((d) => d.status === "OPEN"),
       REJECTED: mine.filter((d) => d.status === "REJECTED"),
-      APPROVED: mine.filter((d) => d.status === "APPROVED"),
+      APPROVED: approved,
     } as Record<Group, ScheduleDraft[]>;
-  }, [myDrafts, queue, isApprover]);
+  }, [myDrafts, queue, approved, isApprover]);
 
-  const list = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("tr");
-    return byGroup[group]
+  const list = useMemo(() =>
+    byGroup[group]
       .filter((d) => kind === "ALL" || d.kind === kind)
-      // Arama bölüm KODUNU da kapsıyor (K-80): kod artık kartta görünen bilgi,
-      // görünen bir şeyin aranamaması tutarsız olurdu.
-      .filter((d) => !q
-        || `${d.department_name} ${d.department_code} ${d.owner.name}`
-             .toLocaleLowerCase("tr").includes(q))
-      .sort((a, b) => ts(b) - ts(a));      // sıralama seçici YOK — daima en yeni önce
-  }, [byGroup, group, search, kind]);
+      .sort((a, b) => ts(b) - ts(a)),      // sıralama seçici YOK — daima en yeni önce
+    [byGroup, group, kind]);
 
   const cur = useMemo(
     () => list.find((d) => d.id === selId) ?? list[0] ?? null,
@@ -205,7 +210,6 @@ export default function PublishingCenterPage() {
             group={group} onGroup={setGroup}
             counts={Object.fromEntries(
               GROUPS.map((g) => [g.key, byGroup[g.key].length])) as Record<Group, number>}
-            search={search} onSearch={setSearch}
             kind={kind} onKind={setKind}
             list={list} loaded={loaded} error={error}
             curId={cur?.id ?? null} onSelect={setSelId}
@@ -231,11 +235,10 @@ export default function PublishingCenterPage() {
  * ================================================================== */
 
 function QueuePane({
-  group, onGroup, counts, search, onSearch, kind, onKind,
+  group, onGroup, counts, kind, onKind,
   list, loaded, error, curId, onSelect, meId,
 }: {
   group: Group; onGroup: (g: Group) => void; counts: Record<Group, number>;
-  search: string; onSearch: (s: string) => void;
   kind: DraftKind | "ALL"; onKind: (k: DraftKind | "ALL") => void;
   list: ScheduleDraft[]; loaded: boolean; error: string | null;
   curId: number | null; onSelect: (id: number) => void; meId: number;
@@ -264,15 +267,9 @@ function QueuePane({
         })}
       </Stack>
 
-      <TextInput
-        placeholder={t.common.search}
-        value={search}
-        leftSection={<IconSearch size={16} />}
-        onChange={(e) => onSearch(e.currentTarget.value)}
-      />
-
-      {/* K-80: tür süzgeci aramanın hemen altında — ikisi de "listeyi daralt"
-          işidir, durum grupları ise "hangi kuyruk" işi (üstte kalır). */}
+      {/* K-80: arama KALDIRILDI — neyin arandığı belirsizdi (bölüm mü, gönderen
+          mi, tarih mi) ve kuyruklar zaten kısa. Daraltma işini tür süzgeci
+          yapıyor; o "ne aranıyor" sorusunu sordurmuyor. */}
       <SegmentedControl
         fullWidth size="xs" radius="md"
         value={kind}
@@ -287,11 +284,7 @@ function QueuePane({
       {error && <Alert color="red" variant="light" radius="md">{error}</Alert>}
       {!loaded && !error && <Loader size="sm" />}
 
-      {loaded && list.length === 0 ? (
-        // Boş grup zaten boş görünür; yalnız ARAMA sonuçsuzsa açıklama gerekir
-        // (kullanıcı bir şey yazdı, cevapsız kalmamalı).
-        search ? <Text c="dimmed" size="sm" mt="xs">{t.publishing.noMatch}</Text> : null
-      ) : (
+      {loaded && list.length === 0 ? null : (
         <ScrollArea.Autosize mah="calc(100vh - 220px)" type="hover">
           <Stack gap="xs">
             {list.map((d) => (
@@ -318,7 +311,11 @@ function QueueCard({ d, active, mine, onClick }: {
           ad detay panelinde zaten yazıyor. */}
       <Group gap={8} wrap="nowrap" mb={5}>
         <KindIcon size={15} color="var(--mantine-color-dimmed)" style={{ flex: "none" }} />
-        <Text fz={13} fw={700} truncate>{d.department_code} · {t.courses.yearN(d.year)}</Text>
+        {/* K-80: dönem de burada — aynı bölüm/sınıfın güz ve bahar kayıtları
+            yan yana düşebiliyor ve kartlar birbirinden ayırt edilemiyordu. */}
+        <Text fz={13} fw={700} truncate>
+          {d.department_code} · {t.courses.yearN(d.year)} · {t.enums.semester[d.semester]}
+        </Text>
       </Group>
       <Group gap={6} wrap="nowrap" c={TEXT_MUTED} fz={11} mb={3}>
         <IconUser size={12} style={{ flex: "none" }} />
@@ -527,20 +524,17 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
           {detailError && <Alert color="red" variant="light" radius="md">{detailError}</Alert>}
           {!detail && !detailError && <Loader size="sm" />}
 
-          {/* ---- Yayında: onay anında donmuş görüntü (K-80) ----
+          {/* ---- Onaylananlar: onay anında donmuş görüntü (K-80) ----
               Fark ve çakışma YOK — ikisi de o anki yayına karşı hesaplanır ve
-              sonraki onaylarla kayar. Onay anındaki değişiklikler
-              `applied_summary`de dondurulmuştur, onu gösteriyoruz. */}
+              sonraki onaylarla kayar.
+
+              `applied_summary` de GÖSTERİLMİYOR: tek satırda yan yana dizilen
+              "CENG 3004 Ş1 Pzt 1 → Pzt 2; …" listesi uzun onaylarda okunmaz bir
+              şeride dönüşüyordu. Onaylanan PROGRAMIN kendisi zaten aşağıda
+              duruyor ve sorunun asıl cevabı o. (Özet backend'de saklanmaya
+              devam ediyor — Değişiklik Akışı onu okuyor.) */}
           {detail?.approved && (
             <>
-              <Alert color="green" variant="light" radius="md" icon={<IconCircleCheck size={18} />}
-                title={t.publishing.appliedTitle}>
-                <Text fz={12} fw={600} c={TEXT_MUTED} mb={4}>
-                  {t.publishing.appliedChangesTitle}
-                </Text>
-                <Text fz="sm">{draft.applied_summary || t.publishing.appliedFallback}</Text>
-              </Alert>
-
               <div>
                 <Group gap={10} mb={8} align="center">
                   <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.approvedGridTitle}</Text>
@@ -593,7 +587,8 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate }: {
                 <Group gap={14} mb={8} align="center">
                   <Text fz={12} fw={600} c={TEXT_MUTED}>{t.publishing.gridTitle}</Text>
                   <div style={{ flex: 1 }} />
-                  <Legend swatch="light-blue" label={t.publishing.legendAdded} />
+                  <Legend swatch="green" label={t.publishing.legendAdded} />
+                  <Legend swatch="blue" label={t.publishing.legendMoved} />
                   <Legend swatch="gray" label={t.publishing.legendExisting} />
                 </Group>
                 <Paper withBorder radius="md" p="sm">
@@ -711,9 +706,12 @@ function StatCell({ label, value, color, border }: {
   );
 }
 
-function Legend({ swatch, label }: { swatch: "light-blue" | "gray"; label: string }) {
-  const bg = swatch === "light-blue"
-    ? "var(--mantine-color-blue-light)" : "var(--mantine-color-gray-light)";
+/** K-80: örnek renkler ızgaranın GERÇEK rozetleriyle eşleşir — eklenen ve
+ *  taşınan `filled`, değişmeyen `light` (bkz. ProposedSchedule). */
+function Legend({ swatch, label }: { swatch: "green" | "blue" | "gray"; label: string }) {
+  const bg = swatch === "green" ? "var(--mantine-color-green-filled)"
+    : swatch === "blue" ? "var(--mantine-color-blue-filled)"
+    : "var(--mantine-color-gray-light)";
   return (
     <Group gap={6} wrap="nowrap">
       <span style={{ width: 11, height: 11, borderRadius: 3, background: bg,
@@ -865,12 +863,13 @@ function DecisionNotePanel({ value, onChange }: {
   const t = useT();
   return (
     <div>
-      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.decisionNoteTitle}</Text>
+      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>
+        {t.publishing.decisionNoteOptional}
+      </Text>
       <Paper withBorder radius="md" p="md">
         <Textarea placeholder={t.publishing.decisionNotePlaceholder}
           autosize minRows={4} maxRows={9}
           value={value} onChange={(e) => onChange(e.currentTarget.value)} />
-        <Text fz={11} c={TEXT_MUTED} mt={7}>{t.publishing.decisionNoteHelp}</Text>
       </Paper>
     </div>
   );

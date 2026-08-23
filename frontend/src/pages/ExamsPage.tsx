@@ -292,11 +292,18 @@ export default function ExamsPage() {
     const semParam = searchParams.get("semester");
     if (yearParam) setYear(yearParam);
     if (semParam) setSem(semParam as SemesterType);
+    // K-80: `mode=pub` ile gelindiyse YAYIN istenmiştir; mod hafızası devreye
+    // girip ekranı açık taslağa düşürmemeli (haftalıktaki eşinin ikizi).
+    if (searchParams.get("mode") === "pub") {
+      taslakSecimiAtla.current = true;
+      setDraft(null);
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
     next.delete("year");
     next.delete("semester");
     next.delete("draft_id");
+    next.delete("mode");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -581,7 +588,11 @@ export default function ExamsPage() {
    *  yenilense de kaybolmasın). Yalnız kendi taslaklarım döner. */
   useEffect(() => {
     // K-80: haftalıktaki ile aynı — mod çözülene kadar takvim beklesin.
-    const cozuldu = () => setModCozulen(cohortKey);
+    // `iptal` şart: efekt cohort değiştikçe yeniden koşuyor ve içinde bir
+    // sunucu turu var; eski cevap geç dönerse kapıyı ESKİ cohort'un
+    // anahtarıyla kapatır ve ekran sonsuza dek "yükleniyor"da kalır.
+    let iptal = false;
+    const cozuldu = () => { if (!iptal) setModCozulen(cohortKey); };
     if (!dep || year === COMMON_YEAR) { cozuldu(); return; }
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan sınavı ekrandan kaçırır. Bayrak tek seferliktir.
@@ -599,10 +610,11 @@ export default function ExamsPage() {
         const eslesen = typeof pref === "number"
           ? cohortDrafts.find((d) => d.id === pref)
           : cohortDrafts[0];
-        if (eslesen) setDraft(eslesen);
+        if (!iptal && eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })
       .finally(cozuldu);
+    return () => { iptal = true; };
   }, [dep, year, sem, cohortKey]);
 
   const haftaEtiketi = () => {

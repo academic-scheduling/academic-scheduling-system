@@ -313,11 +313,20 @@ export default function WeeklyPage() {
     const semParam = searchParams.get("semester");
     if (yearParam) setYear(yearParam);
     if (semParam) setSem(semParam as SemesterType);
+    // K-80: `mode=pub` ile gelindiyse YAYIN istenmiştir (Yayın Merkezi'ndeki
+    // "Programda gör"). K-73'ün mod hafızası burada devreye girmemeli, yoksa
+    // ekran o cohortun açık taslağına düşer ve kullanıcı istediğinden başka bir
+    // program görür. `taslakSecimiAtla` K-62'de tam bunun için yazılmıştı.
+    if (searchParams.get("mode") === "pub") {
+      taslakSecimiAtla.current = true;
+      setDraft(null);
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
     next.delete("year");
     next.delete("semester");
     next.delete("draft_id");
+    next.delete("mode");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -469,7 +478,15 @@ export default function WeeklyPage() {
   useEffect(() => {
     // K-80: her çıkış yolu modu ÇÖZÜLDÜ ilan etmeli — biri unutulursa ızgara
     // sonsuza dek "yükleniyor"da kalır.
-    const cozuldu = () => setModCozulen(cohortKey);
+    //
+    // `iptal` ŞART: bu efekt cohort her değiştiğinde yeniden koşuyor ve içinde
+    // bir sunucu turu var. Yenisi eskisinden önce dönerse, ESKİ cevabın
+    // `cozuldu`su kapıyı eski cohort'un anahtarıyla kapatır ve bir daha
+    // açılmaz — ekran sonsuza dek "yükleniyor"da kalırdı. (Yayın Merkezi'nden
+    // "Programda düzenle" ile gelindiğinde tam olarak bu oluyordu: URL
+    // parametreleri dep/year/sem'i arka arkaya değiştiriyor.)
+    let iptal = false;
+    const cozuldu = () => { if (!iptal) setModCozulen(cohortKey); };
     if (!dep || year === COMMON_YEAR) { cozuldu(); return; }
     // K-62: çakışma vurgusuyla gelindiyse hedef YAYINDA'dır; taslağı seçmek
     // aranan satırı ekrandan kaçırır. Bayrak tek seferliktir.
@@ -493,10 +510,11 @@ export default function WeeklyPage() {
         const eslesen = typeof pref === "number"
           ? cohortDrafts.find((d) => d.id === pref)
           : cohortDrafts[0];
-        if (eslesen) setDraft(eslesen);
+        if (!iptal && eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })
       .finally(cozuldu);
+    return () => { iptal = true; };
   }, [dep, year, sem, cohortKey]);
 
   const handleUndo = async () => {

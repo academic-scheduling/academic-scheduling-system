@@ -347,3 +347,142 @@ def test_rejected_draft_keeps_its_rows_and_conflict_scan():
         assert d.reviewer is not None
     finally:
         db.close()
+
+
+# ------------------------------------------------------------------
+# K-80 · "Onaylananlar" gorunurlugu: hazirlik ozel, SONUC paylasilir
+# ------------------------------------------------------------------
+#
+# Yayin Merkezi'nin "Onaylananlar" grubu artik BASKALARININ onaylanmis
+# taslaklarini da gosteriyor. Bu, K-59 gizliliginin sinirini degistiriyor ve
+# tam da bu yuzden en dikkatli korunmasi gereken yer burasi: genisleyen sey
+# YALNIZCA onaylanan kayit olmali. OPEN/PENDING/REJECTED bir taslak sahibinden
+# baskasina — ADMIN dahil — hala gorunmemeli.
+
+def approved_draft_of(owner_h, dep, cls, sec, onaylayan, *, day=2, slot=6):
+    draft = submitted_draft(owner_h, dep, cls, sec, day=day, slot=slot)
+    assert client.post(f"/schedule-approvals/{draft['id']}/approve",
+                       headers=onaylayan).status_code == 200
+    return draft
+
+
+def test_approval_history_shows_other_peoples_approved_drafts_in_scope():
+    """Ayni bolume UYE baska bir kullanici onaylanan kaydi gorur ve satirlarini
+    okuyabilir — grubun anlami bu."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    publish_entry(sec["id"], cls["id"], day=1, slot=1)
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+
+    draft = approved_draft_of(h, dep, cls, sec, onaylayan)
+
+    # Uye ama taslagin sahibi OLMAYAN biri (yetkisiz de olabilir: gorunurluk
+    # onay yetkisine degil UYELIGE bakar).
+    uye = make_account([dep["id"]])
+    gecmis = client.get("/schedule-approvals/history", headers=uye)
+    assert gecmis.status_code == 200, gecmis.text
+    assert draft["id"] in [d["id"] for d in gecmis.json()]
+
+    r = client.get(f"/schedule-drafts/{draft['id']}/entries", headers=uye)
+    assert r.status_code == 200, r.text
+    assert [(e["day_of_week"], e["start_slot"]) for e in r.json()] == [(2, 6)]
+
+
+def test_history_excludes_members_of_other_departments():
+    """Baska bolumun uyesi kapsam disidir — ortak ders etkisi de yoksa gormez."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    publish_entry(sec["id"], cls["id"], day=1, slot=1)
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+    draft = approved_draft_of(h, dep, cls, sec, onaylayan, day=3, slot=3)
+
+    baska_dep, _, _, _, _ = base_setup(h)
+    yabanci = make_account([baska_dep["id"]])
+
+    assert draft["id"] not in [
+        d["id"] for d in client.get("/schedule-approvals/history",
+                                    headers=yabanci).json()]
+    assert client.get(f"/schedule-drafts/{draft['id']}/entries",
+                      headers=yabanci).status_code == 404
+
+
+def test_history_is_empty_for_a_membershipless_account():
+    """Uyeligi olmayan alt hesap bos liste alir — `/schedule-changes` ile ayni
+    cizgi. (Seed'deki "Alt Hesap (Test)" tam olarak bu durumda.)"""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    publish_entry(sec["id"], cls["id"], day=1, slot=1)
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+    draft = approved_draft_of(h, dep, cls, sec, onaylayan, day=4, slot=2)
+
+    uyeliksiz = make_account([])
+    assert client.get("/schedule-approvals/history", headers=uyeliksiz).json() == []
+    assert client.get(f"/schedule-drafts/{draft['id']}/entries",
+                      headers=uyeliksiz).status_code == 404
+
+
+def test_unapproved_drafts_stay_private_even_from_admin():
+    """K-59'un CEKIRDEGI — K-80 bunu bozmamali.
+
+    Onaylanmamis taslak (OPEN / PENDING / REJECTED) sahibinden baskasina
+    gorunmez; ADMIN de muaf degil. Genisleyen sey yalnizca ONAYLANAN kayitti.
+    """
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    publish_entry(sec["id"], cls["id"], day=1, slot=1)
+    sahip = make_account([dep["id"]], can_manage_weekly=True)
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+
+    # OPEN
+    acik = create_draft(sahip, dep["id"])
+    for baskasi in (h, onaylayan):
+        assert client.get(f"/schedule-drafts/{acik['id']}/entries",
+                          headers=baskasi).status_code == 404
+        assert client.get(f"/schedule-drafts/{acik['id']}",
+                          headers=baskasi).status_code == 404
+    assert client.delete(f"/schedule-drafts/{acik['id']}", headers=sahip).status_code == 204
+
+    # PENDING — onaylayici INCELEME ucundan gorur ama taslak ucundan GORMEZ,
+    # ve onay yetkisi olmayan admin de satirlarina erisemez.
+    bekleyen = submitted_draft(sahip, dep, cls, sec, day=5, slot=5)
+    assert client.get(f"/schedule-drafts/{bekleyen['id']}/entries",
+                      headers=h).status_code == 404
+
+    # REJECTED
+    assert client.post(f"/schedule-approvals/{bekleyen['id']}/reject",
+                       json={"note": "olmadı"}, headers=onaylayan).status_code == 200
+    assert client.get(f"/schedule-drafts/{bekleyen['id']}/entries",
+                      headers=h).status_code == 404
+    assert client.get(f"/schedule-drafts/{bekleyen['id']}/entries",
+                      headers=onaylayan).status_code == 404
+
+
+def test_history_route_is_not_shadowed_by_the_id_route():
+    """`/schedule-approvals/history` ile `/schedule-approvals/{draft_id}` ayni
+    on eki paylasiyor. Sabit yol ONCE tanimlanmazsa "history" bir id sanilir ve
+    uc 422 dondurur — sessiz ve kafa karistirici bir kirilma."""
+    h = admin_headers()
+    r = client.get("/schedule-approvals/history", headers=h)
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_approved_draft_is_still_read_only_for_a_non_owner():
+    """Gorme hakki DUZENLEME hakki degil: kapsamdaki uye satirlari okur ama
+    yazma uclari (sahiplik arayan `_get_own_draft`) ona kapali kalir."""
+    h = admin_headers()
+    dep, _, cls, _, sec = base_setup(h)
+    publish_entry(sec["id"], cls["id"], day=1, slot=1)
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+    draft = approved_draft_of(h, dep, cls, sec, onaylayan, day=5, slot=7)
+
+    uye = make_account([dep["id"]], can_manage_weekly=True)
+    satir = client.get(f"/schedule-drafts/{draft['id']}/entries", headers=uye).json()[0]
+    assert client.patch(
+        f"/schedule-drafts/{draft['id']}/entries/{satir['id']}",
+        json={"day_of_week": 1}, headers=uye).status_code == 404
+    assert client.delete(f"/schedule-drafts/{draft['id']}",
+                         headers=uye).status_code == 404
+    # Fark/cakisma uclari da sahiplik arar (canli hesap, gecmis kayitta anlamsiz)
+    assert client.get(f"/schedule-drafts/{draft['id']}/diff",
+                      headers=uye).status_code == 404

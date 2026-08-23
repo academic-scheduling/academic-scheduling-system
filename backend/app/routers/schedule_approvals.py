@@ -35,6 +35,7 @@ from app.models import (
     WeeklyScheduleEntry,
 )
 from app.routers.exams import _eager_exam_query
+from app.routers.schedule_changes import approved_visibility_filter
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
     DraftApproveRequest, DraftApproveResponse, DraftOut, DraftRejectRequest,
@@ -131,6 +132,42 @@ def approval_queue(
     """
     drafts = _approvable_query(db, user).order_by(ScheduleDraft.submitted_at).all()
     return [_to_out(db, d) for d in drafts]
+
+
+@router.get("/schedule-approvals/history", response_model=list[DraftOut])
+def approval_history(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """ONAYLANMIS taslaklar — beni ilgilendirenler, yeniden eskiye (K-80).
+
+    Kuyruktan (`/schedule-approvals`) farki iki turlu: durum APPROVED, ve
+    gorunurluk onay YETKISINE degil DEGISIKLIK AKISI kapsamina bakar.
+
+    Neden bu kapsam: onaylanan taslak artik ozel bir calisma degil, yayina
+    girmis bir kayittir. Yayindaki programi zaten gorebilen birinin, o programi
+    kimin ne zaman degistirdigini gorememesi icin bir sebep yok. K-59'un
+    gizliligi HAZIRLIK evresini korur (OPEN/PENDING/REJECTED), sonucunu degil.
+
+    Kapsam `/schedule-changes` ile AYNI fonksiyondan gelir — iki yuzey ayni
+    soruyu soruyor, cevabin iki surumu olmamali.
+    """
+    q = (
+        db.query(ScheduleDraft)
+        .options(selectinload(ScheduleDraft.department),
+                 selectinload(ScheduleDraft.owner),
+                 selectinload(ScheduleDraft.reviewer))
+        .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
+                ScheduleDraft.status == DraftStatus.APPROVED)
+    )
+    gorunurluk = approved_visibility_filter(user)
+    if gorunurluk is False:
+        return []
+    if gorunurluk is not None:
+        q = q.filter(gorunurluk)
+    drafts = q.order_by(ScheduleDraft.reviewed_at.desc()).all()
+    # live=False: kayit gecmistir, farki `applied_summary`de dondu.
+    return [_to_out(db, d, live=False) for d in drafts]
 
 
 @router.get("/schedule-approvals/{draft_id}", response_model=DraftReviewOut)

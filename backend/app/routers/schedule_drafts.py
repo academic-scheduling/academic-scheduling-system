@@ -42,6 +42,7 @@ from app.routers.exams import (
     _e2_message, _eager_exam_query, _ensure_weekday, _get_owned_course,
     _load_classrooms, _normalize_exam_index, _validate_exam_refs,
 )
+from app.routers.schedule_changes import approved_visibility_filter
 from app.routers.weekly_entries import (
     _ensure_online_has_no_classroom, _ensure_slot_window, _get_owned_section,
     _validate_classroom, _eager_entry_query,
@@ -79,6 +80,52 @@ def _get_own_draft(db: Session, user: User, draft_id: int) -> ScheduleDraft:
     )
     if draft is None:
         raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    return draft
+
+
+def _get_readable_draft(db: Session, user: User, draft_id: int) -> ScheduleDraft:
+    """OKUMA icin taslak: benimse her durumda, degilse yalniz ONAYLANMISSA (K-80).
+
+    K-59 gizliligi HAZIRLIK evresini korur: OPEN/PENDING/REJECTED bir taslak
+    sahibinden baskasina — ADMIN dahil — gorunmez. Ama ONAYLANAN taslak artik
+    ozel bir calisma degil, yayina girmis bir kayittir; Yayin Merkezi'nin
+    "Onaylananlar" grubu onun programini gosteriyor ve satirlarini okuyabilmesi
+    gerekiyor.
+
+    Kapsam `/schedule-changes` ile AYNI kuraldan gelir (`approved_visibility_
+    filter`): ADMIN workgroup'un tamamini, alt hesap kendi bolumlerini + ortak
+    ders uzerinden etkilenenleri. Uyeliksiz alt hesaba HICBIRI acilmaz.
+
+    404 (403 degil): kapsam disi bir kaydin varligi da sizdirilmez — dosyanin
+    geri kalaniyla ayni cizgi.
+    """
+    draft = (
+        db.query(ScheduleDraft)
+        .options(selectinload(ScheduleDraft.department),
+                 selectinload(ScheduleDraft.owner),
+                 selectinload(ScheduleDraft.reviewer))
+        .filter(ScheduleDraft.id == draft_id,
+                ScheduleDraft.workgroup_id == user.workgroup_id)
+        .first()
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    if draft.created_by == user.id:
+        return draft
+    if draft.status is not DraftStatus.APPROVED:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+
+    gorunurluk = approved_visibility_filter(user)
+    if gorunurluk is False:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    if gorunurluk is not None:
+        kapsamda = (
+            db.query(ScheduleDraft.id)
+            .filter(ScheduleDraft.id == draft.id, gorunurluk)
+            .first()
+        )
+        if kapsamda is None:
+            raise HTTPException(status_code=404, detail="Taslak bulunamadı")
     return draft
 
 
@@ -339,7 +386,8 @@ def get_draft(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return _to_out(db, _get_own_draft(db, user, draft_id))
+    # K-80: okuma ucu — onaylanan taslak kapsamdaki herkese acik.
+    return _to_out(db, _get_readable_draft(db, user, draft_id))
 
 
 @router.patch("/schedule-drafts/{draft_id}", response_model=DraftOut)
@@ -438,7 +486,8 @@ def list_draft_entries(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    draft = _get_own_draft(db, user, draft_id)
+    # K-80: onaylanan taslagin izgarasi Yayin Merkezi'nde gosteriliyor.
+    draft = _get_readable_draft(db, user, draft_id)
     _ensure_kind(draft, DraftKind.WEEKLY)
     return (
         _eager_entry_query(db, published_only=False)
@@ -592,7 +641,8 @@ def list_draft_exams(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    draft = _get_own_draft(db, user, draft_id)
+    # K-80: onaylanan taslagin sinav listesi Yayin Merkezi'nde gosteriliyor.
+    draft = _get_readable_draft(db, user, draft_id)
     _ensure_kind(draft, DraftKind.EXAM)
     return (
         _eager_exam_query(db, published_only=False)

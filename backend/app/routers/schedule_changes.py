@@ -28,6 +28,31 @@ from app.schemas import ScheduleChangeOut
 router = APIRouter(tags=["schedule-changes"])
 
 
+def approved_visibility_filter(user: User):
+    """"Onaylanmis bir degisikligi gormeye hakkim var mi?" — TEK yerde (K-80).
+
+    Bu kural K-59'da bu dosyada dogmustu; K-80'de Yayin Merkezi'nin
+    "Onaylananlar" grubu da ayni soruyu sormaya basladi. Iki yerde kopyalanirsa
+    biri gunun birinde otekinden ayrilir ve gizlilik sinirini KOPYA belirler —
+    o yuzden burada tek surum durur.
+
+    Cevabin sekli: `None` = kisit yok (ADMIN), `False` = hicbir sey (uyeliksiz
+    alt hesap), aksi halde SQLAlchemy kosulu.
+
+    Iki yoldan "beni ilgilendirir": degisiklik KENDI bolumumdeydi, ya da baska
+    bir bolumun onayi ORTAK DERS uzerinden benim bolumumu etkiledi (K-48).
+    """
+    if user.role == UserRole.ADMIN:
+        return None                       # K-04 cizgisi: workgroup'un tamami
+    uyelikler = [m.department_id for m in user.memberships]
+    if not uyelikler:
+        return False                      # gormesi gereken bir sey yok
+    return or_(
+        ScheduleDraft.department_id.in_(uyelikler),
+        ScheduleDraft.affected_departments.any(Department.id.in_(uyelikler)),
+    )
+
+
 @router.get("/schedule-changes", response_model=list[ScheduleChangeOut])
 def list_recent_changes(
     limit: int = Query(10, ge=1, le=50),
@@ -71,14 +96,11 @@ def list_recent_changes(
         q = q.filter(ScheduleDraft.year == year)
     if semester is not None:
         q = q.filter(ScheduleDraft.semester == semester)
-    if user.role != UserRole.ADMIN:
-        uyelikler = [m.department_id for m in user.memberships]
-        if not uyelikler:
-            return []
-        q = q.filter(or_(
-            ScheduleDraft.department_id.in_(uyelikler),
-            ScheduleDraft.affected_departments.any(Department.id.in_(uyelikler)),
-        ))
+    gorunurluk = approved_visibility_filter(user)
+    if gorunurluk is False:
+        return []
+    if gorunurluk is not None:
+        q = q.filter(gorunurluk)
 
     drafts = q.order_by(ScheduleDraft.reviewed_at.desc()).limit(limit).all()
     return [

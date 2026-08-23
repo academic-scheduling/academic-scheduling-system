@@ -3150,3 +3150,25 @@ koymak fazladan tıklamaydı.
 **"1 değişiklik ama 3 mavi hücre" hata DEĞİL.** Bir yerleşim `slot_count` kadar
 hücreye yayılır ve vurgu `start_slot`'tan okunur; 3 saatlik bir dersin taşınması
 3 hücreyi birden boyar. Değişiklik sayısı yerleşimi sayar, hücreyi değil.
+
+### K-80 eki 3 · eskimiş onay uyarısı ve tekrar temizliği
+
+**Donmuş görüntü ile canlı yayın ayrışabilir — uyarı bunu söyler.** Onaylanan
+kaydın ızgarası onay anına aittir; "Programda gör" ise güncel yayına götürür.
+Arada aynı cohort için başka bir onay geçtiyse ikisi ayrışır ve kullanıcı
+baktığı görüntünün hâlâ yürürlükte olduğunu sanar. Buton **engellenmiyor** —
+güncel yayını görmek meşru bir istektir; uyarı yalnızca beklentiyi düzeltir.
+
+Hesap İSTEMCİDE: "beni ilgilendiren onaylar" listesi zaten yüklü, ek bir sunucu
+turu gerekmiyor ve göremediğim bir onayın uyarısını vermek de anlamsız olurdu
+(kapsam dışıysa zaten benim işim değil). Karşılaştırma `kind`i içerir — sınav
+onayı haftalık programı eskitmez (K-60).
+
+**Tekrar eden açıklamalar kaldırıldı.** "ONAYLANAN PROGRAM / Onay anındaki hâli
+— sonraki değişiklikler yansımaz" başlığı, kaydın onaylandığını durum rozetinin
+ve karar kartının yanında ÜÇÜNCÜ kez söylüyordu; öteki görünümlerle aynı
+"PROGRAM GÖRÜNTÜSÜ" başlığına indi. Not kutularının altındaki "X yazdı" satırı
+da aynı sebeple gitti: kim olduğu hemen üstteki kartta yazılı.
+
+**Kural olarak:** bir bilgi ekranda ikinci kez görünüyorsa, ikinci görünüm
+kendini savunmak zorundadır — farklı bir soruyu cevaplamıyorsa gürültüdür.

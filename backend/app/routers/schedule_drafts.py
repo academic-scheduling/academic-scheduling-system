@@ -223,13 +223,16 @@ def _default_name(db: Session, payload: DraftCreate) -> str:
 def _to_out(db: Session, draft: ScheduleDraft) -> dict:
     """DraftOut govdesi: sayaclar taslagin O ANKI haline gore hesaplanir."""
     svc = _svc(draft)
-    # Onaylanan taslagin satirlari yayina gecip silinir; canli fark hesabi o
-    # noktada anlamsizdir (bos taslak "her sey kaldirildi" gibi gorunurdu).
+    # Onaylanan taslakta canli fark hesabi ANLAMSIZDIR: kayit gecmistir, farki
+    # onay aninda `applied_summary`ye donmustur. K-80'den beri satirlar yerinde
+    # duruyor, yani hesap KOSAR — ama O ANKI yayina karsi kosar ve sonraki her
+    # onayda kayar; "onaylandi ama 3 degisiklik var" gibi yanlis okunurdu.
     canli = draft.status != DraftStatus.APPROVED
     return {
         "id": draft.id,
         "department_id": draft.department_id,
         "department_name": draft.department.name,
+        "department_code": draft.department.code,
         "year": draft.year,
         "semester": draft.semester,
         "kind": draft.kind,

@@ -37,7 +37,8 @@ from app.models import (
 from app.routers.exams import _eager_exam_query
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
-    DraftApproveResponse, DraftOut, DraftRejectRequest, DraftReviewOut,
+    DraftApproveRequest, DraftApproveResponse, DraftOut, DraftRejectRequest,
+    DraftReviewOut,
 )
 
 router = APIRouter(tags=["schedule-approvals"])
@@ -88,13 +89,14 @@ def _ensure_not_self(user: User, draft: ScheduleDraft) -> None:
 
 
 def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
-    """DraftOut govdesi. `live=False` onaydan SONRA kullanilir: taslagin
-    satirlari yayina gecip silindigi icin canli fark hesabi anlamsizdir
-    (bos taslak "her sey kaldirildi" gibi gorunurdu)."""
+    """DraftOut govdesi. `live=False` onaydan SONRA kullanilir: kayit artik
+    gecmistir, farki onay aninda `applied_summary`ye donmustur. Canli hesap
+    O ANKI yayina karsi kosacagi icin sonraki onaylarla kayardi."""
     return {
         "id": draft.id,
         "department_id": draft.department_id,
         "department_name": draft.department.name,
+        "department_code": draft.department.code,
         "year": draft.year,
         "semester": draft.semester,
         "kind": draft.kind,
@@ -192,10 +194,15 @@ def review_draft(
              response_model=DraftApproveResponse)
 def approve_draft(
     draft_id: int,
+    payload: DraftApproveRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_schedule_approver),
 ):
-    """Taslagin farkini YAYINA uygular. Sistemin tek yayin yazma noktasi."""
+    """Taslagin farkini YAYINA uygular. Sistemin tek yayin yazma noktasi.
+
+    K-80: karar notu onayda da yazilabilir. Govde OPSIYONELDIR (`| None = None`)
+    — not zorunlu olmadigi gibi, gonderilmeyen govde de gecerli bir onaydir.
+    """
     draft = _get_reviewable(db, user, draft_id)
     _ensure_not_self(user, draft)
 
@@ -214,6 +221,10 @@ def approve_draft(
     draft.status = DraftStatus.APPROVED
     draft.reviewed_by = user.id
     draft.reviewed_at = datetime.now(timezone.utc)
+    # K-80: `review_note` artik "karar notu" — retten de onaydan da doldurulur.
+    # Ayni alan, cunku soru ayni: KARARI VEREN ne dedi? Durum zaten hangisi
+    # oldugunu soyluyor, ikinci bir sutun ayrim katmazdi.
+    draft.review_note = payload.note if payload else None
     draft.applied_summary = svc.build_applied_summary(uygulanan)
     # Ortak ders tasindiysa etkilenen bolumler burada donar; degisiklik akisi
     # ("bolumunuzu etkileyen son degisiklikler") bu satirlari okur.

@@ -579,6 +579,9 @@ class DraftOut(BaseModel):
     id: int
     department_id: int
     department_name: str
+    # K-80: kuyrukta ve detay basliginda bolum KODU gosteriliyor — ad uzun ve
+    # dar sutunda kirpiliyor, kod ise kisa ve bolumu tekil olarak tanitiyor.
+    department_code: str
     year: int
     semester: SemesterType
     kind: DraftKind                               # K-60: WEEKLY | EXAM
@@ -594,8 +597,10 @@ class DraftOut(BaseModel):
     reviewed_at: datetime | None = None
     review_note: str | None = None
     # Onay anında dondurulan özet — onaylandıktan sonra fark yeniden
-    # hesaplanamaz (taslağın satırları yayına geçip silinir), kayıt kendi
-    # kendine yetsin diye saklanır (K-36 deseni).
+    # hesaplanamaz: taslağın satırları K-80'den beri yerinde duruyor ama fark
+    # O ANKİ yayına karşı hesaplanır, dolayısıyla sonraki onaylar geçtikçe
+    # "onay anında ne uygulandı" sorusunun cevabı kayardı. Kayıt kendi kendine
+    # yetsin diye özet burada saklanır (K-36 deseni).
     applied_summary: str | None = None
 
 class DraftPlacementOut(BaseModel):
@@ -677,6 +682,15 @@ class DraftSubmitResponse(BaseModel):
 class DraftRejectRequest(BaseModel):
     # Gerekçesiz ret işe yaramaz: gönderen neyi düzelteceğini bilemez.
     note: str = Field(min_length=1, max_length=2000)
+
+class DraftApproveRequest(BaseModel):
+    """Onay notu (K-80) — RETTEN farklı olarak ZORUNLU DEĞİL.
+
+    Ret gerekçesiz anlamsızdır (gönderen neyi düzelteceğini bilemez); onay ise
+    kendi başına yeterli bir cevaptır, not yalnızca varsa değer katar
+    ("2. şubeyi de taşıdım", "gelecek dönem tekrar bakalım").
+    """
+    note: str | None = Field(None, max_length=2000)
 
 class DraftStalenessOut(BaseModel):
     """Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).

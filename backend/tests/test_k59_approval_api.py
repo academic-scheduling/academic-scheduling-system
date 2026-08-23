@@ -159,7 +159,10 @@ def test_approve_applies_the_move_and_preserves_row_identity():
     # Satirin KIMLIGI korundu: ayni id, yeni yer, hala yayinda
     assert entry_row(yayin_id) == (3, 5, None)
 
-    # Taslagin kopyalari temizlendi, ozet donduruldu
+    # Ozet donduruldu; taslagin kopyalari ise K-80'den beri KORUNUR — Yayin
+    # Merkezi "bu taslak onaylandiginda program neye benziyordu" sorusunu
+    # bu satirlardan cevapliyor. Yayin evrenine sizmadiklarinin guvencesi
+    # `draft_id`nin dolu kalmasi (yayin HER YERDE `draft_id IS NULL`).
     db = SessionLocal()
     try:
         d = db.get(ScheduleDraft, draft["id"])
@@ -167,7 +170,7 @@ def test_approve_applies_the_move_and_preserves_row_identity():
         assert d.reviewed_by is not None and d.reviewed_at is not None
         assert "taşındı" in d.applied_summary
         assert db.query(WeeklyScheduleEntry).filter(
-            WeeklyScheduleEntry.draft_id == d.id).count() == 0
+            WeeklyScheduleEntry.draft_id == d.id).count() == 1
     finally:
         db.close()
 

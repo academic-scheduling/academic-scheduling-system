@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  Alert, Badge, Button, Group, Loader, Paper, Popover, SegmentedControl,
-  Select, Stack, Table, Text, Title,
+  ActionIcon, Alert, Badge, Button, Group, Loader, Paper, Popover, ScrollArea,
+  SegmentedControl, Select, Stack, Table, Text, Title, Tooltip,
 } from "@mantine/core";
 import {
-  IconArrowRight, IconChecks, IconFilter, IconFilterOff,
+  IconArrowRight, IconChecks, IconFilter, IconFilterOff, IconHelp,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type {
   ConflictAffectedRef, ConflictResult, ConflictScan, Department, SemesterType,
 } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
+import { TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
@@ -291,6 +292,58 @@ function FilterSelect({ label, placeholder, value, onChange, data }: {
   );
 }
 
+/** Kural sözlüğü — "Kural" sütun başlığının yanındaki "?" (K-80).
+ *
+ *  Tabloda artık kural KODU (W4) ve ADI görünüyor; kodun ne demek olduğunu
+ *  öğrenmenin yolu ise dokümana gitmekti. Yirmi iki kuralın tamamı burada, tek
+ *  bakışta: kod · ad · bir cümlelik koşul.
+ *
+ *  Sıra motorun ürettiği kod sırası DEĞİL, kolların sırası: haftalık (W) →
+ *  sınav (E) → çapraz (X). Kullanıcı bir kuralı ararken hangi ekranla ilgili
+ *  olduğunu bilir, kodun sayısını değil. */
+const RULE_ORDER = [
+  "W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9",
+  "E1", "E2", "E3", "E4a", "E4b", "E5", "E5a", "E6", "E7", "E8",
+  "X1", "X2", "X3",
+];
+
+function RuleHelp() {
+  const t = useT();
+  return (
+    <Popover width={520} position="bottom-start" shadow="md" withArrow>
+      <Popover.Target>
+        <ActionIcon variant="subtle" color="gray" size="xs" radius="xl"
+          aria-label={t.conflicts.ruleHelpHint}>
+          <IconHelp size={14} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Text fz={12} fw={700} c={TEXT_MUTED} mb={8}>
+          {t.conflicts.ruleHelpTitle}
+        </Text>
+        <ScrollArea.Autosize mah={380} type="hover">
+          <Stack gap={7}>
+            {RULE_ORDER.map((kod) => (
+              <Group key={kod} gap={9} align="flex-start" wrap="nowrap">
+                <Badge size="sm" variant="outline" color="gray"
+                  style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
+                <div style={{ minWidth: 0 }}>
+                  <Text fz={12.5} fw={500} lh={1.35}>
+                    {t.conflicts.ruleNames[kod]}
+                  </Text>
+                  <Text fz={11.5} c={TEXT_MUTED} lh={1.4}>
+                    {t.conflicts.ruleHelp[kod]}
+                  </Text>
+                </div>
+              </Group>
+            ))}
+          </Stack>
+        </ScrollArea.Autosize>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
 /** Tablo — eskiden her çakışma bir KART'tı ve ekrana az kayıt sığıyordu.
  *
  *  Her çakışmanın aynı beş sorusu var, o yüzden sütun: tür · kural · ne oldu ·
@@ -325,35 +378,46 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
         <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th w={110}>{t.conflicts.colKind}</Table.Th>
-              <Table.Th w={78}>{t.conflicts.colRule}</Table.Th>
+              <Table.Th w={92}>{t.conflicts.colKind}</Table.Th>
+              <Table.Th w={104}>
+                <Group gap={5} wrap="nowrap">
+                  {t.conflicts.colRule}
+                  <RuleHelp />
+                </Group>
+              </Table.Th>
               <Table.Th>{t.conflicts.colConflict}</Table.Th>
-              <Table.Th w={210}>{t.conflicts.colCohort}</Table.Th>
+              <Table.Th w={230}>{t.conflicts.colCohort}</Table.Th>
               <Table.Th w={170}>{t.conflicts.colItems}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {list.map(({ c, hard }, i) => {
-              const sinav = c.affected.some((a) => a.type === "exam");
-              return (
+            {list.map(({ c, hard }, i) => (
                 <Table.Tr key={`${c.rule_id}-${i}`}
                   style={{
                     // Sol kenar çubuğu, ızgaradaki çakışma belirtecinin AYNI
                     // dili (K-80): kırmızı engel, turuncu uyarı.
                     borderLeft: `3px solid var(--mantine-color-${hard ? "red" : "orange"}-6)`,
                   }}>
-                  <Table.Td>
-                    <Badge size="sm" variant="light" color={sinav ? "violet" : "blue"}>
-                      {sinav ? t.conflicts.examConflict : t.conflicts.weeklyConflict}
-                    </Badge>
-                  </Table.Td>
+                  {/* TÜR = ŞİDDET. Haftalık/sınav ayrımı burada DEĞİL: kural
+                      kodu (W/E/X) ve öğe rozetlerinin rengi zaten söylüyor. */}
                   <Table.Td>
                     <Badge size="sm" variant="light" color={hard ? "red" : "orange"}>
-                      {c.rule_id}
+                      {hard ? t.conflicts.blocking : t.conflicts.warning}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    <Text fz={13} lh={1.45}>{c.message}</Text>
+                    <Badge size="sm" variant="outline" color="gray">{c.rule_id}</Badge>
+                  </Table.Td>
+                  {/* Mesaj yerine KURAL ADI: mesaj hangi dersler ve hangi saat
+                      diye tekrar ediyordu, ikisi de kendi sütununda duruyor.
+                      Tam mesaj ipucunda korunuyor — kapasite sayısı gibi ek
+                      ayrıntı kaybolmasın. */}
+                  <Table.Td>
+                    <Tooltip label={c.message} multiline maw={420} openDelay={200}>
+                      <Text fz={13} fw={500} lh={1.45} style={{ cursor: "help" }}>
+                        {t.conflicts.ruleNames[c.rule_id] ?? c.message}
+                      </Text>
+                    </Tooltip>
                   </Table.Td>
                   <Table.Td>
                     <Stack gap={2}>
@@ -365,7 +429,9 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                         const zaman = zamanEtiketi(a, t);
                         return [cohort, zaman].filter(Boolean).join(" · ");
                       }).filter(Boolean))].map((satir) => (
-                        <Text key={satir} fz={11.5} c="dimmed" lh={1.4}>{satir}</Text>
+                        // K-80: SOLUK DEĞİL — cohort "bu beni ilgilendiriyor mu"
+                        // sorusunun cevabı ve listeyi tararken en çok bakılan yer.
+                        <Text key={satir} fz={12} lh={1.45}>{satir}</Text>
                       ))}
                     </Stack>
                   </Table.Td>
@@ -373,7 +439,7 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                     {/* Tıklayınca ilgili programda vurgulanır (K-62). */}
                     <Group gap={5} wrap="wrap">
                       {c.affected.map((a, ix) => {
-                        const oSinav = a.type === "exam";
+                        const oSinav = a.type === "exam";   // rozet rengi türü söyler
                         const yol = `${oSinav ? "/exams" : "/weekly"}`
                           + `?highlight=${a.id}&rule=${c.rule_id}`;
                         return (
@@ -388,8 +454,7 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                     </Group>
                   </Table.Td>
                 </Table.Tr>
-              );
-            })}
+            ))}
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>

@@ -431,11 +431,72 @@ export const tr = {
     classYear: "Sınıf",
     semester: "Dönem",
     // Tablo sütunları — her çakışmanın aynı beş sorusu.
+    // K-80: "Tür" = ŞİDDET (engel/uyarı). Haftalık/sınav ayrımı sütun
+    // istemiyor: kural kodu (W/E/X) ve öğe rozetlerinin rengi zaten söylüyor.
     colKind: "Tür",
     colRule: "Kural",
     colConflict: "Çakışma",
-    colCohort: "Cohort / zaman",
+    colCohort: "Etkilenen cohort",
     colItems: "Çakışan öğeler",
+    // K-80 · KURAL KATALOĞU — kod başına ad + kısa açıklama.
+    //
+    // Tabloda mesajın yerini bu ADLAR aldı: mesaj hangi derslerin ve hangi
+    // saatin çakıştığını tekrar ediyordu, oysa ikisi de kendi sütununda
+    // duruyor. Ad "ne tür bir sorun" sorusunu bir bakışta cevaplıyor; tam
+    // mesaj satırın ipucunda korunuyor (sayı gibi ek ayrıntı kaybolmasın).
+    //
+    // Açıklamalar `docs/cakisma_kural_seti_1.md`den geliyor ve KISA tutuldu:
+    // "?" pop-up'ı 22 satır, her biri iki cümle olsaydı okunmazdı.
+    ruleNames: {
+      W1: "Derslik çakışması",
+      W2: "Hoca çakışması",
+      W3: "Cohort — zorunlu ders çakışması",
+      W4: "Cohort — seçmeli ders çakışması",
+      W5: "Mükerrer şube oturumu",
+      W6: "Pencere dışı slot",
+      W7: "Derslik kapasitesi aşıldı",
+      W8: "Ders saati tamlığı",
+      W9: "Derslik girilmemiş",
+      E1: "Sınav dersliği çakışması",
+      E2: "Mükerrer sınav",
+      E3: "Sınav sorumlusu çakışması",
+      E4a: "Cohort — zorunlu sınav çakışması",
+      E4b: "Cohort — seçmeli sınav çakışması",
+      E5: "Sınav kontenjanı yetersiz",
+      E5a: "Sınav kontenjanı girilmemiş",
+      E6: "Hafta sonuna sınav",
+      E7: "Gereksiz derslik fazlası",
+      E8: "Sınav dersliği girilmemiş",
+      X1: "Sınav dersi işgal ediyor",
+      X2: "Sınav cohort dersiyle çakışıyor",
+      X3: "Sınav sorumlusu derste",
+    } as Record<string, string>,
+    ruleHelp: {
+      W1: "Aynı derslikte, aynı gün, kesişen saatlerde iki ders.",
+      W2: "Aynı öğretim üyesi, aynı gün, kesişen saatlerde iki ders.",
+      W3: "Aynı sınıfın iki ZORUNLU dersi çakışıyor — öğrenci ikisini de almak zorunda.",
+      W4: "Aynı sınıfın iki dersi çakışıyor, en az biri seçmeli.",
+      W5: "Aynı şubenin kesişen iki oturumu girilmiş.",
+      W6: "Gün 1-5 dışında ya da günün son slotunu aşan yerleşim.",
+      W7: "Şubenin beklenen öğrenci sayısı dersliğin kapasitesini aşıyor.",
+      W8: "Yerleşen saat toplamı dersin teori+uygulama+lab değeriyle uyuşmuyor.",
+      W9: "Yüz yüze derse derslik atanmamış.",
+      E1: "İki sınav aynı dersliği aynı tarih ve kesişen saatte kullanıyor.",
+      E2: "Aynı dersin aynı türden ikinci sınavı.",
+      E3: "Aynı sorumlu, aynı tarih ve kesişen saatte iki sınavda.",
+      E4a: "Aynı sınıfın iki ZORUNLU sınavı aynı anda.",
+      E4b: "Aynı sınıfın iki sınavı aynı anda, en az biri seçmeli.",
+      E5: "Seçili dersliklerin sınav kontenjanı toplamı öğrenci sayısını karşılamıyor.",
+      E5a: "Seçili dersliklerden birinin sınav kontenjanı girilmemiş.",
+      E6: "Sınav cumartesi ya da pazara denk geliyor.",
+      E7: "Bir derslik çıkarılsa bile kontenjan fazlasıyla yetiyor.",
+      E8: "Sınava hiç derslik seçilmemiş.",
+      X1: "Sınavın dersliği o saatte haftalık derste kullanılıyor.",
+      X2: "Sınav, aynı sınıfın haftalık dersiyle aynı saate düşüyor.",
+      X3: "Sınav sorumlusu o saatte haftalık bir derste görünüyor.",
+    } as Record<string, string>,
+    ruleHelpTitle: "Çakışma kuralları",
+    ruleHelpHint: "Kural listesi",
   },
 
   dashboard: {

@@ -55,12 +55,13 @@ def test_build_result_shape():
     assert result["severity"] == "HARD"
     assert result["rule_id"] == "W1"
     assert "Derslik çakışması" in result["message"]
-    # affected artık bölüm/sınıf da taşır (rapor + Bölümler sayacı süzmesi için).
+    # affected COHORT ucluSunu tasir (rapor suzmesi icin): bolum + sinif +
+    # donem. K-80'de `semester` eklendi — cohort uc boyutlu, ikisi yetmiyordu.
     assert result["affected"] == [
         {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1",
-         "department_id": 2, "year": 2},
+         "department_id": 2, "year": 2, "semester": "FALL"},
         {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1",
-         "department_id": 2, "year": 2},
+         "department_id": 2, "year": 2, "semester": "FALL"},
     ]
   
 

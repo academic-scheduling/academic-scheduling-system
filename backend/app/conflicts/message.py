@@ -288,11 +288,14 @@ def build_message(rule_id, a, b=None):
 def _affected_ref(obj):
     """ConflictResult.affected içindeki tek öğe (kontrat §0).
 
-    department_id + year taşınır: çakışma raporu ve Bölümler sayacı "bu çakışma
-    hangi bölümü/sınıfı etkiliyor" diye süzebilsin. Motor dict'i (hem haftalık
-    hem sınav) bu iki alanı zaten üretiyor; burada dışarı veriliyor. Ders koduna
-    göre eşleştirme kırılgandır (kod bölümler arası tekrar edebilir) — bu yüzden
-    id taşınıyor.
+    department_id + year + semester taşınır: çakışma raporu ve Bölümler sayacı
+    "bu çakışma hangi COHORT'u etkiliyor" diye süzebilsin. Motor dict'i (hem
+    haftalık hem sınav) bu alanları zaten üretiyor; burada dışarı veriliyor.
+    Ders koduna göre eşleştirme kırılgandır (kod bölümler arası tekrar edebilir)
+    — bu yüzden id taşınıyor.
+
+    K-80: `semester` EKLENDİ. Cohort üç boyutludur (bölüm + sınıf + dönem) ama
+    ref yalnız ikisini taşıyordu; rapor "güz mü bahar mı" diye süzemiyordu.
     """
     if obj.get("type") == "exam":
         code = obj["course_code"]      # sınav ders düzeyinde (K-16) — şube yok
@@ -304,6 +307,7 @@ def _affected_ref(obj):
         "course_code": code,
         "department_id": obj.get("department_id"),
         "year": obj.get("year"),
+        "semester": obj.get("semester"),
     }
 
 

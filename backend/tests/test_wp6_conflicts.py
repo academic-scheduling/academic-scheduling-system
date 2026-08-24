@@ -59,13 +59,31 @@ def test_affected_refs_survive_the_contract(monkeypatch):
             "hard": [{
                 "severity": "HARD", "rule_id": "E1",
                 "message": "Sınav derslik çakışması",
-                # department_id + year: rapor/sayaç bölüm süzmesi bunları okur.
+                # K-80: COHORT üçlüsü (bölüm + sınıf + dönem) taşınır — rapor
+                # süzmesi bunları okur.
                 "affected": [{"type": "exam", "id": 42, "course_code": "CENG2001",
-                              "department_id": 3, "year": 2}],
+                              "department_id": 3, "year": 2, "semester": "SPRING"}],
             }],
             "warnings": [],
         },
     )
     ref = client.get("/conflicts", headers=admin_headers()).json()["hard"][0]["affected"][0]
     assert ref == {"type": "exam", "id": 42, "course_code": "CENG2001",
-                   "department_id": 3, "year": 2}
+                   "department_id": 3, "year": 2, "semester": "SPRING"}
+
+
+def test_affected_ref_carries_the_semester_from_the_engine():
+    """K-80: `semester` motor dict'inde ZATEN vardı ama dışarı verilmiyordu.
+
+    Sözleşme testi (yukarıdaki) motoru monkeypatch'lediği için bu boşluğu
+    göremezdi — burada GERÇEK motor çıktısı üzerinden bakılıyor: cohort üç
+    boyutludur ve rapor "güz mü bahar mı" diye süzebilmeli.
+    """
+    from app.conflicts.message import _affected_ref
+
+    ref = _affected_ref({
+        "type": "weekly_entry", "id": 7, "course_code": "CENG 1004",
+        "section_no": 1, "department_id": 3, "year": 1, "semester": "SPRING",
+    })
+    assert ref["semester"] == "SPRING"
+    assert (ref["department_id"], ref["year"]) == (3, 1)

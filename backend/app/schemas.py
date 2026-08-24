@@ -419,10 +419,12 @@ class ConflictAffectedRef(BaseModel):
     type: Literal["weekly_entry", "exam"]
     id: int
     course_code: str | None = None
-    # Çakışma raporu + Bölümler sayacı bölüm/sınıf süzmesi için (kırılgan kod
+    # Çakışma raporu + Bölümler sayacı COHORT süzmesi için (kırılgan kod
     # eşleştirmesi yerine id). Motor eski girişlerde üretmezse None kalır.
+    # K-80: `semester` de taşınıyor — cohort üç boyutlu, ikisi yetmiyordu.
     department_id: int | None = None
     year: int | None = None
+    semester: SemesterType | None = None
 
 class ConflictResultOut(BaseModel):
     severity: Literal["HARD", "WARNING"]

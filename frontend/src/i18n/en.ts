@@ -392,7 +392,8 @@ export const en: Dict = {
     yearN: (y: number) => `Year ${y}`,
     clearFilter: "Clear filters",
     emptyAll: "No unresolved conflicts — the schedule is ready to publish.",
-    emptyFiltered: "No conflict matches these filters.",
+    // K-81: `emptyFiltered` kaldırıldı — filtre sonuçsuz kalınca hiçbir şey
+    // çizilmiyor. Anahtar tr.ts'ten silindiği için burada da kalamaz (Dict).
     blocking: "Blocking",
     warning: "Warning",
     rule: "Rule",
@@ -408,7 +409,7 @@ export const en: Dict = {
     colKind: "Kind",
     colRule: "Rule",
     colConflict: "Conflict",
-    colCohort: "Affected cohort",
+    colCohort: "Cohort",
     colItems: "Affected items",
     ruleNames: {
       W1: "Classroom conflict",

@@ -413,9 +413,13 @@ export const tr = {
     allKinds: "Tüm türler",
     allRules: "Tüm kurallar",
     yearN: (y: number) => `${y}. Sınıf`,
-    clearFilter: "Süzgeci temizle",
+    // K-81: "süzgeç" arayüzden kalktı — buton "Filtrele" derken temizleme
+    // "Süzgeci temizle" diyordu; aynı şeyin iki adı olması, kullanıcıya iki
+    // ayrı şeymiş gibi geliyor. Arayüzün tek kelimesi: FİLTRE.
+    clearFilter: "Filtreyi temizle",
     emptyAll: "Çözülmemiş çakışma yok — program yayınlanmaya hazır.",
-    emptyFiltered: "Bu süzgece uyan çakışma yok.",
+    // K-81 · `emptyFiltered` KALDIRILDI: filtre sonuçsuz kaldığında ekrana
+    // hiçbir şey çizilmiyor (bkz. ConflictsPage/ConflictTable gerekçesi).
     blocking: "Engel",
     warning: "Uyarı",
     rule: "Kural",
@@ -425,7 +429,7 @@ export const tr = {
     course: "Ders",
     // Dashboard kartı bunu okuyor (rapor sayfası kendi boş metnini kullanır).
     none: "Çakışma bulunamadı.",
-    // K-80: süzgeçler "Filtrele" popover'ında toplandı (Dersler deseni).
+    // K-80: filtreler "Filtrele" popover'ında toplandı (Dersler deseni).
     filter: "Filtrele",
     department: "Bölüm",
     classYear: "Sınıf",
@@ -436,7 +440,10 @@ export const tr = {
     colKind: "Tür",
     colRule: "Kural",
     colConflict: "Çakışma",
-    colCohort: "Etkilenen cohort",
+    // K-81: "Etkilenen cohort" → "Cohort". "Etkilenen" hiçbir ayrım yapmıyordu
+    // (tabloda etkilenmeyen cohort zaten yazmaz) ama başlığı sütunun içeriğinden
+    // uzun hale getiriyordu. Kısalan başlık genişleyen sütuna da yer açtı.
+    colCohort: "Cohort",
     colItems: "Çakışan öğeler",
     // K-80 · KURAL KATALOĞU — kod başına ad + kısa açıklama.
     //
@@ -449,16 +456,21 @@ export const tr = {
     // "?" pop-up'ı 22 satır, her biri iki cümle olsaydı okunmazdı.
     ruleNames: {
       W1: "Derslik çakışması",
-      W2: "Hoca çakışması",
+      // K-81: "Hoca" → "Öğretim üyesi". Arayüzün geri kalanı (menü, Öğretim
+      // Üyeleri sayfası, W2 açıklaması) zaten resmî terimi kullanıyordu;
+      // yalnız kural adı konuşma dilinde kalmıştı.
+      W2: "Öğretim üyesi çakışması",
       W3: "Cohort — zorunlu ders çakışması",
       W4: "Cohort — seçmeli ders çakışması",
-      W5: "Mükerrer şube oturumu",
+      // K-81: "Mükerrer" → "Yinelenen" (E2'de de aynısı). Osmanlıca terim,
+      // kuralın ne dediğini anlatmak yerine önce kendini açıklatıyordu.
+      W5: "Yinelenen şube oturumu",
       W6: "Pencere dışı slot",
       W7: "Derslik kapasitesi aşıldı",
       W8: "Ders saati tamlığı",
       W9: "Derslik girilmemiş",
       E1: "Sınav dersliği çakışması",
-      E2: "Mükerrer sınav",
+      E2: "Yinelenen sınav",
       E3: "Sınav sorumlusu çakışması",
       E4a: "Cohort — zorunlu sınav çakışması",
       E4b: "Cohort — seçmeli sınav çakışması",

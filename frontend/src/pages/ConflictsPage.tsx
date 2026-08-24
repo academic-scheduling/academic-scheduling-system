@@ -20,10 +20,10 @@ import type { Dict } from "../i18n/tr";
  * K-80 · Çakışma Raporu — öteki ekranlarla aynı kabuk
  *
  * Eskiden HARD ve WARNING iki ayrı SEKMEYDİ ve her biri kart yığını çiziyordu.
- * Sekme "ya o ya bu" der; oysa şiddet bir SÜZGEÇ boyutudur ve "hepsini birden
+ * Sekme "ya o ya bu" der; oysa şiddet bir FİLTRE boyutudur ve "hepsini birden
  * gör" en doğal istektir — sekmede o seçenek yoktu.
  *
- * Şimdi Dersler/Derslikler ile aynı kabuk: başlık, tek süzgeç çubuğu (şiddet
+ * Şimdi Dersler/Derslikler ile aynı kabuk: başlık, tek filtre çubuğu (şiddet
  * segmenti + "Filtrele" popover'ı), altında TABLO. Tablo çünkü her çakışmanın
  * aynı beş sorusu var — hangi tür, hangi kural, ne oldu, hangi cohort/ne zaman,
  * hangi öğeler — ve sütun başlığı bu soruları bir kez sorup satırları
@@ -79,7 +79,7 @@ export default function ConflictsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Bölüm/sınıf süzgeci Bölümler sayacından ?department_id= ile önceden gelebilir.
+  // Bölüm/sınıf filtresi Bölümler sayacından ?department_id= ile önceden gelebilir.
   const [searchParams, setSearchParams] = useSearchParams();
   const [sev, setSev] = useState<Sev>("ALL");
   const [dep, setDep] = useState<string | null>(searchParams.get("department_id"));
@@ -139,7 +139,7 @@ export default function ConflictsPage() {
     || a.c.message.localeCompare(b.c.message, "tr")),
   [scan]);
 
-  /** Süzme: bir çakışma, ETKİLENEN ÖĞELERİNDEN HERHANGİ biri ölçüte uyuyorsa
+  /** Filtreleme: bir çakışma, ETKİLENEN ÖĞELERİNDEN HERHANGİ biri ölçüte uyuyorsa
    *  listede kalır. Bölümler-arası bir çakışma (W1/W2) iki tarafı da taşır; o
    *  bölümü seçince görünür — çözebilmek için karşı tarafı da görmek gerekir
    *  (K-26). Aynı mantık sınıf, dönem ve tür için de geçerli. */
@@ -180,9 +180,9 @@ export default function ConflictsPage() {
 
   /** ŞİDDET bilerek DIŞARIDA: o bir segment, kendi durumu zaten görünür ve
    *  "Tümü"ne dönmek tek tık. Sayaç ve "temizle" yalnız POPOVER içindeki
-   *  süzgeçleri anlatır — yoksa "Tümü/Engel/Uyarı"dan birini seçmek ekrana
+   *  filtreleri anlatır — yoksa "Tümü/Engel/Uyarı"dan birini seçmek ekrana
    *  ilgisiz bir temizleme butonu düşürüyordu. */
-  const acikSuzgec = [dep, year, sem, kind, rule].filter(Boolean).length;
+  const acikFiltre = [dep, year, sem, kind, rule].filter(Boolean).length;
   const temizle = () => {
     setDep(null); setYear(null); setSem(null); setKind(null); setRule(null);
   };
@@ -219,8 +219,8 @@ export default function ConflictsPage() {
                 leftSection={<IconFilter size={16} />}
                 onClick={() => setFiltersOpen((o) => !o)}>
                 {t.conflicts.filter}
-                {acikSuzgec > 0 && (
-                  <Badge size="sm" circle ml={6} variant="filled">{acikSuzgec}</Badge>
+                {acikFiltre > 0 && (
+                  <Badge size="sm" circle ml={6} variant="filled">{acikFiltre}</Badge>
                 )}
               </Button>
             </Popover.Target>
@@ -257,7 +257,7 @@ export default function ConflictsPage() {
                   value={rule} onChange={setRule}
                   data={secenekler.rules.map((r) => ({
                     value: r, label: `${t.conflicts.rule} ${r}` }))} />
-                {acikSuzgec > 0 && (
+                {acikFiltre > 0 && (
                   <Button variant="subtle" color="gray" size="sm"
                     leftSection={<IconFilterOff size={15} />} onClick={temizle}>
                     {t.conflicts.clearFilter}
@@ -300,11 +300,21 @@ function FilterSelect({ label, placeholder, value, onChange, data }: {
  *
  *  Sıra motorun ürettiği kod sırası DEĞİL, kolların sırası: haftalık (W) →
  *  sınav (E) → çapraz (X). Kullanıcı bir kuralı ararken hangi ekranla ilgili
- *  olduğunu bilir, kodun sayısını değil. */
-const RULE_ORDER = [
-  "W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9",
-  "E1", "E2", "E3", "E4a", "E4b", "E5", "E5a", "E6", "E7", "E8",
-  "X1", "X2", "X3",
+ *  olduğunu bilir, kodun sayısını değil.
+ *
+ *  K-81: sıra ve ŞİDDET tek listede. Ayrı bir `RULE_SEVERITY` haritası olsaydı
+ *  ikisi zamanla ayrışabilirdi (kural eklenir, birine yazılır ötekine değil);
+ *  yan yana durunca eksik alan derleme hatası olur. Şiddetler
+ *  `docs/cakisma_kural_seti_1.md` tablolarından birebir alınmıştır. */
+const RULE_CATALOG: { kod: string; hard: boolean }[] = [
+  { kod: "W1", hard: true },   { kod: "W2", hard: true },   { kod: "W3", hard: true },
+  { kod: "W4", hard: false },  { kod: "W5", hard: false },  { kod: "W6", hard: true },
+  { kod: "W7", hard: false },  { kod: "W8", hard: false },  { kod: "W9", hard: false },
+  { kod: "E1", hard: true },   { kod: "E2", hard: true },   { kod: "E3", hard: true },
+  { kod: "E4a", hard: true },  { kod: "E4b", hard: false }, { kod: "E5", hard: false },
+  { kod: "E5a", hard: false }, { kod: "E6", hard: true },   { kod: "E7", hard: false },
+  { kod: "E8", hard: false },
+  { kod: "X1", hard: true },   { kod: "X2", hard: false },  { kod: "X3", hard: false },
 ];
 
 function RuleHelp() {
@@ -323,9 +333,14 @@ function RuleHelp() {
         </Text>
         <ScrollArea.Autosize mah={380} type="hover">
           <Stack gap={7}>
-            {RULE_ORDER.map((kod) => (
+            {RULE_CATALOG.map(({ kod, hard }) => (
               <Group key={kod} gap={9} align="flex-start" wrap="nowrap">
-                <Badge size="sm" variant="outline" color="gray"
+                {/* K-81: kod rozeti ŞİDDETİ renkle söyler — kırmızı engel,
+                    turuncu uyarı. Katalogda hepsi griyken "hangileri yayını
+                    durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
+                    okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
+                    Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
+                <Badge size="sm" variant="outline" color={hard ? "red" : "orange"}
                   style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
                 <div style={{ minWidth: 0 }}>
                   <Text fz={12.5} fw={500} lh={1.35}>
@@ -356,25 +371,33 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
   const t = useT();
 
   if (list.length === 0) {
-    // İki ayrı boşluk, iki ayrı anlam: gerçekten çakışma YOK (iyi haber) ile
-    // süzgeç sonuçsuz kaldı (ölçüt dar). Aynı cümleyle geçiştirilemez.
+    // İki ayrı boşluk, iki ayrı anlam — ve K-81'de ikisi ayrı ayrı ele alındı.
+    //
+    // Gerçekten çakışma YOK: bu bir HABER, hem de iyi haber. Söylenmeli.
+    //
+    // Filtre sonuçsuz kaldı: bu haber değil, kullanıcının az önce kendi
+    // yaptığı seçimin sonucu. "Bu filtreye uyan çakışma yok" cümlesi, üstteki
+    // segmentte zaten "Engel (0)" yazarken aynı şeyi ikinci kez söylüyordu.
+    // Sayacı okuyan zaten biliyor; bilmeyene de cümle bir şey öğretmiyor.
+    // Bu yüzden hiçbir şey çizmiyoruz: boş bir çerçevenin içine boş bir metin
+    // koymaktansa çerçeveyi de çizmemek dürüst — ekranda filtre çubuğu kalır.
+    if (!hicYokMu) return null;
     return (
       <Paper withBorder radius="md" p="lg">
-        {hicYokMu ? (
-          <Group gap={9}>
-            <IconChecks size={18} color="var(--mantine-color-green-6)" />
-            <Text size="sm" c="green.7">{t.conflicts.emptyAll}</Text>
-          </Group>
-        ) : (
-          <Text size="sm" c="dimmed">{t.conflicts.emptyFiltered}</Text>
-        )}
+        <Group gap={9}>
+          <IconChecks size={18} color="var(--mantine-color-green-6)" />
+          <Text size="sm" c="green.7">{t.conflicts.emptyAll}</Text>
+        </Group>
       </Paper>
     );
   }
 
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
-      <Table.ScrollContainer minWidth={880}>
+      {/* K-81: 880 → 950, cohort sütunu 70px genişledi. Bu sayı sütunların
+          toplamıyla tutarlı kalmazsa dar ekranda kaydırma yerine sıkıştırma
+          olur ve tam da kapattığımız sarma geri gelir. */}
+      <Table.ScrollContainer minWidth={950}>
         <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -386,7 +409,12 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                 </Group>
               </Table.Th>
               <Table.Th>{t.conflicts.colConflict}</Table.Th>
-              <Table.Th w={230}>{t.conflicts.colCohort}</Table.Th>
+              {/* K-81: 230 → 300. İçerik ("CENG · 3. Sınıf · Bahar · Per 09:30
+                  - 12:15") 230'a sığmayıp saati alt satıra atıyordu; sarma,
+                  tek bir bilgiyi iki parçaya bölüp satır yüksekliğini de
+                  düzensizleştiriyordu. Genişlik tahmin değil: parçaların hepsi
+                  sınırlı (bölüm KODU, "N. Sınıf", dönem, gün+saat). */}
+              <Table.Th w={300}>{t.conflicts.colCohort}</Table.Th>
               <Table.Th w={170}>{t.conflicts.colItems}</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -405,8 +433,15 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                       {hard ? t.conflicts.blocking : t.conflicts.warning}
                     </Badge>
                   </Table.Td>
+                  {/* K-81: kural kodu da şiddet rengini taşır. `outline`
+                      kalıyor — "Tür" rozeti `light` (dolgulu), bu çerçeveli;
+                      aynı renkte iki rozet yan yana ama farklı ağırlıkta, o
+                      yüzden tekrar gibi değil aynı satırın iki okuması gibi
+                      görünüyor. */}
                   <Table.Td>
-                    <Badge size="sm" variant="outline" color="gray">{c.rule_id}</Badge>
+                    <Badge size="sm" variant="outline" color={hard ? "red" : "orange"}>
+                      {c.rule_id}
+                    </Badge>
                   </Table.Td>
                   {/* Mesaj yerine KURAL ADI: mesaj hangi dersler ve hangi saat
                       diye tekrar ediyordu, ikisi de kendi sütununda duruyor.
@@ -431,7 +466,12 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                       }).filter(Boolean))].map((satir) => (
                         // K-80: SOLUK DEĞİL — cohort "bu beni ilgilendiriyor mu"
                         // sorusunun cevabı ve listeyi tararken en çok bakılan yer.
-                        <Text key={satir} fz={12} lh={1.45}>{satir}</Text>
+                        // K-81: ve İNCE de değil. Normal ağırlıkta 12px, yanındaki
+                        // kural adının (fw 500) gölgesinde kalıyordu; oysa göz
+                        // listeyi tararken önce buraya bakıyor. `nowrap` sarmayı
+                        // kapatır — sütun genişliği zaten sığacak şekilde seçildi.
+                        <Text key={satir} fz={12.5} fw={500} lh={1.45}
+                          style={{ whiteSpace: "nowrap" }}>{satir}</Text>
                       ))}
                     </Stack>
                   </Table.Td>

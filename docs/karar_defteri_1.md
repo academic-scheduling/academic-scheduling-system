@@ -3251,3 +3251,29 @@ açılır kutu çoğu zaman kullanılmadan yer kaplıyordu. **Şiddet segmenti h
 o birincil boyut, durumu zaten görünür ve "Tümü"ye dönmek tek tık — bu yüzden
 açık süzgeç sayacına da girmiyor, yoksa segmentten birini seçmek ekrana ilgisiz
 bir "temizle" butonu düşürüyordu.
+
+### K-80 eki 7 · Kural kataloğu ve sütunların anlamı
+
+**Sütun adı ile içeriği eşleşmeliydi.** "Tür" sütunu haftalık/sınav ayrımını
+gösteriyordu, oysa kullanıcının o başlıktan beklediği ŞİDDET'ti (engel/uyarı).
+Haftalık-sınav ayrımı zaten kural kodundan (W/E/X) ve öğe rozetlerinin
+renginden okunuyor — ayrı bir sütun istemiyor.
+
+**Mesaj yerine kural ADI.** Motorun ürettiği mesaj hangi derslerin, hangi
+saatte çakıştığını yazıyordu; ikisi de artık kendi sütununda duruyor,
+dolayısıyla mesaj üçüncü kez aynı şeyi söylüyordu. Sütunda artık kuralın
+okunur adı var ("Cohort — seçmeli ders çakışması"). **Tam mesaj ipucunda
+korunuyor:** kapasite sayısı gibi mesaja özgü ayrıntı kaybolmasın — bilgiyi
+silmek değil, öne çıkanı değiştirmek istiyorduk.
+
+**Kural kataloğu ("?" pop-up'ı).** Tabloda kod görünüyor ama kodun ne demek
+olduğunu öğrenmenin yolu dokümana gitmekti. 22 kuralın tamamı tek pop-up'ta:
+kod · ad · bir cümlelik koşul, `docs/cakisma_kural_seti_1.md`den türetilmiş.
+**Sıra motorun kod sırası değil KOLLARIN sırası** (W → E → X): kullanıcı bir
+kuralı ararken hangi ekranla ilgili olduğunu bilir, kodun sayısını değil.
+Açıklamalar bilerek tek cümle — 22 satırlık bir listede iki cümlelik
+açıklamalar okunmaz.
+
+**"Cohort / zaman" → "Etkilenen cohort", ve soluk değil.** Cohort, listeyi
+tararken en çok bakılan yer ("bu beni ilgilendiriyor mu"); `dimmed` olması onu
+ikincil gösteriyordu.

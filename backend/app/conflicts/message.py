@@ -82,7 +82,7 @@ def _msg_w1(a, b):
 def _msg_w2(a, b):
     A, B, T = course_label(a), course_label(b), weekly_time_label(a)
     return _pick(
-        f"Hoca çakışması: {A} ve {B}, {T}'te aynı hocaya sahip.",
+        f"Öğretim üyesi çakışması: {A} ve {B}, {T}'te aynı öğretim üyesine sahip.",
         f"Lecturer conflict: {A} and {B} have the same lecturer at {T}.")
 
 

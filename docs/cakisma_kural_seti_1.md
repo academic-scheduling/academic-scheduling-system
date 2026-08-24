@@ -60,10 +60,10 @@ takvimde farklı haftalarda tekrar eder, asla aynı fiziksel anda olmaz.
 | ID | Kural | Koşul | Severity | Atlama koşulu |
 |---|---|---|---|---|
 | W1 | Derslik çakışması | Aynı `classroom_id`, aynı gün, kesişen slotlar | **HARD** | Taraflardan birinin `classroom_id` NULL ise [K-10] |
-| W2 | Hoca çakışması | Aynı `section.lecturer_id`, aynı gün, kesişen slotlar | **HARD** | — |
+| W2 | Öğretim üyesi çakışması | Aynı `section.lecturer_id`, aynı gün, kesişen slotlar | **HARD** | — |
 | W3 | Cohort: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, iki FARKLI ders, ikisi de `is_elective=false`, **şube-farkındalıklı çakışma** (aşağıda) | **HARD** [K-05, K-15] | Aynı dersin şubeleri arası karşılaştırma (şubeler alternatiftir; aynı şube içi mükerrerlik W5'in işi) |
 | W4 | Cohort: seçmeli dahil | Aynı bölüm+yıl+dönem, iki FARKLI ders, en az biri `is_elective=true`, **şube-farkındalıklı çakışma** | **WARNING** [K-05, K-15] | — |
-| W5 | Mükerrer şube oturumu | Aynı `section_id`, kesişen slotlar | WARNING | — |
+| W5 | Yinelenen şube oturumu | Aynı `section_id`, kesişen slotlar | WARNING | — |
 | W6 | Pencere dışı slot | Gün 1-5 dışında VEYA `start_slot+slot_count-1 > 9` | **HARD** | Sadece derslere uygulanır; sınavlara ASLA [K-06]. DB CHECK zaten koruyor; motor yine de anlaşılır mesaj üretir |
 | W7 | Kapasite | `section.expected_students > classroom.capacity` | WARNING | `classroom_id` NULL ise |
 | W8 | T+U+L tamlığı [K-20] | Şubenin `session_type` bazında SUM(slot_count) ≠ dersin `hours_theory/practice/lab` değeri (eksik VEYA fazla) | WARNING | **Yalnız submit anında** çalışır; save'de sessiz [K-20]. hours değeri 0 olan bileşen için giriş yoksa kontrol edilmez |
@@ -98,8 +98,8 @@ expected_students)`.
 | ID | Kural | Koşul | Severity | Atlama koşulu |
 |---|---|---|---|---|
 | E1 | Sınav derslik çakışması | İki sınavın derslik KÜMELERİ kesişiyor (ortak en az bir derslik) ve aynı tarih, kesişen saat aralıkları | **HARD** | Taraflardan birinin derslik kümesi boşsa |
-| E2 | Mükerrer sınav tipi | Aynı `course_id` (ders) + `exam_type` ikinci kayıt | **HARD** | — (DB UNIQUE zaten engeller; motor anlaşılır mesaj üretir) |
-| E3 | Hoca/sorumlu çakışması | Aynı `lecturer_id`, aynı tarih, kesişen saatler | **HARD** [K-12] | — |
+| E2 | Yinelenen sınav tipi | Aynı `course_id` (ders) + `exam_type` ikinci kayıt | **HARD** | — (DB UNIQUE zaten engeller; motor anlaşılır mesaj üretir) |
+| E3 | Öğretim üyesi / sorumlu çakışması | Aynı `lecturer_id`, aynı tarih, kesişen saatler | **HARD** [K-12] | — |
 | E4a | Cohort sınav: zorunlu × zorunlu | Aynı bölüm+yıl+dönem, ikisi de zorunlu, kesişen tarih+saat | **HARD** [K-12] | — (sınav ders düzeyinde olduğundan şube esnekliği YOKTUR — herkes aynı sınavda) |
 | E4b | Cohort sınav: seçmeli dahil | Aynı cohort, en az biri seçmeli | **WARNING** | — |
 | E5 | Sınav kontenjanı yetersiz [K-17] | `SUM(seçili dersliklerin exam_capacity) < total_expected` → "ek derslik seçin" mesajı | WARNING | Derslik kümesi boşsa VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
@@ -122,7 +122,7 @@ Dokümandaki tek satırlık "exam vs course" kuralı aslında üç ayrı fizikse
 |---|---|---|---|
 | X1 | Derslik işgali | Sınavın derslik kümesinden HERHANGİ biri, aynı derslikteki haftalık dersle kesişiyor | **HARD** — fiziksel imkânsızlık, oda ikiye bölünemez |
 | X2 | Cohort | Sınav, aynı cohort'un (bölüm+yıl+dönem) haftalık dersiyle kesişiyor | WARNING — vize haftasında dersler fiilen boş geçebilir; engellemek aşırı katı olur |
-| X3 | Hoca | Sınav sorumlusu, aynı anda haftalık derste görünüyor | WARNING — ders o hafta yapılmıyor olabilir |
+| X3 | Öğretim üyesi | Sınav sorumlusu, aynı anda haftalık derste görünüyor | WARNING — ders o hafta yapılmıyor olabilir |
 
 Haftalık taraf `ONLINE_ASYNC` ise X1/X2/X3 atlanır (ön-eleme, K-19).
 

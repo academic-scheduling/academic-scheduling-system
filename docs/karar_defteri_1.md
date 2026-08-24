@@ -3219,3 +3219,35 @@ sonuçsuz kaldı (ölçüt dar). İkisi aynı cümleyle geçiştirilemez.
 monkeypatch'leyen sözleşme testi, öteki motorun kendi çıktısı. Monkeypatch'li
 olan sabit bir sözlük döndürdüğü için alanın gerçekten taşınıp taşınmadığını
 göremezdi; gerçek `_affected_ref` üzerinden koşan üçüncü bir test eklendi.
+
+### K-80 eki 6 · Çakışma Raporu tablo oldu
+
+**Liste → tablo.** Her çakışmanın aynı beş sorusu var: hangi tür, hangi kural,
+ne oldu, hangi cohort'ta ve ne zaman, hangi öğeler. Sütun başlığı bu soruları
+BİR KEZ sorar; liste biçiminde her satır kendi düzenini yeniden anlatıyordu.
+
+**Cohort ve zaman alt alta, ve TEKİLLEŞTİRİLMİŞ.** Bir çakışma iki tarafı da
+taşıyabiliyor (W1/W2 bölümler arası) ve yan yana dizilince hangi zamanın hangi
+cohort'a ait olduğu karışıyor. Öte yandan iki taraf çoğu zaman aynı cohort ve
+aynı saatte oluyor — kural zaten "aynı anda" diyor — o yüzden aynı satır iki
+kez yazılmıyor.
+
+**Zaman için backend'e alan eklendi.** Yerleşim zamanı mesajın METNİNDE zaten
+geçiyordu ama sütuna çıkarmak metin ayrıştırmak demekti. Motor dict'i alanları
+zaten tutuyor; ham veriyi vermek hem ucuz hem sağlam. **Biçimlendirme
+istemcide:** gün adları dile bağlı (K-79) ve sunucunun metin üretmesi o metni
+tek dile çivilerdi.
+
+**Tarih/saat ISO STRING olarak çıkıyor, ham `date`/`time` DEĞİL.** İlk denemede
+tam buradan kırıldı ve kırılma beklenmedik bir yerde patladı: `affected` yapısı
+Pydantic'ten geçmeyen bir yoldan da dışarı çıkıyor — onaya gönderme 409'u
+çakışmaları ham `JSONResponse` ile veriyor ve orada `json.dumps` bir `date`
+görünce TypeError atıyor. **Ders: bir çıktı yapısı birden fazla yoldan
+dışarı çıkıyorsa, en dar yolun kısıtına göre tasarlanmalı.** Ayrıca bekçi test
+eklendi (ref ham `json.dumps`'tan geçebilmeli).
+
+**Süzgeçler "Filtrele" popover'ında** (Dersler/Derslikler deseni); yan yana beş
+açılır kutu çoğu zaman kullanılmadan yer kaplıyordu. **Şiddet segmenti hariç:**
+o birincil boyut, durumu zaten görünür ve "Tümü"ye dönmek tek tık — bu yüzden
+açık süzgeç sayacına da girmiyor, yoksa segmentten birini seçmek ekrana ilgisiz
+bir "temizle" butonu düşürüyordu.

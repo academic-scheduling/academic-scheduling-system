@@ -425,6 +425,16 @@ class ConflictAffectedRef(BaseModel):
     department_id: int | None = None
     year: int | None = None
     semester: SemesterType | None = None
+    # K-80: yerleşim zamanı — rapor tablosunun "ne zaman" sütunu. Haftalıkta
+    # gün+slot, sınavda tarih+saat dolar; karşı tür için None kalır.
+    day_of_week: int | None = None
+    start_slot: int | None = None
+    slot_count: int | None = None
+    # ISO STRING (date/time DEĞİL): bu yapı Pydantic'ten geçmeyen bir yoldan
+    # da dönüyor — onaya gönderme 409'u çakışmaları ham JSONResponse ile
+    # veriyor ve orada tip dönüşümü yok.
+    exam_date: str | None = None
+    start_time: str | None = None
 
 class ConflictResultOut(BaseModel):
     severity: Literal["HARD", "WARNING"]

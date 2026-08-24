@@ -55,13 +55,18 @@ def test_build_result_shape():
     assert result["severity"] == "HARD"
     assert result["rule_id"] == "W1"
     assert "Derslik çakışması" in result["message"]
-    # affected COHORT ucluSunu tasir (rapor suzmesi icin): bolum + sinif +
-    # donem. K-80'de `semester` eklendi — cohort uc boyutlu, ikisi yetmiyordu.
+    # affected COHORT ucluSunu (bolum + sinif + donem) ve YERLESIM ZAMANINI
+    # tasir — rapor tablosu ikisini de kendi sutununda gosteriyor (K-80).
+    # Karsi turun alanlari None kalir: haftalik satirda exam_date/start_time.
     assert result["affected"] == [
         {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1",
-         "department_id": 2, "year": 2, "semester": "FALL"},
+         "department_id": 2, "year": 2, "semester": "FALL",
+         "day_of_week": 1, "start_slot": 3, "slot_count": 2,
+         "exam_date": None, "start_time": None},
         {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1",
-         "department_id": 2, "year": 2, "semester": "FALL"},
+         "department_id": 2, "year": 2, "semester": "FALL",
+         "day_of_week": 1, "start_slot": 3, "slot_count": 2,
+         "exam_date": None, "start_time": None},
     ]
   
 

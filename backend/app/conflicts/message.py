@@ -285,6 +285,11 @@ def build_message(rule_id, a, b=None):
         return _pick(f"Çakışma: {rule_id}", f"Conflict: {rule_id}")
     return builder(a, b)
 
+def _iso(v):
+    """date/time -> ISO string; zaten string ya da None ise dokunmaz."""
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
 def _affected_ref(obj):
     """ConflictResult.affected içindeki tek öğe (kontrat §0).
 
@@ -296,6 +301,17 @@ def _affected_ref(obj):
 
     K-80: `semester` EKLENDİ. Cohort üç boyutludur (bölüm + sınıf + dönem) ama
     ref yalnız ikisini taşıyordu; rapor "güz mü bahar mı" diye süzemiyordu.
+
+    K-80 (2): YERLEŞİM ZAMANI da taşınıyor — çakışma raporu tablo oldu ve
+    "ne zaman" kendi sütununda duruyor. Zaman mesajın METNİNDE zaten geçiyor
+    ama oradan sütuna çıkarmak metin ayrıştırmak demekti; motor dict'i alanları
+    zaten tutuyor, ham veriyi vermek hem ucuz hem sağlam. BİÇİMLENDİRME
+    istemcide: gün adları dile bağlı (K-79) ve sunucunun metin üretmesi o
+    metni tek dile çivilerdi.
+
+    İki tür iki farklı şekil taşır — haftalık gün+slot, sınav tarih+saat — ve
+    karşı tür için alanlar None kalır. Tek bir "zaman" alanında birleştirmek
+    ikisini de kaybettirirdi.
     """
     if obj.get("type") == "exam":
         code = obj["course_code"]      # sınav ders düzeyinde (K-16) — şube yok
@@ -308,6 +324,16 @@ def _affected_ref(obj):
         "department_id": obj.get("department_id"),
         "year": obj.get("year"),
         "semester": obj.get("semester"),
+        # Haftalık kol
+        "day_of_week": obj.get("day_of_week"),
+        "start_slot": obj.get("start_slot"),
+        "slot_count": obj.get("slot_count"),
+        # Sınav kolu. ISO STRING'e çevriliyor, ham date/time DEĞİL: bu yapı
+        # Pydantic'ten geçmeyen bir yoldan da dışarı çıkıyor — onaya gönderme
+        # 409'u çakışmaları `JSONResponse` ile ham `json.dumps`'tan geçiriyor
+        # ve orada `date` serialize EDİLEMİYOR (bu, testin yakaladığı kırılma).
+        "exam_date": _iso(obj.get("exam_date")),
+        "start_time": _iso(obj.get("start_time")),
     }
 
 

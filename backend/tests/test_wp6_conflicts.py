@@ -62,14 +62,17 @@ def test_affected_refs_survive_the_contract(monkeypatch):
                 # K-80: COHORT üçlüsü (bölüm + sınıf + dönem) taşınır — rapor
                 # süzmesi bunları okur.
                 "affected": [{"type": "exam", "id": 42, "course_code": "CENG2001",
-                              "department_id": 3, "year": 2, "semester": "SPRING"}],
+                              "department_id": 3, "year": 2, "semester": "SPRING",
+                              "exam_date": "2026-01-12", "start_time": "10:00:00"}],
             }],
             "warnings": [],
         },
     )
     ref = client.get("/conflicts", headers=admin_headers()).json()["hard"][0]["affected"][0]
     assert ref == {"type": "exam", "id": 42, "course_code": "CENG2001",
-                   "department_id": 3, "year": 2, "semester": "SPRING"}
+                   "department_id": 3, "year": 2, "semester": "SPRING",
+                   "exam_date": "2026-01-12", "start_time": "10:00:00",
+                   "day_of_week": None, "start_slot": None, "slot_count": None}
 
 
 def test_affected_ref_carries_the_semester_from_the_engine():
@@ -84,6 +87,34 @@ def test_affected_ref_carries_the_semester_from_the_engine():
     ref = _affected_ref({
         "type": "weekly_entry", "id": 7, "course_code": "CENG 1004",
         "section_no": 1, "department_id": 3, "year": 1, "semester": "SPRING",
+        "day_of_week": 3, "start_slot": 6, "slot_count": 2,
     })
     assert ref["semester"] == "SPRING"
     assert (ref["department_id"], ref["year"]) == (3, 1)
+    # K-80: yerleşim zamanı da taşınır — rapor tablosunun "ne zaman" sütunu
+    # bunu okuyor; mesaj metnini ayrıştırmak zorunda kalmasın.
+    assert (ref["day_of_week"], ref["start_slot"], ref["slot_count"]) == (3, 6, 2)
+
+
+def test_affected_ref_serializes_exam_time_as_plain_strings():
+    """K-80: sınav tarih/saati ISO STRING olarak çıkar, `date`/`time` DEĞİL.
+
+    Sebebi ince: bu yapı Pydantic'ten geçmeyen bir yoldan da dışarı çıkıyor —
+    onaya gönderme 409'u çakışmaları ham `JSONResponse` ile veriyor ve orada
+    `json.dumps` bir `date` görürse TypeError atıyor. Alanlar ilk eklendiğinde
+    tam olarak bu kırıldı (`test_exam_submit_rejected_by_hard_conflict`), ve
+    kırılma UÇTA değil ilgisiz görünen bir akışta patladığı için buraya bir
+    bekçi konuyor.
+    """
+    import json
+    from datetime import date, time
+    from app.conflicts.message import _affected_ref
+
+    ref = _affected_ref({
+        "type": "exam", "id": 9, "course_code": "CENG 1004",
+        "department_id": 1, "year": 1, "semester": "SPRING",
+        "exam_date": date(2026, 1, 12), "start_time": time(10, 0),
+    })
+    assert ref["exam_date"] == "2026-01-12"
+    assert ref["start_time"] == "10:00:00"
+    json.dumps(ref)          # ham serialize edilebilmeli — asıl güvence bu

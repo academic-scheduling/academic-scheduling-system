@@ -3277,3 +3277,53 @@ açıklamalar okunmaz.
 **"Cohort / zaman" → "Etkilenen cohort", ve soluk değil.** Cohort, listeyi
 tararken en çok bakılan yer ("bu beni ilgilendiriyor mu"); `dimmed` olması onu
 ikincil gösteriyordu.
+
+## K-81 · Çakışma Raporu: renk, sütun, sessizlik ve terimler [E]
+
+**Kural kodu da ŞİDDETİ söylüyor.** "Tür" sütunu engel/uyarıyı zaten yazıyordu
+ama kural kodu gri bir rozetti; kural KATALOĞUNDA ise şiddet hiç yoktu — 22
+satırlık listede "hangileri yayını durdurur" sorusunun cevabı ancak açıklama
+cümlelerini tek tek okuyarak çıkıyordu, oysa liste tam da göz gezdirmek için
+var. Artık kod rozeti kırmızı (engel) / turuncu (uyarı): ızgaradaki çakışma
+belirteci ve satırın sol kenar çubuğuyla AYNI dil (K-80).
+
+**Sıra ve şiddet tek listede** (`RULE_CATALOG`). Ayrı bir şiddet haritası
+olsaydı ikisi zamanla ayrışırdı — kural eklenir, birine yazılır ötekine
+unutulur. Yan yana durunca eksik alan derleme hatası oluyor.
+
+**"Etkilenen cohort" → "Cohort"; sütun 230 → 300px; yazı 12/normal →
+12.5/500.** "Etkilenen" hiçbir ayrım yapmıyordu (tabloda etkilenmeyen cohort
+zaten yazmaz) ama başlığı içerikten uzun tutuyordu. Asıl kusur sarmaydı:
+"CENG · 3. Sınıf · Bahar · Per 09:30 - 12:15" 230px'e sığmayıp saati alt satıra
+atıyor, tek bir bilgiyi ikiye bölüp satır yüksekliğini de düzensizleştiriyordu.
+Genişlik tahmin değil — parçaların hepsi sınırlı (bölüm KODU, "N. Sınıf",
+dönem, gün+saat), o yüzden `nowrap` güvenli. `minWidth` 880 → 950: bu sayı
+sütun toplamıyla tutarlı kalmazsa dar ekranda kaydırma yerine sıkışma olur ve
+tam da kapattığımız sarma geri gelir.
+
+**Sonuçsuz filtre artık SESSİZ.** "Bu süzgece uyan çakışma yok" cümlesi,
+üstteki segmentte "Engel (0)" yazarken aynı şeyi ikinci kez söylüyordu; sayacı
+okuyan zaten biliyor, okumayana da cümle bir şey öğretmiyor. Boş çerçevenin
+içine boş metin koymaktansa çerçeveyi hiç çizmemek dürüst — ekranda filtre
+çubuğu ve sayaçlar kalıyor. **Gerçekten çakışma yok** hali korunuyor: o bir
+haber (hem de iyi haber), söylenmeli. K-80'in "iki boşluk iki anlam" ayrımı
+duruyor; değişen, ikinci boşluğun cümleye ihtiyacı olmadığının görülmesi.
+
+**Terim temizliği — arayüzün tek kelimesi olmalı.**
+- *süzgeç → filtre*: buton "Filtrele" derken temizleme "Süzgeci temizle"
+  diyordu; aynı şeyin iki adı, kullanıcıya iki ayrı şeymiş gibi geliyor.
+- *hoca → öğretim üyesi* (W2, E3, X3): menü, Öğretim Üyeleri sayfası ve W2'nin
+  kendi açıklaması zaten resmî terimi kullanıyordu; yalnız kural ADI konuşma
+  dilinde kalmıştı. Motorun ürettiği W2 mesajı da düzeltildi (ipuçunda görünür).
+- *mükerrer → yinelenen* (W5, E2): Osmanlıca terim, kuralın ne dediğini
+  anlatmak yerine önce kendini açıklatıyordu.
+Adlar `docs/cakisma_kural_seti_1.md` tablolarında da güncellendi — arayüz ile
+spec ayrışırsa katalog güvenilmez olur.
+
+**Açık soru — W4'ün şiddeti [S bekliyor].** W4 bugün "en az biri seçmeli" olan
+her cohort çakışmasını tek kovaya koyuyor (K-05). Oysa içinde iki farklı durum
+var: *zorunlu × seçmeli*'de cohort'un TAMAMI zorunlu derste olmak zorundadır,
+yani seçmeliye kimse gidemez — seçmeli fiilen kapanır; *seçmeli × seçmeli*'de
+ise öğrenci birini seçer, bu normaldir ve seçmeli havuzlarında bilerek yapılır.
+İkisi aynı uyarıyı üretiyor. Ayrıştırmak (W4a HARD / W4b WARNING) K-05'i
+değiştirmek demektir; hoca kararı olduğu için koda dokunulmadı.

@@ -331,6 +331,14 @@ export type ConflictAffectedRef = {
   year: number | null;
   /** K-80: cohort üç boyutludur; rapor dönem süzgeci bunu okur. */
   semester: SemesterType | null;
+  /** K-80: yerleşim zamanı — rapor tablosunun "ne zaman" sütunu. Haftalıkta
+   *  gün+slot, sınavda tarih+saat dolar; karşı tür için null kalır. Zaman
+   *  mesajın metninde de geçiyor ama oradan ayrıştırmak kırılgan olurdu. */
+  day_of_week: number | null;
+  start_slot: number | null;
+  slot_count: number | null;
+  exam_date: string | null;
+  start_time: string | null;
 };
 
 export type ConflictResult = {

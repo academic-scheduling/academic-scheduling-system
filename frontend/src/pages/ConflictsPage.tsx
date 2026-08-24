@@ -1,30 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  Alert, Badge, Button, Group, Loader, Paper, SegmentedControl, Select,
-  Stack, Text, Title,
+  Alert, Badge, Button, Group, Loader, Paper, Popover, SegmentedControl,
+  Select, Stack, Table, Text, Title,
 } from "@mantine/core";
-import { IconArrowRight, IconChecks, IconFilterOff } from "@tabler/icons-react";
+import {
+  IconArrowRight, IconChecks, IconFilter, IconFilterOff,
+} from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type {
-  ConflictResult, ConflictScan, Department, SemesterType,
+  ConflictAffectedRef, ConflictResult, ConflictScan, Department, SemesterType,
 } from "../api/types";
-import { BORDER } from "../utils/scheduleTheme";
+import { formatSlotRange } from "../utils/slots";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /* ==================================================================
  * K-80 · Çakışma Raporu — öteki ekranlarla aynı kabuk
  *
- * Eskiden HARD ve WARNING iki ayrı SEKMEYDİ, her biri kart yığını çiziyordu.
- * İki kusuru vardı:
- *   1. Sekme "ya o ya bu" der; oysa şiddet bir SÜZGEÇ boyutudur ve "hepsini
- *      birden gör" en doğal istektir — sekmede o seçenek YOKTU.
- *   2. Süzgeçler (bölüm/sınıf) sekmenin dışında duruyordu; tür ve kural gibi
- *      boyutlar hiç yoktu, kalabalık listede aranan çakışmaya inmek zordu.
+ * Eskiden HARD ve WARNING iki ayrı SEKMEYDİ ve her biri kart yığını çiziyordu.
+ * Sekme "ya o ya bu" der; oysa şiddet bir SÜZGEÇ boyutudur ve "hepsini birden
+ * gör" en doğal istektir — sekmede o seçenek yoktu.
  *
- * Yeni kabuk Dersler/Öğretim Üyeleri ile aynı (K-65/K-66): başlık + sayaç,
- * altında tek süzgeç çubuğu, altında TEK liste. Süzgeç boyutları:
- * şiddet · cohort (bölüm + sınıf + dönem) · tür · kural.
+ * Şimdi Dersler/Derslikler ile aynı kabuk: başlık, tek süzgeç çubuğu (şiddet
+ * segmenti + "Filtrele" popover'ı), altında TABLO. Tablo çünkü her çakışmanın
+ * aynı beş sorusu var — hangi tür, hangi kural, ne oldu, hangi cohort/ne zaman,
+ * hangi öğeler — ve sütun başlığı bu soruları bir kez sorup satırları
+ * karşılaştırılabilir kılıyor.
  * ================================================================== */
 
 // "Filtre yok" sentinel'i: Mantine Select value'su null olamadığı için
@@ -33,12 +35,40 @@ const ALL = "__all__";
 
 type Sev = "ALL" | "HARD" | "WARNING";
 
-/** Listedeki tek satır: çakışma + hangi kovadan geldiği.
+/** Tablodaki tek satır: çakışma + hangi kovadan geldiği.
  *
  *  Şiddet `ConflictResult.severity` içinde de var; yine de kovayı taşıyoruz,
  *  çünkü listeyi birleştiren şey KOVA ve satırın rengini tek bir gerçeğin
  *  belirlemesi, iki kaynağın gün gelip ayrışmasından iyidir. */
 type Satir = { c: ConflictResult; hard: boolean };
+
+/** Etkilenen öğenin cohort'u: "CENG · 1. sınıf · Bahar".
+ *  Motor eski kayıtlarda alanları üretmemiş olabilir — eksikse satır atlanır,
+ *  yarım bir etiket ("· 1. sınıf ·") göstermek bilgi değil gürültüdür. */
+function cohortEtiketi(
+  a: ConflictAffectedRef, depAdi: (id: number) => string, t: Dict,
+): string | null {
+  if (a.department_id == null) return null;
+  const parcalar = [depAdi(a.department_id)];
+  if (a.year != null) parcalar.push(t.conflicts.yearN(a.year));
+  if (a.semester != null) parcalar.push(t.enums.semester[a.semester]);
+  return parcalar.join(" · ");
+}
+
+/** Etkilenen öğenin YERLEŞİM ZAMANI. İki tür iki farklı şekilde okunur:
+ *  haftalıkta gün + slot aralığı, sınavda tarih + saat. */
+function zamanEtiketi(a: ConflictAffectedRef, t: Dict): string | null {
+  if (a.day_of_week != null && a.start_slot != null) {
+    return formatSlotRange(a.day_of_week, a.start_slot, a.slot_count ?? 1, "short", t);
+  }
+  if (a.exam_date) {
+    const gun = new Date(`${a.exam_date}T00:00:00`).toLocaleDateString(t.locale, {
+      day: "2-digit", month: "short",
+    });
+    return a.start_time ? `${gun} ${a.start_time.slice(0, 5)}` : gun;
+  }
+  return null;
+}
 
 export default function ConflictsPage() {
   const t = useT();
@@ -46,6 +76,7 @@ export default function ConflictsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Bölüm/sınıf süzgeci Bölümler sayacından ?department_id= ile önceden gelebilir.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -90,6 +121,11 @@ export default function ConflictsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const depAdi = useMemo(() => {
+    const harita = new Map(departments.map((d) => [d.id, d.code]));
+    return (id: number) => harita.get(id) ?? `#${id}`;
+  }, [departments]);
+
   /** İki kova tek listeye. Sıralama: HARD ÖNCE (yayını engelleyen iş önce
    *  görülmeli), sonra kural koduna göre — aynı kuralın vuruşları yan yana
    *  düşsün, çoğu zaman aynı kökten gelirler ve toplu çözülürler. */
@@ -122,7 +158,7 @@ export default function ConflictsPage() {
 
   /** Seçenekler VERİDEN türetilir: yalnız gerçekten çakışması olan sınıf/dönem/
    *  kural listelensin. Boş seçenek seçtirip "sonuç yok" göstermek, kullanıcıyı
-   *  kendi verisi hakkında yanıltır. */
+   *  kendi verisi hakkında yanıltır — seçenek varsa sonuç da vardır. */
   const secenekler = useMemo(() => {
     const years = new Set<number>();
     const sems = new Set<string>();
@@ -141,10 +177,13 @@ export default function ConflictsPage() {
     };
   }, [hepsi]);
 
-  const suzgecVar = sev !== "ALL" || !!dep || !!year || !!sem || !!kind || !!rule;
+  /** ŞİDDET bilerek DIŞARIDA: o bir segment, kendi durumu zaten görünür ve
+   *  "Tümü"ne dönmek tek tık. Sayaç ve "temizle" yalnız POPOVER içindeki
+   *  süzgeçleri anlatır — yoksa "Tümü/Engel/Uyarı"dan birini seçmek ekrana
+   *  ilgisiz bir temizleme butonu düşürüyordu. */
+  const acikSuzgec = [dep, year, sem, kind, rule].filter(Boolean).length;
   const temizle = () => {
-    setSev("ALL"); setDep(null); setYear(null); setSem(null);
-    setKind(null); setRule(null);
+    setDep(null); setYear(null); setSem(null); setKind(null); setRule(null);
   };
 
   if (loading && !scan) return <Loader mt="xl" />;
@@ -152,17 +191,13 @@ export default function ConflictsPage() {
 
   return (
     <Stack gap="md">
-      <Group align="baseline" gap="xs">
-        <Title order={3}>{t.conflicts.title}</Title>
-        <Text size="sm" c="dimmed">{t.conflicts.countLabel(hardSayi, uyariSayi)}</Text>
-      </Group>
+      {/* K-80: başlıkta sayaç YOK — sayılar segmentin üzerinde zaten yazıyor. */}
+      <Title order={3}>{t.conflicts.title}</Title>
 
-      {/* --- Süzgeç çubuğu: şiddet segmenti + cohort + tür + kural --- */}
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" align="center" wrap="wrap">
-          {/* Şiddet BİRİNCİL boyut, o yüzden segment: seçenekler ve sayıları
-              aynı anda görünür ve "Tümü" de bir seçenek olarak durur —
-              sekmede olmayan tam da buydu. */}
+          {/* Şiddet BİRİNCİL boyut, o yüzden popover'da değil dışarıda:
+              seçenekler ve sayıları aynı anda görünür. */}
           <SegmentedControl
             value={sev}
             onChange={(v: string) => setSev(v as Sev)}
@@ -174,57 +209,81 @@ export default function ConflictsPage() {
             size="sm"
           />
 
-          <FilterSelect w={230} placeholder={t.conflicts.allDepartments}
-            value={dep} onChange={setDep}
-            data={departments.map((d) => ({
-              value: String(d.id), label: `${d.code} — ${d.name}` }))} />
-
-          <FilterSelect w={130} placeholder={t.conflicts.allYears}
-            value={year} onChange={setYear}
-            data={secenekler.years.map((y) => ({
-              value: String(y), label: t.conflicts.yearN(y) }))} />
-
-          <FilterSelect w={130} placeholder={t.conflicts.allSemesters}
-            value={sem} onChange={setSem}
-            data={secenekler.sems.map((s) => ({
-              value: s, label: t.enums.semester[s as SemesterType] }))} />
-
-          <FilterSelect w={160} placeholder={t.conflicts.allKinds}
-            value={kind} onChange={setKind}
-            data={[
-              { value: "weekly_entry", label: t.conflicts.weeklyConflict },
-              { value: "exam", label: t.conflicts.examConflict },
-            ]} />
-
-          <FilterSelect w={140} placeholder={t.conflicts.allRules}
-            value={rule} onChange={setRule}
-            data={secenekler.rules.map((r) => ({
-              value: r, label: `${t.conflicts.rule} ${r}` }))} />
-
-          {suzgecVar && (
-            <Button variant="subtle" color="gray" size="sm"
-              leftSection={<IconFilterOff size={15} />} onClick={temizle}>
-              {t.conflicts.clearFilter}
-            </Button>
-          )}
+          {/* Kalan dört boyut popover'da (Dersler/Derslikler deseni): yan yana
+              beş açılır kutu, çoğu zaman kullanılmadan yer kaplıyordu. */}
+          <Popover opened={filtersOpen} onChange={setFiltersOpen}
+            position="bottom-start" width={430} shadow="md" withArrow>
+            <Popover.Target>
+              <Button variant="default" size="sm"
+                leftSection={<IconFilter size={16} />}
+                onClick={() => setFiltersOpen((o) => !o)}>
+                {t.conflicts.filter}
+                {acikSuzgec > 0 && (
+                  <Badge size="sm" circle ml={6} variant="filled">{acikSuzgec}</Badge>
+                )}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <Stack gap="sm">
+                <Group grow gap="sm">
+                  <FilterSelect label={t.conflicts.department}
+                    placeholder={t.conflicts.allDepartments}
+                    value={dep} onChange={setDep}
+                    data={departments.map((d) => ({
+                      value: String(d.id), label: `${d.code} — ${d.name}` }))} />
+                  <FilterSelect label={t.conflicts.classYear}
+                    placeholder={t.conflicts.allYears}
+                    value={year} onChange={setYear}
+                    data={secenekler.years.map((y) => ({
+                      value: String(y), label: t.conflicts.yearN(y) }))} />
+                </Group>
+                <Group grow gap="sm">
+                  <FilterSelect label={t.conflicts.semester}
+                    placeholder={t.conflicts.allSemesters}
+                    value={sem} onChange={setSem}
+                    data={secenekler.sems.map((s) => ({
+                      value: s, label: t.enums.semester[s as SemesterType] }))} />
+                  <FilterSelect label={t.conflicts.colKind}
+                    placeholder={t.conflicts.allKinds}
+                    value={kind} onChange={setKind}
+                    data={[
+                      { value: "weekly_entry", label: t.conflicts.weeklyConflict },
+                      { value: "exam", label: t.conflicts.examConflict },
+                    ]} />
+                </Group>
+                <FilterSelect label={t.conflicts.colRule}
+                  placeholder={t.conflicts.allRules}
+                  value={rule} onChange={setRule}
+                  data={secenekler.rules.map((r) => ({
+                    value: r, label: `${t.conflicts.rule} ${r}` }))} />
+                {acikSuzgec > 0 && (
+                  <Button variant="subtle" color="gray" size="sm"
+                    leftSection={<IconFilterOff size={15} />} onClick={temizle}>
+                    {t.conflicts.clearFilter}
+                  </Button>
+                )}
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
         </Group>
       </Paper>
 
-      <ConflictList list={list} hicYokMu={hepsi.length === 0} />
+      <ConflictTable list={list} hicYokMu={hepsi.length === 0} depAdi={depAdi} />
     </Stack>
   );
 }
 
-/** Süzgeç seçicilerinin ortak biçimi: "hepsi" seçeneği listenin BAŞINDA görünür
- *  bir öğe olarak durur — Mantine'in temizleme (×) ikonu fark edilmiyor. */
-function FilterSelect({ w, placeholder, value, onChange, data }: {
-  w: number; placeholder: string; value: string | null;
+function FilterSelect({ label, placeholder, value, onChange, data }: {
+  label: string; placeholder: string; value: string | null;
   onChange: (v: string | null) => void;
   data: { value: string; label: string }[];
 }) {
   return (
     <Select
-      w={w} size="sm" allowDeselect={false} comboboxProps={{ withinPortal: true }}
+      label={label} size="sm" allowDeselect={false}
+      comboboxProps={{ withinPortal: true }}
+      // "Hepsi" seçeneği listenin BAŞINDA görünür bir öğe: Mantine'in
+      // temizleme (×) ikonu fark edilmiyor (K-56'da görüldü).
       data={[{ value: ALL, label: placeholder }, ...data]}
       value={value ?? ALL}
       onChange={(v) => onChange(v === ALL || v === null ? null : v)}
@@ -232,10 +291,15 @@ function FilterSelect({ w, placeholder, value, onChange, data }: {
   );
 }
 
-/** Tek liste — eskiden her çakışma bir KART'tı ve ekrana az kayıt sığıyordu.
- *  Satır biçimi Yayın Merkezi'nin değişiklik listesiyle aynı (tek Paper, satır
- *  araları çizgi): aynı işi yapan iki ekran aynı görünmeli. */
-function ConflictList({ list, hicYokMu }: { list: Satir[]; hicYokMu: boolean }) {
+/** Tablo — eskiden her çakışma bir KART'tı ve ekrana az kayıt sığıyordu.
+ *
+ *  Her çakışmanın aynı beş sorusu var, o yüzden sütun: tür · kural · ne oldu ·
+ *  hangi cohort ve ne zaman · hangi öğeler. Cohort/zaman ALT ALTA yazılıyor,
+ *  çünkü bir çakışma iki tarafı da taşıyabiliyor (W1/W2 bölümler arası) ve
+ *  yan yana dizilince hangi zamanın hangi cohort'a ait olduğu karışıyor. */
+function ConflictTable({ list, hicYokMu, depAdi }: {
+  list: Satir[]; hicYokMu: boolean; depAdi: (id: number) => string;
+}) {
   const t = useT();
 
   if (list.length === 0) {
@@ -257,44 +321,78 @@ function ConflictList({ list, hicYokMu }: { list: Satir[]; hicYokMu: boolean }) 
 
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
-      {list.map(({ c, hard }, i) => (
-        <Group key={`${c.rule_id}-${i}`} gap="md" align="flex-start" wrap="nowrap"
-          style={{
-            padding: "10px 14px",
-            borderTop: i ? `1px solid ${BORDER}` : undefined,
-            // Sol kenar çubuğu, ızgaradaki çakışma belirtecinin AYNI dili
-            // (K-80): kırmızı engel, turuncu uyarı. Aynı işaret her ekranda
-            // aynı şeyi söylemeli.
-            borderLeft: `3px solid var(--mantine-color-${hard ? "red" : "orange"}-6)`,
-          }}>
-          <Badge size="sm" variant="light" color={hard ? "red" : "orange"}
-            style={{ flex: "none", minWidth: 42 }}>
-            {c.rule_id}
-          </Badge>
-
-          <Text fz={13} lh={1.5} style={{ flex: 1, minWidth: 0 }}>{c.message}</Text>
-
-          {/* Çakışan öğeler: tıklayınca ilgili programda vurgulanır (K-62). */}
-          {c.affected.length > 0 && (
-            <Group gap={6} justify="flex-end" wrap="wrap"
-              style={{ flex: "none", maxWidth: "38%" }}>
-              {c.affected.map((item, idx) => {
-                const sinav = item.type === "exam";
-                const yol = `${sinav ? "/exams" : "/weekly"}`
-                  + `?highlight=${item.id}&rule=${c.rule_id}`;
-                return (
-                  <Button key={idx} component={Link} to={yol} size="compact-xs"
-                    variant="light" color={sinav ? "violet" : "blue"}
-                    rightSection={<IconArrowRight size={11} />}>
-                    {item.course_code
-                      ?? `${sinav ? t.conflicts.exam : t.conflicts.course} #${item.id}`}
-                  </Button>
-                );
-              })}
-            </Group>
-          )}
-        </Group>
-      ))}
+      <Table.ScrollContainer minWidth={880}>
+        <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={110}>{t.conflicts.colKind}</Table.Th>
+              <Table.Th w={78}>{t.conflicts.colRule}</Table.Th>
+              <Table.Th>{t.conflicts.colConflict}</Table.Th>
+              <Table.Th w={210}>{t.conflicts.colCohort}</Table.Th>
+              <Table.Th w={170}>{t.conflicts.colItems}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {list.map(({ c, hard }, i) => {
+              const sinav = c.affected.some((a) => a.type === "exam");
+              return (
+                <Table.Tr key={`${c.rule_id}-${i}`}
+                  style={{
+                    // Sol kenar çubuğu, ızgaradaki çakışma belirtecinin AYNI
+                    // dili (K-80): kırmızı engel, turuncu uyarı.
+                    borderLeft: `3px solid var(--mantine-color-${hard ? "red" : "orange"}-6)`,
+                  }}>
+                  <Table.Td>
+                    <Badge size="sm" variant="light" color={sinav ? "violet" : "blue"}>
+                      {sinav ? t.conflicts.examConflict : t.conflicts.weeklyConflict}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge size="sm" variant="light" color={hard ? "red" : "orange"}>
+                      {c.rule_id}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text fz={13} lh={1.45}>{c.message}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Stack gap={2}>
+                      {/* TEKİLLEŞTİRİLİR: çakışmanın iki tarafı çoğu zaman AYNI
+                          cohort'ta ve aynı saatte olur (kural zaten "aynı anda"
+                          diyor). Aynı satırı iki kez yazmak bilgi katmaz. */}
+                      {[...new Set(c.affected.map((a) => {
+                        const cohort = cohortEtiketi(a, depAdi, t);
+                        const zaman = zamanEtiketi(a, t);
+                        return [cohort, zaman].filter(Boolean).join(" · ");
+                      }).filter(Boolean))].map((satir) => (
+                        <Text key={satir} fz={11.5} c="dimmed" lh={1.4}>{satir}</Text>
+                      ))}
+                    </Stack>
+                  </Table.Td>
+                  <Table.Td>
+                    {/* Tıklayınca ilgili programda vurgulanır (K-62). */}
+                    <Group gap={5} wrap="wrap">
+                      {c.affected.map((a, ix) => {
+                        const oSinav = a.type === "exam";
+                        const yol = `${oSinav ? "/exams" : "/weekly"}`
+                          + `?highlight=${a.id}&rule=${c.rule_id}`;
+                        return (
+                          <Button key={ix} component={Link} to={yol} size="compact-xs"
+                            variant="light" color={oSinav ? "violet" : "blue"}
+                            rightSection={<IconArrowRight size={11} />}>
+                            {a.course_code
+                              ?? `${oSinav ? t.conflicts.exam : t.conflicts.course} #${a.id}`}
+                          </Button>
+                        );
+                      })}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
     </Paper>
   );
 }

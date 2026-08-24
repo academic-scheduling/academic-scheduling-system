@@ -407,10 +407,6 @@ export const tr = {
   conflicts: {
     title: "Çakışma Raporu",
     loadFailed: "Çakışmalar yüklenemedi",
-    // K-80: başlıktaki iki rozet yerine tek sayaç satırı — sayılar zaten
-    // süzgeç segmentinde de yazıyor, üç kez söylemeye gerek yok.
-    countLabel: (engel: number, uyari: number) =>
-      `${engel} engel · ${uyari} uyarı`,
     allDepartments: "Tüm bölümler",
     allYears: "Tüm sınıflar",
     allSemesters: "Tüm dönemler",
@@ -424,11 +420,22 @@ export const tr = {
     warning: "Uyarı",
     rule: "Kural",
     examConflict: "Sınav",
-    weeklyConflict: "Haftalık program",
+    weeklyConflict: "Haftalık",
     exam: "Sınav",
     course: "Ders",
     // Dashboard kartı bunu okuyor (rapor sayfası kendi boş metnini kullanır).
     none: "Çakışma bulunamadı.",
+    // K-80: süzgeçler "Filtrele" popover'ında toplandı (Dersler deseni).
+    filter: "Filtrele",
+    department: "Bölüm",
+    classYear: "Sınıf",
+    semester: "Dönem",
+    // Tablo sütunları — her çakışmanın aynı beş sorusu.
+    colKind: "Tür",
+    colRule: "Kural",
+    colConflict: "Çakışma",
+    colCohort: "Cohort / zaman",
+    colItems: "Çakışan öğeler",
   },
 
   dashboard: {

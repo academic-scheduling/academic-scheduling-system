@@ -384,8 +384,6 @@ export const en: Dict = {
   conflicts: {
     title: "Conflict Report",
     loadFailed: "Conflicts could not be loaded",
-    countLabel: (engel: number, uyari: number) =>
-      `${engel} blocking · ${uyari} warnings`,
     allDepartments: "All departments",
     allYears: "All years",
     allSemesters: "All semesters",
@@ -398,11 +396,20 @@ export const en: Dict = {
     blocking: "Blocking",
     warning: "Warning",
     rule: "Rule",
-    examConflict: "Exams",
-    weeklyConflict: "Weekly schedule",
+    examConflict: "Exam",
+    weeklyConflict: "Weekly",
     exam: "Exam",
     course: "Course",
     none: "No conflicts found.",
+    filter: "Filter",
+    department: "Department",
+    classYear: "Year",
+    semester: "Semester",
+    colKind: "Kind",
+    colRule: "Rule",
+    colConflict: "Conflict",
+    colCohort: "Cohort / time",
+    colItems: "Affected items",
   },
 
   dashboard: {

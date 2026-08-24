@@ -329,6 +329,8 @@ export type ConflictAffectedRef = {
    *  Motor eski girişlerde üretmezse null. */
   department_id: number | null;
   year: number | null;
+  /** K-80: cohort üç boyutludur; rapor dönem süzgeci bunu okur. */
+  semester: SemesterType | null;
 };
 
 export type ConflictResult = {

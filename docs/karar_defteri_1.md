@@ -3187,3 +3187,35 @@ son koşusuna kadar canlı tut. Burada kalıcı seçildi: `writeScheduleMode(...
 "pub")` K-73'ün tercihine yazıyor; efekt kaç kez koşarsa koşsun `readScheduleMode`
 "pub" döndürüyor. Yan fayda: davranış doğru — kullanıcı yayını istedi, tercih
 yayın oldu; taslağına "Taslağa Dön" ile döner (o da tercihi taslağa yazar).
+
+### K-80 eki 5 · Çakışma Raporu ortak kabuğa taşındı
+
+**Sekme yanlış araçtı.** HARD ve WARNING iki ayrı sekmeydi; sekme "ya o ya bu"
+der, oysa şiddet bir SÜZGEÇ boyutudur ve "hepsini birden gör" en doğal istektir
+— sekmede o seçenek yoktu. Segment (Tümü / Engel / Uyarı) hem seçenekleri hem
+sayıları aynı anda gösteriyor.
+
+**Süzgeç boyutları tamamlandı:** şiddet · cohort (bölüm + sınıf + dönem) · tür ·
+kural. Dönem için backend'e dokunuldu: `affected` ref'i cohort'un yalnız iki
+boyutunu taşıyordu, `semester` motor dict'inde ZATEN vardı ama dışarı
+verilmiyordu.
+
+**Seçenekler VERİDEN türetilir.** Yalnız gerçekten çakışması olan sınıf/dönem/
+kural listelenir. Boş bir seçeneği seçtirip "sonuç yok" göstermek, kullanıcıyı
+kendi verisi hakkında yanıltır — seçenek varsa sonuç da vardır.
+
+**Kart yığını → tek liste.** Satır biçimi Yayın Merkezi'nin değişiklik
+listesiyle aynı; 16 çakışma artık tek ekrana sığıyor. Sıralama HARD ÖNCE
+(yayını engelleyen iş önce görülmeli), sonra kural koduna göre — aynı kuralın
+vuruşları yan yana düşer ve çoğu zaman toplu çözülürler.
+
+**Aynı işaret her ekranda aynı anlama gelir.** Satırın sol kenar çubuğu,
+ızgaradaki çakışma belirtecinin dilini kullanır: kırmızı engel, turuncu uyarı.
+
+**Boş durum ikiye ayrıldı:** gerçekten çakışma yok (iyi haber) ile süzgeç
+sonuçsuz kaldı (ölçüt dar). İkisi aynı cümleyle geçiştirilemez.
+
+**Test notu:** `affected` şeklini iki test birden kilitliyordu — biri motoru
+monkeypatch'leyen sözleşme testi, öteki motorun kendi çıktısı. Monkeypatch'li
+olan sabit bir sözlük döndürdüğü için alanın gerçekten taşınıp taşınmadığını
+göremezdi; gerçek `_affected_ref` üzerinden koşan üçüncü bir test eklendi.

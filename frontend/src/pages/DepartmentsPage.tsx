@@ -40,6 +40,28 @@ const CARD_STYLES = `
   background: var(--mantine-color-blue-light);
   box-shadow: 0 6px 20px rgba(0,0,0,0.10);
 }
+/* K-81 · Sol panel yüksekliği.
+   Liste eskiden mah=calc(100vh - 220px) ile sınırlıydı. 220 bir TAHMİNDİ ve
+   yanlıştı: liste aslında y=106'da başlıyor, dolayısıyla kutu 114px fazla
+   kısıtlanıyordu. Sonucu ekranda iki kusur olarak görünüyordu — altta ~100px
+   ölü alan ve son bölümlerin gereksiz yere kaydırma istemesi (son kart yarım
+   kırpılmış bir kutu gibi duruyordu).
+
+   Çözüm sabiti düzeltmek DEĞİL (aynı tahmin, farklı sayı): panel artık
+   yapışkan ve tam ekran yüksekliğinde, liste de içinde flex:1 ile ARTAN
+   yeri kaplıyor. Böylece başlık/arama kutusu değişse bile hesap kendiliğinden
+   doğru kalıyor. Yan fayda: sağ panel uzunken bölüm listesi görünürde kalıyor.
+
+   min-height:0 şart: flex çocuğu varsayılan olarak içeriğinden küçülmez,
+   bu da kaydırmayı kutunun dışına taşırır. */
+@media (min-width: 62em) {
+  .dept-list-pane {
+    position: sticky;
+    top: 16px;
+    height: calc(100vh - 32px);
+  }
+}
+.dept-list-scroll { flex: 1; min-height: 0; }
 .kpi-card {
   transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
 }
@@ -263,7 +285,7 @@ export default function DepartmentsPage() {
       <Grid gutter="lg" align="stretch" columns={100}>
         {/* ================= SOL PANEL ================= */}
         <Grid.Col span={{ base: 100, md: 30, lg: 21 }}>
-          <Stack gap="sm">
+          <Stack gap="sm" className="dept-list-pane">
             <Group justify="space-between" align="center">
               <Title order={4}>{t.departments.title}</Title>
               {isAdmin && (
@@ -283,8 +305,8 @@ export default function DepartmentsPage() {
                 {query ? t.departments.noMatch : t.departments.empty}
               </Text>
             ) : (
-              <ScrollArea.Autosize mah="calc(100vh - 220px)" type="hover">
-                <Stack gap="xs">
+              <ScrollArea className="dept-list-scroll" type="hover">
+                <Stack gap="xs" pr={4}>
                   {visible.map((dep) => (
                     <UnstyledButton
                       key={dep.id}
@@ -298,7 +320,7 @@ export default function DepartmentsPage() {
                     </UnstyledButton>
                   ))}
                 </Stack>
-              </ScrollArea.Autosize>
+              </ScrollArea>
             )}
           </Stack>
         </Grid.Col>

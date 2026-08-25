@@ -844,7 +844,8 @@ def test_message_e2():
 def test_message_e3():
     a = base_exam()
     b = base_exam()
-    assert "hoca çakışması" in build_message("E3", a, b).lower()
+    # K-81: "hoca" resmî değil; E3'ün adı zaten "Sınav sorumlusu çakışması".
+    assert "sorumlusu çakışması" in build_message("E3", a, b).lower()
 
 
 def test_message_e4():
@@ -884,7 +885,7 @@ def test_message_x2():
 def test_message_x3():
     exam = base_exam()
     weekly = base_session()
-    assert "hoca" in build_message("X3", exam, weekly).lower()    
+    assert "sorumlu" in build_message("X3", exam, weekly).lower()   # K-81: "hoca" kalktı
 
 # ----------------------------------------- orchestrator testleri ---------------------------------
 

@@ -36,6 +36,28 @@ const ALL = "__all__";
 
 type Sev = "ALL" | "HARD" | "WARNING";
 
+/** Şiddetin görsel dili — tek yerde, çünkü dört ayrı yerde çiziliyor
+ *  (Tür rozeti, kural rozeti, satırın sol kenarı, kural kataloğu).
+ *
+ *  K-81: engel ile uyarı ayırt edilemiyordu. Sebep ton seçimi değil, VARYANT:
+ *  `light` rozetin yazı rengi karanlık temada `--mantine-color-red-light-color`
+ *  = #ffa8a8 (pembe) ve `orange-light-color` = #ffc078 (şeftali) — ikisi de
+ *  aynı açıklıkta pastel, yan yana gelince ayrılmıyorlar.
+ *
+ *  Çözüm daha koyu bir kırmızı DEĞİL (pastelin yanında koyu kırmızı bu kez
+ *  okunmuyor), varyantı değiştirmek: engel DOLGU (beyaz yazı, kırmızı zemin),
+ *  uyarı açık ton. Fark artık ton farkı değil BİÇİM farkı — renk körlüğünde de,
+ *  gri baskıda da ayrılıyor. Engel zaten "durdurucu", daha yüksek sesle
+ *  konuşması semantik olarak da doğru. */
+const SEV_BADGE = {
+  hard: { color: "red.8", variant: "filled" as const },
+  warn: { color: "orange", variant: "light" as const },
+};
+/** Kural KODU rozeti çerçeveli kalıyor (Tür rozetiyle tekrar etmesin), ama
+ *  çerçeve/yazı rengi doygun tondan alınıyor — `outline`ın varsayılanı da o
+ *  soluk pasteldi. */
+const SEV_OUTLINE = { hard: "red.5", warn: "orange.4" };
+
 /** Tablodaki tek satır: çakışma + hangi kovadan geldiği.
  *
  *  Şiddet `ConflictResult.severity` içinde de var; yine de kovayı taşıyoruz,
@@ -340,7 +362,8 @@ function RuleHelp() {
                     durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
                     okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
                     Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
-                <Badge size="sm" variant="outline" color={hard ? "red" : "orange"}
+                <Badge size="sm" variant="outline"
+                  color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}
                   style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
                 <div style={{ minWidth: 0 }}>
                   <Text fz={12.5} fw={500} lh={1.35}>
@@ -433,12 +456,14 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                   style={{
                     // Sol kenar çubuğu, ızgaradaki çakışma belirtecinin AYNI
                     // dili (K-80): kırmızı engel, turuncu uyarı.
-                    borderLeft: `3px solid var(--mantine-color-${hard ? "red" : "orange"}-6)`,
+                    // K-81: engel tarafı red-6 (#fa5252) yerine red-7 (#f03e3e)
+                    // — turuncunun yanında daha az pembeye kaçıyor.
+                    borderLeft: `3px solid var(--mantine-color-${hard ? "red-7" : "orange-6"})`,
                   }}>
                   {/* TÜR = ŞİDDET. Haftalık/sınav ayrımı burada DEĞİL: kural
                       kodu (W/E/X) ve öğe rozetlerinin rengi zaten söylüyor. */}
                   <Table.Td>
-                    <Badge size="sm" variant="light" color={hard ? "red" : "orange"}>
+                    <Badge size="sm" {...(hard ? SEV_BADGE.hard : SEV_BADGE.warn)}>
                       {hard ? t.conflicts.blocking : t.conflicts.warning}
                     </Badge>
                   </Table.Td>
@@ -448,7 +473,8 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                       yüzden tekrar gibi değil aynı satırın iki okuması gibi
                       görünüyor. */}
                   <Table.Td>
-                    <Badge size="sm" variant="outline" color={hard ? "red" : "orange"}>
+                    <Badge size="sm" variant="outline"
+                      color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}>
                       {c.rule_id}
                     </Badge>
                   </Table.Td>

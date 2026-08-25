@@ -3349,3 +3349,41 @@ kadar geniş yer alsın), `minWidth` 950 → 1180 (Tür 92 + Kural 104 + Çakı�
 
 **W4 ayrılmadı [S]:** K-81'in "açık soru"su (W4a HARD / W4b WARNING) hoca
 tarafından kapatıldı — W4 tek kova, WARNING olarak kalıyor. K-05 değişmedi.
+
+### K-81 eki 2 · Şiddet rengi, kalan "hoca"lar, Bölümler panel yüksekliği
+
+**Engel ile uyarı ayırt edilemiyordu — sorun TON değil VARYANT'tı.** İkisi de
+`variant="light"` idi; karanlık temada bu varyantın yazı rengi
+`--mantine-color-red-light-color` = **#ffa8a8 (pembe)** ve
+`orange-light-color` = **#ffc078 (şeftali)**. İkisi de aynı açıklıkta pastel,
+yan yana gelince ayrılmıyorlar. "Daha koyu kırmızı" çözüm değildi: pastelin
+yanındaki koyu kırmızı bu kez okunmazdı. Engel artık **DOLGU** (beyaz yazı,
+kırmızı zemin), uyarı açık ton — fark ton farkı değil **biçim** farkı, renk
+körlüğünde ve gri baskıda da ayrılıyor. Engelin daha yüksek sesle konuşması
+semantik olarak da doğru: o, yayını durduran şey. Kural KODU rozeti çerçeveli
+kaldı (Tür rozetiyle tekrar etmesin) ama doygun tondan (`red.5`/`orange.4`);
+satırın sol kenarı da red-6 → red-7.
+
+**Kalan iki "hoca" temizlendi.** K-81'de W2 düzeltilmişti ama motor mesajlarında
+iki yer kalmıştı: E3 "Sınav hoca çakışması" → **"Sınav sorumlusu çakışması …
+aynı öğretim üyesine sahip"**, X3 "Sınav-ders hoca uyarısı" → **"Sınav-ders
+sorumlu uyarısı"**. Kural ADLARI zaten "sorumlu" diyordu; mesajlar adla
+çelişiyordu. `test_overlap.py`'daki iki bekçi de yeni metne göre güncellendi —
+metni değiştirip testi görmezden gelmek, bekçiyi işe yaramaz hale getirirdi.
+
+*Not:* "öğretim görevlisi" değil "öğretim üyesi" kullanıldı — ikisi FARKLI
+akademik unvan, ve arayüzün geri kalanı (menü, Öğretim Üyeleri sayfası, W2)
+"öğretim üyesi" diyor. İki terimi karıştırmak, tek terime indirme amacını
+bozardı.
+
+**Bölümler sayfası: sol listenin altındaki ölü alan.** Liste
+`mah="calc(100vh - 220px)"` ile sınırlıydı; 220 bir TAHMİNDİ ve yanlıştı —
+liste gerçekte y=106'da başlıyor, yani kutu 114px fazla kısıtlanıyordu. Ekranda
+iki kusur olarak görünüyordu: altta ~98px boşluk ve son bölümlerin gereksiz
+kaydırma istemesi (son kart yarım kırpılmış boş bir kutu gibi duruyordu).
+**Çözüm sabiti düzeltmek değil** (aynı tahmin, farklı sayı): panel `md`
+üstünde yapışkan ve tam ekran yüksekliğinde, liste içinde `flex:1` ile artan
+yeri kaplıyor — başlık/arama kutusu değişse bile hesap kendiliğinden doğru
+kalıyor. Ölçüldü: alttaki boşluk 98px → 0, liste yüksekliği 528 → 626.
+`min-height:0` şart, yoksa flex çocuğu içeriğinden küçülmez ve kaydırma
+kutunun dışına taşar. Yan fayda: sağ panel uzunken liste görünürde kalıyor.

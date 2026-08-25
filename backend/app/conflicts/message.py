@@ -158,7 +158,8 @@ def _msg_e2(a, b):
 def _msg_e3(a, b):
     A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
     return _pick(
-        f"Sınav hoca çakışması: {A} ve {B} sınavları, {T}'te aynı sorumluya sahip.",
+        f"Sınav sorumlusu çakışması: {A} ve {B} sınavları, {T}'te aynı "
+        f"öğretim üyesine sahip.",
         f"Exam lecturer conflict: the {A} and {B} exams have the same supervisor "
         f"at {T}.")
 
@@ -241,7 +242,7 @@ def _msg_x2(exam, weekly):
 def _msg_x3(exam, weekly):
     X, C, CT = exam_label(exam), course_label(weekly), weekly_time_label(weekly)
     return _pick(
-        f"Sınav-ders hoca uyarısı: {X} sınav sorumlusu, {C} dersinde ({CT}) "
+        f"Sınav-ders sorumlu uyarısı: {X} sınav sorumlusu, {C} dersinde ({CT}) "
         f"aynı anda görünüyor.",
         f"Exam-course lecturer warning: the supervisor of the {X} exam is also "
         f"in the {C} session ({CT}) at the same time.")

@@ -409,6 +409,7 @@ export const en: Dict = {
     colKind: "Kind",
     colRule: "Rule",
     colConflict: "Conflict",
+    colDesc: "Description",
     colCohort: "Cohort",
     colItems: "Affected items",
     ruleNames: {

@@ -440,6 +440,12 @@ export const tr = {
     colKind: "Tür",
     colRule: "Kural",
     colConflict: "Çakışma",
+    // K-81 eki: K-80'de motorun mesajı "tekrar ediyor" diye SÜTUNDAN kaldırılıp
+    // ipucuna alınmıştı; ipucu keşfedilebilir değil (dokunmatikte hiç görünmez),
+    // o yüzden geri geldi — ama soluk/ikincil stille: ad birincil, açıklama
+    // destekleyici. Mesaj hangi dersler ve saatte olduğunu tekrar edebilir;
+    // artık kaybolmasın diye bilerek göze görünür duruyor.
+    colDesc: "Açıklama",
     // K-81: "Etkilenen cohort" → "Cohort". "Etkilenen" hiçbir ayrım yapmıyordu
     // (tabloda etkilenmeyen cohort zaten yazmaz) ama başlığı sütunun içeriğinden
     // uzun hale getiriyordu. Kısalan başlık genişleyen sütuna da yer açtı.

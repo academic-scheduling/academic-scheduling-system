@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Paper, Popover, ScrollArea,
-  SegmentedControl, Select, Stack, Table, Text, Title, Tooltip,
+  SegmentedControl, Select, Stack, Table, Text, Title,
 } from "@mantine/core";
 import {
   IconArrowRight, IconChecks, IconFilter, IconFilterOff, IconHelp,
@@ -394,10 +394,11 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
 
   return (
     <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
-      {/* K-81: 880 → 950, cohort sütunu 70px genişledi. Bu sayı sütunların
-          toplamıyla tutarlı kalmazsa dar ekranda kaydırma yerine sıkıştırma
-          olur ve tam da kapattığımız sarma geri gelir. */}
-      <Table.ScrollContainer minWidth={950}>
+      {/* K-81: minWidth sütun toplamıyla tutarlı olmalı, yoksa dar ekranda
+          kaydırma yerine sıkışma olur ve kapattığımız sarma geri gelir.
+          Toplam sabit sütunlar: Tür 92 + Kural 104 + Çakışma 210 + Cohort 300
+          + Öğeler 170 = 876; Açıklama'ya en az ~300 → 1180. */}
+      <Table.ScrollContainer minWidth={1180}>
         <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -408,7 +409,11 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                   <RuleHelp />
                 </Group>
               </Table.Th>
-              <Table.Th>{t.conflicts.colConflict}</Table.Th>
+              {/* K-81 eki: Çakışma (kural adı) sabit genişliğe alındı ki yeni
+                  Açıklama sütunu esneyebilsin — mesaj bir cümle, sarabildiği
+                  kadar geniş yer ona verilsin. */}
+              <Table.Th w={210}>{t.conflicts.colConflict}</Table.Th>
+              <Table.Th>{t.conflicts.colDesc}</Table.Th>
               {/* K-81: 230 → 300. İçerik ("CENG · 3. Sınıf · Bahar · Per 09:30
                   - 12:15") 230'a sığmayıp saati alt satıra atıyordu; sarma,
                   tek bir bilgiyi iki parçaya bölüp satır yüksekliğini de
@@ -443,16 +448,22 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                       {c.rule_id}
                     </Badge>
                   </Table.Td>
-                  {/* Mesaj yerine KURAL ADI: mesaj hangi dersler ve hangi saat
-                      diye tekrar ediyordu, ikisi de kendi sütununda duruyor.
-                      Tam mesaj ipucunda korunuyor — kapasite sayısı gibi ek
-                      ayrıntı kaybolmasın. */}
+                  {/* Kural ADI — birincil, koyu. K-81 eki: mesaj artık kendi
+                      "Açıklama" sütununda GÖRÜNÜR, o yüzden ipucu (tooltip)
+                      kaldırıldı; aynı metnin iki yolla (hover + sütun) verilmesi
+                      gereksizdi ve "cursor: help" hangi hücrede ipucu var diye
+                      yanıltıyordu. */}
                   <Table.Td>
-                    <Tooltip label={c.message} multiline maw={420} openDelay={200}>
-                      <Text fz={13} fw={500} lh={1.45} style={{ cursor: "help" }}>
-                        {t.conflicts.ruleNames[c.rule_id] ?? c.message}
-                      </Text>
-                    </Tooltip>
+                    <Text fz={13} fw={500} lh={1.45}>
+                      {t.conflicts.ruleNames[c.rule_id] ?? c.message}
+                    </Text>
+                  </Table.Td>
+                  {/* Açıklama — motorun ürettiği tam cümle, İKİNCİL (soluk).
+                      Ad "ne tür sorun" der; açıklama "tam olarak ne oldu" (hangi
+                      dersler, hangi saat, kapasite sayısı gibi ayrıntı). Cümle
+                      olduğu için sarması doğal — nowrap YOK. */}
+                  <Table.Td>
+                    <Text fz={12.5} c={TEXT_MUTED} lh={1.45}>{c.message}</Text>
                   </Table.Td>
                   <Table.Td>
                     <Stack gap={2}>

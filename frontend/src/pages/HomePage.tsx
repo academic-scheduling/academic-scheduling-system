@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  ActionIcon, Alert, Grid, Group, Loader, Pagination, Paper, SimpleGrid, Stack,
-  Text, Title, Tooltip,
+  Alert, Grid, Group, Loader, Paper, SimpleGrid, Stack, Text, Title,
 } from "@mantine/core";
 import {
   IconBook2, IconCalendarWeek, IconChevronRight, IconDoor, IconPencil,
-  IconTrash, IconUsers, type IconProps,
+  IconUsers, type IconProps,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { AUDIT_ACTION_COLORS } from "../api/types";
@@ -23,22 +22,13 @@ import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
-/** "Son işlemleriniz" bir sayfada kaç satır gösterir. */
-const ACTIVITY_PAGE = 5;
-
-/** Sunucudan kaç satır çekilir. Sayfalama İSTEMCİDE: akış birkaç sayfalık bir
- *  özet, denetim ekranı değil — elli satır tek istekte gelir ve sayfa değişimi
- *  ağ turu istemez. */
-const ACTIVITY_FETCH = 50;
-
-/** "Listeyi temizle" işaretinin tutulduğu yer.
+/** "Son işlemleriniz" kaç satır gösterir — hepsi bu.
  *
- *  Kayıt SİLİNMEZ — silinemez de: denetim izini failin kendisi silebilseydi iz
- *  denetim olmaktan çıkardı (kontrat §12). Buradaki temizleme yalnız GÖRÜNÜMÜ
- *  susturur: bu andan eski satırlar akışta çizilmez, sonradan yapılan işlemler
- *  yeniden görünür. Kişiye ve tarayıcıya özel bir tercih olduğu için
- *  localStorage yeterli; sunucuda tutulacak bir şey değil. */
-const ACTIVITY_CLEARED_KEY = "activity-cleared-at";
+ *  Sayfalama ve "listeyi temizle" düğmesi KALDIRILDI: ikisi de akışı bir
+ *  denetim ekranı gibi kullanmaya davet ediyordu, oysa blok yalnız "en son ne
+ *  yaptım" sorusuna cevap veriyor. Beş satırlık bir listede sayfalanacak ya da
+ *  temizlenecek bir şey yok. */
+const ACTIVITY_LIMIT = 5;
 
 /** Ana sayfa (K-82) — eski `/` ile `/dashboard`'un birleşimi.
  *
@@ -83,7 +73,7 @@ export default function HomePage() {
 
     api.get<Department[]>("/departments").then(setDepartments).catch(() => { /* ikincil */ });
     api.get<OccupancySummary>("/dashboard/occupancy").then(setOccupancy).catch(() => { /* ikincil */ });
-    api.get<AuditLog[]>(`/audit-logs/mine?limit=${ACTIVITY_FETCH}`)
+    api.get<AuditLog[]>(`/audit-logs/mine?limit=${ACTIVITY_LIMIT}`)
       .then(setActivity).catch(() => setActivity([]));
   }, []);
 
@@ -94,6 +84,10 @@ export default function HomePage() {
     <Stack gap="lg">
       <Title order={3}>{t.home.title}</Title>
 
+      {/* Kart iki iç sütun taşıyor (bölümler + yetkiler); tam genişlikte
+          ikisi de gereğinden fazla açılıp aralarında koca bir boşluk
+          bırakıyordu — kart "geniş" değil "boş" görünüyordu. Genişlik sınırı
+          IdentityCard'ın kendi içinde. */}
       <IdentityCard user={user} departments={departments} />
 
       {/* --- Sayaç kartları: altısı da ilgili ekrana gider --- */}
@@ -282,91 +276,47 @@ const ACTION_COL = 104;
  */
 function MyActivity({ items }: { items: AuditLog[] | null }) {
   const t = useT();
-  const [page, setPage] = useState(1);
-  const [temizlendi, setTemizlendi] = useState<string | null>(
-    () => localStorage.getItem(ACTIVITY_CLEARED_KEY),
-  );
-
-  /** Temizleme işaretinden ESKİ satırlar çizilmez. Sonradan yapılan yeni bir
-   *  işlem listede yeniden görünür — temizleme bir "şimdilik sustur"dur. */
-  const gosterilecek = useMemo(() => {
-    if (!items) return [];
-    if (!temizlendi) return items;
-    return items.filter((l) => l.created_at > temizlendi);
-  }, [items, temizlendi]);
-
   if (items === null) return null;          // henüz yüklenmedi
-
-  const sayfaSayisi = Math.max(1, Math.ceil(gosterilecek.length / ACTIVITY_PAGE));
-  const gecerliSayfa = Math.min(page, sayfaSayisi);
-  const dilim = gosterilecek.slice(
-    (gecerliSayfa - 1) * ACTIVITY_PAGE, gecerliSayfa * ACTIVITY_PAGE);
-
-  const temizle = () => {
-    const simdi = new Date().toISOString();
-    localStorage.setItem(ACTIVITY_CLEARED_KEY, simdi);
-    setTemizlendi(simdi);
-    setPage(1);
-  };
 
   return (
     <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} style={{ borderColor: BORDER }}>
-      <Group justify="space-between" align="center" mb={dilim.length === 0 ? 6 : 10}>
-        <Text fz={14} fw={700}>{t.home.activity.title}</Text>
-        {gosterilecek.length > 0 && (
-          <Tooltip label={t.home.activity.clear} withArrow>
-            <ActionIcon variant="subtle" color="gray" size="sm"
-              aria-label={t.home.activity.clear} onClick={temizle}>
-              <IconTrash size={15} />
-            </ActionIcon>
-          </Tooltip>
-        )}
-      </Group>
+      <Text fz={14} fw={700} mb={items.length === 0 ? 6 : 10}>
+        {t.home.activity.title}
+      </Text>
 
-      {dilim.length === 0 ? (
-        <Text fz={13} c={TEXT_MUTED}>
-          {temizlendi ? t.home.activity.cleared : t.home.activity.empty}
-        </Text>
+      {items.length === 0 ? (
+        <Text fz={13} c={TEXT_MUTED}>{t.home.activity.empty}</Text>
       ) : (
-        <>
-          <Stack gap={0}>
-            {dilim.map((log, i) => (
-              <Group key={log.id} gap={10} align="flex-start" wrap="nowrap"
-                style={{ padding: "9px 0", borderTop: i === 0 ? undefined : `1px solid ${BORDER}` }}>
-                {/* Rozet değil DÜZ METİN: sabit genişlikte bir rozet içi boş
-                    görünüyordu (etiket kısayken rozetin yarısı boşluk). Renk
-                    eylemin türünü yine söylüyor. */}
-                <Text fz={11} fw={700} tt="uppercase" truncate
-                  c={AUDIT_ACTION_COLORS[log.action] ?? "gray"}
-                  style={{ width: ACTION_COL, flex: "none", marginTop: 2 }}>
-                  {t.enums.auditAction[log.action] ?? log.action}
+        <Stack gap={0}>
+          {items.map((log, i) => (
+            <Group key={log.id} gap={10} align="flex-start" wrap="nowrap"
+              style={{ padding: "9px 0", borderTop: i === 0 ? undefined : `1px solid ${BORDER}` }}>
+              {/* Rozet değil DÜZ METİN: sabit genişlikte bir rozet içi boş
+                  görünüyordu (etiket kısayken rozetin yarısı boşluk). Renk
+                  eylemin türünü yine söylüyor. */}
+              <Text fz={11} fw={700} tt="uppercase" truncate
+                c={AUDIT_ACTION_COLORS[log.action] ?? "gray"}
+                style={{ width: ACTION_COL, flex: "none", marginTop: 2 }}>
+                {t.enums.auditAction[log.action] ?? log.action}
+              </Text>
+              <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                <Text fz={13} truncate>
+                  {/* K-36: etiket işlem anında satıra yazılır, silinen kayıt da
+                      konuşur. Eski satırlarda null olabilir — o zaman tür + id. */}
+                  {log.entity_label
+                    ?? `${t.enums.auditEntity[log.entity_type as keyof typeof t.enums.auditEntity]
+                        ?? log.entity_type} #${log.entity_id}`}
                 </Text>
-                <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-                  <Text fz={13} truncate>
-                    {/* K-36: etiket işlem anında satıra yazılır, silinen kayıt da
-                        konuşur. Eski satırlarda null olabilir — o zaman tür + id. */}
-                    {log.entity_label
-                      ?? `${t.enums.auditEntity[log.entity_type as keyof typeof t.enums.auditEntity]
-                          ?? log.entity_type} #${log.entity_id}`}
-                  </Text>
-                  {log.change_summary && (
-                    <Text fz={12} c={TEXT_MUTED} truncate mt={1}>{log.change_summary}</Text>
-                  )}
-                </div>
-                <Text fz={12} c={TEXT_MUTED} style={{ flex: "none", marginTop: 2 }}>
-                  {kisaZaman(log.created_at, t)}
-                </Text>
-              </Group>
-            ))}
-          </Stack>
-
-          {sayfaSayisi > 1 && (
-            <Group justify="center" mt="sm">
-              <Pagination size="sm" total={sayfaSayisi} value={gecerliSayfa}
-                onChange={setPage} />
+                {log.change_summary && (
+                  <Text fz={12} c={TEXT_MUTED} truncate mt={1}>{log.change_summary}</Text>
+                )}
+              </div>
+              <Text fz={12} c={TEXT_MUTED} style={{ flex: "none", marginTop: 2 }}>
+                {kisaZaman(log.created_at, t)}
+              </Text>
             </Group>
-          )}
-        </>
+          ))}
+        </Stack>
       )}
     </Paper>
   );

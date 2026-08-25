@@ -1270,8 +1270,6 @@ export const tr = {
     activity: {
       title: "Son işlemleriniz",
       empty: "Henüz bir işlem yapmadınız.",
-      clear: "Listeyi temizle",
-      cleared: "Liste temizlendi.",
     },
 
     rules: {

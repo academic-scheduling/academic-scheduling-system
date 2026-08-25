@@ -3728,3 +3728,19 @@ dönüşüyordu.
 **X1 kuralının adı değişti:** "Sınav dersi işgal ediyor" → "Sınav — derslik
 çakışması". "İşgal" resmi bir metne ait değil; motorun kendi mesajı zaten
 "Sınav-ders çakışması" diyordu, katalog ondan ayrışıyordu.
+
+**İkinci tur: akış beşe indi, kimlik daraldı.** "Son işlemleriniz"den sayfalama
+ve çöp kutusu düğmesi kaldırıldı. İkisi de bloğu bir DENETİM EKRANI gibi
+kullanmaya davet ediyordu, oysa blok tek bir soruya cevap veriyor: "en son ne
+yaptım". Beş satırlık bir listede sayfalanacak ya da temizlenecek bir şey yok;
+sunucudan da artık beş satır çekiliyor.
+
+Böylece "çöp kutusu gerçekten silsin mi" sorusu da kendiliğinden düştü — silme
+ucu açılmadı. Açılsaydı kendi izini silebilen bir fail demek olurdu ve iz
+denetim olmaktan çıkardı (kontrat §12). **Denetim tablosu yazılmaya devam
+ediyor**: bu bloğun tek kaynağı o, ve arayüzde başka hiçbir yer izin tamamını
+göstermiyor.
+
+Kimlik kartına genişlik sınırı (880px) kondu. Tam genişlikte iki iç sütun
+(bölümler + yetkiler) gereğinden fazla açılıyor ve aralarında koca bir boşluk
+kalıyordu — kart "geniş" değil "boş" görünüyordu.

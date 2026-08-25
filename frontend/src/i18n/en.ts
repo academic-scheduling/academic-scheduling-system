@@ -1177,8 +1177,6 @@ export const en: Dict = {
     activity: {
       title: "Your recent actions",
       empty: "You have not made any changes yet.",
-      clear: "Clear the list",
-      cleared: "List cleared.",
     },
 
     rules: {

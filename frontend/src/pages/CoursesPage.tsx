@@ -395,6 +395,32 @@ export default function CoursesPage() {
     setCourseModal(true);
   }
 
+
+  /** K-82: ana sayfadaki "hızlı işlem" `?new=1` ile buraya gelir ve ekleme
+   *  formu doğrudan açılır. Sadece sayfaya yönlendirmek yetmezdi — o zaman
+   *  hızlı işlem sol menünün kopyası olurdu.
+   *
+   *  Parametre bir kez okunup URL'den TEMİZLENİR: yapışıp kalırsa sayfa her
+   *  yenilendiğinde ya da geri gelindiğinde form kendiliğinden açılır.
+   *  `yeniAcildi` bayrağı, parametre temizlenene kadar geçen render'larda
+   *  formun iki kez açılmasını engeller.
+   *
+   *  Yetkisiz kullanıcıda HİÇ açılmaz: ana sayfa bu işlemi zaten çizmiyor,
+   *  ama URL elle de yazılabilir — açılan boş bir form kullanıcıyı sunucudan
+   *  dönecek 403'e kadar boşuna uğraştırırdı.
+   */
+  const yeniAcildi = useRef(false);
+  useEffect(() => {
+    if (loading || yeniAcildi.current) return;
+    if (searchParams.get("new") !== "1") return;
+    yeniAcildi.current = true;
+    if (writableDepartments.length > 0) openAddCourse();
+    const kalan = new URLSearchParams(searchParams);
+    kalan.delete("new");
+    setSearchParams(kalan, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   function openEditCourse(c: Course) {
     setEditingCourse(c);
     courseForm.setValues({

@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ActionIcon, Alert, Badge, Box, Button, Checkbox, Drawer, Group, Loader, Modal, NumberInput, Paper, Popover, Progress, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -63,6 +64,7 @@ export default function ClassroomsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [buildingFilter, setBuildingFilter] = useState<string | null>(null);
   const [minCap, setMinCap] = useState<string | null>(null);
@@ -236,6 +238,32 @@ export default function ClassroomsPage() {
     });
     setRoomModal(true);
   }
+
+
+  /** K-82: ana sayfadaki "hızlı işlem" `?new=1` ile buraya gelir ve ekleme
+   *  formu doğrudan açılır. Sadece sayfaya yönlendirmek yetmezdi — o zaman
+   *  hızlı işlem sol menünün kopyası olurdu.
+   *
+   *  Parametre bir kez okunup URL'den TEMİZLENİR: yapışıp kalırsa sayfa her
+   *  yenilendiğinde ya da geri gelindiğinde form kendiliğinden açılır.
+   *  `yeniAcildi` bayrağı, parametre temizlenene kadar geçen render'larda
+   *  formun iki kez açılmasını engeller.
+   *
+   *  Yetkisiz kullanıcıda HİÇ açılmaz: ana sayfa bu işlemi zaten çizmiyor,
+   *  ama URL elle de yazılabilir — açılan boş bir form kullanıcıyı sunucudan
+   *  dönecek 403'e kadar boşuna uğraştırırdı.
+   */
+  const yeniAcildi = useRef(false);
+  useEffect(() => {
+    if (loading || yeniAcildi.current) return;
+    if (searchParams.get("new") !== "1") return;
+    yeniAcildi.current = true;
+    if (canWrite && buildings.length > 0) openAddRoom();
+    const kalan = new URLSearchParams(searchParams);
+    kalan.delete("new");
+    setSearchParams(kalan, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   function openEditRoom(c: Classroom) {
     setEditingRoom(c);

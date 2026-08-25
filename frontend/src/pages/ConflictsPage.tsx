@@ -13,6 +13,7 @@ import type {
 } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
 import { TEXT_MUTED } from "../utils/scheduleTheme";
+import { RULE_CATALOG } from "../utils/conflictRules";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
@@ -327,26 +328,10 @@ function FilterSelect({ label, placeholder, value, onChange, data }: {
  *  öğrenmenin yolu ise dokümana gitmekti. Yirmi iki kuralın tamamı burada, tek
  *  bakışta: kod · ad · bir cümlelik koşul.
  *
- *  Sıra motorun ürettiği kod sırası DEĞİL, kolların sırası: haftalık (W) →
- *  sınav (E) → çapraz (X). Kullanıcı bir kuralı ararken hangi ekranla ilgili
- *  olduğunu bilir, kodun sayısını değil.
- *
- *  K-81: sıra ve ŞİDDET tek listede. Ayrı bir `RULE_SEVERITY` haritası olsaydı
- *  ikisi zamanla ayrışabilirdi (kural eklenir, birine yazılır ötekine değil);
- *  yan yana durunca eksik alan derleme hatası olur. Şiddetler
- *  `docs/cakisma_kural_seti_1.md` tablolarından birebir alınmıştır. */
-const RULE_CATALOG: { kod: string; hard: boolean }[] = [
-  { kod: "W1", hard: true },   { kod: "W2", hard: true },   { kod: "W3", hard: true },
-  { kod: "W4", hard: false },  { kod: "W5", hard: false },  { kod: "W6", hard: true },
-  { kod: "W7", hard: false },  { kod: "W8", hard: false },  { kod: "W9", hard: false },
-  { kod: "E1", hard: true },   { kod: "E2", hard: true },   { kod: "E3", hard: true },
-  { kod: "E4a", hard: true },  { kod: "E4b", hard: false }, { kod: "E5", hard: false },
-  { kod: "E5a", hard: false }, { kod: "E6", hard: true },   { kod: "E7", hard: false },
-  { kod: "E8", hard: false },  { kod: "E9", hard: false },   // E9: K-81 gözetmen
-  { kod: "X1", hard: true },   { kod: "X2", hard: false },  { kod: "X3", hard: false },
-  { kod: "X4", hard: false },                                // X4: K-81 gözetmen
-];
-
+ *  K-82: listenin kendisi `utils/conflictRules` içine taşındı — ana sayfadaki
+ *  "kural bazında dağılım" bloğu da aynı katalogdan okuyor. İki kopya olsaydı
+ *  yeni bir kural birine yazılıp ötekinde unutulabilirdi.
+ */
 function RuleHelp() {
   const t = useT();
   /** K-81: pop-up yalnız TIKLAYINCA açılıyordu ve "?" ikonunun tıklanabilir

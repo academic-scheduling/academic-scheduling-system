@@ -3524,3 +3524,131 @@ ders/derslik/sorumlu taşıyor; isimler ipucunda. Gözetmen yoksa satır hiç
 çizilmiyor: "0 gözetmen" bir bilgi değil, isteğe bağlı bir alanın boşluğudur.
 
 Paket 802 yeşil (776 → 802: 10 motor + 12 API testi).
+
+
+---
+
+## K-82 · Ana Sayfa: dashboard'un birleşmesi + Yönetim sayfası [S+E]
+
+**Sorun.** Sistemin iki giriş ekranı vardı ve ikisi de yanlış işi yapıyordu.
+`/` neredeyse boştu — bir başlık, bir "backend çalışıyor" rozeti, bir değişiklik
+akışı. Dolu olan `/dashboard` ise yalnız ADMIN'e açıktı. Yani giriş yapan bir alt
+hesap hiçbir şey görmeyen bir sayfaya düşüyor, göreceği şeyler kapalı kapının
+ardında duruyordu. Dashboard'un kendisi de dağınıktı: sekiz sayaç kartının altında
+ilk beş çakışma satırı, onun altında 630 satırlık kullanıcı yönetimi, onun altında
+filtreli denetim ekranı — dört ayrı iş, tek sayfada, hiçbiri rahat değil.
+
+**"Alt hesap neyi görmemeli?" sorusu yeniden soruldu.** İlk cevap "dashboard'un
+tamamı"ydı ve fazla genişti. `DashboardSummary` alan alan geçildi: bölüm, derslik,
+öğretim üyesi, ders, sınav, haftalık giriş ve çakışma sayıları alt hesabın ZATEN
+listeleyebildiği veriden türüyor (K-26: okuma workgroup genelinde serbest;
+`/conflicts` de herkese açık). Bunları saymak yeni bir şey ifşa etmiyor. Gerçekten
+yönetim bilgisi olan tek şey KULLANICI sayaçlarıydı. O yüzden uç herkese açıldı ve
+`admins` / `sub_accounts` admin dışında **`null`** döner — `0` değil: sıfır
+"kullanıcı yok" demektir, null "sana gösterilmiyor". İstemci null görünce kartı
+hiç çizmiyor. Gizleme kararı istemcide değil sunucuda (brief §10.2).
+
+Aynı gerekçeyle `/dashboard/summary` K-78 matrisinde ADMIN_ONLY listesinden çıkıp
+yeni bir `OPEN_TO_AUTHENTICATED` listesine geçti. O liste boşuna değil: kimliksiz
+istek yine 401 almalı ve bayraksız alt hesap yine 200 almalı — biri gün gelir
+yanlışlıkla `require_admin` koyarsa süpürme yakalar.
+
+**Kullanıcı yönetimi: "Yönetim" sayfası (`/admin`, yalnız ADMIN).** Ayrı bir admin
+KABUĞU açmak gereksiz bulunmuştu (tek ekran için üç katmanlı bir bölge); ayrı bir
+SAYFA ise doğru ölçek. Adı "Kullanıcılar" değil "Yönetim": bugün tek bölümü
+kullanıcı yönetimi ama sınıfı belli bir kapı — programı değil SİSTEMİ yöneten
+ekranlar oraya girer. Sekme çubuğu konmadı; tek sekmeli sekme çubuğu gürültüdür,
+ikinci bölüm gelince eklenir. Menüde de ayraçtan sonra ayrı bir öbekte duruyor:
+"Kullanıcılar" ötekilerin arasına karışırsa bir veri ekranı sanılır. Kendi
+sayfasına çıkınca tablo da rahatladı (sayfa başına 7 → 12 satır).
+
+**İşlem kayıtları ekranı kaldırıldı, denetim izi KALDI.** Kullanıcı isteği
+"herkesin tek tek işlem kaydını tutmaya gerek yok"tu; kaldırılan şey filtreli
+DENETİM EKRANI (`AuditLogSection`), tablo değil. Tablo kontrat §12 borcudur ve
+zaten yerine geleni besliyor: `GET /audit-logs/mine`, "son işlemleriniz". Mevcut
+`/audit-logs`'a "admin değilse `user_id`'yi kendine sabitle" koşulu eklemek de
+mümkündü — eklenmedi, çünkü o zaman TEK ucun yetkisi çağıranın rolüne göre
+değişirdi ve yetki matrisi tek satırda okunamaz hale gelirdi. Yeni uçta filtre
+parametresi yok, kapsam sabit: `current_user`.
+
+Ana sayfada bu akışın hemen altında `ChangeFeed` duruyor ve ikisi karıştırılmamalı:
+biri "ben ne yaptım", öteki "başkasının onayı programımı nasıl değiştirdi" (K-59).
+Ayrı sorular, ayrı uçlar, yan yana.
+
+**İki giriş damgası, çünkü iki ayrı soru var.** `last_login_at` Yönetim
+tablosunun "Son giriş" sütununu besler ve orada anlamı doğrudur: "bu hesap en son
+ne zaman girdi". Ama aynı kolonu kişinin KENDİ kimlik kartında göstermek anlamsız
+olurdu — giriş anında yazıldığı için kart hep "az önce" derdi. Bu yüzden
+`previous_login_at`: girişte önce eskisi buraya kopyalanır, sonra yenisi yazılır.
+Sıra bozulursa kart yine kendi oturumunu gösterir. Damga yazımı audit'e satır
+DÜŞÜRMEZ: her giriş bir "işlem" olsaydı işlem kayıtları girişlerle dolar ve kimin
+neyi DEĞİŞTİRDİĞİ kaybolurdu.
+
+**Kimlik kartı: bu sayfanın asıl gerekçesi.** Sistemde yazma yetkisi İKİ
+BOYUTLUDUR — yetki bayrağı VE bölüm üyeliği (K-25 + K-26) — ama "neden bu düğmeyi
+göremiyorum" sorusunun cevabı hiçbir ekranda yazmıyordu; kullanıcı yetkisini ancak
+bir işi deneyip başarısız olarak öğreniyordu. Kart iki boyutu yan yana koyuyor ve
+altına ikisinin BİRLİKTE gerektiğini yazıyor. Kapalı yetki de listeleniyor (silik):
+listeden düşseydi kullanıcı neyin var olduğunu değil neyin verildiğini görürdü.
+ADMIN'in `department_ids`'i BOŞTUR ve bu "hiçbiri" değil "hepsi" demektir — boş
+listeyi olduğu gibi çizmek kartın en yanıltıcı hâli olurdu. Yeni uç gerekmedi;
+tek eklenen alan `UserPublic.email` (uç zaten yalnız çağıranın kendisini döner).
+
+**Kural bazlı çakışma dağılımı, ilk-beş listesinin YERİNE.** Eski dashboard ham
+çakışma satırlarından beşini listeliyordu: ne bütünü anlatıyordu (yüzlercesi
+arasından beşi) ne de bir iş görüyordu. Dağılım "asıl derdin W9, on vuruş" der ve
+satır tıklanınca Çakışma Raporu'nu o kuralla süzülmüş açar. Yeni uç GEREKMEDİ:
+`/conflicts` zaten `rule_id` + `severity` taşıyor, gruplama istemcide; kural adları
+sözlükte; kol (ders programı / sınav / çapraz) kodun ilk harfinden — motorun kendi
+ayrımı. Tanınmayan kod hiçbir kola konmaz: yanlış kolda görünen satır kullanıcıyı
+yanlış ekrana yollar. Açılış sekmesi çakışması OLAN ilk kol; boş bir sekme
+"çakışma yok" sanısı yaratırdı.
+
+`RULE_CATALOG` bu yüzden `ConflictsPage` içinden `utils/conflictRules`e çıktı. İki
+sayfa listeyi ayrı ayrı taşısaydı yeni bir kural birine yazılıp ötekinde
+unutulurdu — K-80'de "gizlilik kuralı tek yerde dursun" derken kaçındığımızın
+aynısı.
+
+**Derslik doluluk ısı haritası — tek yeni toplama ucu.** Izgaranın şekli uydurma
+değil, sistemin kendi zaman modeli: `slots.py` dokuz slot × beş çalışma günü.
+İstemcide hesaplanamazdı — `/weekly-entries` filtresiz çağrılınca tüm yayın
+satırlarını ders/şube/derslik ilişkileriyle döndürüyor, ana sayfa için ağır bir
+yük. `GET /dashboard/occupancy` birkaç yüz bayt döner. Üç kapsam kuralı sistemin
+başka yerlerindekinin aynısı: yalnız yayın (`draft_id IS NULL`, K-59), dersliksiz
+giriş sayılmaz (online derste derslik olamaz — K-23, dolayısıyla `classroom_id IS
+NOT NULL` online'ı da eler), ve hücrede giriş değil **ayrı derslik** sayılır (aynı
+derslikte aynı saatte iki giriş zaten W1'dir; iki kez saymak dersliği kapasitesinin
+üstünde dolu gösterirdi).
+
+Renk ölçeği haftanın EN YOĞUN hücresine göre normalize edilir, toplam derslik
+sayısına göre değil. Gerçek bir fakültede tek bir saatte dersliklerin tamamı
+dolmaz; ölçek 0-100 olsaydı ızgaranın tamamı en soluk iki tona sıkışır ve harita
+hiçbir şey göstermezdi — oysa blok tam da "hangi saat sıkışık" sorusu için var.
+Kesinlik kaybolmuyor: hücredeki SAYI ve ipucu mutlak gerçeği söylüyor, efsane de
+bu yüzden "az / çok" diyor, "%0 / %100" değil. İki taban rengi (aydınlıkta koyu,
+karanlıkta açık mavi) zorunluydu: tek taban kullanılınca karanlık temada düşük
+oranlı hücreler zeminden ayırt edilemiyordu.
+
+**Hızlı işlemler: yalnız YAPILABİLENLER, ve gerçekten form açanlar.** Yetkisizi
+gri gösterip sebebini yazmak da bir seçenekti; kimlik kartı zaten satır satır
+söylediği için blok yapılamayacak işlerin listesine dönerdi. Hiçbiri kalmıyorsa
+blok hiç çizilmiyor. "Yapabilir" testi iki boyutlu: ders/haftalık/sınav bölüm
+üyeliği de arar, derslik ve öğretim üyesi PAYLAŞIMLI kaynak olduğu için bayrak
+yeter (`canWriteIn`in `departmentId` verilmeyen dalı).
+
+İşlemler ilgili sayfaya yönlendirmekle yetinseydi sol menünün kopyası olurdu; bu
+yüzden `?new=1` ekleme formunu doğrudan açıyor (Dersler, Öğretim Üyeleri,
+Derslikler). Haftalık ve Sınav'da böyle bir form YOK — yerleştirme ızgarada
+yapılır, sınav modalı gün+saat ister — o yüzden onlarda parametre de yok; işlemin
+kendisi ızgarayı açmaktır. Parametre bir kez okunup URL'den temizlenir (yapışırsa
+sayfa her yenilendiğinde form açılır) ve yetkisiz kullanıcıda hiç açılmaz: URL
+elle de yazılabilir, açılan boş form kullanıcıyı sunucudan dönecek 403'e kadar
+boşuna uğraştırırdı.
+
+**Sayaçlar kart olarak kaldı.** Tasarım taslağında tek satırlık bir "envanter
+şeridi" vardı ve daha kompakttı; kullanıcı kararı mevcut kart ızgarasını korumak
+yönünde oldu — sıkıştırma bir hedef değildi.
+
+Kontrat §1/§9/§10/§12 güncellendi. Paket 822 yeşil (802 → 822: `test_k82_home.py`
+16 test + K-78 matrisine 6 parametreli süpürme; `/dashboard/summary`'nin yetki
+testi 403 beklemekten null-alan beklemeye döndü).

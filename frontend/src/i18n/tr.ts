@@ -14,7 +14,6 @@
 export const tr = {
   nav: {
     home: "Ana Sayfa",
-    dashboard: "Dashboard",
     departments: "Bölümler",
     courses: "Dersler",
     classrooms: "Derslikler",
@@ -23,6 +22,8 @@ export const tr = {
     exams: "Sınavlar",
     publishing: "Yayın Merkezi",
     conflicts: "Çakışma Raporu",
+    // K-82: menünün altında, ayraçtan sonra duran tek yönetim ekranı.
+    admin: "Yönetim",
   },
 
   layout: {
@@ -521,20 +522,6 @@ export const tr = {
     ruleHelpHint: "Kural listesi",
   },
 
-  dashboard: {
-    loadFailed: "Dashboard yüklenemedi",
-    departments: "Bölümler",
-    classrooms: "Derslikler",
-    lecturers: "Öğretim Üyeleri",
-    courses: "Dersler",
-    admins: "Admin",
-    subAccounts: "Alt Hesap",
-    exams: "Sınavlar",
-    conflictCard: "Çakışma (engel / uyarı)",
-    conflictsTitle: "Çakışmalar",
-    seeAll: (n: number) => `Tümünü gör (${n})`,
-  },
-
   users: {
     name: "Ad",
     statusCol: "Durum",
@@ -553,6 +540,8 @@ export const tr = {
     roleSub: "Alt hesap",
     status: { PENDING: "Davetli", ACTIVE: "Aktif", DISABLED: "Pasif" },
     readOnly: "sadece okuma",
+    lastLogin: "Son giriş",
+    neverLoggedIn: "hiç girmedi",
 
     resendInvite: "Daveti yeniden gönder",
     cancelInvite: "Daveti iptal et",
@@ -1222,10 +1211,98 @@ export const tr = {
 
   home: {
     title: "Ana Sayfa",
-    subtitle: "Sol menüden bir bölüm seçin.",
-    backend: "Backend",
-    backendUnreachable: "erişilemiyor",
-    backendChecking: "kontrol ediliyor...",
+    loadFailed: "Ana sayfa yüklenemedi",
+    scopeAll: "tüm bölümler",
+    scopeDeps: (n: number) => (n === 1 ? "1 bölüm" : `${n} bölüm`),
+    scopeNone: "bölüm atanmamış",
+    backendOk: "backend çalışıyor · veritabanı bağlı",
+    backendUnreachable: "backend'e erişilemiyor",
+    backendChecking: "backend kontrol ediliyor…",
+
+    cards: {
+      departments: "Bölümler",
+      classrooms: "Derslikler",
+      lecturers: "Öğretim Üyeleri",
+      courses: "Dersler",
+      exams: "Sınavlar",
+      admins: "Yönetici",
+      subAccounts: "Alt Hesap",
+      conflicts: "Çakışma (engel / uyarı)",
+    },
+
+    identity: {
+      account: (id: number) => `Hesap #${id}`,
+      active: "Aktif hesap",
+      previousLogin: (ne_zaman: string) => `Önceki girişiniz ${ne_zaman}`,
+      firstLogin: "İlk girişiniz",
+      departments: "Yetkili olduğunuz bölümler",
+      allDepartments: "tümü",
+      depCount: (n: number) => `${n} bölüm`,
+      noDepartments: "Bölüm atanmamış",
+      depNoteAdmin:
+        "Admin rolü bölüm ataması gerektirmez; tüm bölümlerde yazma yetkiniz vardır.",
+      depNoteSub:
+        "Yazma yetkiniz yalnız bu bölümlerin dersleri, programı ve sınavları için "
+        + "geçerlidir. Diğer bölümleri görüntüleyebilirsiniz.",
+      depNoteNone:
+        "Hiçbir bölüme atanmadığınız için yetki bayraklarınız etkisiz kalır — "
+        + "bölüm ataması için yöneticinize başvurun.",
+      capabilities: "Yetkileriniz",
+      capCount: (acik: number, toplam: number) => `${acik}/${toplam} yetki`,
+      canWrite: "Yazabilir",
+      readOnly: "Yalnız okur",
+      capNoteAdmin:
+        "Admin rolü yetkilerin tamamını kapsar — ayrıca yetki ataması yapılmaz.",
+      capNoteSub: "Kapalı yetkiler için yöneticinize başvurabilirsiniz.",
+      footer:
+        "Yazma yetkisi iki boyutludur: yetki bayrağı VE bölüm üyeliği. "
+        + "Yetkisiz istekler sunucuda da reddedilir.",
+    },
+
+    quickActions: {
+      title: "Hızlı işlemler",
+      newCourse: "Ders ekle",
+      newCourseDesc: "Kod, sınıf, dönem ve şube",
+      newWeekly: "Haftalık programa gir",
+      newWeeklyDesc: "Şubeyi güne ve saate yerleştir",
+      newExam: "Sınav planla",
+      newExamDesc: "Vize, final, bütünleme",
+      newLecturer: "Öğretim üyesi ekle",
+      newLecturerDesc: "Kadro, unvan ve birim",
+      newClassroom: "Derslik tanımla",
+      newClassroomDesc: "Bina, kapasite, sınav kapasitesi",
+    },
+
+    activity: {
+      title: "Son işlemleriniz",
+      empty: "Henüz bir işlem yapmadınız.",
+    },
+
+    rules: {
+      title: "Çakışma dağılımı · kural bazında",
+      tabWeekly: "Ders programı",
+      tabExam: "Sınav",
+      tabCross: "Çapraz",
+      none: "Bu kolda çakışma yok.",
+      allClear: "Hiç çakışma yok — program temiz.",
+      noteWeekly:
+        "Engel kurallar taslağın onaya gitmesini durdurur; uyarılar durdurmaz.",
+      noteExam: "Sınav taraması yayındaki sınav takvimini kapsar.",
+      noteCross:
+        "Çapraz tarama yalnız vize sınavları için çalışır — final ve "
+        + "bütünlemede ders yapılmaz.",
+      seeAll: "Çakışma Raporu",
+    },
+
+    occupancy: {
+      title: "Derslik doluluk",
+      subtitle: (n: number) => `dolu derslik / ${n} derslik · haftalık`,
+      less: "az",
+      more: "çok",
+      empty: "Yayında dersliğe yerleşmiş ders yok.",
+      cellTip: (gun: string, saat: string, dolu: number, toplam: number) =>
+        `${gun} ${saat} · ${toplam} dersliğin ${dolu} tanesi dolu`,
+    },
   },
 };
 

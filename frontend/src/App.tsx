@@ -7,8 +7,8 @@ import ActivatePage from "./pages/ActivatePage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import HomePage from "./pages/HomePage";
-import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import AdminPage from "./pages/AdminPage";
 import WeeklyPage from "./pages/WeeklyPage";
 import ExamsPage from "./pages/ExamsPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
@@ -45,9 +45,14 @@ export default function App() {
           <Route path="/drafts" element={<Navigate to={`/publishing${window.location.search}`} replace />} />
           <Route path="/approvals" element={<Navigate to={`/publishing${window.location.search}`} replace />} />
 
-          {/* Yalnız ADMIN — üçüncü kabuk katmanı */}
+          {/* K-82: Dashboard ana sayfayla birleşti. Derin bağlantılar
+              kırılmasın diye eski yol "/"e yönlenir. */}
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+
+          {/* Yalnız ADMIN — üçüncü kabuk katmanı. K-82'de içerik değişti:
+              kullanıcı yönetimi dashboard'un dibinden buraya taşındı. */}
           <Route element={<RequireAdmin />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Route>
         </Route>
       </Route>

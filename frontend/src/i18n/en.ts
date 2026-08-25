@@ -10,7 +10,6 @@ import type { Dict } from "./tr";
 export const en: Dict = {
   nav: {
     home: "Home",
-    dashboard: "Dashboard",
     departments: "Departments",
     courses: "Courses",
     classrooms: "Classrooms",
@@ -19,6 +18,7 @@ export const en: Dict = {
     exams: "Exams",
     publishing: "Publishing Center",
     conflicts: "Conflict Report",
+    admin: "Administration",
   },
 
   layout: {
@@ -468,20 +468,6 @@ export const en: Dict = {
     ruleHelpHint: "Rule list",
   },
 
-  dashboard: {
-    loadFailed: "Dashboard could not be loaded",
-    departments: "Departments",
-    classrooms: "Classrooms",
-    lecturers: "Lecturers",
-    courses: "Courses",
-    admins: "Admins",
-    subAccounts: "Sub-accounts",
-    exams: "Exams",
-    conflictCard: "Conflicts (blocking / warning)",
-    conflictsTitle: "Conflicts",
-    seeAll: (n: number) => `See all (${n})`,
-  },
-
   users: {
     name: "Name",
     statusCol: "Status",
@@ -500,6 +486,8 @@ export const en: Dict = {
     roleSub: "Sub-account",
     status: { PENDING: "Invited", ACTIVE: "Active", DISABLED: "Inactive" },
     readOnly: "read only",
+    lastLogin: "Last sign-in",
+    neverLoggedIn: "never signed in",
 
     resendInvite: "Resend invitation",
     cancelInvite: "Cancel invitation",
@@ -1134,9 +1122,98 @@ export const en: Dict = {
 
   home: {
     title: "Home",
-    subtitle: "Choose a section from the menu on the left.",
-    backend: "Backend",
-    backendUnreachable: "unreachable",
-    backendChecking: "checking...",
+    loadFailed: "Home page could not be loaded",
+    scopeAll: "all departments",
+    scopeDeps: (n: number) => (n === 1 ? "1 department" : `${n} departments`),
+    scopeNone: "no department assigned",
+    backendOk: "backend running · database connected",
+    backendUnreachable: "backend unreachable",
+    backendChecking: "checking backend…",
+
+    cards: {
+      departments: "Departments",
+      classrooms: "Classrooms",
+      lecturers: "Lecturers",
+      courses: "Courses",
+      exams: "Exams",
+      admins: "Admins",
+      subAccounts: "Sub-accounts",
+      conflicts: "Conflicts (blocking / warning)",
+    },
+
+    identity: {
+      account: (id: number) => `Account #${id}`,
+      active: "Active account",
+      previousLogin: (when: string) => `Previous sign-in ${when}`,
+      firstLogin: "First sign-in",
+      departments: "Departments you can write to",
+      allDepartments: "all",
+      depCount: (n: number) => (n === 1 ? "1 department" : `${n} departments`),
+      noDepartments: "No department assigned",
+      depNoteAdmin:
+        "The admin role needs no department assignment; you can write in every "
+        + "department.",
+      depNoteSub:
+        "Your write permissions apply only to the courses, schedule and exams of "
+        + "these departments. You can view all others.",
+      depNoteNone:
+        "You are not assigned to any department, so your permission flags have no "
+        + "effect — ask your administrator for an assignment.",
+      capabilities: "Your permissions",
+      capCount: (on: number, total: number) => `${on}/${total} permissions`,
+      canWrite: "Can write",
+      readOnly: "Read only",
+      capNoteAdmin:
+        "The admin role covers every permission — no separate assignment is made.",
+      capNoteSub: "Ask your administrator for the permissions you are missing.",
+      footer:
+        "Write access has two dimensions: the permission flag AND department "
+        + "membership. Unauthorized requests are rejected on the server too.",
+    },
+
+    quickActions: {
+      title: "Quick actions",
+      newCourse: "Add course",
+      newCourseDesc: "Code, year, term and sections",
+      newWeekly: "Open weekly schedule",
+      newWeeklyDesc: "Place a section on a day and slot",
+      newExam: "Plan an exam",
+      newExamDesc: "Midterm, final, make-up",
+      newLecturer: "Add lecturer",
+      newLecturerDesc: "Cadre, title and unit",
+      newClassroom: "Add classroom",
+      newClassroomDesc: "Building, capacity, exam capacity",
+    },
+
+    activity: {
+      title: "Your recent actions",
+      empty: "You have not made any changes yet.",
+    },
+
+    rules: {
+      title: "Conflict breakdown · by rule",
+      tabWeekly: "Weekly schedule",
+      tabExam: "Exams",
+      tabCross: "Cross-check",
+      none: "No conflicts in this group.",
+      allClear: "No conflicts at all — the schedule is clean.",
+      noteWeekly:
+        "Blocking rules stop a draft from being submitted; warnings do not.",
+      noteExam: "The exam scan covers the published exam calendar.",
+      noteCross:
+        "The cross-check runs for midterms only — no classes are held during "
+        + "finals and make-ups.",
+      seeAll: "Conflict Report",
+    },
+
+    occupancy: {
+      title: "Classroom occupancy",
+      subtitle: (n: number) => `rooms in use / ${n} rooms · weekly`,
+      less: "low",
+      more: "high",
+      empty: "No published session has a classroom yet.",
+      cellTip: (day: string, time: string, used: number, total: number) =>
+        `${day} ${time} · ${used} of ${total} rooms in use`,
+    },
   },
 };

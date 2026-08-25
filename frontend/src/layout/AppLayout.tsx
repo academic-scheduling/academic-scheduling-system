@@ -55,8 +55,10 @@ type MenuItem = {
 };
 
 const MENU: MenuItem[] = [
+  // K-82: "Dashboard" öğesi KALKTI — içeriği ana sayfayla birleşti. İki ayrı
+  // giriş (biri boş, öteki admin'e kapalı) sistemin en kafa karıştırıcı
+  // yerlerinden biriydi.
   { key: "home", path: "/", icon: IconHome2 },
-  { key: "dashboard", path: "/dashboard", icon: IconLayoutDashboard, adminOnly: true },
   { key: "departments", path: "/departments", icon: IconBuildingBank },
   { key: "courses", path: "/courses", icon: IconBook2 },
   { key: "classrooms", path: "/classrooms", icon: IconDoor },
@@ -67,6 +69,17 @@ const MENU: MenuItem[] = [
   // Herkeste görünür (herkesin taslağı olabilir); rozet bekleyen sayısını verir.
   { key: "publishing", path: "/publishing", icon: IconInbox },
   { key: "conflicts", path: "/conflicts", icon: IconAlertTriangle },
+];
+
+/** Yönetim ekranları (K-82) — menünün altında, AYRI bir öbekte.
+ *
+ *  Ayraçla ayrılmalarının sebebi görsel süs değil: bunlar programı değil
+ *  SİSTEMİ yönetir (davet, rol, yetki). Ötekilerin arasına karışırlarsa
+ *  "Kullanıcılar" da bir veri ekranı sanılır. Öbek ayrıca ileride büyümeye
+ *  hazır bir yer bırakır — ayrı bir admin kabuğu açmadan.
+ */
+const ADMIN_MENU: MenuItem[] = [
+  { key: "admin", path: "/admin", icon: IconLayoutDashboard, adminOnly: true },
 ];
 
 const EXPANDED_WIDTH = 240;
@@ -92,6 +105,7 @@ export default function AppLayout() {
   const items = MENU.filter((m) =>
     (!m.adminOnly || user?.role === "ADMIN")
     && (!m.approverOnly || !!user?.can_approve_schedule));
+  const adminItems = ADMIN_MENU.filter((m) => !m.adminOnly || user?.role === "ADMIN");
 
   const themeLabel = scheme === "dark" ? t.layout.toLightMode : t.layout.toDarkMode;
   const ThemeIcon = scheme === "dark" ? IconSun : IconMoon;
@@ -104,6 +118,47 @@ export default function AppLayout() {
   const otherLang = lang === "tr" ? "en" : "tr";
   const langLabel = lang === "tr" ? t.layout.switchToEnglish : t.layout.switchToTurkish;
   const toggleLang = () => setLang(otherLang);
+
+  /** Tek menü öğesi. İki liste (ana + yönetim) aynı çizimi kullanıyor;
+   *  kopyalansaydı ikisi zamanla ayrışırdı (rozet birinde kalır, ötekinde
+   *  unutulur). */
+  function cizItem(item: MenuItem) {
+    const Icon = item.icon;
+    const active = pathname === item.path;
+    const label = t.nav[item.key];
+    // K-77: Yayın Merkezi'nde bekleyen onay sayısı rozeti.
+    const badge = item.path === "/publishing" && pending > 0
+      ? <Badge size="sm" circle variant="filled" color="blue">{pending}</Badge>
+      : undefined;
+    const link = (
+      <NavLink
+        component={Link}
+        to={item.path}
+        label={collapsed ? undefined : label}
+        leftSection={<Icon size={20} stroke={1.5} />}
+        rightSection={!collapsed ? badge : undefined}
+        active={active}
+        // Daraltılmışken ikonu ortala, boş etiket alanını gizle.
+        styles={
+          collapsed
+            ? {
+                root: { justifyContent: "center", paddingInline: 0 },
+                section: { marginInlineEnd: 0 },
+                body: { display: "none" },
+              }
+            : undefined
+        }
+      />
+    );
+    // Daraltılmışken etiket ikonun yanında yok → hover'da tooltip göster.
+    return collapsed ? (
+      <Tooltip key={item.path} label={label} position="right" withArrow>
+        {link}
+      </Tooltip>
+    ) : (
+      <div key={item.path}>{link}</div>
+    );
+  }
 
   return (
     // Üst bar KALDIRILDI (eski AppShell.Header): başlık, tema, rol ve çıkış artık
@@ -148,44 +203,17 @@ export default function AppLayout() {
 
         {/* ORTA: menü öğeleri (kaydırılabilir) */}
         <AppShell.Section grow component={ScrollArea}>
-          {items.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.path;
-            const label = t.nav[item.key];
-            // K-77: Yayın Merkezi'nde bekleyen onay sayısı rozeti.
-            const badge = item.path === "/publishing" && pending > 0
-              ? <Badge size="sm" circle variant="filled" color="blue">{pending}</Badge>
-              : undefined;
-            const link = (
-              <NavLink
-                component={Link}
-                to={item.path}
-                label={collapsed ? undefined : label}
-                leftSection={<Icon size={20} stroke={1.5} />}
-                rightSection={!collapsed ? badge : undefined}
-                active={active}
-                // Daraltılmışken ikonu ortala, boş etiket alanını gizle.
-                styles={
-                  collapsed
-                    ? {
-                        root: { justifyContent: "center", paddingInline: 0 },
-                        section: { marginInlineEnd: 0 },
-                        body: { display: "none" },
-                      }
-                    : undefined
-                }
-              />
-            );
-            // Daraltılmışken etiket ikonun yanında yok → hover'da tooltip göster.
-            return collapsed ? (
-              <Tooltip key={item.path} label={label} position="right" withArrow>
-                {link}
-              </Tooltip>
-            ) : (
-              <div key={item.path}>{link}</div>
-            );
-          })}
+          {items.map(cizItem)}
+
+          {/* K-82: yönetim öbeği — yalnız ADMIN'de ve ayraçtan sonra. */}
+          {adminItems.length > 0 && (
+            <>
+              <Divider my="xs" />
+              {adminItems.map(cizItem)}
+            </>
+          )}
         </AppShell.Section>
+
 
         {/* ALT: kullanıcı + rol, tema, çıkış */}
         <AppShell.Section>

@@ -14,6 +14,8 @@ export type Role = "ADMIN" | "SUB_ACCOUNT";
 export type User = {
   id: number;
   name: string;
+  /** K-82: kimlik kartı için. Uç zaten yalnız çağıranın kendisini döner. */
+  email: string;
   role: Role;
   department_ids: number[];
   can_manage_courses: boolean;
@@ -22,6 +24,10 @@ export type User = {
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
   can_approve_schedule: boolean;      // K-59: taslağı yayına alma
+  /** K-82: kimlik kartındaki "önceki girişiniz". BU oturumun değil, bir
+   *  öncekinin damgası — sunucu girişte eskisini buraya kopyalayıp yenisini
+   *  yazıyor. Tek damga olsaydı kart hep "az önce" derdi. İlk girişte null. */
+  previous_login_at: string | null;
 };
 
 /** Kontrat §1 · POST /auth/login cevabı */
@@ -313,12 +319,24 @@ export type DashboardSummary = {
   classrooms: number;
   lecturers: number;
   courses: number;
-  admins: number;
-  sub_accounts: number;
+  /** K-82: ADMIN dışında **null** — 0 değil. Sıfır "kullanıcı yok" demektir,
+   *  null "sana gösterilmiyor". Ana sayfa null görünce kartı hiç çizmez. */
+  admins: number | null;
+  sub_accounts: number | null;
   weekly_entries: number;
   exams: number;
   unresolved_hard: number;
   unresolved_warnings: number;
+};
+
+/** Kontrat §10 · GET /dashboard/occupancy (K-82) — haftalık doluluk ısı haritası.
+ *
+ *  `grid[slot-1][gün-1]` = o gün/slotta dolu olan AYRI derslik sayısı.
+ *  Izgara her zaman 9×5 (slot 1..9, gün 1..5). */
+export type OccupancySummary = {
+  /** Payda: aktif derslik sayısı. */
+  classrooms: number;
+  grid: number[][];
 };
 
 /** Kontrat §0 · ConflictResult — motorun ürettiği, UI'ın çizdiği ortak nesne. */
@@ -387,6 +405,9 @@ export type ManagedUser = {
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
   can_approve_schedule: boolean;      // K-59
+  /** K-82: Yönetim tablosunun "Son giriş" sütunu. Başkasına bakan admin için
+   *  anlam doğrudur: "bu hesap en son ne zaman girdi". Hiç girmemişse null. */
+  last_login_at: string | null;
 };
 
 /** Yetenek bayrakları — form ve rozet listelerinin tek kaynağı (K-25, K-59).

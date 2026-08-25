@@ -19,3 +19,9 @@
     animation: none;
   }
 }
+
+/* K-82: ana sayfadaki kural dağılımı satırı — tıklanabilir olduğu hover'da
+   anlaşılsın. Mantine'in `style` prop'u hover taşıyamadığı için sınıf. */
+.rule-row:hover {
+  background: var(--mantine-color-default-hover);
+}

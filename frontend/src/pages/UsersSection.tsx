@@ -13,12 +13,24 @@ import { useAuth } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
 import type { CapabilityKey, Department, ManagedUser, Role, UserStatus } from "../api/types";
 import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 const ALL = "__all__";
 
-/** Sayfa başına kullanıcı satırı. Dashboard tek sayfada dört blok taşıyor;
- *  kullanıcı tablosu diğerlerini aşağı itmemeli. */
-const PAGE_SIZE = 7;
+/** Son giriş damgası: gün + kısa ay + saat. Yıl yok — bir yıldan eski girişte
+ *  saatin bir önemi kalmaz, o zaman da sütun zaten "çok eski" diyor. */
+function girisZamani(iso: string, t: Dict): string {
+  return new Date(iso).toLocaleString(t.locale, {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/** Sayfa başına kullanıcı satırı.
+ *
+ *  K-82: 7 idi — tablo dashboard'da dört bloktan biriydi ve ötekileri aşağı
+ *  itmemesi gerekiyordu. Kendi sayfasına (Yönetim) taşınınca o kısıt kalktı;
+ *  12 satır tipik bir çalışma grubunu tek sayfada gösteriyor. */
+const PAGE_SIZE = 12;
 
 /** K-79: yalnız RENK burada kaldı — renk dile bağlı değil. Etiketler
  *  sözlükte (`t.users.status`), çünkü modül düzeyi dil değişimini göremez. */
@@ -46,19 +58,20 @@ const STATUS_ORDER: Record<UserStatus, number> = {
  *  geniş ekranlarda ise sağda boşluk bırakıyordu. Toplam 100 olmalı.
  */
 const COL = {
-  ad: "15%",
-  eposta: "22%",
-  rol: "10%",
-  durum: "9%",
-  bolumler: "17%",
-  yetkiler: "19%",
+  ad: "14%",
+  eposta: "18%",
+  rol: "9%",
+  durum: "8%",
+  bolumler: "15%",
+  yetkiler: "17%",
+  sonGiris: "11%",     // K-82
   eylem: "8%",
 } as const;
 
 /** Bu genişliğin altında sütunlar okunmaz hale gelir; tablo ezilmek yerine
  *  yatay kayar. Telefonda veri tablosunu kaydırmak kabul gören bir desendir —
  *  sütunu yok etmekten ya da 20px'e sıkıştırmaktan iyidir. */
-const TABLE_MIN_WIDTH = 820;
+const TABLE_MIN_WIDTH = 960;   // K-82: sekizinci sütun (son giriş) eklendi
 
 type FormValues = {
   name: string;
@@ -334,7 +347,7 @@ export default function UsersSection() {
 
   return (
     <>
-      <Group justify="space-between" align="baseline" mt="xl" mb="sm">
+      <Group justify="space-between" align="baseline" mb="sm">
         <Title order={4}>{t.users.title}</Title>
         <Button size="xs" onClick={openInvite}>{t.users.invite}</Button>
       </Group>
@@ -390,6 +403,7 @@ export default function UsersSection() {
               <Table.Th w={COL.durum}>{t.users.statusCol}</Table.Th>
               <Table.Th w={COL.bolumler}>{t.users.departments}</Table.Th>
               <Table.Th w={COL.yetkiler}>{t.users.permissions}</Table.Th>
+              <Table.Th w={COL.sonGiris}>{t.users.lastLogin}</Table.Th>
               <Table.Th w={COL.eylem} />
             </Table.Tr>
           </Table.Thead>
@@ -444,6 +458,16 @@ export default function UsersSection() {
                           <Text size="sm" c="dimmed">{t.users.readOnly}</Text>
                         )}
                       </Group>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    {/* K-82: "hiç girmedi" ile "uzun zamandır girmedi" farklı
+                        şeyler. Boş bırakmak ikisini aynı gösterirdi; davet
+                        edilip gelmemiş hesap bu sütunda açıkça görünmeli. */}
+                    {u.last_login_at ? (
+                      <Text size="sm" c="dimmed">{girisZamani(u.last_login_at, t)}</Text>
+                    ) : (
+                      <Text size="sm" c="dimmed" fs="italic">{t.users.neverLoggedIn}</Text>
                     )}
                   </Table.Td>
                   <Table.Td>

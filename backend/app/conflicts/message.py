@@ -163,6 +163,15 @@ def _msg_e3(a, b):
         f"Exam lecturer conflict: the {A} and {B} exams have the same supervisor "
         f"at {T}.")
 
+def _msg_e9(a, b):
+    A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
+    return _pick(
+        f"Gözetmen çakışması: {A} ve {B} sınavlarında {T}'te aynı kişi "
+        f"görevli — gözetmenlerden biri değiştirilmeli.",
+        f"Invigilator conflict: the same person is assigned to the {A} and {B} "
+        f"exams at {T} — one of the invigilators must be changed.")
+
+
 def _msg_e4a(a, b):
     D, Y, S = dept_label(a), a["year"], a["semester"]
     A, B, T = exam_label(a), exam_label(b), exam_time_label(a)
@@ -239,6 +248,15 @@ def _msg_x2(exam, weekly):
         f"Exam-course cohort warning: the {X} exam overlaps with the same cohort's "
         f"{C} session ({CT}).")
 
+def _msg_x4(exam, weekly):
+    X, C, CT = exam_label(exam), course_label(weekly), weekly_time_label(weekly)
+    return _pick(
+        f"Sınav-ders gözetmen uyarısı: {X} sınavının gözetmeni, {C} dersinde "
+        f"({CT}) aynı anda görünüyor.",
+        f"Exam-course invigilator warning: an invigilator of the {X} exam is "
+        f"also in the {C} session ({CT}) at the same time.")
+
+
 def _msg_x3(exam, weekly):
     X, C, CT = exam_label(exam), course_label(weekly), weekly_time_label(weekly)
     return _pick(
@@ -266,6 +284,7 @@ MESSAGE_BUILDERS = {
     "E1": _msg_e1,
     "E2": _msg_e2,
     "E3": _msg_e3,
+    "E9": _msg_e9,          # K-81: gozetmen cakismasi
     "E4a": _msg_e4a,
     "E4b": _msg_e4b,
     "E5": _msg_e5,
@@ -277,6 +296,7 @@ MESSAGE_BUILDERS = {
     "X1": _msg_x1,
     "X2": _msg_x2,
     "X3": _msg_x3,
+    "X4": _msg_x4,        # K-81: gozetmen derste
 }
 
 

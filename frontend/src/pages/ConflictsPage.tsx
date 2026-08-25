@@ -342,8 +342,9 @@ const RULE_CATALOG: { kod: string; hard: boolean }[] = [
   { kod: "E1", hard: true },   { kod: "E2", hard: true },   { kod: "E3", hard: true },
   { kod: "E4a", hard: true },  { kod: "E4b", hard: false }, { kod: "E5", hard: false },
   { kod: "E5a", hard: false }, { kod: "E6", hard: true },   { kod: "E7", hard: false },
-  { kod: "E8", hard: false },
+  { kod: "E8", hard: false },  { kod: "E9", hard: false },   // E9: K-81 gözetmen
   { kod: "X1", hard: true },   { kod: "X2", hard: false },  { kod: "X3", hard: false },
+  { kod: "X4", hard: false },                                // X4: K-81 gözetmen
 ];
 
 function RuleHelp() {

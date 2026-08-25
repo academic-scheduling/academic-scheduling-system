@@ -130,6 +130,12 @@ ERRORS: dict[str, str] = {
     "Şube bulunamadı": "Section not found",
     "Geçersiz hoca seçimi": "Invalid lecturer selection",
     "Geçersiz derslik seçimi": "Invalid classroom selection",
+    # K-81 · gözetmenler
+    "Geçersiz gözetmen seçimi": "Invalid invigilator selection",
+    "Aynı gözetmen birden çok kez eklenemez":
+        "The same invigilator cannot be added more than once",
+    "Sınav sorumlusu aynı zamanda gözetmen olarak eklenemez":
+        "The exam supervisor cannot also be added as an invigilator",
     "Geçersiz cohort bölümü": "Invalid cohort department",
     "Bu derste bu şube no zaten var": "This section number already exists for this course",
     "Dersin kendi cohort'u ek olarak eklenemez (zaten kapsanıyor)":

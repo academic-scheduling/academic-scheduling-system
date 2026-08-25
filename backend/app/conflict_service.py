@@ -122,6 +122,11 @@ def _exam_to_dict(x: Exam) -> dict:
         "start_time": x.start_time,
         "duration_minutes": x.duration_minutes,
         "lecturer_id": x.lecturer_id,
+        # K-81: gozetmenler. Motor bunu SORUMLUDAN AYRI tutuyor cunku
+        # cakismanin mesaji hangi rolun catistigini soylemeli; tek bir "kisi
+        # kumesi" alani olsaydi E9 "bu kisi iki sinavda" diyebilir ama
+        # "gozetmen olarak" diyemezdi.
+        "invigilator_ids": [g.id for g in x.invigilators],
         "department_id": c.department_id,
         "department_name": c.department.name,
         "year": c.year,
@@ -273,6 +278,7 @@ def _exam_universe(
             .selectinload(Course.extra_cohorts)
             .selectinload(CourseCohort.department),
             selectinload(Exam.classrooms),
+            selectinload(Exam.invigilators),   # K-81 (N+1 onleme)
         )
         .all()
     )

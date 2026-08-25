@@ -8,7 +8,7 @@ import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft,
-  IconChevronRight, IconMapPin, IconPlus, IconTrash, IconUser, IconX,
+  IconChevronRight, IconMapPin, IconPlus, IconTrash, IconUser, IconUsers, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
@@ -1418,6 +1418,23 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClic
         </Group>
       )}
 
+      {/* K-81: gözetmenler. Karta İSİMLER değil SAYI yazılıyor — kart dar ve
+          zaten ders/derslik/sorumlu taşıyor; üç isim daha eklemek kartı
+          okunmaz yapardı. İsimler ipucunda; tam listeye düzenleme
+          penceresinden ulaşılıyor. Gözetmen yoksa satır hiç çizilmiyor:
+          "0 gözetmen" bir bilgi değil, isteğe bağlı bir alanın boşluğudur. */}
+      {showLecturer && e.invigilators.length > 0 && (
+        <Tooltip label={e.invigilators.map(lecturerLabel).join(" · ")}
+          multiline maw={280} openDelay={200}>
+          <Group gap={4} wrap="nowrap" mt={2} style={{ minWidth: 0, cursor: "help" }}>
+            <IconUsers size={12} stroke={1.8} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
+            <Text fz={12} truncate style={{ color: TEXT_MUTED }}>
+              {t.exams.invigilatorCount(e.invigilators.length)}
+            </Text>
+          </Group>
+        </Tooltip>
+      )}
+
       {(hard || warn) && (
         <span title={hard ? t.exams.hardTip : t.exams.warnTip}
           onClick={(ev) => {
@@ -1482,6 +1499,9 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [sure, setSure] = useState(exam?.duration_minutes ?? 90);
   const [odalar, setOdalar] = useState<string[]>(exam?.classrooms.map((c) => String(c.id)) ?? []);
   const [hoca, setHoca] = useState<string | null>(exam ? String(exam.lecturer.id) : null);
+  // K-81: gözetmenler — isteğe bağlı, 0..N.
+  const [gozetmenler, setGozetmenler] = useState<string[]>(
+    exam?.invigilators.map((l) => String(l.id)) ?? []);
   const [not, setNot] = useState(exam?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
@@ -1501,6 +1521,23 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId, tip, midtermCount]);
 
+  /** Sorumlu, gözetmen listesinde OLAMAZ (sunucu 400 verir). İki yerde
+   *  koruyoruz: sorumlu seçeneklerinden gözetmenleri çıkarmak yerine
+   *  GÖZETMEN seçeneklerinden sorumluyu çıkarıyoruz — sorumlu zorunlu alan,
+   *  onu kısıtlamak kullanıcıyı asıl işinden alıkoyardı. */
+  const gozetmenSecenekleri = useMemo(
+    () => lecturers.filter((l) => String(l.id) !== hoca),
+    [lecturers, hoca]);
+  /** Sorumlu SONRADAN gözetmenlerden biri seçilirse form sessizce geçersiz
+   *  olurdu; o kişiyi listeden düşürüyoruz. Sessiz düzeltme burada doğru:
+   *  kullanıcı sorumluyu değiştirdi, gözetmenliği kaldırmayı ayrıca
+   *  düşünmesi gerekmemeli. */
+  useEffect(() => {
+    if (hoca && gozetmenler.includes(hoca)) {
+      setGozetmenler((g) => g.filter((x) => x !== hoca));
+    }
+  }, [hoca, gozetmenler]);
+
   const haftaSonu = isWeekend(tarih);
   const eksik = !courseId || !tarih || !saat || !hoca || haftaSonu;
 
@@ -1511,7 +1548,8 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         exam_type: tip, exam_index: tip === "MIDTERM" ? vizeNo : 1,   // K-46
         exam_date: tarih, start_time: saat,
         duration_minutes: sure, classroom_ids: odalar.map(Number),
-        lecturer_id: Number(hoca), notes: not || null,
+        lecturer_id: Number(hoca), invigilator_ids: gozetmenler.map(Number),
+        notes: not || null,
       };
       if (duzenle) {
         const res = await api.patch<{ conflicts: ConflictResult[] }>(
@@ -1571,6 +1609,14 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         <Select label={t.exams.supervisor} value={hoca} onChange={setHoca} searchable
           placeholder={t.exams.pickLecturer}
           data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />
+        {/* K-81: gözetmenler. Sorumlunun ALTINDA duruyor çünkü ona ek —
+            isteğe bağlı olduğu placeholder'dan da okunuyor. */}
+        <MultiSelect label={t.exams.invigilators} value={gozetmenler}
+          onChange={setGozetmenler} searchable clearable
+          placeholder={gozetmenler.length ? undefined : t.exams.pickInvigilators}
+          description={t.exams.invigilatorsHint}
+          data={gozetmenSecenekleri.map((l) => ({
+            value: String(l.id), label: lecturerLabel(l) }))} />
         <TextInput label={t.exams.note} value={not} onChange={(ev) => setNot(ev.currentTarget.value)}
           placeholder={t.exams.optional} />
         <Group justify="flex-end" gap="xs" mt="xs">

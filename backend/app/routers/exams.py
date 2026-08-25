@@ -64,6 +64,49 @@ def _validate_exam_refs(db: Session, user: User, data: dict) -> None:
         ).count()
         if owned != len(set(ids)):
             raise HTTPException(status_code=400, detail="Geçersiz derslik seçimi")
+    # K-81 · gözetmenler. Üç ayrı kontrol, üçü de AYRI hata veriyor: hepsini
+    # "geçersiz gözetmen" diye tek mesaja toplamak, kullanıcıya neyi
+    # düzelteceğini söylemez.
+    if data.get("invigilator_ids"):
+        gids = data["invigilator_ids"]
+        # (1) Tekrar: aynı hocayı iki kez eklemek. Birleşik PK bunu zaten
+        #     reddeder ama IntegrityError anlaşılmaz bir 500 olurdu.
+        if len(set(gids)) != len(gids):
+            raise HTTPException(status_code=400,
+                                detail="Aynı gözetmen birden çok kez eklenemez")
+        # (2) İzolasyon: başka workgroup'un hocası (çapraz-FK).
+        owned = db.query(Lecturer.id).filter(
+            Lecturer.id.in_(gids),
+            Lecturer.workgroup_id == user.workgroup_id,
+        ).count()
+        if owned != len(set(gids)):
+            raise HTTPException(status_code=400, detail="Geçersiz gözetmen seçimi")
+        # (3) Sorumlu gözetmen olamaz. Aynı kişiyi iki rolde göstermek bilgi
+        #     katmaz ama E9'da kendi kendisiyle çakışıyor gibi görünürdü.
+        #     `lecturer_id` PATCH'te gelmemiş olabilir; o zaman kayıttaki
+        #     değere bakmak çağıranın işi (aşağıda `_sorumlu_gozetmen_mi`).
+        if data.get("lecturer_id") is not None and data["lecturer_id"] in gids:
+            raise HTTPException(
+                status_code=400,
+                detail="Sınav sorumlusu aynı zamanda gözetmen olarak eklenemez")
+
+
+def _load_invigilators(db: Session, lecturer_ids: list[int]) -> list[Lecturer]:
+    if not lecturer_ids:
+        return []
+    return db.query(Lecturer).filter(Lecturer.id.in_(lecturer_ids)).all()
+
+
+def _reddet_sorumlu_gozetmen(sorumlu_id: int, gozetmen_ids: list[int]) -> None:
+    """PATCH'te sorumlu ile gözetmen listesi AYRI alanlardan gelebiliyor.
+
+    `_validate_exam_refs` yalnız gövdedeki ikisini karşılaştırabilir; biri
+    gövdede yoksa (örneğin yalnız gözetmen güncelleniyor) karşılaştırma
+    kayıttaki değerle yapılmalı. Bu yüzden son karar çağıranda veriliyor."""
+    if sorumlu_id in gozetmen_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Sınav sorumlusu aynı zamanda gözetmen olarak eklenemez")
 
 
 def _ensure_weekday(exam_date: date) -> None:
@@ -127,6 +170,7 @@ def _eager_exam_query(db: Session, published_only: bool = True):
             selectinload(Exam.course).selectinload(Course.sections),
             selectinload(Exam.classrooms).selectinload(Classroom.building),
             selectinload(Exam.lecturer),
+            selectinload(Exam.invigilators),   # K-81: ExamOut listeliyor (N+1 önleme)
         )
     )
     return q.filter(Exam.draft_id.is_(None)) if published_only else q

@@ -444,6 +444,16 @@ class Lecturer(Base):
         back_populates="lecturer"
     )
     exams: Mapped[list["Exam"]] = relationship(back_populates="lecturer")
+    # K-81: bu hocanin GOZETMEN olarak gorevli oldugu sinavlar. Ters yon
+    # bilincli olarak taniml: `exam_invigilators` RESTRICT tasiyor, yani
+    # "bu hoca silinebilir mi?" sorusunun uc bagimlisi var (sube, sinav,
+    # gozetmenlik). Ucuncusu ORM'den okunamiyorsa sorgular onu sessizce
+    # atlar ve silme ancak veritabani duzeyinde patlar.
+    # `secondary` STRING olarak veriliyor: tablo bu siniftan SONRA
+    # tanimlaniyor, nesne olarak referans vermek NameError verirdi.
+    invigilated_exams: Mapped[list["Exam"]] = relationship(
+        secondary="exam_invigilators", back_populates="invigilators"
+    )
 
 
 class Building(Base):
@@ -901,6 +911,39 @@ exam_classrooms = Table(
 )
 
 
+# Sinav <-> gozetmen cok-a-cok baglantisi (K-81). exam_classrooms ile BIREBIR
+# ayni desen: ek kolonu yok, o yuzden model sinifi degil sade Table.
+#
+# NEDEN AYRI TABLO, neden `lecturer_id` (sorumlu) buraya KATLANMADI:
+# sorumlu ile gozetmen ayni sey degil. Sorumlu sinavin sahibi -- her sinavda
+# TAM BIR tane olmak zorunda ve E3/X3 kurallari onun uzerine kurulu. Gozetmen
+# istege bagli ve 0..N. Ikisini tek tabloya katlamak, sorumlunun zorunlulugunu
+# tablo duzeyinde ifade edilemez hale getirir ve "sorumlu" diyen butun
+# mesajlari/kurallari yeniden yazmayi gerektirirdi (yikici migration).
+#
+# RESTRICT: gozetmenligi olan hoca silinemez (sorumluyla ayni koruma).
+# CASCADE: sinav silinince satirlar gider.
+exam_invigilators = Table(
+    "exam_invigilators",
+    Base.metadata,
+    Column(
+        "exam_id",
+        BigInteger,
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "lecturer_id",
+        BigInteger,
+        ForeignKey("lecturers.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    # Birlesik birincil anahtar ayni hocayi ayni sinava iki kez eklemeyi zaten
+    # engelliyor; bu indeks ters yonu (bir hocanin gozetmenlikleri) hizlandirir.
+    Index("idx_exam_invigilators_lecturer", "lecturer_id"),
+)
+
+
 class Exam(Base):
     """exams — bir DERSIN bir sinavi (vize/final/butunleme).
 
@@ -981,6 +1024,12 @@ class Exam(Base):
     classrooms: Mapped[list["Classroom"]] = relationship(
         secondary=exam_classrooms
     )  # tek yonlu
+    # K-81: gozetmenler. Tek yonlu ve `lecturer` (sorumlu) iliskisinden AYRI --
+    # bir hoca ayni sinavda hem sorumlu hem gozetmen olamaz (router zorlar),
+    # ama iki farkli sinavda iki farkli rolde olabilir; E9 tam bunu yakalar.
+    invigilators: Mapped[list["Lecturer"]] = relationship(
+        secondary=exam_invigilators, back_populates="invigilated_exams"
+    )
 
     @property
     def total_expected_students(self) -> int:

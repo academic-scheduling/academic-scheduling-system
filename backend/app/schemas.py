@@ -466,6 +466,11 @@ class ExamCreate(BaseModel):
     duration_minutes: int = Field(ge=10, le=480)
     classroom_ids: list[int] = []             # çoklu derslik; boş = henüz atanmadı (K-17)
     lecturer_id: int
+    # K-81: gözetmenler. İSTEĞE BAĞLI ve 0..N — bu yüzden varsayılanı boş liste,
+    # `None` değil: "gözetmen yok" ile "gözetmen bilgisi verilmedi" ayrımı
+    # CREATE'te anlamsız (yeni kayıtta ikisi de boş demek). Sorumlu bu listede
+    # olamaz; router zorlar.
+    invigilator_ids: list[int] = []
     notes: str | None = None
 
 class ExamUpdate(BaseModel):
@@ -477,6 +482,10 @@ class ExamUpdate(BaseModel):
     duration_minutes: int | None = Field(None, ge=10, le=480)
     classroom_ids: list[int] | None = None    # verilirse liste TAM değişir (K-22)
     lecturer_id: int | None = None
+    # K-81: derslik listesiyle AYNI kural — verilirse liste TAM değişir, `None`
+    # "dokunma" demektir (K-22). Boş liste göndermek "gözetmenleri kaldır"dır;
+    # `None` ile ayrımı burada gerçekten gerekli, o yüzden CREATE'ten farklı.
+    invigilator_ids: list[int] | None = None
     notes: str | None = None
 
 class CourseRef(BaseModel):
@@ -504,6 +513,7 @@ class ExamOut(BaseModel):
     duration_minutes: int
     classrooms: list[ExamClassroomRef]
     lecturer: LecturerOut
+    invigilators: list[LecturerOut]           # K-81: 0..N gözetmen (sorumlu hariç)
     total_expected_students: int              # türetilir: aktif şubelerin toplamı (K-16)
     notes: str | None
     # K-60: `status` KALKTI. Satırın "yayında mı" cevabı artık `draft_id`'den

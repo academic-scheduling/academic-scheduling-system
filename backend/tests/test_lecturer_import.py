@@ -44,6 +44,11 @@ def _clean_lecturers():
     db.query(Lecturer).filter(
         ~Lecturer.sections.any(),      # şubesi olan hoca silinemez (RESTRICT)
         ~Lecturer.exams.any(),         # sınavı olan hoca da öyle
+        # K-81: ÜÇÜNCÜ bağımlı. `exam_invigilators` da RESTRICT taşıyor ve bu
+        # satır eklenmeden önce docstring'deki hikâye birebir tekrarlandı —
+        # gözetmen üreten ilk test dosyası gelince 29 test ForeignKeyViolation
+        # ile düştü. Yeni bir RESTRICT bağı her eklendiğinde burası büyümeli.
+        ~Lecturer.invigilated_exams.any(),
     ).delete(synchronize_session=False)
     db.commit()
     db.close()

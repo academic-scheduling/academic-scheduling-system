@@ -106,7 +106,15 @@ expected_students)`.
 | E5a | Kontenjansız derslik seçimi [K-21] | Seçili dersliklerden birinin `exam_capacity` değeri NULL | WARNING — "sınav kontenjanı girilmemiş, önce derslik kaydına girin" | Derslik kümesi boşsa |
 | E6 | Hafta sonu tarihi | `exam_date` Cmt/Paz | **HARD** [K-06] | — (DB CHECK yedekli) |
 | E7 | Gereksiz kontenjan fazlası [K-17] | EN KÜÇÜK `exam_capacity`'li derslik çıkarıldığında kalan toplam `>= total_expected + 10` ise (bariz fazlalık, K-40) | WARNING | Derslik sayısı <= 1 VEYA kümede exam_capacity=NULL derslik varsa (önce E5a) |
+| E9 | Gözetmen çakışması [K-81] | Aynı kişi iki sınavda birden görevli (sorumlu ∪ gözetmen kümeleri kesişiyor) VE en az bir tarafta GÖZETMEN rolünde, tarih+saat kesişiyor | WARNING | İki tarafta da SORUMLU olan kesişim → E3'ün alanı, E9 susar (çift raporlama yok) |
 | E8 | Eksik derslik [K-70] | Sınavın derslik kümesi BOŞ (`rooms=[]`) | WARNING | — (sınavın online kavramı yoktur; dersliksiz her sınav uyarılır. E5/E5a/E7 boş kümede sessizce atlar, E8 tam o boşluğu yakalar) |
+
+**Gözetmen [K-81].** Sınavın `lecturer_id` alanı SORUMLUyu taşır (tam bir tane,
+zorunlu). Buna ek olarak `exam_invigilators` ara tablosuyla 0..N **gözetmen**
+atanabilir; istege bağlıdır. Sorumlu gözetmen listesinde olamaz (router 400).
+E9 WARNING'dir, E3 ise HARD: sorumlu sınavın sahibidir ve yerine biri konamaz
+(çözüm sınavı taşımaktır), gözetmen ise değiştirilebilir — çakışma başka bir
+gözetmen yazılarak çözülür, bütün takvimin yayınını bloke etmek orantısız olur.
 
 Not: Sınavlarda **saat penceresi kuralı yoktur** — 17:30 sonrası serbesttir [K-06].
 Not: E5/E7'de `capacity` DEĞİL `exam_capacity` kullanılır (boşluklu oturma, K-17).
@@ -123,6 +131,7 @@ Dokümandaki tek satırlık "exam vs course" kuralı aslında üç ayrı fizikse
 | X1 | Derslik işgali | Sınavın derslik kümesinden HERHANGİ biri, aynı derslikteki haftalık dersle kesişiyor | **HARD** — fiziksel imkânsızlık, oda ikiye bölünemez |
 | X2 | Cohort | Sınav, aynı cohort'un (bölüm+yıl+dönem) haftalık dersiyle kesişiyor | WARNING — vize haftasında dersler fiilen boş geçebilir; engellemek aşırı katı olur |
 | X3 | Öğretim üyesi | Sınav sorumlusu, aynı anda haftalık derste görünüyor | WARNING — ders o hafta yapılmıyor olabilir |
+| X4 | Gözetmen [K-81] | Sınavın GÖZETMENİ, aynı anda haftalık derste görünüyor | WARNING — X3'ün ikizi, aynı gerekçe. Sorumlu durumu X3'ün alanı; elenmezse aynı çakışma iki kez raporlanır |
 
 Haftalık taraf `ONLINE_ASYNC` ise X1/X2/X3 atlanır (ön-eleme, K-19).
 

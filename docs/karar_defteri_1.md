@@ -3468,3 +3468,59 @@ departments.id` yabancı anahtarı var; kullanıcı ZZ cohort'unda "Taslak Aç"
 derse temizlik IntegrityError ile kırılıyordu — yani tam da vitrin
 KULLANILDIKTAN sonra. Gerçek durumda denendi: 12 ders, 14 sınav, 1 taslak
 silindi, sayımlar başlangıca döndü.
+
+## K-81 · Sınav gözetmenleri (E9 · X4) [S onaylı]
+
+Gerçek sistemde bir sınavda sorumluya EK olarak birden çok **gözetmen**
+görevlendiriliyordu; sistemde yalnız tek bir sorumlu tutulabiliyordu.
+
+**Ayrı ara tablo, sorumlu katlanmadı.** `exam_invigilators(exam_id,
+lecturer_id)` — `exam_classrooms` ile birebir aynı desen (ek kolonu yok, sade
+`Table`). `exams.lecturer_id` olduğu gibi kaldı. Sorumluyu da bu tabloya
+katlamak düşünüldü ve REDDEDİLDİ: sorumlu sınavın sahibidir, TAM BİR tane
+olmak zorundadır ve E3/X3 onun üzerine kurulu; ikisini tek tabloya katlamak
+sorumlunun zorunluluğunu tablo düzeyinde ifade edilemez hale getirir ve
+"sorumlu" diyen bütün mesajları/kuralları yeniden yazmayı gerektirirdi.
+Migration bu sayede tamamen EKLEMELİ — geri alma da veri kaybetmiyor.
+
+**Kapsam:** gözetmen SINAV düzeyinde, derslik başına değil. Gerçekte gözetmen
+dersliğe atanır; o daha derin bir model ve bu turda kapsam dışı bırakıldı.
+
+**E9 · Gözetmen çakışması → WARNING (hoca kararı).** Aynı kişi iki sınavda
+birden görevli ve en az bir tarafta gözetmen. **E3 neden HARD kalırken E9
+WARNING:** sorumlu sınavın sahibidir, yerine biri konamaz — çözüm sınavı
+TAŞIMAKTIR, o yüzden yayını durdurur. Gözetmen ise atanabilir/değiştirilebilir:
+çakışma başka bir gözetmen yazılarak çözülür. Bütün sınav takviminin yayınını
+bunun için bloke etmek orantısız olurdu. **Çift raporlama yok:** iki tarafta da
+SORUMLU olan kesişimi E3 zaten veriyor, E9 o durumda susuyor.
+
+**X4 · Gözetmen derste → WARNING.** X3'ün ikizi; X3 zaten WARNING olduğu için
+(K-12: vize haftasında ders fiilen yapılmayabilir) burada şiddet tartışması
+çıkmadı. Sorumlu durumu X3'ün alanı, elenmezse aynı çakışma iki kez raporlanır.
+K-13 (dersin kendi sınavı) istisnası burada da geçerli.
+
+**Sorumlu gözetmen olamaz.** Çakışma kuralı değil, VERİ BÜTÜNLÜĞÜ: aynı kişiyi
+iki rolde göstermek bilgi katmaz ama E9'da kendi kendisiyle çakışıyor gibi
+görünürdü. Üç ayrı kontrol, üçü ayrı mesaj (tekrar / izolasyon / rol çakışması)
+— hepsini tek "geçersiz gözetmen" mesajına toplamak kullanıcıya neyi
+düzelteceğini söylemezdi. PATCH'te karşılaştırma KAYITTAKİ değere karşı yapılır:
+gövde sorumluyu ve listeyi ayrı ayrı taşıyabildiği için gövdedeki iki alanı
+karşılaştırmak yetmez (sorumlu değişip liste dokunulmadığında da denetlenir).
+Arayüzde gözetmen seçeneklerinden sorumlu çıkarılıyor — tersi değil: sorumlu
+zorunlu alan, onu kısıtlamak kullanıcıyı asıl işinden alıkoyardı.
+
+**`Lecturer.invigilated_exams` ters ilişkisi ŞART.** `exam_invigilators`
+RESTRICT taşıyor, yani "bu hoca silinebilir mi?" sorusunun artık ÜÇ bağımlısı
+var (şube, sınav, gözetmenlik). Üçüncüsü ORM'den okunamazsa sorgular onu
+sessizce atlar ve silme ancak veritabanı düzeyinde patlar. Nitekim patladı:
+`test_lecturer_import.py`nin temizlik bekçisi iki bağımlıyı eliyordu, gözetmen
+üreten ilk test dosyası gelince 29 test birden ForeignKeyViolation ile düştü —
+o dosyanın docstring'indeki hikâyenin birebir tekrarı. **Ders: RESTRICT'li yeni
+bir bağ eklenince o bekçi de büyümeli.**
+
+**Arayüz:** formda sorumlunun ALTINDA çoklu seçim (isteğe bağlı olduğu
+placeholder'dan okunuyor). Kartta İSİM değil SAYI yazıyor — kart dar ve zaten
+ders/derslik/sorumlu taşıyor; isimler ipucunda. Gözetmen yoksa satır hiç
+çizilmiyor: "0 gözetmen" bir bilgi değil, isteğe bağlı bir alanın boşluğudur.
+
+Paket 802 yeşil (776 → 802: 10 motor + 12 API testi).

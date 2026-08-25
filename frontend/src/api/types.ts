@@ -212,6 +212,9 @@ export type Exam = {
   /** Çoklu derslik (K-17); boş liste = derslik henüz atanmadı */
   classrooms: ExamClassroomRef[];
   lecturer: SectionLecturerRef;
+  /** K-81: gözetmenler — 0..N, isteğe bağlı. Sorumlu (`lecturer`) BU LİSTEDE
+   *  DEĞİLDİR; sunucu aynı kişinin iki rolde görünmesini reddeder. */
+  invigilators: SectionLecturerRef[];
   /** Türetilir: dersin aktif şubelerinin expected_students toplamı (K-16) */
   total_expected_students: number;
   notes: string | null;

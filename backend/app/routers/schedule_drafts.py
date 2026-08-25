@@ -40,7 +40,8 @@ from app.models import (
 )
 from app.routers.exams import (
     _e2_message, _eager_exam_query, _ensure_weekday, _get_owned_course,
-    _load_classrooms, _normalize_exam_index, _validate_exam_refs,
+    _load_classrooms, _load_invigilators, _normalize_exam_index,
+    _reddet_sorumlu_gozetmen, _validate_exam_refs,
 )
 from app.routers.schedule_changes import approved_visibility_filter
 from app.routers.weekly_entries import (
@@ -682,8 +683,11 @@ def create_draft_exam(
         db, draft, course.id, payload.exam_type, data["exam_index"])
 
     classroom_ids = data.pop("classroom_ids")
+    gozetmen_ids = data.pop("invigilator_ids")            # K-81
+    _reddet_sorumlu_gozetmen(data["lecturer_id"], gozetmen_ids)
     exam = Exam(draft_id=draft.id, created_by=user.id, **data)
     exam.classrooms = _load_classrooms(db, classroom_ids)
+    exam.invigilators = _load_invigilators(db, gozetmen_ids)
     db.add(exam)
     db.flush()
     log_action(db, user, "CREATE", "exam", exam.id, exam, f"Taslak #{draft.id}")
@@ -727,6 +731,18 @@ def update_draft_exam(
     classroom_ids = data.pop("classroom_ids", None)
     if classroom_ids is not None:      # verilirse liste TAM degisir (K-22)
         exam.classrooms = _load_classrooms(db, classroom_ids)
+    # K-81: gozetmen listesi de ayni kural (K-22). Sorumlu/gozetmen catismasi
+    # KAYITTAKI degere karsi denetlenir: PATCH ikisinden yalnizca birini
+    # tasiyor olabilir, o zaman govdedeki iki alani karsilastirmak yetmez.
+    gozetmen_ids = data.pop("invigilator_ids", None)
+    if gozetmen_ids is not None:
+        _reddet_sorumlu_gozetmen(data.get("lecturer_id", exam.lecturer_id), gozetmen_ids)
+        exam.invigilators = _load_invigilators(db, gozetmen_ids)
+    elif "lecturer_id" in data:
+        # Sorumlu DEGISIYOR ama gozetmen listesi dokunulmuyor: yeni sorumlu
+        # zaten gozetmenler arasindaysa cakisir. Sessizce gecerse kayit
+        # tutarsiz kalirdi.
+        _reddet_sorumlu_gozetmen(data["lecturer_id"], [g.id for g in exam.invigilators])
     ozet = build_change_summary(exam, data)
     for field, value in data.items():
         setattr(exam, field, value)

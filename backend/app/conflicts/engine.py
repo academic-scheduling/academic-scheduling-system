@@ -235,6 +235,37 @@ def e3_exam_lecturer_conflict(a, b):
     return None
 
 
+def _exam_people(x):
+    """Sınavda FİZİKSEL OLARAK bulunması gereken herkes: sorumlu + gözetmenler.
+
+    `invigilator_ids` eski/minimal dict'lerde olmayabilir (testlerdeki sade
+    sözlükler, geriye uyumluluk) — `get` ile okunuyor, yokluğu "gözetmen yok"
+    demek."""
+    return {x["lecturer_id"], *x.get("invigilator_ids", [])}
+
+
+def e9_exam_invigilator_conflict(a, b):
+    """E9 · Gözetmen çakışması (K-81) — WARNING.
+
+    Aynı kişi iki sınavda birden görünüyor ve en az bir tarafta GÖZETMEN.
+
+    **Neden E3'ü genişletmek yerine ayrı kural:** E3 iki tarafta da SORUMLU
+    olan durumdur ve HARD'dır (K-12) — sorumlu sınavın sahibi, yerine biri
+    konamaz, o yüzden çözüm sınavı taşımaktır. Gözetmen ise atanabilir/
+    değiştirilebilir: çakışma başka bir gözetmen yazılarak çözülür, sınavı
+    taşımaya gerek yoktur. Bütün sınav takviminin yayınını bunun için bloke
+    etmek orantısız olurdu.
+
+    **Çift raporlama YOK:** iki tarafta da sorumlu olan kesişimi E3 zaten
+    veriyor; burada o durum eleniyor."""
+    if a["lecturer_id"] == b["lecturer_id"]:
+        return None                       # E3'ün alanı — orada HARD olarak çıkıyor
+    ortak = _exam_people(a) & _exam_people(b)
+    if ortak and exam_sessions_overlap(a, b):
+        return {"rule_id": "E9", "severity": "WARNING"}
+    return None
+
+
 def e4_exam_cohort_conflict(a, b):
     # 1) Aynı öğrenci grubu mu? VE zamanları kesişiyor mu?
     if a["course_id"] == b["course_id"]:
@@ -361,4 +392,23 @@ def x3_exam_weekly_lecturer_conflict(exam, weekly):
 
     if exam["lecturer_id"] == weekly["lecturer_id"] and exam_weekly_overlap(exam, weekly):
         return {"rule_id": "X3", "severity": "WARNING"}
+    return None
+
+
+def x4_exam_weekly_invigilator_conflict(exam, weekly):
+    """X4 · Gözetmen o saatte derste (K-81) — WARNING, X3'ün ikizi.
+
+    X3 zaten WARNING (K-12: vize haftasında ders fiilen yapılmayabilir), bu
+    yüzden gözetmen tarafında şiddeti tartışmak gerekmedi — aynı gerekçe
+    aynı sonucu veriyor.
+
+    Sorumlu durumu X3'ün alanı; burada elenmezse aynı çakışma iki kez
+    raporlanırdı."""
+    if exam["course_id"] == weekly["course_id"]:
+        return None                       # K-13: dersin kendi sınavı
+    if exam["lecturer_id"] == weekly["lecturer_id"]:
+        return None                       # X3'ün alanı
+    if (weekly["lecturer_id"] in set(exam.get("invigilator_ids", []))
+            and exam_weekly_overlap(exam, weekly)):
+        return {"rule_id": "X4", "severity": "WARNING"}
     return None

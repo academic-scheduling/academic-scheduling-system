@@ -27,6 +27,7 @@ def test_summary_has_all_contract_fields():
                  "admins", "sub_accounts", "weekly_entries", "exams",
                  "unresolved_hard", "unresolved_warnings"):
         assert alan in s, f"{alan} alanı eksik"
+        # K-82: admins/sub_accounts admin dışında None; ADMIN çağrısında hepsi int.
         assert isinstance(s[alan], int)
 
 
@@ -157,10 +158,29 @@ def test_conflict_counters_read_from_engine_seam(monkeypatch):
 
 # --- yetki ve izolasyon ---
 
-def test_sub_account_cannot_read_summary():
-    """Dashboard yalnız ADMIN'in (K-33); alt hesap bayrağı ne olursa olsun 403."""
-    r = client.get("/dashboard/summary", headers=sub_headers(can_manage_courses=True))
-    assert r.status_code == 403
+def test_sub_account_can_read_summary_without_user_counts():
+    """K-82: özet artık herkesin (ana sayfa kartları) — ama kullanıcı sayaçları değil.
+
+    Sayaçların çoğu alt hesabın zaten listeleyebildiği veriden türüyor (K-26),
+    o yüzden saklamak anlamsızdı. Kullanıcı sayısı ise yönetim bilgisidir:
+    None döner, sıfır DEĞİL — "kullanıcı yok" ile "sana gösterilmiyor"
+    karışmasın.
+    """
+    s = summary(sub_headers(can_manage_courses=True))
+    assert s["admins"] is None
+    assert s["sub_accounts"] is None
+    # Geri kalan sözleşme alanları alt hesapta da dolu gelmeli.
+    for alan in ("departments", "classrooms", "lecturers", "courses",
+                 "weekly_entries", "exams", "unresolved_hard",
+                 "unresolved_warnings"):
+        assert isinstance(s[alan], int), f"{alan} alt hesapta eksik"
+
+
+def test_admin_still_sees_user_counts():
+    """Admin'de iki sayaç dolu — kart çizilmesinin koşulu bu."""
+    s = summary(admin_headers())
+    assert isinstance(s["admins"], int) and s["admins"] >= 1
+    assert isinstance(s["sub_accounts"], int)
 
 
 def test_anonymous_cannot_read_summary():

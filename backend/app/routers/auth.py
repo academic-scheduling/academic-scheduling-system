@@ -35,6 +35,18 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Kullanıcı hesabı aktif değil",
         )
+    # K-82: once ESKI damgayi previous'a tasi, sonra yenisini yaz. Sira onemli —
+    # tersi olsaydi previous da bu oturumu gosterirdi ve kimlik kartindaki
+    # "onceki girisiniz" satiri her zaman "az once" derdi.
+    #
+    # Bu yazma OTURUM ACMANIN parcasidir, audit kaydi degil: log'a satir
+    # dusurmuyoruz (her giris bir "islem" olsaydi islem kayitlari girislerle
+    # dolar, kimin neyi DEGISTIRDIGI kaybolurdu).
+    user.previous_login_at = user.last_login_at
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
     access_token = create_access_token({"sub": str(user.id)})
     return TokenResponse(access_token=access_token, user=UserPublic.model_validate(user))
 

@@ -70,6 +70,11 @@ Cevap 200:
   "bu kaydı düzenleyebilir miyim?" sorusunu bu iki alandan cevaplar.
   ADMIN'de tüm bayraklar `true` döner (rol muafiyeti istemciye yansıtılır),
   `department_ids` boş gelir — admin zaten tüm bölümlerde yetkilidir.
+  (`can_approve_schedule` de aynı kümededir — K-59.)
+← `previous_login_at` (K-82): ana sayfadaki kimlik kartının "önceki girişiniz"
+  satırı. **Bu oturumun değil, bir öncekinin** damgasıdır: giriş anında eski
+  `last_login_at` buraya kopyalanır, sonra yenisi yazılır. Tek kolon olsaydı
+  kullanıcı kendi kartında hep "az önce" görürdü. İlk girişte `null`.
 Hata 401: geçersiz bilgiler.
 
 ### GET /auth/invitation/{token}   ← K-24
@@ -177,8 +182,13 @@ Hata 400: e-posta izinli domainde değil / geçersiz bölüm seçimi.
 Yalnız `PENDING`. Eski kullanılmamış token'lar geçersiz kılınır, yenisi gönderilir.
 
 ### GET /users → kullanıcı listesi (bölüm atamalarıyla)
-`[ { "id", "name", "email", "role", "status", "department_ids", "can_manage_*" } ]`
+`[ { "id", "name", "email", "role", "status", "department_ids", "can_manage_*",
+  "last_login_at" } ]`
 `status`: `PENDING` (davet edildi, giriş yapmadı) · `ACTIVE` · `DISABLED`.
+← `last_login_at` (K-82): Yönetim sayfasının "Son giriş" sütunu. Burada anlam
+  doğrudur — başkasına bakan admin için "bu hesap en son ne zaman girdi".
+  Hiç giriş yapmamış (PENDING) hesapta `null`. Kişinin KENDİ kartında
+  gösterilen damga bu değil, `previous_login_at`'tir (§1).
 
 ### PATCH /users/{id}   ← K-34
 İstek (hepsi opsiyonel): `{ "name", "role", "department_ids", "status",
@@ -491,8 +501,8 @@ Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": 
 - Alt hesabın çakışmayı çözebilmesi için karşı tarafı görmesi şarttır; ayrıca
   motor mesajları zaten diğer bölümün ders/derslik/saat bilgisini içerir.
 - Çözme (düzenleme) yetkisi yine bayrak + üyelikle sınırlıdır.
-- **Yetki notu:** dashboard özeti (§10) yalnız ADMIN'dir, bu uç DEĞİL — alt hesap
-  da okur (K-26). İki ucun yetkisi bilerek farklıdır.
+- **Yetki notu:** K-82'ye kadar dashboard özeti (§10) yalnız ADMIN'di, bu uç
+  değildi. Artık ikisi de oturumu olan herkese açık — alt hesap da okur (K-26).
 - Sonuç **canlı hesaplanır**, tabloda saklanmaz: çakışmanın id'si ve zaman
   damgası yoktur, "en yeni çakışma" diye bir sıralama mümkün değildir.
 - Motor bağlanana dek iki liste de **boş** döner (`conflict_service` stub —
@@ -502,7 +512,7 @@ Tam tarama (doküman §3.6). Cevap: `{ "hard": [ConflictResult...], "warnings": 
 
 ## 10. Dashboard
 
-### GET /dashboard/summary   ← K-33 (yalnız ADMIN)
+### GET /dashboard/summary   ← K-33 (K-82: oturumu olan herkes)
 Cevap:
 ```json
 { "departments": 2, "classrooms": 5, "lecturers": 9, "courses": 24,
@@ -514,12 +524,31 @@ Cevap:
   öğretim üyesi/ders sayaca girmez — ekranlardaki liste uzunluklarıyla tutsun.
 ← `admins` / `sub_accounts`: yalnız `status="ACTIVE"` hesaplar. PENDING davet
   ve DISABLED hesap sayılmaz (ikisi de sisteme bir şey yapamaz).
-← `exams` ve `weekly_entries`: `active` bayrağı yok, DRAFT + SUBMITTED birlikte
-  sayılır (K-03).
+  **K-82: bu iki alan ADMIN dışında `null` döner** — `0` DEĞİL. Sıfır
+  "kullanıcı yok" demektir; null "sana gösterilmiyor" demektir, istemci de
+  o iki kartı hiç çizmez. Diğer alanlar herkeste doludur, çünkü hepsi alt
+  hesabın zaten listeleyebildiği veriden türer (K-26).
+← `exams` ve `weekly_entries`: `active` bayrağı yok; kapsam YAYINDAKİ
+  programdır (`draft_id IS NULL` — K-59/K-60).
 ← `unresolved_hard` / `unresolved_warnings`: motor bağlanana dek **ikisi de 0**
   döner (`conflict_service` stub — A-3/A-4). Alan adları şimdiden sabit.
-← Dashboard sekiz kart çizer; `weekly_entries` kart olarak gösterilmez ama
-  alan korunur (haftalık program ekranı gelince eklenecek).
+← `weekly_entries` kart olarak gösterilmez ama alan korunur.
+
+### GET /dashboard/occupancy   ← K-82 (oturumu olan herkes)
+Haftalık derslik doluluk ısı haritası (ana sayfa).
+```json
+{ "classrooms": 26, "grid": [[12, 11, 14, 9, 7], ...] }
+```
+← `grid[slot-1][gün-1]` = o gün ve slotta DOLU olan **ayrı derslik** sayısı.
+  Izgara her zaman 9×5'tir (slot 1..9, gün 1..5 — brief §3.4).
+← `classrooms`: payda, aktif derslik sayısı (§10 sayacıyla aynı tanım).
+← Kapsam **yalnız yayındaki program** (`draft_id IS NULL`): kimsenin özel
+  taslağı fakültenin doluluk haritasını şişirmez (K-59).
+← **Dersliksiz giriş sayılmaz.** Online derste derslik olamaz (K-23), yani bu
+  filtre online'ı da eler.
+← Hücrede **giriş değil ayrı derslik** sayılır: aynı derslikte aynı saatte iki
+  giriş zaten W1 çakışmasıdır, iki kez saymak dersliği kapasitesinin üstünde
+  dolu gösterirdi.
 
 ---
 
@@ -558,6 +587,19 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
 ← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
 ← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
   `workgroup_id` kolonu yok.
+← **Not (K-82):** bu ucun ARAYÜZÜ kaldırıldı (dashboard'daki filtreli denetim
+  bloğu). Uç yerinde duruyor; denetim ekranı gerekirse kendi sayfası olarak
+  geri gelir.
+
+### GET /audit-logs/mine?limit=5   ← K-82 (oturumu olan herkes)
+"Son işlemleriniz" — ana sayfadaki kişisel akış. Yeniden eskiye sıralı,
+`AuditLogOut` listesi döner (sayfalama yok, `limit` en fazla 50).
+← **Kapsam her zaman çağıranın kendisidir**; filtre parametresi YOKTUR.
+  `/audit-logs`'a "admin değilse user_id'yi kendine sabitle" koşulu eklemek de
+  mümkündü — eklenmedi, çünkü o zaman tek ucun yetkisi çağıranın rolüne göre
+  değişirdi ve yetki matrisi (K-78) tek satırda okunamaz hale gelirdi.
+← Bu akış "ben ne yaptım" sorusunun cevabıdır. "Başkası ne yaptı da beni
+  etkiledi" AYRI bir akıştır: `/schedule-changes` (§13, K-59).
 
 ---
 

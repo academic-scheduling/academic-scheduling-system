@@ -21,6 +21,10 @@ class UserPublic(BaseModel):
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
     can_approve_schedule: bool = False      # K-59: taslağı yayına alma
+    # K-82: kimlik kartindaki "onceki girisiniz". BU oturumun degil, bir
+    # oncekinin damgasi (auth.login sirayi boyle kuruyor). Hic girmemis
+    # hesapta ve ilk giriste null.
+    previous_login_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
@@ -146,6 +150,9 @@ class UserListItem(BaseModel):
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
     can_approve_schedule: bool = False      # K-59
+    # K-82: Yonetim tablosunun "Son giriş" sutunu. Burada anlam DOGRU: baskasina
+    # bakan admin icin "bu hesap en son ne zaman girdi" sorusunun cevabidir.
+    last_login_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
 # --- Bölümler (WP2) ---
@@ -774,21 +781,42 @@ class DraftClearResponse(BaseModel):
 # --- Dashboard (WP6, K-33) ---
 
 class DashboardSummary(BaseModel):
-    """GET /dashboard/summary cevabi (kontrat 10, K-33).
+    """GET /dashboard/summary cevabi (kontrat 10, K-33, K-82).
 
-    Sekiz kart cizilir; weekly_entries kart degil ama alan korunuyor
-    (kontrat onu zaten vaat etmisti, kaldirmak kirici degisiklik olurdu).
+    weekly_entries kart degil ama alan korunuyor (kontrat onu zaten vaat
+    etmisti, kaldirmak kirici degisiklik olurdu).
+
+    K-82: uc artik TUM oturumlulara acik — sayaclarin cogu zaten herkesin
+    listeleyebildigi veriden turuyor (K-26: okuma workgroup genelinde serbest),
+    dolayisiyla saymak yeni bir sey ifsa etmiyor. TEK istisna asagidaki iki
+    kullanici sayaci: onlar kullanici yonetimi bilgisidir ve admin disinda
+    None doner — istemci de o iki karti hic cizmez.
     """
     departments: int
     classrooms: int
     lecturers: int
     courses: int
-    admins: int
-    sub_accounts: int
+    admins: int | None = None
+    sub_accounts: int | None = None
     weekly_entries: int
     exams: int
     unresolved_hard: int
     unresolved_warnings: int
+
+
+class OccupancySummary(BaseModel):
+    """GET /dashboard/occupancy cevabi (K-82) — haftalik derslik doluluk isi haritasi.
+
+    `grid[slot-1][gun-1]` = o gun/slotta DOLU olan AYRI derslik sayisi;
+    payda `classrooms` (aktif derslik sayisi). Izgara 9x5 sabittir, cunku
+    zaman modeli oyle: slots.py 9 slot, gun 1..5 (brief 3.4).
+
+    Neden ayri bir uc: ayni sayiyi istemcide hesaplamak butun yayindaki
+    yerlesimleri ders/sube/derslik iliskileriyle birlikte cekmek demekti.
+    Bu cevap birkac yuz bayt.
+    """
+    classrooms: int
+    grid: list[list[int]]
 
 
 # --- Islem kayitlari (WP6, K-35) ---

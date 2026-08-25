@@ -252,6 +252,21 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # K-82: giris zaman damgalari. IKI kolon, cunku iki farkli soruya cevap
+    # veriyorlar ve tek kolon ikisini birden veremez:
+    #   last_login_at     -> "bu hesap en son ne zaman girdi" (Yonetim tablosu)
+    #   previous_login_at -> "SIZ bundan onceki sefer ne zaman girdiniz"
+    #                        (kimlik karti). Tek kolon olsaydi kullanicinin
+    #                        kendi karti hep ICINDE BULUNDUGU oturumu gosterir,
+    #                        yani her zaman "az once" yazardi.
+    # Girste once eskisi previous'a kopyalanir, sonra last yazilir (auth.login).
+    # Ikisi de nullable: hic giris yapmamis (PENDING) hesapta deger yoktur.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    previous_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     @property
     def department_ids(self) -> list[int]:

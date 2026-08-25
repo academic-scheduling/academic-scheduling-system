@@ -53,7 +53,17 @@ ADMIN_ONLY = [
     ("PATCH", "/users/1"),
     ("DELETE", "/users/1"),
     ("GET", "/audit-logs"),
-    ("GET", "/dashboard/summary"),
+]
+
+# K-82: OTURUMU OLAN HERKESE açık okuma uçları. Ayrıcalıklı değiller ama
+# kimliksiz de değiller — matrisin A sınıfı (401) burada da geçerli, B sınıfı
+# (403) bilerek geçerli DEĞİL. Listeyi tutmanın sebebi: bir gün biri bu
+# uçlardan birine yanlışlıkla require_admin koyarsa ya da tersine kimlik
+# kapısını düşürürse, aşağıdaki iki süpürme onu yakalasın.
+OPEN_TO_AUTHENTICATED = [
+    ("GET", "/dashboard/summary"),      # kullanıcı sayaçları admin dışında None
+    ("GET", "/dashboard/occupancy"),
+    ("GET", "/audit-logs/mine"),        # kapsam her zaman current_user
 ]
 
 # Bayrak kapısı: (uç listesi, o ucu açan bayrak).
@@ -359,3 +369,25 @@ def test_another_users_draft_is_invisible():
                       headers=other).status_code == 404
     assert client.delete(f"/schedule-drafts/{draft['id']}",
                          headers=other).status_code == 404
+
+
+# ------------------------------------------------------------------
+# A/B eki · Herkese açık okuma uçları (K-82)
+# ------------------------------------------------------------------
+
+@pytest.mark.parametrize("method,path", OPEN_TO_AUTHENTICATED)
+def test_open_read_endpoints_still_need_identity(method, path):
+    """Açık demek KİMLİKSİZ demek değil: token yoksa yine 401."""
+    r = _call(method, path, headers={})
+    assert r.status_code == 401, f"{method} {path} -> {r.status_code}"
+
+
+@pytest.mark.parametrize("method,path", OPEN_TO_AUTHENTICATED)
+def test_open_read_endpoints_accept_flagless_subaccount(method, path):
+    """Hiçbir bayrağı ve bölüm üyeliği olmayan alt hesap bile okuyabilmeli.
+
+    Ana sayfa bu üç ucun üstünde duruyor; biri 403 dönerse en dar yetkili
+    kullanıcının ana sayfası boş kalır.
+    """
+    r = _call(method, path, headers=sub_headers())
+    assert r.status_code == 200, f"{method} {path} -> {r.status_code}"

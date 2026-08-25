@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.deps import get_db, require_admin
+from app.deps import get_current_user, get_db, require_admin
 from app.models import (
     AuditLog, Building, Classroom, Course, CourseSection, Department,
     Exam, Lecturer, User, WeeklyScheduleEntry,
@@ -148,3 +148,49 @@ def list_audit_logs(
             for r in rows
         ],
     )
+
+
+@router.get("/audit-logs/mine", response_model=list[AuditLogOut])
+def list_my_audit_logs(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    limit: int = Query(5, ge=1, le=50),
+):
+    """"Son işlemleriniz" — ana sayfadaki kişisel akış (K-82).
+
+    Yukarıdaki `/audit-logs` bir DENETİM aracıdır (kim neyi değiştirdi) ve
+    admin'e aittir. Bu uç aynı tablodan besleniyor ama başka bir soruya cevap
+    veriyor: "ben en son ne yaptım".
+
+    **Filtre parametresi bilerek YOK.** `/audit-logs`'a "admin değilse user_id'yi
+    kendine sabitle" koşulu eklemek de mümkündü; eklenmedi, çünkü o zaman tek
+    ucun yetkisi çağıranın rolüne göre değişirdi ve yetki matrisi (K-78) tek
+    satırda okunamaz hale gelirdi. Burada kapsam sabit: `current_user`.
+
+    Workgroup izolasyonu ayrıca aranmaz — kendi satırları tanımı gereği kendi
+    workgroup'undadır.
+    """
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == user.id)
+        .options(selectinload(AuditLog.user))
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    etiketler = _resolve_labels(db, rows)
+
+    return [
+        AuditLogOut(
+            id=r.id,
+            created_at=r.created_at,
+            user=AuditActorOut.model_validate(r.user) if r.user else None,
+            action=r.action,
+            entity_type=r.entity_type,
+            entity_id=r.entity_id,
+            entity_label=r.entity_label or etiketler.get((r.entity_type, r.entity_id)),
+            change_summary=r.change_summary,
+        )
+        for r in rows
+    ]

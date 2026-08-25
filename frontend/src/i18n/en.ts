@@ -396,6 +396,11 @@ export const en: Dict = {
     // çizilmiyor. Anahtar tr.ts'ten silindiği için burada da kalamaz (Dict).
     blocking: "Blocking",
     warning: "Warning",
+    severity: "Severity",
+    allSeverities: "All",
+    familyWeekly: "Weekly schedule",
+    familyExam: "Exams",
+    familyCross: "Cross-check",
     rule: "Rule",
     examConflict: "Exam",
     weeklyConflict: "Weekly",
@@ -433,7 +438,7 @@ export const en: Dict = {
       E7: "Unnecessary extra classroom",
       E8: "No exam classroom assigned",
       E9: "Invigilator conflict",
-      X1: "Exam classroom occupied by a course",
+      X1: "Exam — classroom clash",
       X2: "Exam clashes with a cohort course",
       X3: "Exam supervisor is teaching",
       X4: "Invigilator is teaching",
@@ -459,7 +464,7 @@ export const en: Dict = {
       E7: "Capacity still suffices with room to spare even if one classroom is removed.",
       E8: "No classroom selected for the exam.",
       E9: "The same person is on duty at two exams, at least one as invigilator.",
-      X1: "The exam's classroom is in use by a weekly course at that time.",
+      X1: "The exam's classroom is assigned to a weekly course at that time.",
       X2: "The exam falls at the same time as a course of the same year.",
       X3: "The exam supervisor is teaching a weekly course at that time.",
       X4: "An invigilator of the exam is teaching a weekly course at that time.",
@@ -1059,8 +1064,8 @@ export const en: Dict = {
   },
 
   changeFeed: {
-    title: "Recent changes affecting your department",
-    open: "Open",
+    title: "Recent approvals",
+    seeAll: "See all",
     examSchedule: "exam schedule",
     weeklySchedule: "weekly schedule",
   },
@@ -1123,12 +1128,6 @@ export const en: Dict = {
   home: {
     title: "Home",
     loadFailed: "Home page could not be loaded",
-    scopeAll: "all departments",
-    scopeDeps: (n: number) => (n === 1 ? "1 department" : `${n} departments`),
-    scopeNone: "no department assigned",
-    backendOk: "backend running · database connected",
-    backendUnreachable: "backend unreachable",
-    backendChecking: "checking backend…",
 
     cards: {
       departments: "Departments",
@@ -1142,17 +1141,12 @@ export const en: Dict = {
     },
 
     identity: {
-      account: (id: number) => `Account #${id}`,
-      active: "Active account",
       previousLogin: (when: string) => `Previous sign-in ${when}`,
       firstLogin: "First sign-in",
       departments: "Departments you can write to",
       allDepartments: "all",
       depCount: (n: number) => (n === 1 ? "1 department" : `${n} departments`),
       noDepartments: "No department assigned",
-      depNoteAdmin:
-        "The admin role needs no department assignment; you can write in every "
-        + "department.",
       depNoteSub:
         "Your write permissions apply only to the courses, schedule and exams of "
         + "these departments. You can view all others.",
@@ -1163,12 +1157,7 @@ export const en: Dict = {
       capCount: (on: number, total: number) => `${on}/${total} permissions`,
       canWrite: "Can write",
       readOnly: "Read only",
-      capNoteAdmin:
-        "The admin role covers every permission — no separate assignment is made.",
       capNoteSub: "Ask your administrator for the permissions you are missing.",
-      footer:
-        "Write access has two dimensions: the permission flag AND department "
-        + "membership. Unauthorized requests are rejected on the server too.",
     },
 
     quickActions: {
@@ -1188,27 +1177,21 @@ export const en: Dict = {
     activity: {
       title: "Your recent actions",
       empty: "You have not made any changes yet.",
+      clear: "Clear the list",
+      cleared: "List cleared.",
     },
 
     rules: {
-      title: "Conflict breakdown · by rule",
+      title: "Conflict breakdown",
       tabWeekly: "Weekly schedule",
       tabExam: "Exams",
       tabCross: "Cross-check",
       none: "No conflicts in this group.",
       allClear: "No conflicts at all — the schedule is clean.",
-      noteWeekly:
-        "Blocking rules stop a draft from being submitted; warnings do not.",
-      noteExam: "The exam scan covers the published exam calendar.",
-      noteCross:
-        "The cross-check runs for midterms only — no classes are held during "
-        + "finals and make-ups.",
-      seeAll: "Conflict Report",
     },
 
     occupancy: {
       title: "Classroom occupancy",
-      subtitle: (n: number) => `rooms in use / ${n} rooms · weekly`,
       less: "low",
       more: "high",
       empty: "No published session has a classroom yet.",

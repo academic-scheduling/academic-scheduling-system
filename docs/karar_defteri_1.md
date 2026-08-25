@@ -3652,3 +3652,79 @@ yönünde oldu — sıkıştırma bir hedef değildi.
 Kontrat §1/§9/§10/§12 güncellendi. Paket 822 yeşil (802 → 822: `test_k82_home.py`
 16 test + K-78 matrisine 6 parametreli süpürme; `/dashboard/summary`'nin yetki
 testi 403 beklemekten null-alan beklemeye döndü).
+
+### K-82 revizyonu · ilk turdan sonra sadeleştirme
+
+İlk tur çalışır hâle gelince ekranda duran ama iş görmeyen parçalar ayıklandı.
+Ortak ölçüt yine K-80'inki: **her durumda mı duruyor, yoksa söyleyecek sözü
+olduğunda mı?**
+
+**Kaldırılanlar ve nedenleri.** Başlıktaki kapsam yazısı ("tüm bölümler") ve
+"backend çalışıyor · veritabanı bağlı" rozeti: ilki kimlik kartında zaten
+yazıyordu, ikincisi bir GELİŞTİRME tanısıydı — kullanıcı için "her şey yolunda"
+demek, hiçbir şey dememektir; gerçekten çalışmıyorsa sayfa zaten yüklenmez.
+Kimlik kartından "Hesap #1" (kullanıcıya bir şey söylemiyor) ve "Aktif hesap"
+rozeti (oturum açabilmiş olmak zaten kanıtı) düştü. Admin'e gösterilen iki not
+ve "yazma yetkisi iki boyutludur" cümlesi de kalktı: birincisi sütun zaten
+"tümü" derken gereksizdi, ikincisi her ekranda duran bir cümleydi ve bir süre
+sonra okunmuyordu — kartın kendisi iki boyutu zaten yan yana gösteriyor. Alt
+hesapta notlar KALDI, orada gerçekten bilgi taşıyorlar. Kural dağılımından alt
+açıklama ve "Çakışma Raporu" linki de gitti (her satır zaten oraya, üstelik
+kendi kuralıyla süzülmüş gidiyor); ısı haritasının alt başlığı da öyle.
+
+**Kimlik en üste alındı.** Sayfayı açan kişinin ilk sorusu "buradan ne
+yapabilirim"; sayaçlar o sorunun cevabı değil, sistemin durumu.
+
+**Sayaçlar altıya indi ve tıklanabilir oldu.** Yönetici / alt hesap kartları
+ana sayfadan tümüyle çıktı — yönetim bilgisinin yeri Yönetim sayfası; sunucu
+onları hâlâ admin'e döndürüyor ama ana sayfa artık istemiyor. Her kart kendi
+ekranına gidiyor: bir sayı gösterip tıklanamaz olması, kullanıcıyı sol menüde
+aynı yeri aramaya zorluyordu.
+
+**Bölümler alt alta.** Yan yana sarmalanınca satır sonları rastgele düşüyor ve
+liste okunmuyordu; tek sütun hem taramayı kolaylaştırıyor hem kodların hizasını
+koruyor.
+
+**Kural dağılımının sekmeleri sağ üste taşındı.** Kartın en dar kaynağı dikey
+yer ve sekme şeridi tek başına bir satır yiyordu.
+
+**Çakışma Raporu'nun üst segmenti ŞİDDET'ten KOL'a döndü** (Tümü / Ders programı
+/ Sınav / Çapraz). Kullanıcı rapora "haftalık programımda ne var" ya da
+"sınavlarda ne var" diye giriyor; şiddet o soruyu daraltmıyor, ikisini de
+kapsıyor. Ayrıca ana sayfadaki dağılım bloğu da aynı üç kolu kullanıyor — iki
+ekranın aynı listeyi farklı eksende bölmesi iki ayrı zihin haritası
+gerektiriyordu. Şiddet popover'a indi; oradaki eski "Tür" filtresi (haftalık /
+sınav ÖĞESİ) kalktı, çünkü iki kontrol de "ders programı / sınav" diyordu ve
+segment aynı soruyu daha kesin cevaplıyor.
+
+**Derin bağ ÇALIŞMIYORDU.** Ana sayfadan `?rule=W3` ile gelinince rapor
+parametreyi hiç okumuyor, filtresiz liste açıyordu — bağlantı çalışır görünen
+bir hataydı. `rule` artık `department_id`/`year` gibi bir kez okunup URL'den
+temizleniyor.
+
+**"Son işlemleriniz": hiza, sayfalama, temizleme.** Eylem etiketi içeriğe göre
+ölçülünce ("Sildi" ile "Onaya gönderdi") açıklama sütunu her satırda başka
+yerden başlıyordu; sütun sabit genişliğe alındı ve rozet yerine renkli düz
+metin oldu (sabit genişlikte rozetin yarısı boşluk kalıyordu). Sayfa başına beş
+satır, sayfalama İSTEMCİDE: elli satır tek istekte gelir, sayfa değişimi ağ
+turu istemez. **Çöp kutusu düğmesi kaydı SİLMEZ** — silemez de: denetim izini
+failin kendisi silebilseydi iz denetim olmaktan çıkardı (kontrat §12). Düğme
+bir "şimdilik sustur" işareti koyar (localStorage), o andan eski satırlar
+çizilmez, sonra yapılan işlemler yeniden görünür.
+
+**Değişiklik akışı "Son onaylar" oldu ve hep açık.** Eski başlık panelin ne
+olduğunu değil gerekçesini anlatıyordu. K-73'te varsayılan KAPALIYDI ("göz
+yormasın") — ama kapalı bir panel, kimsenin haberi olmadan değişen programı
+duyurma işini yapamaz; panelin var oluş sebebi buydu. Beş satır gösteriliyor;
+`limit + 1` çekilip fazladan gelen satır çizilmeden yalnız "daha var mı"
+sorusunu cevaplıyor — ayrı bir sayaç ucu açmadan "Hepsini gör"ün görünüp
+görünmeyeceğine karar veriyor. Bağlantı Yayın Merkezi'nin "Onaylananlar"
+grubuna gider: aynı kayıtlar ve aynı görünürlük kuralı orada (K-80).
+
+**Isı haritası genişliği sınırlandı.** Sütunlar `1fr` olduğu için kapsayıcı ne
+kadar genişse o kadar açılıyor, hücreler haber niteliğini yitirip birer şeride
+dönüşüyordu.
+
+**X1 kuralının adı değişti:** "Sınav dersi işgal ediyor" → "Sınav — derslik
+çakışması". "İşgal" resmi bir metne ait değil; motorun kendi mesajı zaten
+"Sınav-ders çakışması" diyordu, katalog ondan ayrışıyordu.

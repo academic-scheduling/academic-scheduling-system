@@ -1,7 +1,5 @@
 import { Badge, Group, Paper, Stack, Text } from "@mantine/core";
-import {
-  IconCircleCheck, IconEye, IconLock, IconLogin,
-} from "@tabler/icons-react";
+import { IconCircleCheck, IconEye, IconLogin } from "@tabler/icons-react";
 import type { Department, User } from "../api/types";
 import { CAPABILITIES } from "../api/types";
 import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
@@ -49,17 +47,11 @@ export default function IdentityCard({
             <Badge variant="light" color={admin ? "blue" : "gray"} size="sm">
               {admin ? t.layout.roleAdmin : t.layout.roleSubAccount}
             </Badge>
-            {/* Oturumu açabilmiş olmak hesabın ACTIVE olduğunun kanıtıdır —
-                sunucu her istekte ACTIVE arar (deps.py). Bu rozet bir veri
-                alanını değil, o gerçeği yazıyor. */}
-            <Badge variant="light" color="green" size="sm"
-              leftSection={<IconCircleCheck size={13} />}>
-              {t.home.identity.active}
-            </Badge>
           </Group>
-          <Text fz={13} c={TEXT_MUTED} mt={3}>
-            {user.email} · {t.home.identity.account(user.id)}
-          </Text>
+          {/* "Aktif hesap" rozeti YOK: oturum açabilmiş olmak zaten hesabın
+              ACTIVE olduğunun kanıtı (sunucu her istekte arar). Hesap numarası
+              da yok — kullanıcıya bir şey söylemiyor. */}
+          <Text fz={13} c={TEXT_MUTED} mt={3}>{user.email}</Text>
           <Group gap={6} mt={8} c={TEXT_MUTED}>
             <IconLogin size={14} />
             <Text fz={12}>
@@ -72,8 +64,7 @@ export default function IdentityCard({
       </Group>
 
       {/* ORTA: yetkinin iki boyutu, yan yana */}
-      <Group align="stretch" gap={0} wrap="nowrap"
-        style={{ borderBottom: `1px solid ${BORDER}` }}>
+      <Group align="stretch" gap={0} wrap="nowrap">
         <div style={{ flex: "1 1 0", minWidth: 0, padding: "14px 18px 16px",
           borderRight: `1px solid ${BORDER}` }}>
           <Group justify="space-between" gap="xs" mb={10}>
@@ -89,7 +80,11 @@ export default function IdentityCard({
           {bolumler.length === 0 ? (
             <Text fz={13} c={TEXT_MUTED}>{t.home.identity.noDepartments}</Text>
           ) : (
-            <Group gap={6}>
+            // ALT ALTA, yan yana değil: bölüm adları uzun ("Metalurji ve
+            // Malzeme Mühendisliği") ve sarmalanınca satır sonları rastgele
+            // düşüyor — liste okunmuyordu. Tek sütun hem taramayı kolaylaştırır
+            // hem kodların hizasını korur.
+            <Stack gap={6} align="flex-start">
               {bolumler.map((d) => (
                 // tt="none": Badge varsayılanı BÜYÜK HARF. Bölüm adları özel
                 // ad; büyük harfe çevrilince hem bağırıyor hem uzuyor.
@@ -98,14 +93,18 @@ export default function IdentityCard({
                   {d.name}
                 </Badge>
               ))}
-            </Group>
+            </Stack>
           )}
 
-          <Text fz={12} c={TEXT_MUTED} mt={10} lh={1.5}>
-            {admin ? t.home.identity.depNoteAdmin
-              : bolumler.length === 0 ? t.home.identity.depNoteNone
+          {/* Not YALNIZ alt hesapta: admin'de söylenecek bir şey yok
+              (sütun zaten "tümü" diyor) ve her ekranda duran bir cümle bir
+              süre sonra okunmuyor. */}
+          {!admin && (
+            <Text fz={12} c={TEXT_MUTED} mt={10} lh={1.5}>
+              {bolumler.length === 0 ? t.home.identity.depNoteNone
                 : t.home.identity.depNoteSub}
-          </Text>
+            </Text>
+          )}
         </div>
 
         <div style={{ flex: "1 1 0", minWidth: 0, padding: "14px 18px 16px" }}>
@@ -141,17 +140,12 @@ export default function IdentityCard({
             })}
           </Stack>
 
-          <Text fz={12} c={TEXT_MUTED} mt={10} lh={1.5}>
-            {admin ? t.home.identity.capNoteAdmin : t.home.identity.capNoteSub}
-          </Text>
+          {!admin && (
+            <Text fz={12} c={TEXT_MUTED} mt={10} lh={1.5}>
+              {t.home.identity.capNoteSub}
+            </Text>
+          )}
         </div>
-      </Group>
-
-      {/* ALT: iki boyutun BİRLİKTE gerektiğini söyleyen tek cümle. Kartın
-          asıl mesajı bu; üstteki iki sütun onun kanıtı. */}
-      <Group gap={8} px="lg" py={10} wrap="nowrap" c={TEXT_MUTED}>
-        <IconLock size={15} style={{ flex: "none" }} />
-        <Text fz={12} lh={1.5}>{t.home.identity.footer}</Text>
       </Group>
     </Paper>
   );

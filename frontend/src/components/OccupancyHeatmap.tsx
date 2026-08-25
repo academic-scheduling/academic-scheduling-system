@@ -41,12 +41,14 @@ export default function OccupancyHeatmap({ data }: { data: OccupancySummary }) {
   const enYogun = Math.max(1, ...data.grid.flat());
 
   return (
-    <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} style={{ borderColor: BORDER }}>
+    // maw: ızgara dokuz satır ve beş sütun; sütunlar `1fr` olduğu için
+    // kapsayıcı ne kadar genişse o kadar açılıyordu ve hücreler haber
+    // niteliğini yitirip birer şeride dönüşüyordu. Üst sınır, hücreleri
+    // kareye yakın tutuyor.
+    <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} maw={620}
+      style={{ borderColor: BORDER }}>
       <Group justify="space-between" align="center" mb="md" gap="sm">
-        <Group gap="xs" align="baseline">
-          <Text fz={14} fw={700}>{t.home.occupancy.title}</Text>
-          <Text fz={12} c={TEXT_MUTED}>{t.home.occupancy.subtitle(payda)}</Text>
-        </Group>
+        <Text fz={14} fw={700}>{t.home.occupancy.title}</Text>
         <Group gap={6} align="center" c={TEXT_MUTED}>
           <Text fz={11}>{t.home.occupancy.less}</Text>
           {LEGEND.map((v) => (

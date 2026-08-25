@@ -13,7 +13,8 @@ import type {
 } from "../api/types";
 import { formatSlotRange } from "../utils/slots";
 import { TEXT_MUTED } from "../utils/scheduleTheme";
-import { RULE_CATALOG } from "../utils/conflictRules";
+import type { RuleFamily } from "../utils/conflictRules";
+import { RULE_CATALOG, ruleFamily } from "../utils/conflictRules";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
@@ -36,6 +37,15 @@ import type { Dict } from "../i18n/tr";
 const ALL = "__all__";
 
 type Sev = "ALL" | "HARD" | "WARNING";
+
+/** K-82: üst segmentin boyutu. Şiddet (engel/uyarı) buradan popover'a indi.
+ *
+ *  Gerekçe: kullanıcı rapora "haftalık programımda ne var" ya da "sınavlarda
+ *  ne var" diye giriyor — şiddet o soruyu daralt­mıyor, ikisini de kapsıyor.
+ *  Ayrıca ana sayfadaki dağılım bloğu da aynı üç kolu kullanıyor; iki ekranın
+ *  aynı şeyi farklı eksende bölmesi, aynı listeye iki ayrı zihin haritası
+ *  gerektiriyordu. */
+type Family = "ALL" | RuleFamily;
 
 /** Şiddetin görsel dili — tek yerde, çünkü dört ayrı yerde çiziliyor
  *  (Tür rozeti, kural rozeti, satırın sol kenarı, kural kataloğu).
@@ -111,12 +121,14 @@ export default function ConflictsPage() {
 
   // Bölüm/sınıf filtresi Bölümler sayacından ?department_id= ile önceden gelebilir.
   const [searchParams, setSearchParams] = useSearchParams();
+  const [family, setFamily] = useState<Family>("ALL");
   const [sev, setSev] = useState<Sev>("ALL");
   const [dep, setDep] = useState<string | null>(searchParams.get("department_id"));
   const [year, setYear] = useState<string | null>(searchParams.get("year"));
   const [sem, setSem] = useState<string | null>(null);
-  const [kind, setKind] = useState<string | null>(null);   // "weekly_entry" | "exam"
-  const [rule, setRule] = useState<string | null>(null);
+  // K-82: ana sayfadaki dağılım bloğu `?rule=W3` ile buraya geliyor. Parametre
+  // OKUNMUYORDU — bağlantı çalışıyor görünüp filtresiz liste açıyordu.
+  const [rule, setRule] = useState<string | null>(searchParams.get("rule"));
 
   useEffect(() => {
     let iptal = false;
@@ -144,10 +156,12 @@ export default function ConflictsPage() {
 
   // Deep-link parametrelerini bir kez tüket: state'e alındı, URL'de yapışmasın.
   useEffect(() => {
-    if (!searchParams.has("department_id") && !searchParams.has("year")) return;
+    if (!searchParams.has("department_id") && !searchParams.has("year")
+      && !searchParams.has("rule")) return;
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
     next.delete("year");
+    next.delete("rule");
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -180,12 +194,24 @@ export default function ConflictsPage() {
     if (dep && !c.affected.some((a) => String(a.department_id) === dep)) return false;
     if (year && !c.affected.some((a) => String(a.year) === year)) return false;
     if (sem && !c.affected.some((a) => a.semester === sem)) return false;
-    if (kind && !c.affected.some((a) => a.type === kind)) return false;
+    if (family !== "ALL" && ruleFamily(c.rule_id) !== family) return false;
     return true;
-  }), [hepsi, sev, rule, dep, year, sem, kind]);
+  }), [hepsi, sev, rule, dep, year, sem, family]);
 
   const hardSayi = hepsi.filter((s) => s.hard).length;
   const uyariSayi = hepsi.length - hardSayi;
+
+  /** Segmentin üzerindeki sayılar: her kolda kaç çakışma var. Diğer filtreler
+   *  UYGULANMADAN sayılır — segment "nereye gidebilirim"i gösterir, seçili
+   *  filtrenin sonucunu değil. */
+  const kolSayisi = useMemo(() => {
+    const k: Record<RuleFamily, number> = { W: 0, E: 0, X: 0 };
+    for (const { c } of hepsi) {
+      const f = ruleFamily(c.rule_id);
+      if (f) k[f] += 1;
+    }
+    return k;
+  }, [hepsi]);
 
   /** Seçenekler VERİDEN türetilir: yalnız gerçekten çakışması olan sınıf/dönem/
    *  kural listelensin. Boş seçenek seçtirip "sonuç yok" göstermek, kullanıcıyı
@@ -208,13 +234,15 @@ export default function ConflictsPage() {
     };
   }, [hepsi]);
 
-  /** ŞİDDET bilerek DIŞARIDA: o bir segment, kendi durumu zaten görünür ve
-   *  "Tümü"ne dönmek tek tık. Sayaç ve "temizle" yalnız POPOVER içindeki
-   *  filtreleri anlatır — yoksa "Tümü/Engel/Uyarı"dan birini seçmek ekrana
-   *  ilgisiz bir temizleme butonu düşürüyordu. */
-  const acikFiltre = [dep, year, sem, kind, rule].filter(Boolean).length;
+  /** KOL bilerek dışarıda: o bir segment, kendi durumu zaten görünür ve
+   *  "Tümü"ye dönmek tek tık. Sayaç ve "temizle" yalnız POPOVER içindeki
+   *  filtreleri anlatır — yoksa segmentten birini seçmek ekrana ilgisiz bir
+   *  temizleme butonu düşürüyordu. Şiddet K-82'de popover'a indiği için
+   *  artık sayaca DAHİL. */
+  const acikFiltre = [dep, year, sem, rule].filter(Boolean).length
+    + (sev === "ALL" ? 0 : 1);
   const temizle = () => {
-    setDep(null); setYear(null); setSem(null); setKind(null); setRule(null);
+    setDep(null); setYear(null); setSem(null); setRule(null); setSev("ALL");
   };
 
   if (loading && !scan) return <Loader mt="xl" />;
@@ -227,15 +255,16 @@ export default function ConflictsPage() {
 
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" align="center" wrap="wrap">
-          {/* Şiddet BİRİNCİL boyut, o yüzden popover'da değil dışarıda:
+          {/* KOL birincil boyut, o yüzden popover'da değil dışarıda:
               seçenekler ve sayıları aynı anda görünür. */}
           <SegmentedControl
-            value={sev}
-            onChange={(v: string) => setSev(v as Sev)}
+            value={family}
+            onChange={(v: string) => setFamily(v as Family)}
             data={[
               { value: "ALL", label: `${t.common.all} (${hepsi.length})` },
-              { value: "HARD", label: `${t.conflicts.blocking} (${hardSayi})` },
-              { value: "WARNING", label: `${t.conflicts.warning} (${uyariSayi})` },
+              { value: "W", label: `${t.conflicts.familyWeekly} (${kolSayisi.W})` },
+              { value: "E", label: `${t.conflicts.familyExam} (${kolSayisi.E})` },
+              { value: "X", label: `${t.conflicts.familyCross} (${kolSayisi.X})` },
             ]}
             size="sm"
           />
@@ -274,12 +303,17 @@ export default function ConflictsPage() {
                     value={sem} onChange={setSem}
                     data={secenekler.sems.map((s) => ({
                       value: s, label: t.enums.semester[s as SemesterType] }))} />
-                  <FilterSelect label={t.conflicts.colKind}
-                    placeholder={t.conflicts.allKinds}
-                    value={kind} onChange={setKind}
+                  {/* K-82: eski "Tür" (haftalık/sınav ÖĞESİ) filtresi kalktı —
+                      üstteki kol segmenti aynı soruyu daha kesin cevaplıyordu
+                      ve iki kontrolün ikisi de "ders programı / sınav" diyordu.
+                      Yerine, segmentten inen ŞİDDET. */}
+                  <FilterSelect label={t.conflicts.severity}
+                    placeholder={t.conflicts.allSeverities}
+                    value={sev === "ALL" ? null : sev}
+                    onChange={(v) => setSev((v ?? "ALL") as Sev)}
                     data={[
-                      { value: "weekly_entry", label: t.conflicts.weeklyConflict },
-                      { value: "exam", label: t.conflicts.examConflict },
+                      { value: "HARD", label: `${t.conflicts.blocking} (${hardSayi})` },
+                      { value: "WARNING", label: `${t.conflicts.warning} (${uyariSayi})` },
                     ]} />
                 </Group>
                 <FilterSelect label={t.conflicts.colRule}

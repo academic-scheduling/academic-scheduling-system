@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Anchor, Badge, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
+import { Badge, Button, Group, Paper, Stack, Text } from "@mantine/core";
+import { IconChevronRight } from "@tabler/icons-react";
 import type { ConflictScan } from "../api/types";
 import type { RuleFamily } from "../utils/conflictRules";
 import { ruleFamily, ruleOrder } from "../utils/conflictRules";
@@ -66,24 +66,16 @@ export default function RuleBreakdown({ scan }: { scan: ConflictScan }) {
   const etiket: Record<RuleFamily, string> = {
     W: t.home.rules.tabWeekly, E: t.home.rules.tabExam, X: t.home.rules.tabCross,
   };
-  const not: Record<RuleFamily, string> = {
-    W: t.home.rules.noteWeekly, E: t.home.rules.noteExam, X: t.home.rules.noteCross,
-  };
-
   return (
     <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} style={{ borderColor: BORDER }}>
-      <Group justify="space-between" align="center" mb="md" gap="sm">
+      {/* Sekmeler başlığın ALTINDA değil SAĞ ÜSTTE: kartın en dar kaynağı
+          dikey yer ve sekme şeridi tek başına bir satır yiyordu. Buradaki
+          "Çakışma Raporu" linki de kalktı — her satır zaten oraya, üstelik
+          kendi kuralıyla süzülmüş olarak gidiyor. */}
+      <Group justify="space-between" align="center" mb="md" gap="sm" wrap="wrap">
         <Text fz={14} fw={700}>{t.home.rules.title}</Text>
-        <Anchor component={Link} to="/conflicts" fz={12} fw={600}>
-          {t.home.rules.seeAll}
-        </Anchor>
-      </Group>
-
-      {hicYok ? (
-        <Text fz={13} c={TEXT_MUTED}>{t.home.rules.allClear}</Text>
-      ) : (
-        <>
-          <Group gap={6} mb="md">
+        {!hicYok && (
+          <Group gap={6}>
             {KOLLAR.map((k) => {
               const secili = k === acik;
               return (
@@ -101,7 +93,13 @@ export default function RuleBreakdown({ scan }: { scan: ConflictScan }) {
               );
             })}
           </Group>
+        )}
+      </Group>
 
+      {hicYok ? (
+        <Text fz={13} c={TEXT_MUTED}>{t.home.rules.allClear}</Text>
+      ) : (
+        <>
           {satirlar.length === 0 ? (
             <Text fz={13} c={TEXT_MUTED}>{t.home.rules.none}</Text>
           ) : (
@@ -111,12 +109,6 @@ export default function RuleBreakdown({ scan }: { scan: ConflictScan }) {
               ))}
             </Stack>
           )}
-
-          <Group gap={8} mt="md" pt="md" wrap="nowrap"
-            style={{ borderTop: `1px solid ${BORDER}` }} c={TEXT_MUTED}>
-            <IconInfoCircle size={15} style={{ flex: "none" }} />
-            <Text fz={12} lh={1.5}>{not[acik]}</Text>
-          </Group>
         </>
       )}
     </Paper>

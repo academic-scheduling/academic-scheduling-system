@@ -423,6 +423,12 @@ export const tr = {
     // hiçbir şey çizilmiyor (bkz. ConflictsPage/ConflictTable gerekçesi).
     blocking: "Engel",
     warning: "Uyarı",
+    // K-82: üst segment artık ŞİDDET değil KOL — kural kodunun ilk harfi.
+    severity: "Şiddet",
+    allSeverities: "Tümü",
+    familyWeekly: "Ders programı",
+    familyExam: "Sınav",
+    familyCross: "Çapraz",
     rule: "Kural",
     examConflict: "Sınav",
     weeklyConflict: "Haftalık",
@@ -487,7 +493,7 @@ export const tr = {
       E7: "Gereksiz derslik fazlası",
       E8: "Sınav dersliği girilmemiş",
       E9: "Gözetmen çakışması",
-      X1: "Sınav dersi işgal ediyor",
+      X1: "Sınav — derslik çakışması",
       X2: "Sınav cohort dersiyle çakışıyor",
       X3: "Sınav sorumlusu derste",
       X4: "Gözetmen derste",
@@ -513,7 +519,7 @@ export const tr = {
       E7: "Bir derslik çıkarılsa bile kontenjan fazlasıyla yetiyor.",
       E8: "Sınava hiç derslik seçilmemiş.",
       E9: "Aynı kişi iki sınavda birden görevli, en az biri gözetmenlik.",
-      X1: "Sınavın dersliği o saatte haftalık derste kullanılıyor.",
+      X1: "Sınavın dersliği o saatte haftalık bir derse ayrılmış.",
       X2: "Sınav, aynı sınıfın haftalık dersiyle aynı saate düşüyor.",
       X3: "Sınav sorumlusu o saatte haftalık bir derste görünüyor.",
       X4: "Sınavın gözetmeni o saatte haftalık bir derste görünüyor.",
@@ -1148,8 +1154,11 @@ export const tr = {
   },
 
   changeFeed: {
-    title: "Bölümünüzü etkileyen son değişiklikler",
-    open: "Aç",
+    // K-82: başlık kısaldı. Uzun hâli ("Bölümünüzü etkileyen son
+    // değişiklikler") panelin ne olduğunu değil gerekçesini anlatıyordu;
+    // gerekçe kalıcı bir başlık olamayacak kadar uzundu.
+    title: "Son onaylar",
+    seeAll: "Hepsini gör",
     examSchedule: "sınav takvimi",
     weeklySchedule: "ders programı",
   },
@@ -1212,12 +1221,6 @@ export const tr = {
   home: {
     title: "Ana Sayfa",
     loadFailed: "Ana sayfa yüklenemedi",
-    scopeAll: "tüm bölümler",
-    scopeDeps: (n: number) => (n === 1 ? "1 bölüm" : `${n} bölüm`),
-    scopeNone: "bölüm atanmamış",
-    backendOk: "backend çalışıyor · veritabanı bağlı",
-    backendUnreachable: "backend'e erişilemiyor",
-    backendChecking: "backend kontrol ediliyor…",
 
     cards: {
       departments: "Bölümler",
@@ -1231,16 +1234,12 @@ export const tr = {
     },
 
     identity: {
-      account: (id: number) => `Hesap #${id}`,
-      active: "Aktif hesap",
       previousLogin: (ne_zaman: string) => `Önceki girişiniz ${ne_zaman}`,
       firstLogin: "İlk girişiniz",
       departments: "Yetkili olduğunuz bölümler",
       allDepartments: "tümü",
       depCount: (n: number) => `${n} bölüm`,
       noDepartments: "Bölüm atanmamış",
-      depNoteAdmin:
-        "Admin rolü bölüm ataması gerektirmez; tüm bölümlerde yazma yetkiniz vardır.",
       depNoteSub:
         "Yazma yetkiniz yalnız bu bölümlerin dersleri, programı ve sınavları için "
         + "geçerlidir. Diğer bölümleri görüntüleyebilirsiniz.",
@@ -1251,12 +1250,7 @@ export const tr = {
       capCount: (acik: number, toplam: number) => `${acik}/${toplam} yetki`,
       canWrite: "Yazabilir",
       readOnly: "Yalnız okur",
-      capNoteAdmin:
-        "Admin rolü yetkilerin tamamını kapsar — ayrıca yetki ataması yapılmaz.",
       capNoteSub: "Kapalı yetkiler için yöneticinize başvurabilirsiniz.",
-      footer:
-        "Yazma yetkisi iki boyutludur: yetki bayrağı VE bölüm üyeliği. "
-        + "Yetkisiz istekler sunucuda da reddedilir.",
     },
 
     quickActions: {
@@ -1276,27 +1270,21 @@ export const tr = {
     activity: {
       title: "Son işlemleriniz",
       empty: "Henüz bir işlem yapmadınız.",
+      clear: "Listeyi temizle",
+      cleared: "Liste temizlendi.",
     },
 
     rules: {
-      title: "Çakışma dağılımı · kural bazında",
+      title: "Çakışma dağılımı",
       tabWeekly: "Ders programı",
       tabExam: "Sınav",
       tabCross: "Çapraz",
       none: "Bu kolda çakışma yok.",
       allClear: "Hiç çakışma yok — program temiz.",
-      noteWeekly:
-        "Engel kurallar taslağın onaya gitmesini durdurur; uyarılar durdurmaz.",
-      noteExam: "Sınav taraması yayındaki sınav takvimini kapsar.",
-      noteCross:
-        "Çapraz tarama yalnız vize sınavları için çalışır — final ve "
-        + "bütünlemede ders yapılmaz.",
-      seeAll: "Çakışma Raporu",
     },
 
     occupancy: {
       title: "Derslik doluluk",
-      subtitle: (n: number) => `dolu derslik / ${n} derslik · haftalık`,
       less: "az",
       more: "çok",
       empty: "Yayında dersliğe yerleşmiş ders yok.",

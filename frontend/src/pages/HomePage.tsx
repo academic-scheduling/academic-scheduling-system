@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  Alert, Badge, Grid, Group, Loader, Paper, SimpleGrid, Stack, Text, Title,
+  ActionIcon, Alert, Grid, Group, Loader, Pagination, Paper, SimpleGrid, Stack,
+  Text, Title, Tooltip,
 } from "@mantine/core";
 import {
   IconBook2, IconCalendarWeek, IconChevronRight, IconDoor, IconPencil,
-  IconUsers, type IconProps,
+  IconTrash, IconUsers, type IconProps,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import { AUDIT_ACTION_COLORS } from "../api/types";
@@ -22,26 +23,37 @@ import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
-type Health = { status: string; database: string };
+/** "Son işlemleriniz" bir sayfada kaç satır gösterir. */
+const ACTIVITY_PAGE = 5;
 
-/** "Son işlemleriniz" kaç satır gösterir. */
-const ACTIVITY_LIMIT = 5;
+/** Sunucudan kaç satır çekilir. Sayfalama İSTEMCİDE: akış birkaç sayfalık bir
+ *  özet, denetim ekranı değil — elli satır tek istekte gelir ve sayfa değişimi
+ *  ağ turu istemez. */
+const ACTIVITY_FETCH = 50;
+
+/** "Listeyi temizle" işaretinin tutulduğu yer.
+ *
+ *  Kayıt SİLİNMEZ — silinemez de: denetim izini failin kendisi silebilseydi iz
+ *  denetim olmaktan çıkardı (kontrat §12). Buradaki temizleme yalnız GÖRÜNÜMÜ
+ *  susturur: bu andan eski satırlar akışta çizilmez, sonradan yapılan işlemler
+ *  yeniden görünür. Kişiye ve tarayıcıya özel bir tercih olduğu için
+ *  localStorage yeterli; sunucuda tutulacak bir şey değil. */
+const ACTIVITY_CLEARED_KEY = "activity-cleared-at";
 
 /** Ana sayfa (K-82) — eski `/` ile `/dashboard`'un birleşimi.
  *
- *  **Neden birleşti:** `/` neredeyse boştu (bir sağlık rozeti), dolu olan
- *  `/dashboard` ise yalnız ADMIN'e açıktı. Yani giriş yapan alt hesap hiçbir
- *  şey görmeyen bir sayfaya düşüyor, göreceği şeyler ise kapalı kapının
- *  ardında duruyordu. Tek sayfa var artık; içerik role göre şekilleniyor.
+ *  **Neden birleşti:** `/` neredeyse boştu, dolu olan `/dashboard` ise yalnız
+ *  ADMIN'e açıktı. Yani giriş yapan alt hesap hiçbir şey görmeyen bir sayfaya
+ *  düşüyor, göreceği şeyler ise kapalı kapının ardında duruyordu. Tek sayfa var
+ *  artık; içerik role göre şekilleniyor.
  *
  *  **Neyin gizli olduğu yeniden soruldu:** sayaçların çoğu alt hesabın zaten
- *  listeleyebildiği veriden türüyor (K-26), o yüzden saklanmıyor. Gerçekten
- *  yönetim bilgisi olan iki sayaç (yönetici / alt hesap sayısı) sunucudan
- *  `null` gelir ve kart hiç çizilmez — gizleme kararı istemcide DEĞİL,
- *  sunucuda (brief §10.2).
+ *  listeleyebildiği veriden türüyor (K-26), o yüzden saklanmıyor. Kullanıcı
+ *  sayaçları (yönetici / alt hesap) ise ana sayfaya hiç girmiyor — onların yeri
+ *  Yönetim sayfası.
  *
- *  Kullanıcı yönetimi ve filtreli denetim ekranı bu sayfadan çıkıp Yönetim
- *  sayfasına (`/admin`, yalnız ADMIN) taşındı.
+ *  **Sıra: en üstte KİMLİK.** Sayfayı açan kişinin ilk sorusu "buradan ne
+ *  yapabilirim"; sayaçlar o sorunun cevabı değil, sistemin durumu.
  */
 export default function HomePage() {
   const t = useT();
@@ -57,8 +69,6 @@ export default function HomePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [occupancy, setOccupancy] = useState<OccupancySummary | null>(null);
   const [activity, setActivity] = useState<AuditLog[] | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
-  const [healthError, setHealthError] = useState(false);
 
   useEffect(() => {
     // Sayaçlar ve çakışma taraması sayfanın omurgası: ikisi de sunucuda aynı
@@ -73,43 +83,29 @@ export default function HomePage() {
 
     api.get<Department[]>("/departments").then(setDepartments).catch(() => { /* ikincil */ });
     api.get<OccupancySummary>("/dashboard/occupancy").then(setOccupancy).catch(() => { /* ikincil */ });
-    api.get<AuditLog[]>(`/audit-logs/mine?limit=${ACTIVITY_LIMIT}`)
+    api.get<AuditLog[]>(`/audit-logs/mine?limit=${ACTIVITY_FETCH}`)
       .then(setActivity).catch(() => setActivity([]));
-    api.get<Health>("/health").then(setHealth).catch(() => setHealthError(true));
   }, []);
 
   if (error) return <Alert color="red" mt="md">{error}</Alert>;
   if (!user || !summary || !scan) return <Loader mt="xl" />;
 
-  const admin = user.role === "ADMIN";
-  const kapsam = admin ? t.home.scopeAll
-    : user.department_ids.length === 0 ? t.home.scopeNone
-      : t.home.scopeDeps(user.department_ids.length);
-
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="baseline" gap="md">
-        <Group align="baseline" gap="xs">
-          <Title order={3}>{t.home.title}</Title>
-          <Text size="sm" c="dimmed">{kapsam}</Text>
-        </Group>
-        <Badge variant="light" size="lg"
-          color={health ? "green" : healthError ? "red" : "gray"}>
-          {health ? t.home.backendOk
-            : healthError ? t.home.backendUnreachable : t.home.backendChecking}
-        </Badge>
-      </Group>
+      <Title order={3}>{t.home.title}</Title>
 
-      {/* --- Sayaç kartları --- */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
-        <StatCard label={t.home.cards.departments} value={summary.departments} />
-        <StatCard label={t.home.cards.classrooms} value={summary.classrooms} />
-        <StatCard label={t.home.cards.lecturers} value={summary.lecturers} />
-        <StatCard label={t.home.cards.courses} value={summary.courses} />
-        <StatCard label={t.home.cards.exams} value={summary.exams} />
+      <IdentityCard user={user} departments={departments} />
+
+      {/* --- Sayaç kartları: altısı da ilgili ekrana gider --- */}
+      <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }} spacing="md">
+        <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
+        <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
+        <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
+        <StatCard to="/courses" label={t.home.cards.courses} value={summary.courses} />
+        <StatCard to="/exams" label={t.home.cards.exams} value={summary.exams} />
 
         {/* Çakışma tek kart ama iki sayı: engel taslağın onaya gitmesini
-            durdurur, uyarı durdurmaz (K-05). Kart Çakışma Raporu'na gider. */}
+            durdurur, uyarı durdurmaz (K-05). */}
         <StatCard
           to="/conflicts"
           label={t.home.cards.conflicts}
@@ -125,22 +121,13 @@ export default function HomePage() {
             </Group>
           }
         />
-
-        {/* K-82: kullanıcı sayaçları YALNIZ admin'de gelir (sunucu null döner).
-            `!= null` bilerek: 0 geçerli bir sayıdır, gizlilikle karıştırılmamalı. */}
-        {summary.admins != null && (
-          <StatCard to="/admin" label={t.home.cards.admins} value={summary.admins} />
-        )}
-        {summary.sub_accounts != null && (
-          <StatCard to="/admin" label={t.home.cards.subAccounts} value={summary.sub_accounts} />
-        )}
       </SimpleGrid>
 
       <Grid gutter="lg" align="flex-start">
         <Grid.Col span={{ base: 12, lg: 7 }}>
           <Stack gap="lg">
-            <IdentityCard user={user} departments={departments} />
             <RuleBreakdown scan={scan} />
+            {occupancy && <OccupancyHeatmap data={occupancy} />}
           </Stack>
         </Grid.Col>
 
@@ -155,46 +142,28 @@ export default function HomePage() {
           </Stack>
         </Grid.Col>
       </Grid>
-
-      {occupancy && <OccupancyHeatmap data={occupancy} />}
     </Stack>
   );
 }
 
-/** Tek sayaç kartı: büyük sayı üstte, ne olduğu altında.
+/** Tek sayaç kartı: büyük sayı üstte, ne olduğu altında; tıklanınca o ekrana.
  *
  *  `value` sayı değil DÜĞÜM alır — çakışma kartı tek sayı değil, iki renkli
  *  sayı gösteriyor ("3 / 7"). Kart tipini ikiye bölmek yerine tek bileşen
- *  ikisini de taşıyor. `to` verilirse kart tıklanabilir olur.
+ *  ikisini de taşıyor.
  */
 function StatCard({ label, value, to }: {
-  label: string; value: ReactNode; to?: string;
+  label: string; value: ReactNode; to: string;
 }) {
-  const icerik = (
-    <>
+  return (
+    <Paper component={Link} to={to} withBorder radius="md" p="lg" ta="center"
+      bg={PAGE_SURFACE} className="stat-card"
+      style={{ borderColor: BORDER, textDecoration: "none", color: "inherit" }}>
       {/* component="div": `value` bazen Group taşıyor (çakışma kartı). Text
           varsayılan <p> üretir ve <p> içine <div> koymak geçersiz HTML'dir —
           tarayıcı p'yi erkenden kapatıp hizalamayı bozar. */}
       <Text component="div" fw={700} fz={36} lh={1.1}>{value}</Text>
       <Text size="sm" c="dimmed" mt={6}>{label}</Text>
-    </>
-  );
-
-  // İki ayrı dal: `component`/`to` koşullu yayılırsa TypeScript `to`'yu
-  // opsiyonel görüp Link'in zorunlu prop'uyla çakışıyor.
-  if (to !== undefined) {
-    return (
-      <Paper component={Link} to={to} withBorder radius="md" p="lg" ta="center"
-        bg={PAGE_SURFACE}
-        style={{ borderColor: BORDER, textDecoration: "none", color: "inherit", cursor: "pointer" }}>
-        {icerik}
-      </Paper>
-    );
-  }
-  return (
-    <Paper withBorder radius="md" p="lg" ta="center" bg={PAGE_SURFACE}
-      style={{ borderColor: BORDER }}>
-      {icerik}
     </Paper>
   );
 }
@@ -248,7 +217,7 @@ const ISLEMLER: Islem[] = [
  *
  *  Yetkisiz işlemi gri gösterip "yetkiniz yok" demek de bir seçenekti;
  *  seçilmedi. Kimlik kartı hangi yetkinin kapalı olduğunu zaten satır satır
- *  yazıyor, burada ikinci kez söylemek blok'u yapılamayacak işlerin listesine
+ *  yazıyor, burada ikinci kez söylemek bloğu yapılamayacak işlerin listesine
  *  çevirirdi. Hiçbir işlem kalmıyorsa blok hiç çizilmez.
  */
 function QuickActions({ user }: { user: User }) {
@@ -297,7 +266,15 @@ function QuickActions({ user }: { user: User }) {
   );
 }
 
-/** "Son işlemleriniz" — kendi denetim izinizin son beş satırı (K-82).
+/** Eylem sütununun SABİT genişliği.
+ *
+ *  İçeriğe göre ölçülünce "Sildi" ile "Onaya gönderdi" farklı genişlikte çıkıyor
+ *  ve açıklama her satırda başka yerden başlıyordu; göz listeyi tarayamaz hâle
+ *  geliyordu. Sabit sütun iki dilde de uzun etiketleri taşıyacak kadar geniş,
+ *  taşan kırpılır — hiza bozulmaz. */
+const ACTION_COL = 104;
+
+/** "Son işlemleriniz" — kendi denetim izinizin son satırları (K-82).
  *
  *  Yanındaki `ChangeFeed` ile karıştırılmamalı: bu "ben ne yaptım", o
  *  "başkasının onayı programımı nasıl değiştirdi" (K-59). İkisi ayrı sorular,
@@ -305,49 +282,97 @@ function QuickActions({ user }: { user: User }) {
  */
 function MyActivity({ items }: { items: AuditLog[] | null }) {
   const t = useT();
+  const [page, setPage] = useState(1);
+  const [temizlendi, setTemizlendi] = useState<string | null>(
+    () => localStorage.getItem(ACTIVITY_CLEARED_KEY),
+  );
+
+  /** Temizleme işaretinden ESKİ satırlar çizilmez. Sonradan yapılan yeni bir
+   *  işlem listede yeniden görünür — temizleme bir "şimdilik sustur"dur. */
+  const gosterilecek = useMemo(() => {
+    if (!items) return [];
+    if (!temizlendi) return items;
+    return items.filter((l) => l.created_at > temizlendi);
+  }, [items, temizlendi]);
+
   if (items === null) return null;          // henüz yüklenmedi
+
+  const sayfaSayisi = Math.max(1, Math.ceil(gosterilecek.length / ACTIVITY_PAGE));
+  const gecerliSayfa = Math.min(page, sayfaSayisi);
+  const dilim = gosterilecek.slice(
+    (gecerliSayfa - 1) * ACTIVITY_PAGE, gecerliSayfa * ACTIVITY_PAGE);
+
+  const temizle = () => {
+    const simdi = new Date().toISOString();
+    localStorage.setItem(ACTIVITY_CLEARED_KEY, simdi);
+    setTemizlendi(simdi);
+    setPage(1);
+  };
 
   return (
     <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} style={{ borderColor: BORDER }}>
-      <Text fz={14} fw={700} mb={items.length === 0 ? 6 : 10}>
-        {t.home.activity.title}
-      </Text>
+      <Group justify="space-between" align="center" mb={dilim.length === 0 ? 6 : 10}>
+        <Text fz={14} fw={700}>{t.home.activity.title}</Text>
+        {gosterilecek.length > 0 && (
+          <Tooltip label={t.home.activity.clear} withArrow>
+            <ActionIcon variant="subtle" color="gray" size="sm"
+              aria-label={t.home.activity.clear} onClick={temizle}>
+              <IconTrash size={15} />
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
 
-      {items.length === 0 ? (
-        <Text fz={13} c={TEXT_MUTED}>{t.home.activity.empty}</Text>
+      {dilim.length === 0 ? (
+        <Text fz={13} c={TEXT_MUTED}>
+          {temizlendi ? t.home.activity.cleared : t.home.activity.empty}
+        </Text>
       ) : (
-        <Stack gap={0}>
-          {items.map((log, i) => (
-            <Group key={log.id} gap={10} align="flex-start" wrap="nowrap"
-              style={{ padding: "9px 0", borderTop: i === 0 ? undefined : `1px solid ${BORDER}` }}>
-              <Badge size="sm" variant="light" style={{ flex: "none" }}
-                color={AUDIT_ACTION_COLORS[log.action] ?? "gray"}>
-                {t.enums.auditAction[log.action] ?? log.action}
-              </Badge>
-              <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-                <Text fz={13} truncate>
-                  {/* K-36: etiket işlem anında satıra yazılır, silinen kayıt da
-                      konuşur. Eski satırlarda null olabilir — o zaman tür + id. */}
-                  {log.entity_label
-                    ?? `${t.enums.auditEntity[log.entity_type as keyof typeof t.enums.auditEntity]
-                        ?? log.entity_type} #${log.entity_id}`}
+        <>
+          <Stack gap={0}>
+            {dilim.map((log, i) => (
+              <Group key={log.id} gap={10} align="flex-start" wrap="nowrap"
+                style={{ padding: "9px 0", borderTop: i === 0 ? undefined : `1px solid ${BORDER}` }}>
+                {/* Rozet değil DÜZ METİN: sabit genişlikte bir rozet içi boş
+                    görünüyordu (etiket kısayken rozetin yarısı boşluk). Renk
+                    eylemin türünü yine söylüyor. */}
+                <Text fz={11} fw={700} tt="uppercase" truncate
+                  c={AUDIT_ACTION_COLORS[log.action] ?? "gray"}
+                  style={{ width: ACTION_COL, flex: "none", marginTop: 2 }}>
+                  {t.enums.auditAction[log.action] ?? log.action}
                 </Text>
-                {log.change_summary && (
-                  <Text fz={12} c={TEXT_MUTED} truncate mt={1}>{log.change_summary}</Text>
-                )}
-              </div>
-              <Text fz={12} c={TEXT_MUTED} style={{ flex: "none" }} mt={2}>
-                {kisaZaman(log.created_at, t)}
-              </Text>
+                <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                  <Text fz={13} truncate>
+                    {/* K-36: etiket işlem anında satıra yazılır, silinen kayıt da
+                        konuşur. Eski satırlarda null olabilir — o zaman tür + id. */}
+                    {log.entity_label
+                      ?? `${t.enums.auditEntity[log.entity_type as keyof typeof t.enums.auditEntity]
+                          ?? log.entity_type} #${log.entity_id}`}
+                  </Text>
+                  {log.change_summary && (
+                    <Text fz={12} c={TEXT_MUTED} truncate mt={1}>{log.change_summary}</Text>
+                  )}
+                </div>
+                <Text fz={12} c={TEXT_MUTED} style={{ flex: "none", marginTop: 2 }}>
+                  {kisaZaman(log.created_at, t)}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
+
+          {sayfaSayisi > 1 && (
+            <Group justify="center" mt="sm">
+              <Pagination size="sm" total={sayfaSayisi} value={gecerliSayfa}
+                onChange={setPage} />
             </Group>
-          ))}
-        </Stack>
+          )}
+        </>
       )}
     </Paper>
   );
 }
 
-/** Gün + saat; yıl yok — akış son beş işlemi gösteriyor, yıl gürültü olurdu. */
+/** Gün + saat; yıl yok — akış son işlemleri gösteriyor, yıl gürültü olurdu. */
 function kisaZaman(iso: string, t: Dict): string {
   return new Date(iso).toLocaleString(t.locale, {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",

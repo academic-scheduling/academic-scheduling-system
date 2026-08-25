@@ -25,3 +25,26 @@
 .rule-row:hover {
   background: var(--mantine-color-default-hover);
 }
+
+/* K-82: ana sayfadaki sayaç kartları tıklanabilir. Hover'da hafifçe kalkıp
+   kenarı belirginleşiyor — "buraya basılır" işareti, dikkat çekmeden.
+   `transform` yerine yalnız gölge/kenar kullanılsaydı dokunmatikte hiçbir
+   geri bildirim kalmazdı; 1px'lik kalkış her iki girdi türünde de okunur. */
+.stat-card {
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+.stat-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--mantine-color-default-border) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.10);
+}
+
+/* Hareket hassasiyeti olan kullanıcıda yalnız gölge kalsın. */
+@media (prefers-reduced-motion: reduce) {
+  .stat-card {
+    transition: none;
+  }
+  .stat-card:hover {
+    transform: none;
+  }
+}

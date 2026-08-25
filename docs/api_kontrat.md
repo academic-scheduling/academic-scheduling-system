@@ -60,7 +60,7 @@ edebilir). Motorun eski girişlerde üretmediği durumda `null` olabilir.
 Cevap 200:
 ```json
 { "access_token": "...",
-  "user": { "id": 1, "name": "...", "role": "ADMIN" | "SUB_ACCOUNT",
+  "user": { "id": 1, "name": "...", "email": "...", "role": "ADMIN" | "SUB_ACCOUNT",
     "department_ids": [1, 2],
     "can_manage_courses": false, "can_manage_weekly": false,
     "can_manage_exams": false, "can_manage_classrooms": false,

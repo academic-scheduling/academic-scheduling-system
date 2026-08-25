@@ -13,6 +13,9 @@ class LoginRequest(BaseModel):
 class UserPublic(BaseModel):
     id: int
     name: str
+    # K-82: ana sayfadaki kimlik karti kisinin KENDI e-postasini gosteriyor.
+    # Gizlilik sorusu dogurmaz — bu uc zaten yalnizca cagiranin kendisini doner.
+    email: str
     role: UserRole
     department_ids: list[int] = []          # K-26: yazma kapsamı
     can_manage_courses: bool = False        # K-25: yetenek bayrakları

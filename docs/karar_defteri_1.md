@@ -3327,3 +3327,25 @@ yani seçmeliye kimse gidemez — seçmeli fiilen kapanır; *seçmeli × seçmel
 ise öğrenci birini seçer, bu normaldir ve seçmeli havuzlarında bilerek yapılır.
 İkisi aynı uyarıyı üretiyor. Ayrıştırmak (W4a HARD / W4b WARNING) K-05'i
 değiştirmek demektir; hoca kararı olduğu için koda dokunulmadı.
+
+### K-81 eki · "Açıklama" sütunu — K-80'in mesaj kararının revizyonu [S]
+
+K-80 motorun ürettiği tam mesajı tablodan çıkarıp satır ipucuna (tooltip)
+almıştı; gerekçe, mesajın ders adlarını ve saati (kendi sütunlarında zaten
+duran şeyleri) tekrar etmesiydi. **Hoca kararı [S]: mesaj görünür bir sütun
+olarak geri gelsin.** Gerekçe: ipucu keşfedilebilir değil — kullanıcı üstüne
+gelmeden orada bilgi olduğunu bilmiyor, dokunmatikte hover hiç yok.
+
+Redundansı yok saymadık, ONA GÖRE STİLLEDİK: "Çakışma" sütunu kuralın ADINI
+koyu/birincil verir ("ne tür sorun"), yeni "Açıklama" sütunu tam cümleyi
+soluk/ikincil verir ("tam olarak ne oldu" — kapasite sayısı gibi yalnız mesajda
+olan ayrıntı da burada). Tooltip kaldırıldı: aynı metni hem hover hem sütunla
+vermek, üstelik "cursor: help"le hangi hücrede ipucu var diye yanıltarak,
+gereksizdi.
+
+Yerleşim: Çakışma sabit 210px'e alındı (Açıklama esnesin, cümle sarabildiği
+kadar geniş yer alsın), `minWidth` 950 → 1180 (Tür 92 + Kural 104 + Çakışma 210
++ Cohort 300 + Öğeler 170 = 876, Açıklama'ya en az ~300).
+
+**W4 ayrılmadı [S]:** K-81'in "açık soru"su (W4a HARD / W4b WARNING) hoca
+tarafından kapatıldı — W4 tek kova, WARNING olarak kalıyor. K-05 değişmedi.

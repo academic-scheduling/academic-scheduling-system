@@ -193,6 +193,10 @@ export const tr = {
       exam: "Sınav",
       weekly_entry: "Haftalık giriş",
       user: "Kullanıcı",
+      // K-82: K-59'dan beri yazılıyordu ama sözlükte karşılığı yoktu —
+      // denetim tablosu kaldırılmış olduğu için kimse ham slug'ı görmüyordu.
+      // Tablo Yönetim sayfasına dönünce görünür oldu.
+      schedule_draft: "Taslak",
     },
   },
 

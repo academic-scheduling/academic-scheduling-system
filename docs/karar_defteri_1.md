@@ -3744,3 +3744,22 @@ göstermiyor.
 Kimlik kartına genişlik sınırı (880px) kondu. Tam genişlikte iki iç sütun
 (bölümler + yetkiler) gereğinden fazla açılıyor ve aralarında koca bir boşluk
 kalıyordu — kart "geniş" değil "boş" görünüyordu.
+
+**Üçüncü tur: denetim tablosu Yönetim sayfasına alındı.** İlk turda arayüzden
+tümüyle kaldırılmıştı; gerekçe "herkesin ilk gördüğü ekranda kim-neyi-değiştirdi
+tablosunun işi yok" idi ve o gerekçe hâlâ geçerli — ama ana sayfadan çıkarmak
+ile sistemden çıkarmak aynı şey değil. İz zaten yazılmaya devam ediyordu
+(kontrat §12 borcu, üstelik "Son işlemleriniz"in tek kaynağı); ona bakabilecek
+tek rol olan admin'in bir yeri yoktu. Yeri Yönetim sayfası: davet, yetki ve
+denetim aynı sınıftan işler.
+
+Blok geri gelirken sayfa başına satır 7'den 12'ye çıktı — dashboard'da dört
+bloktan biriyken ötekileri aşağı itmemesi gerekiyordu, artık tek başına duruyor.
+Yönetim sayfası da böylece iki bölümlü oldu; sekme çubuğu yine konmadı: iki
+bölüm alt alta okunuyor, sekme ancak biri ötekini saklamayı hak edecek kadar
+uzadığında gelir.
+
+**İki akış, iki soru — karıştırılmamalı.** Ana sayfadaki "Son işlemleriniz"
+kişinin KENDİ izidir: filtresiz, sayfasız, beş satır, `/audit-logs/mine`.
+Yönetim'deki "İşlem Kayıtları" bir DENETİM aracıdır: herkesin izi, filtreli,
+sunucu tarafında sayfalı, `/audit-logs`, yalnız ADMIN.

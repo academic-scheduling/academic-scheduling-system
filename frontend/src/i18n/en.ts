@@ -174,6 +174,7 @@ export const en: Dict = {
       exam: "Exam",
       weekly_entry: "Weekly entry",
       user: "User",
+      schedule_draft: "Draft",
     },
   },
 

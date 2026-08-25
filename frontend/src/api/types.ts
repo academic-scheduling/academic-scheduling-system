@@ -435,7 +435,8 @@ export type AuditAction =
 
 export type AuditEntityType =
   | "department" | "building" | "classroom" | "lecturer"
-  | "course" | "course_section" | "exam" | "weekly_entry" | "user";
+  | "course" | "course_section" | "exam" | "weekly_entry" | "user"
+  | "schedule_draft";      // K-59 taslakları (K-82'de sözlüğe eklendi)
 
 export type AuditLog = {
   id: number;

@@ -575,7 +575,8 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
   olmalarının sebebi: "link istendi ama hiç kullanılmadı" durumu denetimde
   görünür kalsın (istenmeyen talep yığını olası saldırı işaretidir).
 ← `entity_type`: `department` · `building` · `classroom` · `lecturer` ·
-  `course` · `course_section` · `exam` · `weekly_entry` · `user`
+  `course` · `course_section` · `exam` · `weekly_entry` · `user` ·
+  `schedule_draft` (K-59; kontrata K-82'de yazıldı — yazılıyordu ama listede yoktu)
 ← `entity_label`: **işlem anındaki** insan-okur ad, satıra yazılır (K-36).
   Silinen kayıt da konuşur; sonraki değişiklikler eski satırları bozmaz
   (UPDATE satırı o işlemden sonraki adı taşır).
@@ -587,9 +588,11 @@ Yalnız ADMIN. Yeniden eskiye sıralı.
 ← Sayfalama ZORUNLU (log tek büyür): `limit` varsayılan 20, en fazla 100.
 ← İzolasyon `user_id → users.workgroup_id` join'iyle; `audit_logs`'ta
   `workgroup_id` kolonu yok.
-← **Not (K-82):** bu ucun ARAYÜZÜ kaldırıldı (dashboard'daki filtreli denetim
-  bloğu). Uç yerinde duruyor; denetim ekranı gerekirse kendi sayfası olarak
-  geri gelir.
+← **Not (K-82):** bu bloğun yeri değişti. Dashboard ana sayfayla birleşince
+  bir tur kaldırıldı (herkesin ilk gördüğü ekranda "kim neyi değiştirdi"
+  tablosunun işi yoktu), sonra **Yönetim sayfasına** (`/admin`, yalnız ADMIN)
+  alındı. Ana sayfadaki `/audit-logs/mine` ile karıştırılmamalı: o kişinin
+  kendi izi, bu denetim aracı.
 
 ### GET /audit-logs/mine?limit=5   ← K-82 (oturumu olan herkes)
 "Son işlemleriniz" — ana sayfadaki kişisel akış. Yeniden eskiye sıralı,

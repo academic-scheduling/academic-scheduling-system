@@ -47,6 +47,13 @@ const DAY_END = 21 * 60;         // 21:00 — akşam sınavları da sığsın
 // Grid böylece uzuyor → aşağıda weekly boyuna sabitlenip fazlası scroll edilir.
 const HOUR_H = WEEKLY_ROW_H;     // bir saatin piksel yüksekliği
 const PX = HOUR_H / 60;          // dakika başına piksel
+/** K-81: ızgaraya yerleştirme ADIMI. Eskiden 30 dakikaydı ("sınavlar genelde
+ *  tam/buçukta") ama ekranda bir saat tek bir hücre olarak çizildiği için
+ *  hücrenin alt yarısına tıklamak o hücrenin YARISINI seçiyordu — görülen
+ *  kutuyla seçilen aralık uyuşmuyordu. Adım artık hücrenin kendisi kadar:
+ *  tıklanan hücre neyse o seçilir. Buçuklu saat hâlâ mümkün — sınav
+ *  formundaki saat alanından elle yazılır. */
+const ADIM = 60;
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 },
   (_, i) => DAY_START + i * 60);
 // K-76: gridin görünür yüksekliği = haftalık program gridiyle aynı (9 slot).
@@ -895,8 +902,8 @@ export default function ExamsPage() {
                            aynı düzeltme). */
                         if (ev.target !== ev.currentTarget) { setHoverCell(null); return; }
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
-                        // 30 dakikalık adımlara yuvarla — sınavlar genelde tam/buçukta
-                        const dk = DAY_START + Math.floor(y / PX / 30) * 30;
+                        // Tıklanan HÜCREYE yuvarla (bkz. ADIM).
+                        const dk = DAY_START + Math.floor(y / PX / ADIM) * ADIM;
                         setHoverCell(`${gun}-${dk}`);
                       }}
                       onMouseLeave={() => setHoverCell(null)}
@@ -905,14 +912,14 @@ export default function ExamsPage() {
                         // yalnız üstteki bardan açılır.
                         if (!canWrite) return;
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
-                        const dk = DAY_START + Math.floor(y / PX / 30) * 30;
+                        const dk = DAY_START + Math.floor(y / PX / ADIM) * ADIM;
                         setPlacing({ date: gun, min: dk });
                       }}
                       onDragOver={(ev) => {
                         if (!drag) return;
                         ev.preventDefault();
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
-                        setOver(`${gun}|${DAY_START + Math.floor(y / PX / 30) * 30}`);
+                        setOver(`${gun}|${DAY_START + Math.floor(y / PX / ADIM) * ADIM}`);
                       }}
                       onDragLeave={(ev) => {
                         if (!ev.currentTarget.contains(ev.relatedTarget as Node)) setOver(null);
@@ -920,7 +927,7 @@ export default function ExamsPage() {
                       onDrop={(ev) => {
                         ev.preventDefault();
                         const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
-                        birak(gun, DAY_START + Math.floor(y / PX / 30) * 30);
+                        birak(gun, DAY_START + Math.floor(y / PX / ADIM) * ADIM);
                       }}
                     >
                       {HOURS.slice(0, -1).map((h, i) => (
@@ -946,7 +953,10 @@ export default function ExamsPage() {
                         <div style={{
                           position: "absolute", left: 2, right: 2,
                           top: (Number(hoverCell.split("-").pop()) - DAY_START) * PX,
-                          height: 30 * PX, borderRadius: 6,
+                          // K-81: işaret artık hücrenin TAMAMINI kaplıyor —
+                          // yarım yükseklikte bir kutu, seçilenin de yarım
+                          // olduğunu söylüyordu.
+                          height: ADIM * PX, borderRadius: 6,
                           background: HOVER_CELL_BG,
                           display: "flex", alignItems: "center", justifyContent: "center",
                           pointerEvents: "none",

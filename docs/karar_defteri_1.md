@@ -3435,3 +3435,36 @@ kapatmaz; açılır kutu da hover'ı canlı tutuyor (aradaki boşlukta kapanmas�
 **Haftalıktaki kapsam ipucu kaldırıldı.** "Taslağınızın satırlarına dokunan
 çakışmalar…" cümlesi K-62'de kapsam sorusuna cevaptı; artık her satır etkilenen
 dersi ve cohort'unu kendisi yazdığı için sabit bir başlık gürültüsü olmuştu.
+
+### K-81 eki 4 · Rozet geri alma, taslak butonu yanıp sönmesi, sınav ızgara adımı
+
+**Kural rozeti ÇERÇEVELİYE döndü.** Bir tur dolgulu denendi (Tür rozetiyle aynı
+biçim) ama aynı satırda iki dolu kırmızı blok fazla ağır durdu: satırda ilk
+bakışta okunması gereken şey ŞİDDET, kural kodu ikincil. Çerçeve rengi taşıyıp
+ağırlığı taşımıyor — istenen tam bu ayrım.
+
+**"Taslak Aç" butonu bir an yanlış görünüyordu.** `mevcut` ("bu cohortta açık
+taslağım var mı?") başlangıçta `null` ve sunucu turu bitene kadar null kalıyor;
+buton ise null'ı "taslak yok" diye okuyup FİLLED **"Taslak Aç"** çiziyordu.
+Yani cevap gelene dek ekranda yanlış ve TIKLANABİLİR bir buton duruyordu:
+"Yayına Dön" dedikten hemen sonra hızlı tıklayan kullanıcı yeni taslak
+yaratmayı deniyor ve sunucudan "bu cohort için zaten açık taslağınız var (#22)"
+hatasını alıyordu. Hata doğruydu; kullanıcı o duruma hiç düşmemeliydi.
+Üç seçenek vardı: (a) `loading` — etiket yine yanlış kalır, (b) etiketi son
+bilinen değerde tutmak — cohort değişince o da yanlış, (c) cevap gelene kadar
+**hiç çizmemek**. (c) seçildi: bilinmeyen bir durumun doğru görseli boşluktur.
+`finally` şart — istek hata verse de kapı açılmalı, yoksa buton sonsuza dek
+görünmez kalır.
+
+**Sınav ızgarasının adımı 30 → 60 dakika.** Ekranda bir saat TEK hücre olarak
+çiziliyor ama yerleştirme 30 dakikaya yuvarlıyordu; hücrenin alt yarısına
+tıklamak o hücrenin yarısını seçiyor, üstelik hover işareti de yarım
+yükseklikte çiziliyordu. Görülen kutu ile seçilen aralık uyuşmuyordu. Artık
+adım hücrenin kendisi kadar: tıklanan hücre neyse o seçilir. Buçuklu saat hâlâ
+mümkün — sınav formundaki saat alanından elle yazılır.
+
+**Vitrin `--undo`'su taslakları da siliyor.** `schedule_drafts.department_id ->
+departments.id` yabancı anahtarı var; kullanıcı ZZ cohort'unda "Taslak Aç"
+derse temizlik IntegrityError ile kırılıyordu — yani tam da vitrin
+KULLANILDIKTAN sonra. Gerçek durumda denendi: 12 ders, 14 sınav, 1 taslak
+silindi, sayımlar başlangıca döndü.

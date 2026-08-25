@@ -46,8 +46,8 @@ from app.conflict_service import scan_workgroup
 from app.db import SessionLocal
 from app.models import (
     Building, Classroom, Course, CourseSection, DeliveryMode, Department,
-    Exam, ExamType, Lecturer, RoomType, SemesterType, SessionType,
-    WeeklyScheduleEntry,
+    Exam, ExamType, Lecturer, RoomType, ScheduleDraft, SemesterType,
+    SessionType, WeeklyScheduleEntry,
 )
 from app.normalize import normalize_lecturer_name
 
@@ -265,6 +265,15 @@ def geri_al(db: Session) -> None:
         print(f"• '{DEP_CODE}' bolumu yok — silinecek bir sey yok.")
         return
 
+    # K-81: ZZ bölümünde AÇILMIŞ program taslakları da silinmeli. Vitrin bunları
+    # üretmiyor ama kullanıcı ekranda "Taslak Aç" diyerek üretebiliyor ve
+    # `schedule_drafts.department_id -> departments.id` yabancı anahtarı var:
+    # taslak dururken bölümü silmek IntegrityError verir, yani --undo tam da
+    # vitrin kullanıldıktan sonra kırılırdı. Taslağın KENDİ satırları da
+    # (draft_id dolu haftalık/sınav kayıtları) bu bölümün derslerine bağlı
+    # olduğu için aşağıdaki ders temizliğiyle birlikte gidiyor.
+    taslak_ids = [d.id for d in db.query(ScheduleDraft).filter_by(department_id=dep.id)]
+
     ders_ids = [c.id for c in db.query(Course).filter_by(department_id=dep.id)]
     sube_ids = [s.id for s in db.query(CourseSection).filter(
         CourseSection.course_id.in_(ders_ids))] if ders_ids else []
@@ -300,10 +309,14 @@ def geri_al(db: Session) -> None:
     db.query(Lecturer).filter(
         Lecturer.workgroup_id == WORKGROUP_ID,
         Lecturer.full_name.like(f"{LECTURER_PREFIX}%")).delete(synchronize_session=False)
+    if taslak_ids:
+        db.query(ScheduleDraft).filter(
+            ScheduleDraft.id.in_(taslak_ids)).delete(synchronize_session=False)
     db.delete(dep)
 
     db.commit()
-    print(f"• ZZ adasi silindi ({len(ders_ids)} ders, {len(sinavlar)} sinav).")
+    print(f"• ZZ adasi silindi ({len(ders_ids)} ders, {len(sinavlar)} sinav, "
+          f"{len(taslak_ids)} taslak).")
 
 
 # ======================================================================

@@ -53,9 +53,12 @@ const SEV_BADGE = {
   hard: { color: "red.8", variant: "filled" as const },
   warn: { color: "orange", variant: "light" as const },
 };
-/*  K-81: kural KODU rozeti de aynı sözlüğü kullanıyor — çerçeveli değil
- *  DOLGULU. Çerçeveli hâli aynı satırda iki farklı ağırlık üretiyordu; ikisi
- *  de aynı şeyi (şiddeti) söylediğine göre aynı biçimde söylemeleri doğru. */
+/** Kural KODU rozeti ÇERÇEVELİ. Bir tur dolgulu denendi (Tür rozetiyle aynı
+ *  biçim) ama aynı satırda iki dolu kırmızı blok fazla ağır durdu: satırın
+ *  ilk bakışta okunması gereken şey ŞİDDET, kod ise ikincil. Çerçeve, rengi
+ *  taşıyıp ağırlığı taşımıyor — istenen tam bu ayrım. `outline`ın varsayılan
+ *  tonu da o soluk pastel olduğu için renk doygun shade'den veriliyor. */
+const SEV_OUTLINE = { hard: "red.5", warn: "orange.4" };
 
 /** Cohort ve "Çakışan öğeler" sütunlarının satır ölçüsü. İki sütun da AYNI
  *  sayıyı kullanmak zorunda — hizanın tek dayanağı bu. */
@@ -384,7 +387,8 @@ function RuleHelp() {
                     durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
                     okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
                     Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
-                <Badge size="sm" {...(hard ? SEV_BADGE.hard : SEV_BADGE.warn)}
+                <Badge size="sm" variant="outline"
+                  color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}
                   style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
                 <div style={{ minWidth: 0 }}>
                   <Text fz={12.5} fw={500} lh={1.35}>
@@ -489,7 +493,8 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    <Badge size="sm" {...(hard ? SEV_BADGE.hard : SEV_BADGE.warn)}>
+                    <Badge size="sm" variant="outline"
+                      color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}>
                       {c.rule_id}
                     </Badge>
                   </Table.Td>

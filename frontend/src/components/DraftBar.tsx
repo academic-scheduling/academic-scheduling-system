@@ -130,6 +130,20 @@ export function DraftActions({
   const [diff, setDiff] = useState<DraftDiffItem[] | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [mevcut, setMevcut] = useState<ScheduleDraft | null>(null);
+  /** K-81: "bu cohortta açık taslağım var mı?" sorusunun CEVABI GELDİ Mİ?
+   *
+   *  `mevcut` başlangıçta null ve sunucu turu bitene kadar null kalıyor; buton
+   *  ise null'ı "taslak yok" diye okuyup FİLLED "Taslak Aç" çiziyordu. Yani
+   *  cevap gelene dek ekranda yanlış ve TIKLANABİLİR bir buton duruyordu:
+   *  "Yayına Dön" dedikten hemen sonra hızlı tıklayan kullanıcı yeni taslak
+   *  yaratmayı deniyor ve sunucudan "bu cohort için zaten açık taslağınız var"
+   *  hatasını alıyordu. Hata doğruydu ama kullanıcı hiç o duruma düşmemeliydi.
+   *
+   *  Üç seçenek vardı: (a) butonu `loading` yapmak — etiket yine yanlış kalır,
+   *  (b) etiketi son bilinen değerde tutmak — cohort değişince o da yanlış,
+   *  (c) cevap gelene kadar HİÇ çizmemek. (c) seçildi: bilinmeyen bir durumu
+   *  temsil eden doğru görsel, boşluktur. */
+  const [mevcutCozuldu, setMevcutCozuldu] = useState(false);
   // K-76: "Temizle" artık önce sorar — ortak dersler de silinsin mi?
   const [clearOpen, setClearOpen] = useState(false);
   const [clearShared, setClearShared] = useState(false);
@@ -141,8 +155,11 @@ export function DraftActions({
   const satirAdi = t.draft.row[kind];
 
   useEffect(() => {
-    if (draft || !cohortHazir) { setMevcut(null); return; }
+    // Cohort seçili değilse sorulacak bir şey yok — buton "önce cohort seç"
+    // diye pasif duruyor, o hâli göstermek için beklemeye gerek yok.
+    if (draft || !cohortHazir) { setMevcut(null); setMevcutCozuldu(!cohortHazir); return; }
     let iptal = false;
+    setMevcutCozuldu(false);
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         if (iptal) return;
@@ -150,7 +167,10 @@ export function DraftActions({
           && d.department_id === departmentId
           && d.year === year && d.semester === semester) ?? null);
       })
-      .catch(() => { /* akış ikincil; bulunamazsa "yeni aç" davranışı kalır */ });
+      // Akış ikincil; liste alınamazsa "yeni aç" davranışına düşülür. Kapıyı
+      // yine de AÇMAK gerekir, yoksa buton sonsuza dek görünmez kalır.
+      .catch(() => { /* yut */ })
+      .finally(() => { if (!iptal) setMevcutCozuldu(true); });
     return () => { iptal = true; };
   }, [draft, cohortHazir, departmentId, year, semester, kind]);
 
@@ -213,7 +233,7 @@ export function DraftActions({
 
   return (
     <>
-      {!draft && (
+      {!draft && mevcutCozuldu && (
         <Tooltip
           label={!cohortHazir
             ? t.draft.pickCohortFirst

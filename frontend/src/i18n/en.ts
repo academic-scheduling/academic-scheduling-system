@@ -818,10 +818,7 @@ export const en: Dict = {
     elective: "Elective",
 
     conflictsTitle: "Conflicts",
-    conflictsDraftHint:
-      "Conflicts touching your draft's rows — the other side may be another " +
-      "year's published course.",
-    conflictsPublishedHint: "Conflicts in the published schedule.",
+    // K-81: kapsam ipucu kaldırıldı (bkz. WeeklyPage gerekçesi).
     noConflicts: "No conflict in the weekly schedule.",
 
     sectionOption: (no: number, hoca: string, ogrenci: number) =>

@@ -53,10 +53,14 @@ const SEV_BADGE = {
   hard: { color: "red.8", variant: "filled" as const },
   warn: { color: "orange", variant: "light" as const },
 };
-/** Kural KODU rozeti çerçeveli kalıyor (Tür rozetiyle tekrar etmesin), ama
- *  çerçeve/yazı rengi doygun tondan alınıyor — `outline`ın varsayılanı da o
- *  soluk pasteldi. */
-const SEV_OUTLINE = { hard: "red.5", warn: "orange.4" };
+/*  K-81: kural KODU rozeti de aynı sözlüğü kullanıyor — çerçeveli değil
+ *  DOLGULU. Çerçeveli hâli aynı satırda iki farklı ağırlık üretiyordu; ikisi
+ *  de aynı şeyi (şiddeti) söylediğine göre aynı biçimde söylemeleri doğru. */
+
+/** Cohort ve "Çakışan öğeler" sütunlarının satır ölçüsü. İki sütun da AYNI
+ *  sayıyı kullanmak zorunda — hizanın tek dayanağı bu. */
+const SATIR_Y = 26;
+const SATIR_ARA = 4;
 
 /** Tablodaki tek satır: çakışma + hangi kovadan geldiği.
  *
@@ -341,15 +345,33 @@ const RULE_CATALOG: { kod: string; hard: boolean }[] = [
 
 function RuleHelp() {
   const t = useT();
+  /** K-81: pop-up yalnız TIKLAYINCA açılıyordu ve "?" ikonunun tıklanabilir
+   *  olduğu belli değildi — üstüne gelmek en doğal keşif hareketi.
+   *
+   *  Neden `HoverCard` değil: o yalnız hover'la çalışır, tık ile SABİTLEME
+   *  olmaz. Katalog 22 satır ve kaydırılabilir; fare listeye inerken hedeften
+   *  çıkıp pop-up'ı kapatabilir. Bu yüzden kontrollü `Popover`: hover açar,
+   *  tık SABİTLER (`sabit`), sabitken hover'dan çıkmak kapatmaz.
+   *
+   *  `onMouseLeave` hem hedefte hem açılır kutuda: ikisinin arasındaki
+   *  boşlukta kapanmasın diye açılır kutu da hover'ı canlı tutuyor. */
+  const [acik, setAcik] = useState(false);
+  const [sabit, setSabit] = useState(false);
+  const kapat = () => { if (!sabit) setAcik(false); };
   return (
-    <Popover width={520} position="bottom-start" shadow="md" withArrow>
+    <Popover width={520} position="bottom-start" shadow="md" withArrow
+      opened={acik}
+      onChange={(o) => { setAcik(o); if (!o) setSabit(false); }}>
       <Popover.Target>
         <ActionIcon variant="subtle" color="gray" size="xs" radius="xl"
-          aria-label={t.conflicts.ruleHelpHint}>
+          aria-label={t.conflicts.ruleHelpHint}
+          onMouseEnter={() => setAcik(true)}
+          onMouseLeave={kapat}
+          onClick={() => { setSabit((v) => !v); setAcik(true); }}>
           <IconHelp size={14} />
         </ActionIcon>
       </Popover.Target>
-      <Popover.Dropdown>
+      <Popover.Dropdown onMouseEnter={() => setAcik(true)} onMouseLeave={kapat}>
         <Text fz={12} fw={700} c={TEXT_MUTED} mb={8}>
           {t.conflicts.ruleHelpTitle}
         </Text>
@@ -362,8 +384,7 @@ function RuleHelp() {
                     durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
                     okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
                     Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
-                <Badge size="sm" variant="outline"
-                  color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}
+                <Badge size="sm" {...(hard ? SEV_BADGE.hard : SEV_BADGE.warn)}
                   style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
                 <div style={{ minWidth: 0 }}>
                   <Text fz={12.5} fw={500} lh={1.35}>
@@ -467,14 +488,8 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                       {hard ? t.conflicts.blocking : t.conflicts.warning}
                     </Badge>
                   </Table.Td>
-                  {/* K-81: kural kodu da şiddet rengini taşır. `outline`
-                      kalıyor — "Tür" rozeti `light` (dolgulu), bu çerçeveli;
-                      aynı renkte iki rozet yan yana ama farklı ağırlıkta, o
-                      yüzden tekrar gibi değil aynı satırın iki okuması gibi
-                      görünüyor. */}
                   <Table.Td>
-                    <Badge size="sm" variant="outline"
-                      color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}>
+                    <Badge size="sm" {...(hard ? SEV_BADGE.hard : SEV_BADGE.warn)}>
                       {c.rule_id}
                     </Badge>
                   </Table.Td>
@@ -495,44 +510,56 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
                   <Table.Td>
                     <Text fz={12.5} c={TEXT_MUTED} lh={1.45}>{c.message}</Text>
                   </Table.Td>
+                  {/* K-81 · Cohort ve Çakışan öğeler ARTIK HİZALI.
+                      Önceden cohort satırları tekilleştiriliyordu ("iki taraf
+                      aynı cohort ve saatteyse tekrar bilgi katmaz") ve öğeler
+                      yan yana diziliyordu. Sonuç: iki öğe, tek cohort satırı —
+                      hangi öğenin hangi cohort'a ait olduğu okunamıyordu.
+
+                      Artık iki sütun da `c.affected`i AYNI SIRAYLA, öğe başına
+                      bir satır olarak yazıyor; i'inci cohort i'inci öğenin.
+                      Tekrar eden cohort'lar da yazılıyor — burada tekrar
+                      gürültü değil, HİZANIN kendisi. Sabit satır yüksekliği
+                      (SATIR_Y) şart: solda 12.5px metin, sağda compact-xs
+                      düğme var, doğal yükseklikleri farklı; eşitlenmezse
+                      listeler birkaç öğeden sonra kayıyor. */}
                   <Table.Td>
-                    <Stack gap={2}>
-                      {/* TEKİLLEŞTİRİLİR: çakışmanın iki tarafı çoğu zaman AYNI
-                          cohort'ta ve aynı saatte olur (kural zaten "aynı anda"
-                          diyor). Aynı satırı iki kez yazmak bilgi katmaz. */}
-                      {[...new Set(c.affected.map((a) => {
+                    <Stack gap={SATIR_ARA}>
+                      {c.affected.map((a, ix) => {
                         const cohort = cohortEtiketi(a, depAdi, t);
                         const zaman = zamanEtiketi(a, t);
-                        return [cohort, zaman].filter(Boolean).join(" · ");
-                      }).filter(Boolean))].map((satir) => (
-                        // K-80: SOLUK DEĞİL — cohort "bu beni ilgilendiriyor mu"
-                        // sorusunun cevabı ve listeyi tararken en çok bakılan yer.
-                        // K-81: ve İNCE de değil. Normal ağırlıkta 12px, yanındaki
-                        // kural adının (fw 500) gölgesinde kalıyordu; oysa göz
-                        // listeyi tararken önce buraya bakıyor. `nowrap` sarmayı
-                        // kapatır — sütun genişliği zaten sığacak şekilde seçildi.
-                        <Text key={satir} fz={12.5} fw={500} lh={1.45}
-                          style={{ whiteSpace: "nowrap" }}>{satir}</Text>
-                      ))}
+                        const satir = [cohort, zaman].filter(Boolean).join(" · ");
+                        return (
+                          <Group key={ix} h={SATIR_Y} align="center" gap={0} wrap="nowrap">
+                            {/* K-80: soluk DEĞİL — cohort "bu beni ilgilendiriyor
+                                mu" sorusunun cevabı, listede en çok bakılan yer.
+                                Boşsa tire: satır düşerse hiza da düşer. */}
+                            <Text fz={12.5} fw={500} lh={1.2}
+                              style={{ whiteSpace: "nowrap" }}>{satir || "—"}</Text>
+                          </Group>
+                        );
+                      })}
                     </Stack>
                   </Table.Td>
                   <Table.Td>
                     {/* Tıklayınca ilgili programda vurgulanır (K-62). */}
-                    <Group gap={5} wrap="wrap">
+                    <Stack gap={SATIR_ARA}>
                       {c.affected.map((a, ix) => {
                         const oSinav = a.type === "exam";   // rozet rengi türü söyler
                         const yol = `${oSinav ? "/exams" : "/weekly"}`
                           + `?highlight=${a.id}&rule=${c.rule_id}`;
                         return (
-                          <Button key={ix} component={Link} to={yol} size="compact-xs"
-                            variant="light" color={oSinav ? "violet" : "blue"}
-                            rightSection={<IconArrowRight size={11} />}>
-                            {a.course_code
-                              ?? `${oSinav ? t.conflicts.exam : t.conflicts.course} #${a.id}`}
-                          </Button>
+                          <Group key={ix} h={SATIR_Y} align="center" gap={0} wrap="nowrap">
+                            <Button component={Link} to={yol} size="compact-xs"
+                              variant="light" color={oSinav ? "violet" : "blue"}
+                              rightSection={<IconArrowRight size={11} />}>
+                              {a.course_code
+                                ?? `${oSinav ? t.conflicts.exam : t.conflicts.course} #${a.id}`}
+                            </Button>
+                          </Group>
                         );
                       })}
-                    </Group>
+                    </Stack>
                   </Table.Td>
                 </Table.Tr>
             ))}

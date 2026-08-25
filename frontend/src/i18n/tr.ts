@@ -872,10 +872,7 @@ export const tr = {
     elective: "Seçmeli",
 
     conflictsTitle: "Çakışmalar",
-    conflictsDraftHint:
-      "Taslağınızın satırlarına dokunan çakışmalar — karşı taraf başka bir " +
-      "sınıfın yayındaki dersi olabilir.",
-    conflictsPublishedHint: "Yayındaki programın çakışmaları.",
+    // K-81: kapsam ipucu kaldırıldı (bkz. WeeklyPage gerekçesi).
     noConflicts: "Haftalık programda çakışma yok.",
 
     sectionOption: (no: number, hoca: string, ogrenci: number) =>

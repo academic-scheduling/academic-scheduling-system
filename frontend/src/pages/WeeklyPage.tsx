@@ -211,6 +211,10 @@ export default function WeeklyPage() {
    *  Çakışma vurgusuyla gelindiğinde hedef yayındadır; taslağa geçmek aranan
    *  satırı ekrandan kaçırır. */
   const taslakSecimiAtla = useRef(false);
+  /** K-81: sınav sayfasındaki ile aynı kusur — Yayın Merkezi `draft_id`
+   *  gönderiyor, burası okumadan siliyordu ve "bu cohortun ilk açık taslağı"
+   *  tahminine düşülüyordu. Aynı cohortta iki taslak varsa yanlışı açılır. */
+  const istenenTaslakId = useRef<number | null>(null);
 
   // Palet yüksekliği GRID'e bağlanır, kendi içeriğine değil: ders sayısı arttıkça
   // uzamasın, kaydırsın. Ölçüyoruz çünkü sabit sayı yazmak grid'in iç yapısı
@@ -323,6 +327,12 @@ export default function WeeklyPage() {
     if (searchParams.get("mode") === "pub" && yearParam && semParam) {
       writeScheduleMode("weekly-mode", depParam, yearParam, semParam, "pub");
       setDraft(null);
+    }
+    // K-81: `draft_id` artık siliniyor DEĞİL, önce okunuyor.
+    const draftIdParam = searchParams.get("draft_id");
+    if (draftIdParam && searchParams.get("mode") !== "pub") {
+      const n = Number(draftIdParam);
+      if (Number.isInteger(n) && n > 0) istenenTaslakId.current = n;
     }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
@@ -499,8 +509,10 @@ export default function WeeklyPage() {
     // K-73: bu cohort'u en son YAYINDA bıraktıysam taslağa atlama — kullanıcı
     // bıraktığı moda dönmeli. Tercih yoksa (ilk ziyaret) eski davranış: açık
     // taslağı seç. Tercih belirli bir taslaksa onu seç.
+    // K-81: URL açıkça bir taslak istediyse hatırlanan tercihin ÜSTÜNDEDİR.
+    const istenen = istenenTaslakId.current;
     const pref = readScheduleMode("weekly-mode", dep, year, sem);
-    if (pref === "pub") { cozuldu(); return; }
+    if (istenen == null && pref === "pub") { cozuldu(); return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         // K-62: `kind` süzgeci ZORUNLU. K-60'ta sınav taslakları eklendiğinde
@@ -510,9 +522,12 @@ export default function WeeklyPage() {
         const cohortDrafts = liste.filter((d) => d.kind === "WEEKLY"
           && String(d.department_id) === dep
           && String(d.year) === year && d.semester === sem);
-        const eslesen = typeof pref === "number"
-          ? cohortDrafts.find((d) => d.id === pref)
-          : cohortDrafts[0];
+        const eslesen = istenen != null
+          ? cohortDrafts.find((d) => d.id === istenen)
+          : typeof pref === "number"
+            ? cohortDrafts.find((d) => d.id === pref)
+            : cohortDrafts[0];
+        if (istenen != null) istenenTaslakId.current = null;
         if (!iptal && eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })
@@ -1120,15 +1135,12 @@ export default function WeeklyPage() {
             </Badge>
           </Group>
         </Group>
-        {/* K-62: kapsam sorulmuştu ("bu cohort mu, tüm sistem mi?"). Taslakta
-            liste TASLAĞIMIN satırlarına dokunanlarla sınırlıdır ama karşı taraf
-            başka cohort'un YAYINDAKİ satırı olabilir — bunu söylememek, listeyi
-            "neden burada başka sınıfın dersi var" sorusuna açık bırakıyordu. */}
-        <Text size="xs" c="dimmed" mb={weeklyConflicts.length ? "sm" : 0}>
-          {draft
-            ? t.weekly.conflictsDraftHint
-            : t.weekly.conflictsPublishedHint}
-        </Text>
+        {/* K-81: kapsam açıklaması KALDIRILDI. K-62'de "bu cohort mu, tüm
+            sistem mi?" sorusuna cevap olsun diye konmuştu; artık her satır
+            etkilenen dersi ve cohort'unu kendisi yazıyor, dolayısıyla cümle
+            listenin her açılışında yeniden okunan sabit bir başlık gürültüsü
+            haline gelmişti. Başlıktaki "Çakışmalar" + satırların kendisi
+            yetiyor. */}
         {weeklyConflicts.length === 0 ? (
           <Text size="sm" c="dimmed">{t.weekly.noConflicts}</Text>
         ) : (

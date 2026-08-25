@@ -3387,3 +3387,51 @@ yeri kaplıyor — başlık/arama kutusu değişse bile hesap kendiliğinden do�
 kalıyor. Ölçüldü: alttaki boşluk 98px → 0, liste yüksekliği 528 → 626.
 `min-height:0` şart, yoksa flex çocuğu içeriğinden küçülmez ve kaydırma
 kutunun dışına taşar. Yan fayda: sağ panel uzunken liste görünürde kalıyor.
+
+### K-81 eki 3 · Sınav derin-bağı, draft_id, hiza ve rozet dili
+
+**Çakışma Raporu'ndaki sınav butonları çalışmıyordu — YARIŞ.** `/exams?highlight=`
+efektinin ilk koşusu `courses` henüz BOŞKEN oluyordu; `fullCourse` bulunamadığı
+için bölüm/sınıf/dönem ayarlanmıyor, ama `setWeek` yine de çalışıyor ve efektin
+sonundaki `setSearchParams({})` highlight parametresini siliyordu. `courses`
+yüklenince efekt tekrar koşuyor fakat bu kez `highlightIds` boş → erken dönüş.
+Bildirilen kusur tam bu: **hafta doğru gidiyor, cohort seçili olanda kalıyor.**
+Koruma (`!courses.length`) WeeklyPage'de vardı, ExamsPage'e yazılmamıştı —
+haftalık butonlarının çalışıp sınav butonlarının çalışmamasının sebebi buydu.
+*Ders:* iki ekran aynı deseni paylaşıyorsa koruma da paylaşılmalı; biri
+düzeltilip öteki unutulduğunda kusur "bazen çalışıyor" diye görünür.
+
+**`draft_id` gönderiliyor ama okunmuyordu.** Yayın Merkezi "Programda düzenle"
+`?draft_id=<id>` ekliyor; her iki program ekranı da parametreyi okumadan
+siliyor ve hangi taslağın açılacağını "bu cohortun İLK açık taslağı" tahmini
+belirliyordu. Aynı cohortta iki taslak varsa yanlışı açılır. Artık URL'nin
+istediği taslak açıkça seçiliyor ve K-73'ün hatırlanan tercihinin ÜSTÜNDE:
+kullanıcı hangi taslağı düzenlemek istediğini bir tık önce söyledi.
+Sınava özgü ikinci yarısı: takvim bir HAFTA gösteriyor ve o hafta
+localStorage'dan geliyor; taslağın sınavları başka haftadaysa ekran boş
+görünüyor ve akış "bozuk" diye okunuyordu. Taslakla gelindiğinde ilk sınavın
+haftasına atlanıyor (bayrak tek seferlik — kullanıcı sonra hafta gezerse
+yeniden yükleme onu geri sürüklemesin).
+
+**Cohort ile "Çakışan öğeler" HİZALANDI.** Cohort satırları tekilleştiriliyor
+("iki taraf aynı cohort ve saatteyse tekrar bilgi katmaz"), öğeler ise yan yana
+diziliyordu. Sonuç: iki öğe, tek cohort satırı — hangi öğenin hangi cohort'a
+ait olduğu okunamıyordu. Artık iki sütun da `affected`i AYNI SIRAYLA, öğe
+başına bir satır yazıyor. **Tekrar eden cohort'lar da yazılıyor** — burada
+tekrar gürültü değil, hizanın kendisi. Sabit satır yüksekliği şart: solda
+12.5px metin, sağda compact-xs düğme var; doğal yükseklikleri farklı olduğu
+için eşitlenmezse listeler birkaç öğeden sonra kayıyor.
+
+**Kural rozeti de dolgulu.** Çerçeveli hâli aynı satırda iki farklı ağırlık
+üretiyordu; Tür ve Kural rozetleri aynı şeyi (şiddeti) söylediğine göre aynı
+biçimde söylemeleri doğru.
+
+**Kural kataloğu hover'la da açılıyor.** Yalnız tıkla açılıyordu ve "?" ikonunun
+tıklanabilir olduğu belli değildi. `HoverCard` DEĞİL kontrollü `Popover`:
+katalog 22 satır ve kaydırılabilir, fare listeye inerken hedeften çıkıp
+kapatabilirdi. Hover açar, **tık sabitler**, sabitken hover'dan çıkmak
+kapatmaz; açılır kutu da hover'ı canlı tutuyor (aradaki boşlukta kapanmasın).
+
+**Haftalıktaki kapsam ipucu kaldırıldı.** "Taslağınızın satırlarına dokunan
+çakışmalar…" cümlesi K-62'de kapsam sorusuna cevaptı; artık her satır etkilenen
+dersi ve cohort'unu kendisi yazdığı için sabit bir başlık gürültüsü olmuştu.

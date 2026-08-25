@@ -223,6 +223,17 @@ export default function ExamsPage() {
   /** K-62: cohort değişince taslağı kendiliğinden seçen efekti BİR KEZ atlatır
    *  (çakışma vurgusu yayındaki bir sınava götürdüğünde). */
   const taslakSecimiAtla = useRef(false);
+  /** K-81: Yayın Merkezi "Programda düzenle" ile `draft_id` GÖNDERİYORDU ama
+   *  bu sayfa (ve haftalıktaki eşi) onu okumadan siliyordu; hangi taslağın
+   *  açılacağını "bu cohortun ilk açık taslağı" tahmini belirliyordu. Aynı
+   *  cohortta iki taslak varsa yanlışı açılır. Artık istenen taslak açıkça
+   *  seçiliyor. */
+  const istenenTaslakId = useRef<number | null>(null);
+  /** Sınava özgü ikinci yarısı: takvim bir HAFTA gösteriyor ve o hafta
+   *  localStorage'dan geliyor. Taslağa girince sınavları başka haftadaysa
+   *  ekran boş görünüyor ve "çalışmıyor" gibi okunuyor. Taslakla gelindiğinde
+   *  ilk sınavın haftasına atlıyoruz. */
+  const taslakHaftasinaAtla = useRef(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -268,7 +279,13 @@ export default function ExamsPage() {
           mevcut && d.some((y) => String(y.id) === mevcut)
             ? mevcut : d.length ? String(d[0].id) : null);
         // Yalnız İLK açılışta (kayıtlı hafta yokken) en erken sınavın haftasına git.
-        if (!weekIso && x.length) {
+        // K-81: taslakla gelindiğinde KAYITLI hafta olsa da atlanır — taslağın
+        // sınavları başka haftadaysa ekran boş görünüyor ve akış "bozuk" diye
+        // okunuyordu. Bayrak tek seferlik: kullanıcı sonra hafta gezerse
+        // yeniden yükleme onu geri sürüklemesin.
+        const taslaktanGeldi = taslakHaftasinaAtla.current && draft != null;
+        if (taslaktanGeldi) taslakHaftasinaAtla.current = false;
+        if ((!weekIso || taslaktanGeldi) && x.length) {
           const enErken = x.map((e) => e.exam_date).sort()[0];
           setWeek(new Date(`${enErken}T00:00:00`));
         }
@@ -299,6 +316,15 @@ export default function ExamsPage() {
       writeScheduleMode("exam-mode", depParam, yearParam, semParam, "pub");
       setDraft(null);
     }
+    // K-81: `draft_id` artık siliniyor DEĞİL, önce okunuyor.
+    const draftIdParam = searchParams.get("draft_id");
+    if (draftIdParam && searchParams.get("mode") !== "pub") {
+      const n = Number(draftIdParam);
+      if (Number.isInteger(n) && n > 0) {
+        istenenTaslakId.current = n;
+        taslakHaftasinaAtla.current = true;
+      }
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("department_id");
     next.delete("year");
@@ -311,7 +337,14 @@ export default function ExamsPage() {
 
   // Highlight yönlendirmesi geldiğinde hedef sınavların tarih ve cohort filtrelerini otomatik ayarla
   useEffect(() => {
-    if (!highlightIds.length) return;
+    // K-81: `!courses.length` KORUMASI ŞART (WeeklyPage'de vardı, burada yoktu).
+    // Yoksa efekt daha ilk render'da, `courses` henüz boşken koşuyordu:
+    // `fullCourse` bulunamadığı için bölüm/sınıf/dönem AYARLANMIYOR, ama
+    // `setWeek` yine de çalışıyor ve sonda `setSearchParams({})` highlight
+    // parametresini siliyordu. Courses yüklenince efekt tekrar koşuyor fakat
+    // bu kez `highlightIds` boş -> erken dönüyor. Sonuç tam da bildirilen
+    // kusur: HAFTA doğru gidiyor, cohort seçili olan neyse orada kalıyor.
+    if (!highlightIds.length || !courses.length) return;
     api.get<Exam[]>("/exams")
       .then((allExams) => {
         const targets = allExams.filter((x) => highlightIds.includes(x.id));
@@ -601,16 +634,23 @@ export default function ExamsPage() {
       taslakSecimiAtla.current = false; cozuldu(); return;
     }
     // K-73: en son YAYINDA bıraktıysam taslağa atlama; tercih belirli taslaksa onu seç.
+    // K-81: URL açıkça bir taslak istediyse (Yayın Merkezi) o tercihin ÜSTÜNDE.
+    // Kullanıcı hangi taslağı düzenlemek istediğini bir tık önce söyledi;
+    // hatırlanan tercihin onu ezmesi doğrudan yanlış cevap olurdu.
+    const istenen = istenenTaslakId.current;
     const pref = readScheduleMode("exam-mode", dep, year, sem);
-    if (pref === "pub") { cozuldu(); return; }
+    if (istenen == null && pref === "pub") { cozuldu(); return; }
     api.get<ScheduleDraft[]>("/schedule-drafts")
       .then((liste) => {
         const cohortDrafts = liste.filter((d) => d.kind === "EXAM"
           && String(d.department_id) === dep
           && String(d.year) === year && d.semester === sem);
-        const eslesen = typeof pref === "number"
-          ? cohortDrafts.find((d) => d.id === pref)
-          : cohortDrafts[0];
+        const eslesen = istenen != null
+          ? cohortDrafts.find((d) => d.id === istenen)
+          : typeof pref === "number"
+            ? cohortDrafts.find((d) => d.id === pref)
+            : cohortDrafts[0];
+        if (istenen != null) istenenTaslakId.current = null;
         if (!iptal && eslesen) setDraft(eslesen);
       })
       .catch(() => { /* taslak listesi alınamazsa yayın modunda kal */ })

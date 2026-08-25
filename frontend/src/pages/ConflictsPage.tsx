@@ -399,7 +399,11 @@ function ConflictTable({ list, hicYokMu, depAdi }: {
           Toplam sabit sütunlar: Tür 92 + Kural 104 + Çakışma 210 + Cohort 300
           + Öğeler 170 = 876; Açıklama'ya en az ~300 → 1180. */}
       <Table.ScrollContainer minWidth={1180}>
-        <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
+        {/* K-81: `striped` — Dersler/Derslikler/Öğretim Üyeleri ile aynı zebra
+            tonu (Mantine varsayılanı, özel renk yok). Satırların sol kenar
+            çubuğu (kırmızı/turuncu) zebranın üstünde durur; ikisi farklı eksen
+            (kenar = şiddet, zebra = okuma kolaylığı), çakışmaz. */}
+        <Table striped verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={92}>{t.conflicts.colKind}</Table.Th>

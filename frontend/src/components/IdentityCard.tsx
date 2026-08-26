@@ -35,11 +35,11 @@ export default function IdentityCard({
   const acikYetki = CAPABILITIES.filter((c) => user[c.key]).length;
 
   return (
-    // maw: kart tam genişlikte esneyince iki iç sütun (bölümler + yetkiler)
-    // gereğinden fazla açılıyor ve aralarında koca bir boşluk kalıyordu —
-    // "geniş" değil "boş" görünüyordu. Üst sınır, iki sütunu okunur bir
-    // ölçüde tutuyor; dar ekranda kart yine kapsayıcı kadar geniş.
-    <Paper withBorder radius="md" bg={PAGE_SURFACE} maw={880}
+    // Genişliği ARTIK IZGARA belirliyor (ana sayfanın 7/5 sütunu), kartın
+    // kendi `maw`'ı değil: sabit bir üst sınır, yanındaki özet kartlarıyla
+    // arasında hizasız bir boşluk bırakıyordu. `h: 100%` satırdaki iki bloğun
+    // aynı yerde bitmesini sağlar.
+    <Paper withBorder radius="md" bg={PAGE_SURFACE} h="100%"
       style={{ borderColor: BORDER, overflow: "hidden" }}>
       {/* ÜST: kim olduğunuz */}
       <Group align="flex-start" gap="md" p="lg"

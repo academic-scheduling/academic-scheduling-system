@@ -41,11 +41,11 @@ export default function OccupancyHeatmap({ data }: { data: OccupancySummary }) {
   const enYogun = Math.max(1, ...data.grid.flat());
 
   return (
-    // maw: ızgara dokuz satır ve beş sütun; sütunlar `1fr` olduğu için
-    // kapsayıcı ne kadar genişse o kadar açılıyordu ve hücreler haber
-    // niteliğini yitirip birer şeride dönüşüyordu. Üst sınır, hücreleri
-    // kareye yakın tutuyor.
-    <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE} maw={620}
+    // Kart sütunu doldurur (sayfadaki bütün kartlar gibi); sınır IZGARANIN
+    // kendisinde. Sütunlar `1fr` olduğu için kapsayıcı ne kadar genişse o
+    // kadar açılıyor ve hücreler haber niteliğini yitirip birer şeride
+    // dönüşüyordu — üst sınır onları kareye yakın tutuyor.
+    <Paper withBorder radius="md" p="lg" bg={PAGE_SURFACE}
       style={{ borderColor: BORDER }}>
       <Group justify="space-between" align="center" mb="md" gap="sm">
         <Text fz={14} fw={700}>{t.home.occupancy.title}</Text>
@@ -67,6 +67,7 @@ export default function OccupancyHeatmap({ data }: { data: OccupancySummary }) {
           display: "grid",
           gridTemplateColumns: `56px repeat(${GUNLER.length}, minmax(0, 1fr))`,
           gap: 4,
+          maxWidth: 640,
         }}>
           <span />
           {GUNLER.map((g) => (

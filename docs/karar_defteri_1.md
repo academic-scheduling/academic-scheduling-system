@@ -3763,3 +3763,21 @@ uzadığında gelir.
 kişinin KENDİ izidir: filtresiz, sayfasız, beş satır, `/audit-logs/mine`.
 Yönetim'deki "İşlem Kayıtları" bir DENETİM aracıdır: herkesin izi, filtreli,
 sunucu tarafında sayfalı, `/audit-logs`, yalnız ADMIN.
+
+**Dördüncü tur: sayfa tek bir 7/5 ızgarasına oturdu.** Bloklar tek tek doğruydu
+ama sayfa dağınık duruyordu, çünkü her biri kendi genişliğini kendi seçiyordu:
+kimlik kartı 880px'e kadar, sayaçlar tam genişlikte altı ince sütun, alttaki
+bölüm 7/5, ısı haritası 620px. Dört ayrı hizasız kenar.
+
+Çözüm bir düzen kuralı: **sayfada iki sütun var, oranı 7/5, ve HER ızgara aynı
+oranı kullanır.** Üst satır solda kimlik, sağında **3×2 sayaç**; alt bölüm solda
+kural dağılımı + ısı haritası, sağda hızlı işlemler + işlemler + onaylar. İki
+ızgara aynı oranı paylaştığı için sütun kenarları yukarıdan aşağıya tek çizgide
+devam ediyor.
+
+Kartların kendi `maw` sınırları kalktı — genişliği artık ızgara belirliyor.
+Sınır ısı haritasında İÇERİ taşındı (kart sütunu doldurur, ızgara 640px'te
+durur): hücreler `1fr` olduğu için kapsayıcıyla birlikte açılıp haber niteliğini
+yitiriyorlardı. Üst satır `align="stretch"`: kimlik ile sayaç ızgarası aynı
+yerde bitiyor, sayaç kartlarının içeriği de o yüksekliğin ortasında duruyor
+(yoksa sayı tepede asılı kalırdı).

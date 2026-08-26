@@ -30,6 +30,16 @@ import type { Dict } from "../i18n/tr";
  *  temizlenecek bir şey yok. */
 const ACTIVITY_LIMIT = 5;
 
+/** Sayfanın sütun bölünmesi — 12'lik ızgarada 7 / 5.
+ *
+ *  Sabit, çünkü sayfadaki İKİ ızgara da bunu kullanıyor: üst satır (kimlik +
+ *  özet) ile alt bölüm (dağılım/ısı haritası + işlemler) aynı oranı
+ *  paylaşmazsa sütun kenarları her satırda kayar ve sayfa dağınık görünür.
+ *  Yedi/beş seçimi içeriğe göre: solda iki iç sütunlu kartlar (kimlik, kural
+ *  dağılımı, ısı haritası), sağda tek sütunlu listeler. */
+const LEFT = 7;
+const RIGHT = 5;
+
 /** Ana sayfa (K-82) — eski `/` ile `/dashboard`'un birleşimi.
  *
  *  **Neden birleşti:** `/` neredeyse boştu, dolu olan `/dashboard` ise yalnız
@@ -84,48 +94,57 @@ export default function HomePage() {
     <Stack gap="lg">
       <Title order={3}>{t.home.title}</Title>
 
-      {/* Kart iki iç sütun taşıyor (bölümler + yetkiler); tam genişlikte
-          ikisi de gereğinden fazla açılıp aralarında koca bir boşluk
-          bırakıyordu — kart "geniş" değil "boş" görünüyordu. Genişlik sınırı
-          IdentityCard'ın kendi içinde. */}
-      <IdentityCard user={user} departments={departments} />
+      {/* ÜST SATIR: solda kimlik, sağında 3×2 özet.
+          `align="stretch"`: ikisi de satırın yüksekliğine uzar, yani aynı
+          yerde biterler. Kartlar tek sıra hâlinde altı sütunken sayılar
+          incecik şeritlere düşüyor ve kimlik kartıyla arasında hizasız bir
+          boşluk kalıyordu. */}
+      <Grid gutter="lg" align="stretch">
+        <Grid.Col span={{ base: 12, lg: LEFT }}>
+          <IdentityCard user={user} departments={departments} />
+        </Grid.Col>
 
-      {/* --- Sayaç kartları: altısı da ilgili ekrana gider --- */}
-      <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }} spacing="md">
-        <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
-        <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
-        <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
-        <StatCard to="/courses" label={t.home.cards.courses} value={summary.courses} />
-        <StatCard to="/exams" label={t.home.cards.exams} value={summary.exams} />
+        <Grid.Col span={{ base: 12, lg: RIGHT }}>
+          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md" h="100%">
+            <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
+            <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
+            <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
+            <StatCard to="/courses" label={t.home.cards.courses} value={summary.courses} />
+            <StatCard to="/exams" label={t.home.cards.exams} value={summary.exams} />
 
-        {/* Çakışma tek kart ama iki sayı: engel taslağın onaya gitmesini
-            durdurur, uyarı durdurmaz (K-05). */}
-        <StatCard
-          to="/conflicts"
-          label={t.home.cards.conflicts}
-          value={
-            <Group gap={6} align="baseline" justify="center">
-              <Text span inherit c={summary.unresolved_hard > 0 ? "red" : undefined}>
-                {summary.unresolved_hard}
-              </Text>
-              <Text span inherit c="dimmed">/</Text>
-              <Text span inherit c={summary.unresolved_warnings > 0 ? "orange" : undefined}>
-                {summary.unresolved_warnings}
-              </Text>
-            </Group>
-          }
-        />
-      </SimpleGrid>
+            {/* Çakışma tek kart ama iki sayı: engel taslağın onaya gitmesini
+                durdurur, uyarı durdurmaz (K-05). */}
+            <StatCard
+              to="/conflicts"
+              label={t.home.cards.conflicts}
+              value={
+                <Group gap={6} align="baseline" justify="center">
+                  <Text span inherit c={summary.unresolved_hard > 0 ? "red" : undefined}>
+                    {summary.unresolved_hard}
+                  </Text>
+                  <Text span inherit c="dimmed">/</Text>
+                  <Text span inherit c={summary.unresolved_warnings > 0 ? "orange" : undefined}>
+                    {summary.unresolved_warnings}
+                  </Text>
+                </Group>
+              }
+            />
+          </SimpleGrid>
+        </Grid.Col>
+      </Grid>
 
+      {/* ALT BÖLÜM: aynı 7/5 bölünmesi. İki ızgaranın oranı AYNI olduğu için
+          sütun kenarları yukarıdan aşağıya tek çizgide devam ediyor — sayfayı
+          "dağınık" gösteren şey blokların her satırda başka yerde başlamasıydı. */}
       <Grid gutter="lg" align="flex-start">
-        <Grid.Col span={{ base: 12, lg: 7 }}>
+        <Grid.Col span={{ base: 12, lg: LEFT }}>
           <Stack gap="lg">
             <RuleBreakdown scan={scan} />
             {occupancy && <OccupancyHeatmap data={occupancy} />}
           </Stack>
         </Grid.Col>
 
-        <Grid.Col span={{ base: 12, lg: 5 }}>
+        <Grid.Col span={{ base: 12, lg: RIGHT }}>
           <Stack gap="lg">
             <QuickActions user={user} />
             <MyActivity items={activity} />
@@ -150,9 +169,15 @@ function StatCard({ label, value, to }: {
   label: string; value: ReactNode; to: string;
 }) {
   return (
-    <Paper component={Link} to={to} withBorder radius="md" p="lg" ta="center"
+    // flex + center: kart artık satır yüksekliğine uzuyor (3×2 ızgara kimlik
+    // kartıyla aynı yerde bitiyor), içerik de o yüksekliğin ortasında durmalı —
+    // yoksa sayı tepede asılı kalır.
+    <Paper component={Link} to={to} withBorder radius="md" p="md" ta="center"
       bg={PAGE_SURFACE} className="stat-card"
-      style={{ borderColor: BORDER, textDecoration: "none", color: "inherit" }}>
+      style={{
+        borderColor: BORDER, textDecoration: "none", color: "inherit",
+        display: "flex", flexDirection: "column", justifyContent: "center",
+      }}>
       {/* component="div": `value` bazen Group taşıyor (çakışma kartı). Text
           varsayılan <p> üretir ve <p> içine <div> koymak geçersiz HTML'dir —
           tarayıcı p'yi erkenden kapatıp hizalamayı bozar. */}

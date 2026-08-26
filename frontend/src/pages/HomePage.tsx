@@ -95,17 +95,18 @@ export default function HomePage() {
       <Title order={3}>{t.home.title}</Title>
 
       {/* ÜST SATIR: solda kimlik, sağında 3×2 özet.
-          `align="stretch"`: ikisi de satırın yüksekliğine uzar, yani aynı
-          yerde biterler. Kartlar tek sıra hâlinde altı sütunken sayılar
-          incecik şeritlere düşüyor ve kimlik kartıyla arasında hizasız bir
-          boşluk kalıyordu. */}
-      <Grid gutter="lg" align="stretch">
+          `align="flex-start"`: iki blok DOĞAL yükseklikte, tepeden hizalı.
+          Sayaç kartlarını kimlik kartının boyuna UZATMAK (stretch) onları
+          absürt derecede uzun gösteriyordu — kimlik kartı iki listeli, doğal
+          olarak daha uzun. Sağ sütun kısa kalıp altında boşluk bırakabilir;
+          bu normal, kartları deforme etmekten iyidir. */}
+      <Grid gutter="lg" align="flex-start">
         <Grid.Col span={{ base: 12, lg: LEFT }}>
           <IdentityCard user={user} departments={departments} />
         </Grid.Col>
 
         <Grid.Col span={{ base: 12, lg: RIGHT }}>
-          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md" h="100%">
+          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md">
             <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
             <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
             <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
@@ -169,15 +170,9 @@ function StatCard({ label, value, to }: {
   label: string; value: ReactNode; to: string;
 }) {
   return (
-    // flex + center: kart artık satır yüksekliğine uzuyor (3×2 ızgara kimlik
-    // kartıyla aynı yerde bitiyor), içerik de o yüksekliğin ortasında durmalı —
-    // yoksa sayı tepede asılı kalır.
-    <Paper component={Link} to={to} withBorder radius="md" p="md" ta="center"
+    <Paper component={Link} to={to} withBorder radius="md" p="lg" ta="center"
       bg={PAGE_SURFACE} className="stat-card"
-      style={{
-        borderColor: BORDER, textDecoration: "none", color: "inherit",
-        display: "flex", flexDirection: "column", justifyContent: "center",
-      }}>
+      style={{ borderColor: BORDER, textDecoration: "none", color: "inherit" }}>
       {/* component="div": `value` bazen Group taşıyor (çakışma kartı). Text
           varsayılan <p> üretir ve <p> içine <div> koymak geçersiz HTML'dir —
           tarayıcı p'yi erkenden kapatıp hizalamayı bozar. */}

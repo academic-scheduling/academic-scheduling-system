@@ -37,9 +37,9 @@ export default function IdentityCard({
   return (
     // Genişliği ARTIK IZGARA belirliyor (ana sayfanın 7/5 sütunu), kartın
     // kendi `maw`'ı değil: sabit bir üst sınır, yanındaki özet kartlarıyla
-    // arasında hizasız bir boşluk bırakıyordu. `h: 100%` satırdaki iki bloğun
-    // aynı yerde bitmesini sağlar.
-    <Paper withBorder radius="md" bg={PAGE_SURFACE} h="100%"
+    // arasında hizasız bir boşluk bırakıyordu. Yükseklik doğal — sağdaki sayaç
+    // ızgarası buna göre UZATILMIYOR (deforme oluyordu).
+    <Paper withBorder radius="md" bg={PAGE_SURFACE}
       style={{ borderColor: BORDER, overflow: "hidden" }}>
       {/* ÜST: kim olduğunuz */}
       <Group align="flex-start" gap="md" p="lg"

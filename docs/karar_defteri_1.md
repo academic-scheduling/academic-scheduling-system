@@ -3781,3 +3781,19 @@ durur): hücreler `1fr` olduğu için kapsayıcıyla birlikte açılıp haber ni
 yitiriyorlardı. Üst satır `align="stretch"`: kimlik ile sayaç ızgarası aynı
 yerde bitiyor, sayaç kartlarının içeriği de o yüksekliğin ortasında duruyor
 (yoksa sayı tepede asılı kalırdı).
+
+**Beşinci tur: sürekli iki sütun + kart gölgesi.** Dördüncü tur iki AYRI ızgara
+kurmuştu (üstte kimlik+özet, altta dağılım+işlemler); doğal yükseklikte kartlar
+sağ sütunu soldan kısa bırakınca üst ızgaranın altında bir boşluk kalıyordu.
+Çözüm: iki ızgara TEK ızgaraya birleşti, her sütun kendi bloklarını alt alta
+akıtıyor — kısa kalan sütunun altında artık boşluk yok. Sol sütun kimlik →
+kural dağılımı → ısı haritası; sağ sütun 3×2 özet → hızlı işlemler → son
+işlemler → son onaylar. Sütun oranı (7/5) sabit olduğu için dikey kenarlar yine
+hizalı.
+
+Açık modda kart kenarları (1px, çok açık gri) zemine karışıp çerçeveleri
+belirsizleştiriyordu; kartlara hafif bir gölge eklendi. `light-dark()` bir
+box-shadow'un tamamını taşıyamadığı için kural tema attribute'uyla ikiye
+ayrıldı: açık modda sınırı ayıran yumuşak bir gölge, koyu modda yalnız derinlik
+için çok hafif bir gölge (kenar orada zaten görünür). Yalnız ana sayfa kartları
+(`.home-page` altı) etkilenir.

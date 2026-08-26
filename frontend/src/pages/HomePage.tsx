@@ -91,55 +91,20 @@ export default function HomePage() {
   if (!user || !summary || !scan) return <Loader mt="xl" />;
 
   return (
-    <Stack gap="lg">
+    // className="home-page": index.css kart kenarlarına hafif bir gölge
+    // ekliyor — açık modda ince kenarlar zemine karışıyordu.
+    <Stack gap="lg" className="home-page">
       <Title order={3}>{t.home.title}</Title>
 
-      {/* ÜST SATIR: solda kimlik, sağında 3×2 özet.
-          `align="flex-start"`: iki blok DOĞAL yükseklikte, tepeden hizalı.
-          Sayaç kartlarını kimlik kartının boyuna UZATMAK (stretch) onları
-          absürt derecede uzun gösteriyordu — kimlik kartı iki listeli, doğal
-          olarak daha uzun. Sağ sütun kısa kalıp altında boşluk bırakabilir;
-          bu normal, kartları deforme etmekten iyidir. */}
-      <Grid gutter="lg" align="flex-start">
-        <Grid.Col span={{ base: 12, lg: LEFT }}>
-          <IdentityCard user={user} departments={departments} />
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, lg: RIGHT }}>
-          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md">
-            <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
-            <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
-            <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
-            <StatCard to="/courses" label={t.home.cards.courses} value={summary.courses} />
-            <StatCard to="/exams" label={t.home.cards.exams} value={summary.exams} />
-
-            {/* Çakışma tek kart ama iki sayı: engel taslağın onaya gitmesini
-                durdurur, uyarı durdurmaz (K-05). */}
-            <StatCard
-              to="/conflicts"
-              label={t.home.cards.conflicts}
-              value={
-                <Group gap={6} align="baseline" justify="center">
-                  <Text span inherit c={summary.unresolved_hard > 0 ? "red" : undefined}>
-                    {summary.unresolved_hard}
-                  </Text>
-                  <Text span inherit c="dimmed">/</Text>
-                  <Text span inherit c={summary.unresolved_warnings > 0 ? "orange" : undefined}>
-                    {summary.unresolved_warnings}
-                  </Text>
-                </Group>
-              }
-            />
-          </SimpleGrid>
-        </Grid.Col>
-      </Grid>
-
-      {/* ALT BÖLÜM: aynı 7/5 bölünmesi. İki ızgaranın oranı AYNI olduğu için
-          sütun kenarları yukarıdan aşağıya tek çizgide devam ediyor — sayfayı
-          "dağınık" gösteren şey blokların her satırda başka yerde başlamasıydı. */}
+      {/* TEK IZGARA, iki sürekli sütun (7/5). İki sütun da kendi bloklarını
+          alt alta akıtıyor; böylece kısa kalan bir sütunun altında boşluk
+          KALMIYOR. Sütun oranı sabit olduğu için dikey kenarlar da hizalı.
+          Sol: kimlik → kural dağılımı → ısı haritası. Sağ: 3×2 özet → hızlı
+          işlemler → son işlemler → son onaylar. */}
       <Grid gutter="lg" align="flex-start">
         <Grid.Col span={{ base: 12, lg: LEFT }}>
           <Stack gap="lg">
+            <IdentityCard user={user} departments={departments} />
             <RuleBreakdown scan={scan} />
             {occupancy && <OccupancyHeatmap data={occupancy} />}
           </Stack>
@@ -147,6 +112,32 @@ export default function HomePage() {
 
         <Grid.Col span={{ base: 12, lg: RIGHT }}>
           <Stack gap="lg">
+            <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md">
+              <StatCard to="/departments" label={t.home.cards.departments} value={summary.departments} />
+              <StatCard to="/classrooms" label={t.home.cards.classrooms} value={summary.classrooms} />
+              <StatCard to="/lecturers" label={t.home.cards.lecturers} value={summary.lecturers} />
+              <StatCard to="/courses" label={t.home.cards.courses} value={summary.courses} />
+              <StatCard to="/exams" label={t.home.cards.exams} value={summary.exams} />
+
+              {/* Çakışma tek kart ama iki sayı: engel taslağın onaya gitmesini
+                  durdurur, uyarı durdurmaz (K-05). */}
+              <StatCard
+                to="/conflicts"
+                label={t.home.cards.conflicts}
+                value={
+                  <Group gap={6} align="baseline" justify="center">
+                    <Text span inherit c={summary.unresolved_hard > 0 ? "red" : undefined}>
+                      {summary.unresolved_hard}
+                    </Text>
+                    <Text span inherit c="dimmed">/</Text>
+                    <Text span inherit c={summary.unresolved_warnings > 0 ? "orange" : undefined}>
+                      {summary.unresolved_warnings}
+                    </Text>
+                  </Group>
+                }
+              />
+            </SimpleGrid>
+
             <QuickActions user={user} />
             <MyActivity items={activity} />
             {/* K-59: taslaklar özel, onaylar arka planda — program haber

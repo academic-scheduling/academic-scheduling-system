@@ -39,8 +39,17 @@ const writeUid = (id: number | null): void => {
 
 // --- Oturum yönetimi (K-47) ---
 // Karar: MUTLAK 60 dk yerine BOŞTA-KALMA modeli. Aktif çalışırken token sessizce
-// tazelenir (kesinti yok); yalnız 15 dk hareketsizlikte "uzat/çık" sorulur.
-const IDLE_LIMIT_MS = 15 * 60 * 1000;    // 15 dk hareketsizlik → uzatmayı sor
+// tazelenir (kesinti yok); yalnız hareketsizlikte "uzat/çık" sorulur.
+//
+// K-84: eşik 15 → 45 dk. Program hazırlamak ekrandan gözünü ayırmadan yapılan
+// bir iş değil — kullanıcı basılı listeye, telefona, yan masaya dönüyor ve 15
+// dakika bunun için kısaydı; uyarı, güvenlik kazancından çok kesinti üretiyordu.
+//
+// Üst sınır token'ın ömrüdür (backend `access_token_expire_minutes` = 60):
+// keepalive son hareketten en geç 10 dk sonra durduğu için, uyarı anında
+// token'ın yaşı en kötü 55 dk olur; 60 sn'lik mühletle 56. Eşik daha yukarı
+// çekilecekse önce backend'deki ömür büyütülmeli, yoksa "Devam et" 401 alır.
+const IDLE_LIMIT_MS = 45 * 60 * 1000;    // 45 dk hareketsizlik → uzatmayı sor
 const GRACE_SEC = 60;                     // modal açıldıktan sonra otomatik çıkışa kalan saniye
 const KEEPALIVE_MS = 10 * 60 * 1000;      // aktifken token'ı bu aralıkla sessizce tazele
 const TICK_MS = 30 * 1000;                // boşta/keepalive denetim sıklığı
@@ -174,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const idle = now - lastActivity.current;
       if (idle >= IDLE_LIMIT_MS) {
         setGrace(GRACE_SEC);
-        setPromptOpen(true);                      // 15 dk boşta → uzatmayı sor
+        setPromptOpen(true);                      // eşiği geçti → uzatmayı sor
       } else if (idle < KEEPALIVE_MS && now - lastRefresh.current >= KEEPALIVE_MS) {
         refresh().catch(() => { /* 401 → client.ts login'e atar */ });
       }
@@ -195,7 +204,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [promptOpen, grace, logout]);
 
   // GEÇİCİ TANI: boşta-uyarısına kalan süre (ms). Modal açıkken 0. Sidebar sayacı
-  // her saniye bunu çağırır; hareket olunca lastActivity sıfırlanır → sayaç 15:00'e döner.
+  // her saniye bunu çağırır; hareket olunca lastActivity sıfırlanır → sayaç
+  // eşiğe (45:00) döner.
   const idleWarningRemainingMs = useCallback(
     () => (promptOpen ? 0 : Math.max(0, IDLE_LIMIT_MS - (Date.now() - lastActivity.current))),
     [promptOpen]);
@@ -214,7 +224,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       >
         <Stack>
           <Text size="sm">
-            {t.session.idleBody(15)}{" "}
+            {/* Dakika SABİTTEN türetiliyor: eşik değişince cümle de değişsin,
+                iki ayrı yerde 15/45 tutmaya çalışmayalım. */}
+            {t.session.idleBody(IDLE_LIMIT_MS / 60000)}{" "}
             <b>{t.session.idleSeconds(grace)}</b>{t.session.idleTail}
           </Text>
           <Group justify="flex-end">

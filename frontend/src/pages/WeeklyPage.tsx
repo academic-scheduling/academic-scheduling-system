@@ -22,6 +22,7 @@ import type { UndoEntity } from "../hooks/useUndoStack";
 import { turkishOptionsFilter } from "../utils/selectSearch";
 import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
 import { CourseInfoButton } from "../components/CourseInfoButton";
+import { ConflictList } from "../components/ConflictList";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -1112,19 +1113,9 @@ export default function WeeklyPage() {
 
       <Paper ref={conflictsRef} p="md" radius="md"
         style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
-        <style>{`
-          @keyframes blinkPulseRed {
-            0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
-            50% { background-color: rgba(239, 68, 68, 0.05); box-shadow: none; }
-            100% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
-          }
-          @keyframes blinkPulseYellow {
-            0% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
-            50% { background-color: rgba(245, 158, 11, 0.05); box-shadow: none; }
-            100% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
-          }
-        `}</style>
-        <Group justify="space-between" mb={4}>
+        {/* Vurgu (blink) keyframe'leri artık ortak bileşende (K-84): satırları
+            o çiziyor, stilinin de onunla birlikte gezmesi gerekiyor. */}
+        <Group justify="space-between" mb={weeklyConflicts.length ? "sm" : 4}>
           <Text fw={500} size="sm">{t.weekly.conflictsTitle}</Text>
           <Group gap={6}>
             <Badge size="sm" color="red" variant="light">
@@ -1135,82 +1126,33 @@ export default function WeeklyPage() {
             </Badge>
           </Group>
         </Group>
-        {/* K-81: kapsam açıklaması KALDIRILDI. K-62'de "bu cohort mu, tüm
-            sistem mi?" sorusuna cevap olsun diye konmuştu; artık her satır
-            etkilenen dersi ve cohort'unu kendisi yazıyor, dolayısıyla cümle
-            listenin her açılışında yeniden okunan sabit bir başlık gürültüsü
-            haline gelmişti. Başlıktaki "Çakışmalar" + satırların kendisi
-            yetiyor. */}
-        {weeklyConflicts.length === 0 ? (
-          <Text size="sm" c="dimmed">{t.weekly.noConflicts}</Text>
-        ) : (
-          <Stack gap={8}>
-            {weeklyConflicts.map((c, i) => {
-              const isBlinking = blinkingEntryIds != null
-                && c.affected.some((a) => a.type === "weekly_entry" && blinkingEntryIds.includes(a.id));
-              const isHard = c.severity === "HARD";
-              return (
-                <Group key={`${c.rule_id}-${i}`} justify="space-between" gap="sm" wrap="nowrap" align="flex-start"
-                  p={6}
-                  style={{
-                    borderRadius: 6,
-                    transition: "all 300ms ease",
-                    animation: isBlinking
-                      ? isHard ? "blinkPulseRed 0.8s ease-in-out infinite" : "blinkPulseYellow 0.8s ease-in-out infinite"
-                      : undefined,
-                    border: isBlinking
-                      ? isHard ? "2px solid #EF4444" : "2px solid #F59E0B"
-                      : "1px solid transparent",
-                    background: isBlinking
-                      ? isHard ? "light-dark(#FEF2F2, #3A2526)" : "light-dark(#FFFBEB, #3A3320)"
-                      : undefined,
-                  }}>
-                  <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
-                    <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                      color={c.severity === "HARD" ? "red" : "orange"}>
-                      {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                    </Badge>
-                    <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 28 }}>{c.rule_id}</Text>
-                    {/* Mesajı UI kurmuyor, motor kuruyor (kontrat §0) */}
-                    <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
-                  </Group>
-                  {/* Etkilenen tarafların HEPSİ düğme olur. Haftalık ders bu
-                      sayfada highlight'lanır; X kuralında karşı taraf SINAV
-                      olduğundan o düğme sınav takvimine yönlendirir (o kayıt bu
-                      sayfada yok). Renk nereye gittiğini belli eder: mavi =
-                      haftalık ders (burada), mor = sınav (sınavlar sayfası). */}
-                  {c.affected.length > 0 && (
-                    <Group gap={6} wrap="wrap" justify="flex-end" style={{ flexShrink: 0, maxWidth: "38%" }}>
-                      {c.affected.map((a, idx) => (
-                        <Button key={idx} size="compact-xs" variant="light"
-                          color={a.type === "weekly_entry" ? "blue" : "violet"}
-                          onClick={() => {
-                            if (a.type !== "weekly_entry") {
-                              navigate(`/exams?highlight=${a.id}&rule=${c.rule_id}`);
-                              return;
-                            }
-                            // K-62: çakışmanın iki tarafı iki AYRI evrenden
-                            // gelebilir — biri taslağımın satırı, öteki başka
-                            // cohort'un YAYINDAKİ satırı. Karıştırmamak için
-                            // önce "bu satır şu an ekranda mı" diye bakılır.
-                            const ekranda = entries.find((e) => e.id === a.id);
-                            if (ekranda) {
-                              setDeepHighlightIds([a.id]);
-                              setHighlightInfo({ rule: c.rule_id, entries: [ekranda] });
-                              return;         // zaten buradayız, gidilecek yer yok
-                            }
-                            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
-                          }}>
-                          {a.course_code ?? `#${a.id}`}
-                        </Button>
-                      ))}
-                    </Group>
-                  )}
-                </Group>
-              );
-            })}
-          </Stack>
-        )}
+        {/* K-84: liste artık Çakışma Raporu'yla AYNI tablo — zebra dahil.
+            Kompakt sürüm: Tür ve Cohort sütunları yok (şiddet sol kenardan ve
+            kural rozetinden okunuyor, cohort zaten ekranın kendisi). */}
+        <ConflictList
+          list={weeklyConflicts}
+          emptyText={t.weekly.noConflicts}
+          blinking={(c) => blinkingEntryIds != null
+            && c.affected.some((a) => a.type === "weekly_entry"
+              && blinkingEntryIds.includes(a.id))}
+          onAffected={(c, a) => {
+            if (a.type !== "weekly_entry") {
+              // X kuralında karşı taraf SINAV — o kayıt bu sayfada yok.
+              navigate(`/exams?highlight=${a.id}&rule=${c.rule_id}`);
+              return;
+            }
+            // K-62: çakışmanın iki tarafı iki AYRI evrenden gelebilir — biri
+            // taslağımın satırı, öteki başka cohort'un YAYINDAKİ satırı.
+            // Karıştırmamak için önce "bu satır şu an ekranda mı" diye bakılır.
+            const ekranda = entries.find((e) => e.id === a.id);
+            if (ekranda) {
+              setDeepHighlightIds([a.id]);
+              setHighlightInfo({ rule: c.rule_id, entries: [ekranda] });
+              return;                     // zaten buradayız, gidilecek yer yok
+            }
+            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
+          }}
+        />
       </Paper>
 
       {placing && (() => {

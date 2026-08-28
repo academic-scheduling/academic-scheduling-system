@@ -21,6 +21,7 @@ import { DraftStatus, DraftActions, DraftNotes } from "../components/DraftBar";
 import ExportMenu from "../components/ExportMenu";
 import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
 import { CourseInfoButton, type CourseInfoExam } from "../components/CourseInfoButton";
+import { ConflictList } from "../components/ConflictList";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
   GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
@@ -995,18 +996,7 @@ export default function ExamsPage() {
 
       <Paper ref={conflictsRef} p="md" radius="md"
         style={{ background: PAGE_SURFACE, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
-        <style>{`
-          @keyframes blinkPulseRed {
-            0% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
-            50% { background-color: rgba(239, 68, 68, 0.05); box-shadow: none; }
-            100% { background-color: rgba(239, 68, 68, 0.35); box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
-          }
-          @keyframes blinkPulseYellow {
-            0% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
-            50% { background-color: rgba(245, 158, 11, 0.05); box-shadow: none; }
-            100% { background-color: rgba(245, 158, 11, 0.35); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
-          }
-        `}</style>
+        {/* Vurgu (blink) keyframe'leri artık ortak bileşende (K-84). */}
         <Group justify="space-between" mb={examConflicts.length ? "sm" : 0}>
           <Text fw={500} size="sm">{t.exams.conflictsTitle}</Text>
           <Group gap={6}>
@@ -1018,77 +1008,31 @@ export default function ExamsPage() {
             </Badge>
           </Group>
         </Group>
-        {examConflicts.length === 0 ? (
-          <Text size="sm" c="dimmed">{t.exams.noConflicts}</Text>
-        ) : (
-          /* Haftalık programla aynı: liste alt alta uzar (kaydırma kutusu yok).
-             Kapalı bir slider içinde çakışmaların birikmesi, kaçının görünür
-             olduğunu belirsizleştiriyordu. */
-          <Stack gap={8}>
-            {examConflicts.map((c, i) => {
-              const isBlinking = blinkingExamId != null
-                && c.affected.some((a) => a.type === "exam" && a.id === blinkingExamId);
-              const isHard = c.severity === "HARD";
-              return (
-                <Group key={`${c.rule_id}-${i}`} justify="space-between" gap="sm" wrap="nowrap" align="flex-start"
-                  p={6}
-                  style={{
-                    borderRadius: 6,
-                    transition: "all 300ms ease",
-                    animation: isBlinking
-                      ? isHard ? "blinkPulseRed 0.8s ease-in-out infinite" : "blinkPulseYellow 0.8s ease-in-out infinite"
-                      : undefined,
-                    border: isBlinking
-                      ? isHard ? "2px solid #EF4444" : "2px solid #F59E0B"
-                      : "1px solid transparent",
-                    background: isBlinking
-                      ? isHard ? "light-dark(#FEF2F2, #3A2526)" : "light-dark(#FFFBEB, #3A3320)"
-                      : undefined,
-                  }}>
-                  <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
-                    <Badge size="sm" variant="light" style={{ flexShrink: 0 }}
-                      color={c.severity === "HARD" ? "red" : "orange"}>
-                      {c.severity === "HARD" ? "ENGEL" : "UYARI"}
-                    </Badge>
-                    <Text size="xs" c="dimmed" style={{ flexShrink: 0, width: 30 }}>{c.rule_id}</Text>
-                    <Text size="sm" fw={isBlinking ? 700 : 400}>{c.message}</Text>
-                  </Group>
-                  {/* Etkilenen tarafların HEPSİ düğme olur. Sınav öğesi bu
-                      sayfada highlight'lanır; X kuralında karşı taraf HAFTALIK
-                      DERS olduğundan o düğme haftalık programa yönlendirir
-                      (o kayıt bu sayfada yok). Renk nereye gittiğini belli eder:
-                      mor = sınav (burada), mavi = haftalık ders (haftalık sayfa). */}
-                  {c.affected.length > 0 && (
-                    <Group gap={6} wrap="wrap" justify="flex-end" style={{ flexShrink: 0, maxWidth: "38%" }}>
-                      {c.affected.map((a, idx) => (
-                        <Button key={idx} size="compact-xs" variant="light"
-                          color={a.type === "exam" ? "violet" : "blue"}
-                          onClick={() => {
-                            if (a.type !== "exam") {
-                              navigate(`/weekly?highlight=${a.id}&rule=${c.rule_id}`);
-                              return;
-                            }
-                            // K-62: çakışmanın iki tarafı iki AYRI evrenden
-                            // gelebilir — biri taslağımın sınavı, öteki başka
-                            // cohort'un YAYINDAKİ sınavı. Önce "ekranda mı".
-                            const ekranda = exams.find((e) => e.id === a.id);
-                            if (ekranda) {
-                              setDeepHighlightIds([a.id]);
-                              setHighlightInfo({ rule: c.rule_id, exams: [ekranda] });
-                              return;       // zaten buradayız, gidilecek yer yok
-                            }
-                            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
-                          }}>
-                          {a.course_code ?? `#${a.id}`}
-                        </Button>
-                      ))}
-                    </Group>
-                  )}
-                </Group>
-              );
-            })}
-          </Stack>
-        )}
+        {/* K-84: liste artık Çakışma Raporu'yla AYNI tablo — zebra dahil.
+            Kompakt sürüm: Tür ve Cohort sütunları yok (şiddet sol kenardan ve
+            kural rozetinden okunuyor, cohort zaten ekranın kendisi). */}
+        <ConflictList
+          list={examConflicts}
+          emptyText={t.exams.noConflicts}
+          blinking={(c) => blinkingExamId != null
+            && c.affected.some((a) => a.type === "exam" && a.id === blinkingExamId)}
+          onAffected={(c, a) => {
+            if (a.type !== "exam") {
+              // X kuralında karşı taraf HAFTALIK DERS — bu sayfada yok.
+              navigate(`/weekly?highlight=${a.id}&rule=${c.rule_id}`);
+              return;
+            }
+            // K-62: çakışmanın iki tarafı iki AYRI evrenden gelebilir — biri
+            // taslağımın sınavı, öteki başka cohort'un YAYINDAKİ sınavı.
+            const ekranda = exams.find((e) => e.id === a.id);
+            if (ekranda) {
+              setDeepHighlightIds([a.id]);
+              setHighlightInfo({ rule: c.rule_id, exams: [ekranda] });
+              return;                     // zaten buradayız, gidilecek yer yok
+            }
+            setSearchParams({ highlight: String(a.id), rule: c.rule_id });
+          }}
+        />
       </Paper>
 
       {(placing || editing) && (

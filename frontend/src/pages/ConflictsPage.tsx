@@ -15,6 +15,7 @@ import { formatSlotRange } from "../utils/slots";
 import { TEXT_MUTED } from "../utils/scheduleTheme";
 import type { RuleFamily } from "../utils/conflictRules";
 import { RULE_CATALOG, ruleFamily } from "../utils/conflictRules";
+import { SEV_OUTLINE } from "../components/ConflictList";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
@@ -64,12 +65,13 @@ const SEV_BADGE = {
   hard: { color: "red.8", variant: "filled" as const },
   warn: { color: "orange", variant: "light" as const },
 };
-/** Kural KODU rozeti ÇERÇEVELİ. Bir tur dolgulu denendi (Tür rozetiyle aynı
- *  biçim) ama aynı satırda iki dolu kırmızı blok fazla ağır durdu: satırın
- *  ilk bakışta okunması gereken şey ŞİDDET, kod ise ikincil. Çerçeve, rengi
- *  taşıyıp ağırlığı taşımıyor — istenen tam bu ayrım. `outline`ın varsayılan
- *  tonu da o soluk pastel olduğu için renk doygun shade'den veriliyor. */
-const SEV_OUTLINE = { hard: "red.5", warn: "orange.4" };
+/* Kural KODU rozetinin çerçeve tonu (`SEV_OUTLINE`) ORTAK bileşenden geliyor:
+   program ekranlarındaki kompakt liste de aynı rozeti çiziyor (K-84) ve iki
+   kopyanın gün gelip ayrışması, aynı kuralı iki ekranda iki renkte gösterirdi.
+
+   Neden çerçeve: bir tur dolgulu denendi (Tür rozetiyle aynı biçim) ama aynı
+   satırda iki dolu kırmızı blok fazla ağır durdu — satırın ilk bakışta
+   okunması gereken şey ŞİDDET, kod ise ikincil. */
 
 /** Cohort ve "Çakışan öğeler" sütunlarının satır ölçüsü. İki sütun da AYNI
  *  sayıyı kullanmak zorunda — hizanın tek dayanağı bu. */

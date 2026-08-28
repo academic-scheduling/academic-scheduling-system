@@ -153,6 +153,11 @@ ERRORS: dict[str, str] = {
     "Onay bekleyen taslak bulunamadı": "No pending draft found",
     "Kendi talebinizi onaylayamazsınız — başka bir onay yetkilisi incelemeli":
         "You cannot approve your own request — another approver must review it",
+    # K-83: gönderende olmayan bir alıcı seçildi (yetki/üyelik arada değişmiş
+    # ya da istemci listesi bayat).
+    "Seçilen kişilerden biri bu talebi onaylayamaz — listeyi yenileyip tekrar deneyin":
+        "One of the selected people cannot approve this request — refresh the "
+        "list and try again",
     "Taslak onay bekliyor — düzenlemek için önce geri çekin":
         "The draft is pending approval — withdraw it first to edit",
     "Onaylanmış taslak geçmiş kaydıdır, değiştirilemez":

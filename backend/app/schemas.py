@@ -601,10 +601,33 @@ class DraftClearRequest(BaseModel):
 
 class DraftSubmitRequest(BaseModel):
     note: str | None = Field(None, max_length=2000)   # PR açıklaması gibi
+    # K-83: talebin kime gideceği. Gönderen, taslağın bölümündeki onay
+    # yetkilileri + adminler arasından seçer; kuyruk yalnız seçilenlere açılır.
+    #
+    # OPSİYONEL ve `None` = "havuzun tamamı" (K-83 öncesi davranış). İki sebep:
+    #   1. Geriye uyum — eski istemci/entegrasyon gönderimi bozulmaz.
+    #   2. "Kim bakarsa baksın" hâlâ geçerli bir niyet; seçim yapmamak, seçim
+    #      ekranını atlamak demek olmalı, gönderimi engellemek değil.
+    # BOŞ LİSTE ise ayrı bir şeydir ve reddedilir: hiç kimseye gönderilmeyen
+    # talep sonsuza dek beklerdi (`min_length=1`).
+    approver_ids: list[int] | None = Field(None, min_length=1)
 
 class DraftUserRef(BaseModel):
     id: int
     name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class DraftApproverCandidate(BaseModel):
+    """Onaya gönderirken seçilebilecek bir yetkili (K-83).
+
+    `is_admin` bilerek dışarı veriliyor: admin her bölümde yetkilidir, yani
+    bölüm üyeliği olmasa da listede görünür. Bu ayrım gösterilmezse kullanıcı
+    "bu kişi neden burada?" diye sorar; rozet cevabı listenin içinde verir.
+    """
+    id: int
+    name: str
+    email: str
+    is_admin: bool
     model_config = ConfigDict(from_attributes=True)
 
 class DraftOut(BaseModel):
@@ -625,6 +648,9 @@ class DraftOut(BaseModel):
     created_at: datetime
     submitted_at: datetime | None = None
     submit_note: str | None = None
+    # K-83: talebin gönderildiği yetkililer. Gönderen "kime gitti"yi, alıcı da
+    # "benden başka kim bakıyor"u görsün diye kayıtla birlikte taşınır.
+    approvers: list[DraftUserRef] = []
     reviewer: DraftUserRef | None = None
     reviewed_at: datetime | None = None
     review_note: str | None = None

@@ -11,6 +11,9 @@ import {
 import { api, ApiError } from "../api/client";
 import {
   DRAFT_STATUS_COLORS, } from "../api/types";
+import {
+  ApproverPicker, approversReady, useApproverCandidates,
+} from "./ApproverPicker";
 import DiffTable from "./DiffTable";
 import type {
   ConflictResult, DraftClearResponse, DraftDiff, DraftDiffItem, DraftKind,
@@ -398,13 +401,23 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [blockers, setBlockers] = useState<ConflictResult[] | null>(null);
+  /** K-83: talebin adresi. Varsayılan BOŞ — seçim bilinçli olsun; hepsini
+   *  önceden işaretlemek K-83 öncesi yayın davranışını geri getirirdi. */
+  const [approverIds, setApproverIds] = useState<number[]>([]);
+  // Pencere yalnız gönderilebilir taslakta açılır, o yüzden koşulsuz çekilir.
+  const { list: adaylar, error: adayHata } = useApproverCandidates(draft.id, true);
 
   const gonder = async () => {
     setBusy(true);
     setBlockers(null);
     try {
       const r = await api.post<{ draft: ScheduleDraft; warnings: ConflictResult[] }>(
-        `/schedule-drafts/${draft.id}/submit`, { note: note.trim() || null });
+        `/schedule-drafts/${draft.id}/submit`, {
+          note: note.trim() || null,
+          // Havuz boşken `null`: "seçim yapılmadı" ile "kimseye gönderme" aynı
+          // şey değil; sunucu null'ı "havuzun tamamı" diye okur (K-83).
+          approver_ids: approverIds.length ? approverIds : null,
+        });
       notifications.show({
         color: "green", title: t.draft.submitted,
         message: r.warnings.length
@@ -429,6 +442,12 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
           <b>{draft.change_count}</b> değişiklik onaya gönderilecek. Onaylanana
           kadar yayındaki {turAdi} değişmez; taslak inceleme boyunca kilitlenir.
         </Text>
+        {/* K-83: "kime" sorusu "ne diyeceğim"den önce gelir. */}
+        <div>
+          <Text size="sm" fw={600} mb={6}>{t.draft.approversTitle}</Text>
+          <ApproverPicker list={adaylar} error={adayHata}
+            value={approverIds} onChange={setApproverIds} />
+        </div>
         <Textarea
           label={t.draft.noteLabel}
           description={t.draft.noteHelp}
@@ -447,9 +466,16 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
         )}
         <Group justify="flex-end" gap="xs">
           <Button variant="default" onClick={onClose}>{t.common.dismiss}</Button>
-          <Button onClick={gonder} loading={busy} leftSection={<IconPencil size={15} />}>
-            {blockers ? t.draft.retry : t.draft.send}
-          </Button>
+          {/* Adres seçilmeden gönderilemez; havuz boşsa `approversReady`
+              izin verir (adreslenecek kimse yokken kilitlemenin anlamı yok). */}
+          <Tooltip label={t.draft.approversRequired}
+            disabled={approversReady(adaylar, approverIds)}>
+            <Button onClick={gonder} loading={busy}
+              disabled={!approversReady(adaylar, approverIds)}
+              leftSection={<IconPencil size={15} />}>
+              {blockers ? t.draft.retry : t.draft.send}
+            </Button>
+          </Tooltip>
         </Group>
       </Stack>
     </Modal>

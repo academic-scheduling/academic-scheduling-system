@@ -15,6 +15,9 @@ import {
 import type { ComponentType } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import {
+  ApproverPicker, approversReady, useApproverCandidates,
+} from "../components/ApproverPicker";
 import { ProposedExamList, ProposedGrid } from "../components/ProposedSchedule";
 import { examPlacementText, placementText } from "../components/DiffTable";
 import type {
@@ -405,6 +408,10 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
    *  artık incelemenin parçası ve TEK alan iki karara birden hizmet ediyor —
    *  onayda isteğe bağlı, rette zorunlu (backend `review_note` ortak alan). */
   const [note, setNote] = useState("");
+  /** K-83: talebin gideceği onay yetkilileri. Varsayılan BOŞ — adres, gönderenin
+   *  bilinçli seçimi olmalı; hepsini önceden işaretlemek K-83 öncesi yayın
+   *  davranışını sessizce geri getirirdi. */
+  const [approverIds, setApproverIds] = useState<number[]>([]);
 
   const isSelf = draft.owner.id === meId;
   // İncelenebilir = onaylayıcı + PENDING (kuyruk kaydı; kendi bekleyenim de dahil).
@@ -495,8 +502,12 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
   const onayaGonder = async () => {
     setBusy(true);
     try {
-      await api.post(`/schedule-drafts/${draft.id}/submit`,
-        { note: submitNote.trim() || null });
+      await api.post(`/schedule-drafts/${draft.id}/submit`, {
+        note: submitNote.trim() || null,
+        // Havuz boşken `null` gider: "seçim yapılmadı" ile "kimseye gönderme"
+        // aynı şey değil; sunucu null'ı "havuzun tamamı" diye okur (K-83).
+        approver_ids: approverIds.length ? approverIds : null,
+      });
       notifications.show({ color: "green", message: t.publishing.submitted });
       onChanged();
     } catch (e) {
@@ -556,8 +567,16 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
   const duzenlenebilir = draft.status === "OPEN" || draft.status === "REJECTED";
   const kararBizde = reviewable && !isSelf;
   const kararVerildi = draft.status === "REJECTED";
-  const yanSutun = kararBizde || kararVerildi
-    || (duzenlenebilir && isSelf) || (!duzenlenebilir && !!draft.submit_note);
+  /** K-83: gönderim adresi. Liste yalnız GÖNDERİLEBİLİR kendi taslağımda
+   *  çekilir — başka durumda seçilecek bir şey yok, istek de atılmaz. */
+  const gonderebilirim = duzenlenebilir && isSelf;
+  const { list: adaylar, error: adayHata } =
+    useApproverCandidates(draft.id, gonderebilirim);
+  /** Gönderilmiş bir talepte adres ARTIK BİLGİDİR: gönderen "kime gitti"yi,
+   *  alıcı "benden başka kim bakıyor"u görsün. */
+  const adresGoster = !duzenlenebilir && draft.approvers.length > 0;
+  const yanSutun = kararBizde || kararVerildi || gonderebilirim
+    || adresGoster || (!duzenlenebilir && !!draft.submit_note);
 
   return (
     <>
@@ -726,6 +745,20 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
                         kadar `submit_note` yazılıyordu ama hiçbir yerde
                         gösterilmiyordu — onaylayıcı gönderenin ne dediğini
                         göremiyordu. */}
+                    {/* K-83: adres, notun ÜSTÜNDE — "kime" sorusu "ne
+                        diyeceğim"den önce gelir. */}
+                    {gonderebilirim && (
+                      <div>
+                        <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>
+                          {t.publishing.sendToTitle}
+                        </Text>
+                        <Paper withBorder radius="md" p="md">
+                          <ApproverPicker list={adaylar} error={adayHata}
+                            value={approverIds} onChange={setApproverIds} />
+                        </Paper>
+                      </div>
+                    )}
+                    {adresGoster && <RecipientsCard people={draft.approvers} />}
                     {duzenlenebilir && isSelf && (
                       <NotePanel title={t.publishing.submitNoteOptional}
                         value={submitNote} onChange={setSubmitNote} />
@@ -786,10 +819,17 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
                 gönderim doğrudan onu kullanıyor. Onaya göndermek geri
                 alınabilir bir adım (withdraw), araya onay ekranı koymak
                 gereksiz bir tıklamaydı. */}
-            <Button leftSection={<IconSend size={15} />} loading={busy}
-              onClick={onayaGonder}>
-              {t.publishing.submitForApproval}
-            </Button>
+            {/* K-83: adres seçilmeden gönderilemez. `approversReady` havuz
+                boşken izin verir — adreslenecek kimse yokken kilitlemek, tek
+                yetkilisi olan bölümü büsbütün durdururdu. */}
+            <Tooltip label={t.draft.approversRequired}
+              disabled={approversReady(adaylar, approverIds)}>
+              <Button leftSection={<IconSend size={15} />} loading={busy}
+                disabled={!approversReady(adaylar, approverIds)}
+                onClick={onayaGonder}>
+                {t.publishing.submitForApproval}
+              </Button>
+            </Tooltip>
             <Button variant="default" leftSection={<IconPencil size={15} />}
               onClick={() => goProgram(true)}>{t.publishing.editInSchedule}</Button>
             <Button variant="default" color="red" leftSection={<IconTrash size={15} />}
@@ -1012,6 +1052,32 @@ function NotePanel({ title, value, onChange }: {
         <Textarea placeholder={t.publishing.decisionNotePlaceholder}
           autosize minRows={4} maxRows={9}
           value={value} onChange={(e) => onChange(e.currentTarget.value)} />
+      </Paper>
+    </div>
+  );
+}
+
+/** Talebin gönderildiği yetkililer (K-83).
+ *
+ *  Gönderim adresli olduğu için "kime gitti" artık kaydın bir parçası. İki
+ *  okuyucusu var: gönderen (talebimi kim bekliyor) ve alıcı (benden başka kim
+ *  bakıyor — iki kişinin aynı talebi iki kez incelemesini önler).
+ *
+ *  Adres BOŞSA kart hiç çizilmez (çağıran taraf `adresGoster` ile eler): K-83
+ *  öncesi gönderilmiş taleplerde adres yoktur ve boş bir kutu, bilginin
+ *  kaybolduğunu değil talebin kimseye gitmediğini ima ederdi. */
+function RecipientsCard({ people }: { people: { id: number; name: string }[] }) {
+  const t = useT();
+  return (
+    <div>
+      <Text fz={12} fw={600} c={TEXT_MUTED} mb={8}>{t.publishing.sentToTitle}</Text>
+      <Paper withBorder radius="md" p="md">
+        <Group gap={6}>
+          {people.map((p) => (
+            <Badge key={p.id} variant="light" color="blue"
+              leftSection={<IconUser size={12} />}>{p.name}</Badge>
+          ))}
+        </Group>
       </Paper>
     </div>
   );

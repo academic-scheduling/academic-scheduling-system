@@ -1013,6 +1013,19 @@ export const tr = {
     noteHelp: "Onaylayıcı bunu görecek — neden değiştirdiğinizi yazın",
     notePlaceholder: "Örn. 3. sınıf laboratuvarı Çarşamba kapalı olduğu için kaydırıldı",
     submitBlockedTitle: "Gönderilemedi — hard çakışma",
+
+    // K-83 · talep artık adresli: gönderen alıcıları seçer.
+    approversTitle: "Kime gönderilsin?",
+    approversHelp: "Talep yalnız işaretlediğiniz kişilerin onay kuyruğuna düşer",
+    approversAdminBadge: "Yönetici",
+    approversAll: "Tümünü seç",
+    approversNone: "Seçimi temizle",
+    approversEmpty:
+      "Bu bölümde sizden başka onay yetkilisi yok. Talebi göndermek için önce "
+      + "bir onay yetkilisi tanımlanmalı.",
+    approversRequired: "En az bir onay yetkilisi seçin",
+    approversLoadFailed: "Onay yetkilileri getirilemedi",
+    approversSelected: (n: number) => `${n} kişi seçildi`,
     retry: "Tekrar dene",
     send: "Gönder",
 
@@ -1145,6 +1158,9 @@ export const tr = {
     // K-80: gönderim notu artık modalda değil, incelemenin yanında —
     // yazılırken ve gönderildikten sonra AYNI yerde duruyor.
     submitNoteOptional: "ONAYLAYICIYA NOT (opsiyonel)",
+    // K-83: gönderim artık adresli — kutu, notun hemen üstünde durur.
+    sendToTitle: "KİME GÖNDERİLSİN",
+    sentToTitle: "GÖNDERİLDİĞİ KİŞİLER",
     submitNoteTitle: "GÖNDERENİN NOTU",
     decisionNotePlaceholder: "Gönderene iletilecek not",
     rejectNeedsNote: "Reddetmek için gerekçe yazın",

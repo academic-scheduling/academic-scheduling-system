@@ -520,10 +520,24 @@ export type ScheduleDraft = {
   created_at: string;
   submitted_at: string | null;
   submit_note: string | null;
+  /** K-83: talebin gönderildiği onay yetkilileri. Gönderen "kime gitti"yi,
+   *  alıcı da "benden başka kim bakıyor"u buradan görür. Bekleyen olmayan
+   *  taslakta boştur — adresleme gönderime aittir. */
+  approvers: DraftUserRef[];
   reviewer: DraftUserRef | null;
   reviewed_at: string | null;
   review_note: string | null;
   applied_summary: string | null;
+};
+
+/** K-83: onaya gönderirken seçilebilecek yetkili.
+ *  `is_admin` rozeti admin'in bölüm üyeliği olmasa da listede olduğunu
+ *  anlatır — yoksa "bu kişi neden burada?" sorusu cevapsız kalır. */
+export type DraftApproverCandidate = {
+  id: number;
+  name: string;
+  email: string;
+  is_admin: boolean;
 };
 
 export type DraftPlacement = {

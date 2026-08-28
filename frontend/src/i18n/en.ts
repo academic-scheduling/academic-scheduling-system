@@ -948,6 +948,19 @@ export const en: Dict = {
     noteHelp: "The approver will see this — explain why you changed it",
     notePlaceholder: "e.g. moved because the 3rd-year lab is closed on Wednesday",
     submitBlockedTitle: "Could not be sent — blocking conflict",
+
+    // K-83 — the request is addressed: the sender picks the recipients.
+    approversTitle: "Who should receive it?",
+    approversHelp: "Only the people you tick will get this in their approval queue",
+    approversAdminBadge: "Administrator",
+    approversAll: "Select all",
+    approversNone: "Clear selection",
+    approversEmpty:
+      "There is no other approver in this department. An approver must be "
+      + "defined before this request can be sent.",
+    approversRequired: "Pick at least one approver",
+    approversLoadFailed: "Could not load the approvers",
+    approversSelected: (n: number) => `${n} selected`,
     retry: "Try again",
     send: "Send",
 
@@ -1052,6 +1065,9 @@ export const en: Dict = {
     decisionNoteTitle: "DECISION NOTE",
     decisionNoteOptional: "DECISION NOTE (optional)",
     submitNoteOptional: "NOTE TO THE APPROVER (optional)",
+    // K-83 — the request is addressed; the box sits right above the note.
+    sendToTitle: "SEND TO",
+    sentToTitle: "SENT TO",
     submitNoteTitle: "SENDER'S NOTE",
     decisionNotePlaceholder: "Note to be sent to the sender",
     rejectNeedsNote: "Write a reason in order to reject",

@@ -738,6 +738,38 @@ draft_affected_departments = Table(
 )
 
 
+# K-83: onay talebinin ALICILARI. Taslak onaya gonderilirken gonderen, kendi
+# bolumundeki onay yetkilileri (ve her bolumde yetkili olan ADMIN'ler) arasindan
+# kimlere gittigini SECER; talep yalnizca bu satirlarda adi gecen hesaplarin
+# kuyruguna duser.
+#
+# Neden ayri tablo: alici cok-a-cok (bir talep birden cok kisiye, bir kisi
+# birden cok talebe). Taslakta tek bir `assigned_to` kolonu olsaydi "iki
+# yetkiliden hangisi bakarsa baksin" diyemezdik — kuyruk tek kisiye kilitlenir,
+# o kisi izinliyken talep beklerdi.
+#
+# CASCADE iki yonde de: taslak silinince adresleme anlamsiz kalir; hesap
+# silinince (K-34'te zaten engelli) artik ona gonderilemez.
+draft_approvers = Table(
+    "draft_approvers",
+    Base.metadata,
+    Column(
+        "draft_id",
+        BigInteger,
+        ForeignKey("schedule_drafts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "user_id",
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    # "Bana gelen talepler" sorgusu bu sutundan girer — kuyrugun sicak yolu.
+    Index("idx_draft_approvers_user", "user_id"),
+)
+
+
 class ScheduleDraft(Base):
     """schedule_drafts — bir cohort'un OZEL, alternatif program hali (K-59).
 
@@ -837,6 +869,10 @@ class ScheduleDraft(Base):
     affected_departments: Mapped[list["Department"]] = relationship(
         secondary=draft_affected_departments
     )
+    # K-83: talebin gonderildigi onay yetkilileri. Her gonderimde YENIDEN
+    # yazilir (geri cekip tekrar gonderirken eski adresleme yaniltmasin) ve
+    # gonderenin KENDISI asla iceride olmaz — oz-onay yasak (K-59).
+    approvers: Mapped[list["User"]] = relationship(secondary=draft_approvers)
 
 
 class WeeklyScheduleEntry(Base):

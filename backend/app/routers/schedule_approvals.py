@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.audit import log_action
@@ -49,8 +50,45 @@ router = APIRouter(tags=["schedule-approvals"])
 # Erisim
 # ------------------------------------------------------------------
 
+def _addressed_to(user: User):
+    """K-83: bu talep BANA mi gonderildi?
+
+    Gonderen, taslagi onaya verirken alicilari secer (`draft.approvers`).
+    Kuyruk artik "yetkim var" degil "bana gonderildi" sorusunu soruyor —
+    yetki hala gerekli ama tek basina yeterli degil.
+
+    Ikinci kosul (`~any()`) ADRESSIZ talepleri kapsar; bu iki durumda olur:
+
+      1. **Gecis.** K-83 gocunden ONCE gonderilmis bekleyen taleplerin alicisi
+         yoktur. Onlari "adressiz" diye gizlemek, gecis aninda kuyrukta
+         bekleyen isi gorunmez yapardi.
+      2. **Havuz bostu.** Gonderim aninda adreslenebilecek KIMSE yoktu (henuz
+         ikinci bir yetkili davet edilmemis). Sonradan yetki alan biri cikarsa
+         talep ona gorunur — aksi halde is sonsuza dek kilitli kalirdi.
+
+    Ikisinde de kural K-83 oncesine duser: bayrak + bolum uyeligi. Adresleme
+    VAR ise (havuzda birileri vardi ve gonderen sectiyse) secim baglayicidir —
+    secilmeyen yetkili talebi gormez.
+    """
+    return or_(
+        ScheduleDraft.approvers.any(User.id == user.id),
+        ~ScheduleDraft.approvers.any(),
+    )
+
+
 def _approvable_query(db: Session, user: User):
-    """Onayima acik BEKLEYEN taslaklar (K-25 iki boyut: bayrak + bolum uyeligi).
+    """Onayima acik BEKLEYEN taslaklar.
+
+    Uc boyut birlikte calisir:
+      - **Bayrak** `can_approve_schedule` (ADMIN muaf) — K-25.
+      - **Bolum uyeligi** (ADMIN muaf) — K-25. Adresleme sonradan degisen
+        uyelikleri bilmez; bu yuzden uyelik gecmis bir secimin uzerinden
+        DEGIL, her sorguda CANLI kontrol edilir.
+      - **Adresleme** — talep bana gonderildi mi (K-83).
+
+    Kendi talebim ayrica listelenir (bekledigini bilmelisin): gonderen asla
+    kendi talebinin alicisi olmaz, dolayisiyla adresleme kosulundan gecemez.
+    Onaylayamaz — o kapiyi `_ensure_not_self` kapatir.
 
     OPEN taslaklar girmez — onlar sahibine ozeldir; onay yetkisi yalnizca
     ONAYA GONDERILMIS taslagi gorme hakki verir.
@@ -59,16 +97,20 @@ def _approvable_query(db: Session, user: User):
         db.query(ScheduleDraft)
         .options(selectinload(ScheduleDraft.department),
                  selectinload(ScheduleDraft.owner),
-                 selectinload(ScheduleDraft.reviewer))
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
         .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
                 ScheduleDraft.status == DraftStatus.PENDING)
     )
-    if user.role != UserRole.ADMIN:
-        if not user.can_approve_schedule:
-            return q.filter(False)          # yetkisiz: kuyruk bos
+    if user.role == UserRole.ADMIN:
+        kapsam = _addressed_to(user)
+    elif not user.can_approve_schedule:
+        return q.filter(False)              # yetkisiz: kuyruk bos
+    else:
         uyelikler = [m.department_id for m in user.memberships]
-        q = q.filter(ScheduleDraft.department_id.in_(uyelikler or [-1]))
-    return q
+        kapsam = and_(ScheduleDraft.department_id.in_(uyelikler or [-1]),
+                      _addressed_to(user))
+    return q.filter(or_(ScheduleDraft.created_by == user.id, kapsam))
 
 
 def _get_reviewable(db: Session, user: User, draft_id: int) -> ScheduleDraft:
@@ -109,6 +151,7 @@ def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
         "submit_note": draft.submit_note,
+        "approvers": draft.approvers,           # K-83: talep kime gitti
         "reviewer": draft.reviewer,
         "reviewed_at": draft.reviewed_at,
         "review_note": draft.review_note,
@@ -156,7 +199,8 @@ def approval_history(
         db.query(ScheduleDraft)
         .options(selectinload(ScheduleDraft.department),
                  selectinload(ScheduleDraft.owner),
-                 selectinload(ScheduleDraft.reviewer))
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
         .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
                 ScheduleDraft.status == DraftStatus.APPROVED)
     )

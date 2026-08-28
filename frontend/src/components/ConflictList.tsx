@@ -1,5 +1,10 @@
-import { Badge, Button, Group, Stack, Table, Text } from "@mantine/core";
+import { useState } from "react";
+import {
+  ActionIcon, Badge, Button, Group, Popover, ScrollArea, Stack, Table, Text,
+} from "@mantine/core";
+import { IconHelp } from "@tabler/icons-react";
 import type { ConflictAffectedRef, ConflictResult } from "../api/types";
+import { RULE_CATALOG } from "../utils/conflictRules";
 import { TEXT_MUTED } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 
@@ -51,6 +56,73 @@ const BLINK_CSS = `
 .cl-row[data-blink="warn"] td { animation: clBlinkYellow 0.8s ease-in-out infinite; }
 `;
 
+/** Kural kodları kataloğu — "Kural" sütun başlığındaki "?" (K-81).
+ *
+ *  Rapor sayfasıyla ORTAK (K-84): kod listesi ikisinde de aynı soruya cevap
+ *  veriyor ("W3 neydi?") ve iki kopyanın ayrışması, aynı kuralı iki ekranda
+ *  iki türlü anlatmak olurdu.
+ *
+ *  Pop-up yalnız TIKLAYINCA açılıyordu ve "?" ikonunun tıklanabilir olduğu
+ *  belli değildi — üstüne gelmek en doğal keşif hareketi.
+ *
+ *  Neden `HoverCard` değil: o yalnız hover'la çalışır, tık ile SABİTLEME olmaz.
+ *  Katalog 22 satır ve kaydırılabilir; fare listeye inerken hedeften çıkıp
+ *  pop-up'ı kapatabilir. Bu yüzden kontrollü `Popover`: hover açar, tık
+ *  SABİTLER (`sabit`), sabitken hover'dan çıkmak kapatmaz.
+ *
+ *  `onMouseLeave` hem hedefte hem açılır kutuda: ikisinin arasındaki boşlukta
+ *  kapanmasın diye açılır kutu da hover'ı canlı tutuyor. */
+export function RuleHelp() {
+  const t = useT();
+  const [acik, setAcik] = useState(false);
+  const [sabit, setSabit] = useState(false);
+  const kapat = () => { if (!sabit) setAcik(false); };
+  return (
+    <Popover width={520} position="bottom-start" shadow="md" withArrow
+      opened={acik}
+      onChange={(o) => { setAcik(o); if (!o) setSabit(false); }}>
+      <Popover.Target>
+        <ActionIcon variant="subtle" color="gray" size="xs" radius="xl"
+          aria-label={t.conflicts.ruleHelpHint}
+          onMouseEnter={() => setAcik(true)}
+          onMouseLeave={kapat}
+          onClick={() => { setSabit((v) => !v); setAcik(true); }}>
+          <IconHelp size={14} />
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown onMouseEnter={() => setAcik(true)} onMouseLeave={kapat}>
+        <Text fz={12} fw={700} c={TEXT_MUTED} mb={8}>
+          {t.conflicts.ruleHelpTitle}
+        </Text>
+        <ScrollArea.Autosize mah={380} type="hover">
+          <Stack gap={7}>
+            {RULE_CATALOG.map(({ kod, hard }) => (
+              <Group key={kod} gap={9} align="flex-start" wrap="nowrap">
+                {/* K-81: kod rozeti ŞİDDETİ renkle söyler — kırmızı engel,
+                    turuncu uyarı. Katalogda hepsi griyken "hangileri yayını
+                    durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
+                    okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
+                    Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
+                <Badge size="sm" variant="outline"
+                  color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}
+                  style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
+                <div style={{ minWidth: 0 }}>
+                  <Text fz={12.5} fw={500} lh={1.35}>
+                    {t.conflicts.ruleNames[kod]}
+                  </Text>
+                  <Text fz={11.5} c={TEXT_MUTED} lh={1.4}>
+                    {t.conflicts.ruleHelp[kod]}
+                  </Text>
+                </div>
+              </Group>
+            ))}
+          </Stack>
+        </ScrollArea.Autosize>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
 export function ConflictList({ list, emptyText, blinking, onAffected }: {
   list: ConflictResult[];
   /** Hiç çakışma yokken yazılacak cümle — sayfanın kendi sözlüğünden gelir. */
@@ -66,13 +138,20 @@ export function ConflictList({ list, emptyText, blinking, onAffected }: {
   return (
     <>
       <style>{BLINK_CSS}</style>
-      {/* Sabit sütunlar 74 + 190 + 150 = 414; Açıklama'ya en az ~270 → 690.
+      {/* Sabit sütunlar 92 + 190 + 150 = 432; Açıklama'ya en az ~270 → 700.
           Altına inince sıkışma yerine kaydırma olur (Rapor'daki desen). */}
-      <Table.ScrollContainer minWidth={690}>
+      <Table.ScrollContainer minWidth={700}>
         <Table striped verticalSpacing={6} horizontalSpacing="sm" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th w={74}>{t.conflicts.colRule}</Table.Th>
+              {/* Rapor sayfasındaki başlıkla aynı: kod sütununun sağında
+                  katalog "?"si. 74 → 92, ikon başlığı sarmasın. */}
+              <Table.Th w={92}>
+                <Group gap={5} wrap="nowrap">
+                  {t.conflicts.colRule}
+                  <RuleHelp />
+                </Group>
+              </Table.Th>
               <Table.Th w={190}>{t.conflicts.colConflict}</Table.Th>
               <Table.Th>{t.conflicts.colDesc}</Table.Th>
               <Table.Th w={150}>{t.conflicts.colItems}</Table.Th>

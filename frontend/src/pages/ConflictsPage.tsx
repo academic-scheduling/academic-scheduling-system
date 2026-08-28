@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Button, Group, Loader, Paper, Popover, ScrollArea,
+  Alert, Badge, Button, Group, Loader, Paper, Popover,
   SegmentedControl, Select, Stack, Table, Text, Title,
 } from "@mantine/core";
 import {
-  IconArrowRight, IconChecks, IconFilter, IconFilterOff, IconHelp,
+  IconArrowRight, IconChecks, IconFilter, IconFilterOff,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type {
@@ -14,8 +14,8 @@ import type {
 import { formatSlotRange } from "../utils/slots";
 import { TEXT_MUTED } from "../utils/scheduleTheme";
 import type { RuleFamily } from "../utils/conflictRules";
-import { RULE_CATALOG, ruleFamily } from "../utils/conflictRules";
-import { SEV_OUTLINE } from "../components/ConflictList";
+import { ruleFamily } from "../utils/conflictRules";
+import { RuleHelp, SEV_OUTLINE } from "../components/ConflictList";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n/tr";
 
@@ -358,76 +358,6 @@ function FilterSelect({ label, placeholder, value, onChange, data }: {
   );
 }
 
-/** Kural sözlüğü — "Kural" sütun başlığının yanındaki "?" (K-80).
- *
- *  Tabloda artık kural KODU (W4) ve ADI görünüyor; kodun ne demek olduğunu
- *  öğrenmenin yolu ise dokümana gitmekti. Yirmi iki kuralın tamamı burada, tek
- *  bakışta: kod · ad · bir cümlelik koşul.
- *
- *  K-82: listenin kendisi `utils/conflictRules` içine taşındı — ana sayfadaki
- *  "kural bazında dağılım" bloğu da aynı katalogdan okuyor. İki kopya olsaydı
- *  yeni bir kural birine yazılıp ötekinde unutulabilirdi.
- */
-function RuleHelp() {
-  const t = useT();
-  /** K-81: pop-up yalnız TIKLAYINCA açılıyordu ve "?" ikonunun tıklanabilir
-   *  olduğu belli değildi — üstüne gelmek en doğal keşif hareketi.
-   *
-   *  Neden `HoverCard` değil: o yalnız hover'la çalışır, tık ile SABİTLEME
-   *  olmaz. Katalog 22 satır ve kaydırılabilir; fare listeye inerken hedeften
-   *  çıkıp pop-up'ı kapatabilir. Bu yüzden kontrollü `Popover`: hover açar,
-   *  tık SABİTLER (`sabit`), sabitken hover'dan çıkmak kapatmaz.
-   *
-   *  `onMouseLeave` hem hedefte hem açılır kutuda: ikisinin arasındaki
-   *  boşlukta kapanmasın diye açılır kutu da hover'ı canlı tutuyor. */
-  const [acik, setAcik] = useState(false);
-  const [sabit, setSabit] = useState(false);
-  const kapat = () => { if (!sabit) setAcik(false); };
-  return (
-    <Popover width={520} position="bottom-start" shadow="md" withArrow
-      opened={acik}
-      onChange={(o) => { setAcik(o); if (!o) setSabit(false); }}>
-      <Popover.Target>
-        <ActionIcon variant="subtle" color="gray" size="xs" radius="xl"
-          aria-label={t.conflicts.ruleHelpHint}
-          onMouseEnter={() => setAcik(true)}
-          onMouseLeave={kapat}
-          onClick={() => { setSabit((v) => !v); setAcik(true); }}>
-          <IconHelp size={14} />
-        </ActionIcon>
-      </Popover.Target>
-      <Popover.Dropdown onMouseEnter={() => setAcik(true)} onMouseLeave={kapat}>
-        <Text fz={12} fw={700} c={TEXT_MUTED} mb={8}>
-          {t.conflicts.ruleHelpTitle}
-        </Text>
-        <ScrollArea.Autosize mah={380} type="hover">
-          <Stack gap={7}>
-            {RULE_CATALOG.map(({ kod, hard }) => (
-              <Group key={kod} gap={9} align="flex-start" wrap="nowrap">
-                {/* K-81: kod rozeti ŞİDDETİ renkle söyler — kırmızı engel,
-                    turuncu uyarı. Katalogda hepsi griyken "hangileri yayını
-                    durdurur" sorusunun cevabı ancak açıklama cümlesini tek tek
-                    okuyarak çıkıyordu; oysa liste tam da göz gezdirmek için var.
-                    Renk, tablodaki satır rengiyle AYNI dil (K-80). */}
-                <Badge size="sm" variant="outline"
-                  color={hard ? SEV_OUTLINE.hard : SEV_OUTLINE.warn}
-                  style={{ flex: "none", minWidth: 42 }}>{kod}</Badge>
-                <div style={{ minWidth: 0 }}>
-                  <Text fz={12.5} fw={500} lh={1.35}>
-                    {t.conflicts.ruleNames[kod]}
-                  </Text>
-                  <Text fz={11.5} c={TEXT_MUTED} lh={1.4}>
-                    {t.conflicts.ruleHelp[kod]}
-                  </Text>
-                </div>
-              </Group>
-            ))}
-          </Stack>
-        </ScrollArea.Autosize>
-      </Popover.Dropdown>
-    </Popover>
-  );
-}
 
 /** Tablo — eskiden her çakışma bir KART'tı ve ekrana az kayıt sığıyordu.
  *

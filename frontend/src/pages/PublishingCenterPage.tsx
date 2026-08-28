@@ -779,9 +779,23 @@ function DetailPane({ draft, isApprover, meId, onChanged, onNavigate, sonrakiOna
         </Stack>
       </div>
 
-      {/* Eylem çubuğu — duruma göre */}
+      {/* Eylem çubuğu — duruma göre.
+          Ekranın ALTINA YAPIŞIK (`sticky`): inceleme paneli izgara + fark +
+          çakışma listesiyle kolayca ekran boyunu aşıyor ve karar düğmeleri en
+          dibe kaçıyordu — "onayla / gönder" için sayfayı sonuna kadar kaydırmak
+          gerekiyordu. Artık karar hep elin altında.
+
+          Zemin OPAK olmak zorunda: altından geçen içerik düğmelerin arkasından
+          görünürse çubuk okunmaz hale gelir. `zIndex` aynı sebeple — ızgaranın
+          kendi yığın bağlamı çubuğun üstüne çıkabiliyor.
+
+          Kaydırma kabı PENCEREdir (AppShell.Main normal akışta), Mantine
+          Grid'in `--grid-overflow` değeri de `visible`; yani sticky'yi kesen
+          bir ata kutu yok. */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, rowGap: 8, marginTop: 18,
-        paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
+        paddingTop: 12, paddingBottom: 12, borderTop: `1px solid ${BORDER}`,
+        position: "sticky", bottom: 0, zIndex: 2,
+        background: "var(--mantine-color-body)" }}>
         {reviewable && !isSelf && (
           <>
             <Tooltip label={hard ? t.publishing.hardBlocks : t.publishing.approveTip}>

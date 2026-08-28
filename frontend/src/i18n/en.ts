@@ -945,8 +945,6 @@ export const en: Dict = {
     submitFailed: "Could not be sent",
     submitTitle: "Submit for approval",
     noteLabel: "Note (optional)",
-    noteHelp: "The approver will see this — explain why you changed it",
-    notePlaceholder: "e.g. moved because the 3rd-year lab is closed on Wednesday",
     submitBlockedTitle: "Could not be sent — blocking conflict",
 
     // K-83 — the request is addressed: the sender picks the recipients.

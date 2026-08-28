@@ -322,7 +322,7 @@ export function DraftActions({
 
       <DiffModal items={diff} turAdi={turAdi} onClose={() => setDiff(null)} />
       {submitOpen && draft && (
-        <SubmitModal draft={draft} turAdi={turAdi}
+        <SubmitModal draft={draft}
           onClose={() => setSubmitOpen(false)}
           onDone={(d) => { setSubmitOpen(false); onSelect(d); }} />
       )}
@@ -393,8 +393,8 @@ function DiffModal({ items, turAdi, onClose }: {
 
 /** Onaya gönderme kapısı (K-59). HARD çakışma varsa sunucu 409 döner ve talep
  *  HİÇ oluşmaz — onay kuyruğu baştan bozuk taleplerle dolmasın (K-03 aynen). */
-function SubmitModal({ draft, turAdi, onClose, onDone }: {
-  draft: ScheduleDraft; turAdi: string; onClose: () => void;
+function SubmitModal({ draft, onClose, onDone }: {
+  draft: ScheduleDraft; onClose: () => void;
   onDone: (d: ScheduleDraft) => void;
 }) {
   const t = useT();
@@ -438,20 +438,19 @@ function SubmitModal({ draft, turAdi, onClose, onDone }: {
   return (
     <Modal opened onClose={onClose} radius="md" title={t.draft.submitTitle}>
       <Stack gap="sm">
-        <Text size="sm">
-          <b>{draft.change_count}</b> değişiklik onaya gönderilecek. Onaylanana
-          kadar yayındaki {turAdi} değişmez; taslak inceleme boyunca kilitlenir.
-        </Text>
-        {/* K-83: "kime" sorusu "ne diyeceğim"den önce gelir. */}
+        {/* K-83: pencere doğrudan SORUYLA açılır. Buradaki giriş paragrafı
+            ("N değişiklik gönderilecek… taslak kilitlenir") akışı anlatıyordu,
+            oysa bu noktaya gelen kullanıcı akışı zaten biliyor; değişiklik
+            sayısı da çubukta yazıyor. */}
         <div>
           <Text size="sm" fw={600} mb={6}>{t.draft.approversTitle}</Text>
           <ApproverPicker list={adaylar} error={adayHata}
             value={approverIds} onChange={setApproverIds} />
         </div>
+        {/* Yalnız etiket: "Not (isteğe bağlı)" ne yazılacağını zaten söylüyor;
+            açıklama satırı ve örnek yer tutucu kutuyu gereksiz doldurdu. */}
         <Textarea
           label={t.draft.noteLabel}
-          description={t.draft.noteHelp}
-          placeholder={t.draft.notePlaceholder}
           autosize minRows={2} maxRows={5}
           value={note} onChange={(e) => setNote(e.currentTarget.value)}
         />

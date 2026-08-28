@@ -1010,8 +1010,6 @@ export const tr = {
     submitFailed: "Gönderilemedi",
     submitTitle: "Onaya gönder",
     noteLabel: "Not (isteğe bağlı)",
-    noteHelp: "Onaylayıcı bunu görecek — neden değiştirdiğinizi yazın",
-    notePlaceholder: "Örn. 3. sınıf laboratuvarı Çarşamba kapalı olduğu için kaydırıldı",
     submitBlockedTitle: "Gönderilemedi — hard çakışma",
 
     // K-83 · talep artık adresli: gönderen alıcıları seçer.

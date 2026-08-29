@@ -348,11 +348,17 @@ def apply_draft(db: Session, draft: ScheduleDraft) -> list[dict]:
                 **{f: getattr(sonraki, f) for f in _PLACEMENT_FIELDS},
             ))
 
-    # Taslagin kopyalari artik gereksiz: onaylanan taslak GECMIS kaydidir,
-    # duzenlenebilir gorunen donmus bir kopya tasimasi yaniltici olur.
-    for e in draft_entries(db, draft):
-        db.delete(e)
-
+    # K-80: taslagin satirlari SILINMEZ — onaylanan taslagin ONAYLANDIGI HALI
+    # goruntulenebilsin diye yerinde birakilir. K-59'da silinmelerinin gerekcesi
+    # "duzenlenebilir gorunen donmus bir kopya yaniltici olur" idi; artik Yayin
+    # Merkezi bu kaydi bilerek SALT GORUNTU olarak gosteriyor, dolayisiyla
+    # gerekce dustu ve yerini "onaylanan hal geriye donuk okunabilmeli" aldi.
+    #
+    # Guvenli olmasinin sebebi: sistemde "yayinda" HER YERDE `draft_id IS NULL`
+    # demektir (kismi UNIQUE indeksler dahil), yani korunan satirlar hicbir
+    # sorgunun evrenine sizmaz. Ayrica bu goruntu sonraki onaylardan ETKILENMEZ:
+    # baska bir taslagin onayi yayin satirlarina yazar, `draft_id` dolu olan bu
+    # kopyalara dokunmaz.
     db.flush()
     return fark
 

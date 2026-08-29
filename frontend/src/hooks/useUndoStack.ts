@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
+import { useT } from "../i18n";
 
 // Taslak öğelere (haftalık giriş / sınav) yapılan değişiklikleri geri alan
 // KALICI, çok adımlı yığın. Her kayıt, geri almak için uygulanacak TERS işlemi
@@ -65,6 +66,7 @@ function newIdOf(res: unknown): number | undefined {
 }
 
 export function useUndoStack(storageKey: string) {
+  const t = useT();
   const ref = useRef<UndoOp[]>(loadStack(storageKey));
   const [count, setCount] = useState(ref.current.length);
   const [busy, setBusy] = useState(false);
@@ -125,7 +127,7 @@ export function useUndoStack(storageKey: string) {
       return {
         ok: false,
         label: op.label,
-        message: e instanceof ApiError ? e.message : "Geri alınamadı",
+        message: e instanceof ApiError ? e.message : t.draft.undoFailed,
       };
     } finally {
       setBusy(false);

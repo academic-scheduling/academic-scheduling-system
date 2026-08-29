@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Box, Text } from "@mantine/core";
-import { DAY_SHORT, SLOT_TIMES } from "../utils/slots";
+import { SLOT_TIMES } from "../utils/slots";
+import { useT } from "../i18n";
 
 /** Izgaraya yerleştirilecek tek blok. day: 1-5 (Pzt-Cum), startSlot: 1-9. */
 export type WeekPlacement = {
@@ -23,13 +24,17 @@ const SLOTS = Object.keys(SLOT_TIMES).map(Number).sort((a, b) => a - b);
  * etiket yalnız başlangıç slotunda yazılır. Boş hücreler ince kenarlıkla durur.
  */
 export default function MiniWeekGrid({
-  placements, emptyLabel = "Programda ders yok.",
+  placements, emptyLabel,
 }: {
   placements: WeekPlacement[];
   emptyLabel?: string;
 }) {
+  const t = useT();
+  // K-79: varsayılan etiket parametre varsayılanı OLAMAZ — sözlük hook'tan
+  // gelir, hook ise imzada çağrılamaz.
+  const bosMetin = emptyLabel ?? t.miniWeek.empty;
   if (placements.length === 0) {
-    return <Text size="sm" c="dimmed">{emptyLabel}</Text>;
+    return <Text size="sm" c="dimmed">{bosMetin}</Text>;
   }
 
   // `${gün}-${slot}` → o hücrenin etiketi. Etiket kapladığı HER slotta yazılır
@@ -45,7 +50,7 @@ export default function MiniWeekGrid({
     <Box style={{ display: "grid", gridTemplateColumns: "42px repeat(5, 1fr)", gap: 3, alignItems: "center" }}>
       <span />
       {DAYS.map((d) => (
-        <Text key={d} fz={10} fw={600} c="dimmed" ta="center">{DAY_SHORT[d]}</Text>
+        <Text key={d} fz={10} fw={600} c="dimmed" ta="center">{t.days.short[d]}</Text>
       ))}
       {SLOTS.map((slot) => (
         <Fragment key={slot}>

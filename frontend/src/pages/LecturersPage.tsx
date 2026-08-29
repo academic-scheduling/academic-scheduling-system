@@ -1,28 +1,17 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  ActionIcon, Alert, Anchor, Avatar, Badge, Box, Button, Checkbox, Divider, Drawer,
-  Group, Loader, Modal, Paper, Popover, ScrollArea, SegmentedControl, Select,
-  SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip,
-} from "@mantine/core";
+import { ActionIcon, Alert, Anchor, Avatar, Badge, Box, Button, Checkbox, Divider, Drawer, Group, Loader, Modal, Paper, Popover, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Table, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import {
-  IconChevronRight, IconCloudDownload, IconEye, IconEyeOff,
-  IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending,
-  IconSortDescending, IconTrash, IconX,
-} from "@tabler/icons-react";
+import { IconChevronRight, IconCloudDownload, IconEye, IconEyeOff, IconFilter, IconPencil, IconPlus, IconSearch, IconSelector, IconSortAscending, IconSortDescending, IconTrash, IconX } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
 import MiniWeekGrid, { type WeekPlacement } from "../components/MiniWeekGrid";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { formatSlotRange } from "../utils/slots";
 import { turkishOptionsFilter } from "../utils/selectSearch";
-import {
-  lecturerLabel,
-  type Course, type CourseSection, type Department, type ImportCommit,
-  type ImportPreview, type ImportRow, type Lecturer, type WeeklyEntry,
-} from "../api/types";
+import { lecturerLabel, type Course, type CourseSection, type Department, type ImportCommit, type ImportPreview, type ImportRow, type Lecturer, type WeeklyEntry } from "../api/types";
+import { useT } from "../i18n";
 
 const ALL = "__all__";
 /** K-72: yeni satırın bölüm çözümünde "40/a (dış görevli, bölümsüz)" seçeneği. */
@@ -86,6 +75,7 @@ type CourseFormValues = {
 };
 
 export default function LecturersPage() {
+  const t = useT();
   const { user } = useAuth();
   // Workgroup geneli paylaşımlı kaynak: bölüm boyutu YOK (K-25).
   const canWrite = canWriteIn(user, "can_manage_lecturers");
@@ -138,12 +128,12 @@ export default function LecturersPage() {
       detail_url: "",
     },
     validate: {
-      full_name: (v) => (v.trim() ? null : "Ad soyad boş olamaz"),
-      department_id: (v, values) => (values.is_external || v ? null : "Kadro birimi seçin"),
+      full_name: (v) => (v.trim() ? null : t.lecturers.nameRequired),
+      department_id: (v, values) => (values.is_external || v ? null : t.lecturers.pickUnit),
       email: (v) => (!v.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim())
-        ? null : "Geçerli bir e-posta girin"),
+        ? null : t.lecturers.invalidEmail),
       detail_url: (v) => (!v.trim() || /^https?:\/\/\S+$/.test(v.trim())
-        ? null : "Geçerli bir bağlantı girin (http:// ile başlamalı)"),
+        ? null : t.lecturers.invalidUrl),
     },
   });
 
@@ -162,7 +152,7 @@ export default function LecturersPage() {
       setDepartments(deps);
       setWeekly(wk);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
+      setLoadError(e instanceof ApiError ? e.message : t.common.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -285,7 +275,7 @@ export default function LecturersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lecturers, query, deptFilter, titleFilter, seg, onlyActive, sortBy, sortDir, statsByLecturer, depById]);
 
-  const countLabel = `${rows.length} kişi`;
+  const countLabel = t.lecturers.personCount(rows.length);
 
   const selected = useMemo(
     () => lecturers.find((l) => l.id === selId) ?? null, [lecturers, selId]);
@@ -303,7 +293,7 @@ export default function LecturersPage() {
     const out: { key: string; label: string; clear: () => void }[] = [];
     if (deptFilter) {
       const d = depById[Number(deptFilter)];
-      out.push({ key: "dep", label: d ? `${d.code} — ${d.name}` : "Bölüm",
+      out.push({ key: "dep", label: d ? `${d.code} — ${d.name}` : t.lecturers.department,
         clear: () => setDeptFilter(null) });
     }
     if (titleFilter) out.push({ key: "title", label: titleFilter, clear: () => setTitleFilter(null) });
@@ -324,6 +314,32 @@ export default function LecturersPage() {
     });
     setModalOpen(true);
   }
+
+
+  /** K-82: ana sayfadaki "hızlı işlem" `?new=1` ile buraya gelir ve ekleme
+   *  formu doğrudan açılır. Sadece sayfaya yönlendirmek yetmezdi — o zaman
+   *  hızlı işlem sol menünün kopyası olurdu.
+   *
+   *  Parametre bir kez okunup URL'den TEMİZLENİR: yapışıp kalırsa sayfa her
+   *  yenilendiğinde ya da geri gelindiğinde form kendiliğinden açılır.
+   *  `yeniAcildi` bayrağı, parametre temizlenene kadar geçen render'larda
+   *  formun iki kez açılmasını engeller.
+   *
+   *  Yetkisiz kullanıcıda HİÇ açılmaz: ana sayfa bu işlemi zaten çizmiyor,
+   *  ama URL elle de yazılabilir — açılan boş bir form kullanıcıyı sunucudan
+   *  dönecek 403'e kadar boşuna uğraştırırdı.
+   */
+  const yeniAcildi = useRef(false);
+  useEffect(() => {
+    if (loading || yeniAcildi.current) return;
+    if (searchParams.get("new") !== "1") return;
+    yeniAcildi.current = true;
+    if (canWrite) openAdd();
+    const kalan = new URLSearchParams(searchParams);
+    kalan.delete("new");
+    setSearchParams(kalan, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   function openEdit(lec: Lecturer) {
     setEditing(lec);
@@ -351,16 +367,16 @@ export default function LecturersPage() {
     try {
       if (editing) {
         await api.patch<Lecturer>(`/lecturers/${editing.id}`, payload);
-        notifications.show({ color: "green", message: "Öğretim üyesi güncellendi" });
+        notifications.show({ color: "green", message: t.lecturers.updated });
       } else {
         await api.post<Lecturer>("/lecturers", payload);
-        notifications.show({ color: "green", message: "Öğretim üyesi eklendi" });
+        notifications.show({ color: "green", message: t.lecturers.created });
       }
       setModalOpen(false);
       await load();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) form.setFieldError("full_name", e.message);
-      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      else notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     } finally {
       setSubmitting(false);
     }
@@ -372,12 +388,12 @@ export default function LecturersPage() {
       notifications.show({
         color: "green",
         message: lec.active
-          ? "Pasife alındı — ders formunda artık önerilmez"
-          : "Yeniden aktifleştirildi",
+          ? t.lecturers.deactivated
+          : t.lecturers.reactivated,
       });
       await load();
     } catch (e) {
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
     }
   }
 
@@ -386,14 +402,14 @@ export default function LecturersPage() {
     setDeleteBusy(true);
     try {
       await api.delete(`/lecturers/${deleting.id}`);
-      notifications.show({ color: "green", message: "Öğretim üyesi silindi" });
+      notifications.show({ color: "green", message: t.lecturers.deleted });
       if (selId === deleting.id) setSelId(null);
       setDeleting(null);
       await load();
     } catch (e) {
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDeleting(null);
@@ -418,7 +434,7 @@ export default function LecturersPage() {
       setRowDept(init);
       setSelectedUpdates(new Set(data.updates.map((u) => u.id)));
     } catch (e) {
-      setImportError(e instanceof ApiError ? e.message : "İçe aktarma başarısız");
+      setImportError(e instanceof ApiError ? e.message : t.lecturers.importFailed);
     } finally {
       setImportLoading(false);
     }
@@ -443,13 +459,13 @@ export default function LecturersPage() {
         { rows: rowsToCommit, updates: updatesToCommit });
       const parts: string[] = [];
       if (res.created.length) parts.push(`${res.created.length} eklendi`);
-      if (res.updated.length) parts.push(`${res.updated.length} güncellendi`);
-      if (res.skipped.length) parts.push(`${res.skipped.length} atlandı`);
-      notifications.show({ color: "green", message: parts.join(" · ") || "Değişiklik yok" });
+      if (res.updated.length) parts.push(t.lecturers.nUpdated(res.updated.length));
+      if (res.skipped.length) parts.push(t.lecturers.nSkipped(res.skipped.length));
+      notifications.show({ color: "green", message: parts.join(" · ") || t.lecturers.noChange });
       setImportOpen(false);
       await load();
     } catch (e) {
-      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İçe aktarma başarısız" });
+      notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.lecturers.importFailed });
     } finally {
       setCommitting(false);
     }
@@ -504,18 +520,18 @@ export default function LecturersPage() {
     <>
       <Group justify="space-between" align="baseline" mb="md">
         <Group align="baseline" gap="xs">
-          <Title order={3}>Öğretim Üyeleri</Title>
+          <Title order={3}>{t.lecturers.title}</Title>
           <Text size="sm" c="dimmed">{countLabel}</Text>
         </Group>
         {canWrite && (
           <Group gap="xs">
-            <Tooltip label="Fakülte akademik personel sayfasından yeni öğretim üyelerini getir">
+            <Tooltip label={t.lecturers.importTip}>
               <Button variant="default" leftSection={<IconCloudDownload size={16} />} onClick={runImportPreview}>
-                İçe Aktar
+                {t.lecturers.importCta}
               </Button>
             </Tooltip>
             <Button leftSection={<IconPlus size={16} />} onClick={() => openAdd()}>
-              Öğretim Üyesi Ekle
+              {t.lecturers.add}
             </Button>
           </Group>
         )}
@@ -525,7 +541,7 @@ export default function LecturersPage() {
       <Paper withBorder p="xs" radius="md">
         <Group gap="sm" wrap="nowrap" align="center">
           <TextInput
-            placeholder="Ad, soyad veya e-posta ara"
+            placeholder={t.lecturers.searchPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
@@ -537,9 +553,9 @@ export default function LecturersPage() {
             value={seg}
             onChange={(v) => setSeg(v as Seg)}
             data={[
-              { label: "Tümü", value: "all" },
+              { label: t.common.all, value: "all" },
               { label: "Kadrolu", value: "staff" },
-              { label: "Dış görevli", value: "external" },
+              { label: t.lecturers.external, value: "external" },
             ]}
             size="sm"
             style={{ flex: "none" }}
@@ -557,8 +573,8 @@ export default function LecturersPage() {
             <Popover.Dropdown>
               <SimpleGrid cols={2} spacing="sm">
                 <Select
-                  label="Bölüm"
-                  data={[{ value: ALL, label: "Tüm bölümler" },
+                  label={t.lecturers.department}
+                  data={[{ value: ALL, label: t.lecturers.allDepartments },
                     ...departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))]}
                   value={deptFilter ?? ALL}
                   onChange={(v) => setDeptFilter(v === ALL || v === null ? null : v)}
@@ -567,8 +583,8 @@ export default function LecturersPage() {
                   filter={turkishOptionsFilter}
                 />
                 <Select
-                  label="Unvan"
-                  data={[{ value: ALL, label: "Tüm unvanlar" },
+                  label={t.lecturers.titleLabel}
+                  data={[{ value: ALL, label: t.lecturers.allTitles },
                     ...TITLES.map((t) => ({ value: t, label: t }))]}
                   value={titleFilter ?? ALL}
                   onChange={(v) => setTitleFilter(v === ALL || v === null ? null : v)}
@@ -580,11 +596,11 @@ export default function LecturersPage() {
               <Group justify="space-between" mt="md" pt="sm"
                 style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
                 <Checkbox
-                  label="Pasif kayıtları gizle"
+                  label={t.lecturers.hideInactive}
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.currentTarget.checked)}
                 />
-                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>Kapat</Button>
+                <Button variant="default" size="xs" onClick={() => setFiltersOpen(false)}>{t.common.close}</Button>
               </Group>
             </Popover.Dropdown>
           </Popover>
@@ -611,8 +627,8 @@ export default function LecturersPage() {
       {rows.length === 0 ? (
         <Text c="dimmed" mt="xl" ta="center">
           {query || hasFilters || seg !== "all"
-            ? "Filtreye uyan öğretim üyesi yok."
-            : "Henüz öğretim üyesi yok."}
+            ? t.lecturers.noMatch
+            : t.lecturers.empty}
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={820} mt="sm">
@@ -625,7 +641,7 @@ export default function LecturersPage() {
                 {sortTh("Ad Soyad", "name", 280)}
                 {sortTh("Unvan", "title", 150)}
                 {sortTh("Kadro birimi", "dep", 200)}
-                <Table.Th w={220}>E-posta</Table.Th>
+                <Table.Th w={220}>{t.auth.email}</Table.Th>
                 {sortTh("Ders", "courses", 110, "center")}
                 <Table.Th w={40} />
               </Table.Tr>
@@ -676,50 +692,50 @@ export default function LecturersPage() {
       <Modal
         opened={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Öğretim Üyesini Düzenle" : "Yeni Öğretim Üyesi"}
+        title={editing ? t.lecturers.edit : t.lecturers.newOne}
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
-            <Select label="Unvan" placeholder="Seçin (opsiyonel)"
+            <Select label={t.lecturers.titleLabel} placeholder={t.lecturers.optional}
               // Kanonik listede olmayan bir unvan da (eski/import kaydı) seçili
               // görünsün — aksi halde Select boş kalırdı.
               data={form.values.title && !TITLES.includes(form.values.title)
                 ? [form.values.title, ...TITLES] : TITLES}
               clearable
               searchable filter={turkishOptionsFilter} {...form.getInputProps("title")} />
-            <TextInput label="Ad Soyad" placeholder="Ayşe Kaya" {...form.getInputProps("full_name")} />
-            <TextInput label="E-posta" placeholder="ayse.kaya@mu.edu.tr (opsiyonel)" {...form.getInputProps("email")} />
+            <TextInput label={t.lecturers.fullName} placeholder={t.lecturers.namePlaceholder} {...form.getInputProps("full_name")} />
+            <TextInput label={t.auth.email} placeholder={t.lecturers.emailPlaceholder} {...form.getInputProps("email")} />
             <Select
-              label="Kadro birimi"
-              placeholder="Kadro birimini seçin"
+              label={t.lecturers.homeUnit}
+              placeholder={t.lecturers.pickUnitLong}
               data={departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` }))}
               searchable clearable filter={turkishOptionsFilter}
               {...form.getInputProps("department_id")}
             />
             <TextInput
-              label="Akademik personel sayfası"
+              label={t.lecturers.detailPage}
               placeholder="https://…  (opsiyonel)"
               {...form.getInputProps("detail_url")}
             />
-            <Checkbox label="Dış görevli (40/a)" {...form.getInputProps("is_external", { type: "checkbox" })} />
+            <Checkbox label={t.lecturers.external40a} {...form.getInputProps("is_external", { type: "checkbox" })} />
             <Button type="submit" loading={submitting} mt="sm">
-              {editing ? "Kaydet" : "Ekle"}
+              {editing ? t.common.save : t.common.add}
             </Button>
           </Stack>
         </form>
       </Modal>
 
       {/* Silme onayı */}
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Öğretim üyesini sil">
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title={t.lecturers.deleteModal}>
         <Text>
-          <b>{deleting?.full_name}</b> kalıcı olarak silinecek. Bu işlem geri alınamaz.
+          <b>{deleting?.full_name}</b> {t.common.permanentDeleteWarning}
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Derse veya sınava bağlıysa silinmez; onun yerine "Pasife al" kullanın.
+          {t.lecturers.deleteHint}
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeleting(null)}>Vazgeç</Button>
-          <Button color="red" loading={deleteBusy} onClick={handleDelete}>Sil</Button>
+          <Button variant="default" onClick={() => setDeleting(null)}>{t.common.dismiss}</Button>
+          <Button color="red" loading={deleteBusy} onClick={handleDelete}>{t.common.delete}</Button>
         </Group>
       </Modal>
 
@@ -727,20 +743,19 @@ export default function LecturersPage() {
       <Modal
         opened={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Siteden Öğretim Üyesi İçe Aktar"
+        title={t.lecturers.importTitle}
         size="xl"
       >
         {importLoading ? (
           <Group justify="center" py="xl" gap="sm">
             <Loader size="sm" />
-            <Text c="dimmed">Fakülte sayfası taranıyor…</Text>
+            <Text c="dimmed">{t.lecturers.scanning}</Text>
           </Group>
         ) : importError ? (
-          <Alert color="red" title="İçe aktarma başarısız">
+          <Alert color="red" title={t.lecturers.importFailed}>
             {importError}
             <Text size="xs" c="dimmed" mt="xs">
-              Kaynak site geçici olarak erişilemez olabilir ya da sayfa yapısı
-              değişmiş olabilir. Sorun sürerse yöneticinize bildirin.
+              {t.lecturers.scanFailHint}
             </Text>
           </Alert>
         ) : preview ? (() => {
@@ -748,7 +763,7 @@ export default function LecturersPage() {
             // K-74: "bölümsüz" YANLIŞTI — 40/a başka fakültede kadrolu kişidir
             // (Matematik/Fizik gibi servis derslerini verenler); bizim
             // bölümlerimizden birine ait olmaması onları "bölümsüz" yapmaz.
-            { value: EXT, label: "40/a — dış görevli" },
+            { value: EXT, label: t.lecturers.external40aOption },
             ...departments.map((d) => ({ value: String(d.id), label: `${d.code} — ${d.name}` })),
           ];
           const committableNew = preview.new.filter(
@@ -759,23 +774,27 @@ export default function LecturersPage() {
           return (
           <Stack>
             <Text size="sm" c="dimmed">
-              Listede {preview.list_total} kişi bulundu · {preview.already_present} zaten
-              kayıtlı · <Text span fw={700} c="green">{preview.new.length} yeni</Text>
-              {preview.updates.length > 0 && <> · <Text span fw={700} c="blue">{preview.updates.length} güncellenebilir</Text></>}.
+              {t.lecturers.foundSummary(preview.list_total, preview.already_present,
+                                       preview.new.length)}
+              {preview.updates.length > 0 && (
+                <Text span fw={700} c="blue">
+                  {t.lecturers.updatableSuffix(preview.updates.length)}
+                </Text>
+              )}
             </Text>
 
             {preview.new.length === 0 && preview.updates.length === 0 ? (
               <Text c="dimmed" py="md">
-                Eklenecek ya da güncellenecek kayıt yok — liste sistemle güncel.
+                {t.lecturers.nothingToImport}
               </Text>
             ) : (
               <>
                 {preview.new.length > 0 && (
                   <>
-                    <Divider label="Yeni öğretim üyeleri" labelPosition="left" />
+                    <Divider label={t.lecturers.newLecturers} labelPosition="left" />
                     <Group justify="space-between">
                       <Checkbox
-                        label="Tümünü seç"
+                        label={t.lecturers.selectAll}
                         checked={selectedRows.size === preview.new.length}
                         indeterminate={selectedRows.size > 0 && selectedRows.size < preview.new.length}
                         onChange={(e) =>
@@ -786,7 +805,7 @@ export default function LecturersPage() {
                           )
                         }
                       />
-                      <Text size="sm" c="dimmed">{selectedRows.size} seçili</Text>
+                      <Text size="sm" c="dimmed">{selectedRows.size} {t.lecturers.selected}</Text>
                     </Group>
 
                     <ScrollArea.Autosize mah={360}>
@@ -794,10 +813,10 @@ export default function LecturersPage() {
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th w={36} />
-                            <Table.Th>Unvan</Table.Th>
-                            <Table.Th>Ad Soyad</Table.Th>
-                            <Table.Th>Kadro Birimi</Table.Th>
-                            <Table.Th w={230}>Bölüm</Table.Th>
+                            <Table.Th>{t.lecturers.titleLabel}</Table.Th>
+                            <Table.Th>{t.lecturers.fullName}</Table.Th>
+                            <Table.Th>{t.lecturers.homeUnitCaps}</Table.Th>
+                            <Table.Th w={230}>{t.lecturers.department}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
@@ -827,7 +846,7 @@ export default function LecturersPage() {
                                       kullanıcı bölüm seçer ya da 40/a işaretler. */}
                                   <Select
                                     size="xs"
-                                    placeholder="Bölüm ya da 40/a"
+                                    placeholder={t.lecturers.departmentOr40a}
                                     data={deptOptions}
                                     value={res || null}
                                     onChange={(v) => setRowResolution(row.detail_url, v ?? "")}
@@ -848,10 +867,10 @@ export default function LecturersPage() {
 
                 {preview.updates.length > 0 && (
                   <>
-                    <Divider label="Eksik bilgisi tamamlanacaklar" labelPosition="left" mt="sm" />
+                    <Divider label={t.lecturers.missingInfoTitle} labelPosition="left" mt="sm" />
                     <Text size="xs" c="dimmed">
-                      Sistemde kayıtlı ama detay sayfası / e-postası eksik olanlar.
-                      Yalnız boş alanlar doldurulur, mevcut bilgi değişmez.
+                      {t.lecturers.missingInfoHelp1}{" "}
+                      {t.lecturers.missingInfoHelp2}
                     </Text>
                     <Stack gap={4}>
                       {preview.updates.map((u) => (
@@ -862,7 +881,7 @@ export default function LecturersPage() {
                           label={
                             <Text size="sm">
                               {u.full_name}{" "}
-                              <Text span size="xs" c="dimmed">— {u.missing.join(" · ")} doldurulacak</Text>
+                              <Text span size="xs" c="dimmed">{t.lecturers.willBeFilled(u.missing.join(" · "))}</Text>
                             </Text>
                           }
                         />
@@ -873,17 +892,16 @@ export default function LecturersPage() {
 
                 {unresolvedSel > 0 && (
                   <Text size="xs" c="orange.7">
-                    {unresolvedSel} seçili kişinin bölümü belirlenmedi — bölüm seçin ya da
-                    40/a işaretleyin, aksi halde eklenmez.
+                    {t.lecturers.unresolvedWarn(unresolvedSel)}
                   </Text>
                 )}
 
                 <Group justify="flex-end" mt="sm">
-                  <Button variant="default" onClick={() => setImportOpen(false)}>Vazgeç</Button>
+                  <Button variant="default" onClick={() => setImportOpen(false)}>{t.common.dismiss}</Button>
                   <Button loading={committing} disabled={totalToCommit === 0} onClick={handleImportCommit}>
                     {committableNew > 0 && `${committableNew} ekle`}
                     {committableNew > 0 && selectedUpdates.size > 0 && " · "}
-                    {selectedUpdates.size > 0 && `${selectedUpdates.size} güncelle`}
+                    {selectedUpdates.size > 0 && t.lecturers.updateN(selectedUpdates.size)}
                     {totalToCommit === 0 && "Uygula"}
                   </Button>
                 </Group>
@@ -905,6 +923,7 @@ const LecturerRow = memo(function LecturerRow({
   lecturer: Lecturer; depLabel: string; courseCount: number;
   selected: boolean; onSelect: (id: number) => void;
 }) {
+  const t = useT();
   return (
     <Table.Tr
       onClick={() => onSelect(l.id)}
@@ -921,11 +940,11 @@ const LecturerRow = memo(function LecturerRow({
           </Avatar>
           <Text size="sm" truncate>{l.full_name}</Text>
           {l.is_external && (
-            <Tooltip label="Dış görevli (40/a)">
+            <Tooltip label={t.lecturers.external40a}>
               <Badge variant="light" color="orange" size="xs" style={{ flex: "none" }}>40/a</Badge>
             </Tooltip>
           )}
-          {!l.active && <Badge size="xs" color="gray" style={{ flex: "none" }}>Pasif</Badge>}
+          {!l.active && <Badge size="xs" color="gray" style={{ flex: "none" }}>{t.lecturers.inactive}</Badge>}
         </Group>
       </Table.Td>
       <Table.Td>
@@ -985,6 +1004,7 @@ function LecturerDrawerBody({
   onDelete: (l: Lecturer) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const items = stats?.items ?? [];
   const courseCount = stats?.courseIds.size ?? 0;
   const hours = stats?.hours ?? 0;
@@ -995,7 +1015,7 @@ function LecturerDrawerBody({
     for (const e of entriesBySection[section.id] ?? []) {
       placements.push({
         day: e.day_of_week, startSlot: e.start_slot, slotCount: e.slot_count,
-        label: course.code, title: `${course.code} · Şube ${section.section_no}`,
+        label: course.code, title: `${course.code} · ${t.classrooms.section} ${section.section_no}`,
       });
     }
   }
@@ -1018,7 +1038,7 @@ function LecturerDrawerBody({
                 </Badge>
               )}
               {l.is_external && <Badge variant="light" color="orange" size="sm">40/a</Badge>}
-              {!l.active && <Badge color="gray" size="sm">Pasif</Badge>}
+              {!l.active && <Badge color="gray" size="sm">{t.lecturers.inactive}</Badge>}
             </Group>
             {/* K-71: bölüm adı burada değil, aşağıdaki "Kadro birimi" stat'ında —
                 iki yerde yazmasın. Alt satırda yalnız e-posta. */}
@@ -1027,7 +1047,7 @@ function LecturerDrawerBody({
             )}
           </div>
         </Group>
-        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label="Kapat">
+        <ActionIcon variant="subtle" color="gray" onClick={onClose} aria-label={t.common.close}>
           <IconX size={18} />
         </ActionIcon>
       </Group>
@@ -1036,14 +1056,14 @@ function LecturerDrawerBody({
       <Box style={{ flex: 1, overflowY: "auto" }} p="md">
         <Stack gap="lg">
           <SimpleGrid cols={4} spacing="xs">
-            <Stat label="Ders" value={String(courseCount)} />
+            <Stat label={t.lecturers.course} value={String(courseCount)} />
             {/* K-71: Şube sayacı yerine kadro birimi (asli bölüm adı). */}
-            <Stat label="Kadro birimi" value={depLabel} />
-            <Stat label="Haftalık saat" value={`${hours} sa`} />
+            <Stat label={t.lecturers.homeUnit} value={depLabel} />
+            <Stat label={t.lecturers.weeklyHours} value={`${hours} sa`} />
             {/* K-71: Öğrenci sayacı yerine akademik personel sayfası linki. */}
-            <Stat label="Detay sayfası" value={
+            <Stat label={t.lecturers.detailPage} value={
               l.detail_url
-                ? <Anchor href={l.detail_url} target="_blank" rel="noopener noreferrer" size="sm">Aç ↗</Anchor>
+                ? <Anchor href={l.detail_url} target="_blank" rel="noopener noreferrer" size="sm">{t.lecturers.openLink}</Anchor>
                 : <Text size="sm" c="dimmed">—</Text>
             } />
           </SimpleGrid>
@@ -1052,7 +1072,7 @@ function LecturerDrawerBody({
               Kadro birimi künyede (depLabel); bu türetilmiş. */}
           {dutyUnits.length > 0 && (
             <div>
-              <Text size="xs" fw={600} c="dimmed" mb={8}>GÖREV BİRİMİ</Text>
+              <Text size="xs" fw={600} c="dimmed" mb={8}>{t.lecturers.unit}</Text>
               <Group gap={6}>
                 {dutyUnits.map((u) => (
                   <Badge key={u} variant="light" color="blue" style={{ textTransform: "none" }}>{u}</Badge>
@@ -1062,12 +1082,12 @@ function LecturerDrawerBody({
           )}
 
           <div>
-            <Text size="xs" fw={600} c="dimmed" mb={8}>HAFTALIK PROGRAM</Text>
-            <MiniWeekGrid placements={placements} emptyLabel="Bu dönem programda ders yok." />
+            <Text size="xs" fw={600} c="dimmed" mb={8}>{t.lecturers.weeklyScheduleLabel}</Text>
+            <MiniWeekGrid placements={placements} emptyLabel={t.lecturers.noCoursesThisTerm} />
           </div>
 
           <div>
-            <Text size="xs" fw={600} c="dimmed" mb={8}>VERDİĞİ DERSLER</Text>
+            <Text size="xs" fw={600} c="dimmed" mb={8}>{t.lecturers.coursesTaught}</Text>
             <Stack gap="xs">
               {items.map(({ course, section }) => {
                 const entries = entriesBySection[section.id] ?? [];
@@ -1080,18 +1100,19 @@ function LecturerDrawerBody({
                           {" · "}{course.name}
                         </Text>
                         <Text size="xs" c="dimmed" mt={2}>
-                          Şube {section.section_no} · {section.expected_students} öğrenci
+                          {t.lecturers.sectionStudents(section.section_no,
+                                                     section.expected_students)}
                         </Text>
                       </div>
                       {entries.length === 0 ? (
-                        <Text size="xs" c="orange.7" style={{ flex: "none" }}>programda değil</Text>
+                        <Text size="xs" c="orange.7" style={{ flex: "none" }}>{t.lecturers.notScheduled}</Text>
                       ) : (
                         // K-68: slotlar üst üste — çok günlü ders yan yana sıralanınca
                         // tüm satırı kaplayıp çirkin duruyordu.
                         <Stack gap={4} align="flex-end" style={{ flex: "none" }}>
                           {entries.map((e) => (
                             <Badge key={e.id} variant="light" size="sm" color="green">
-                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short")}
+                              {formatSlotRange(e.day_of_week, e.start_slot, e.slot_count, "short", t)}
                             </Badge>
                           ))}
                         </Stack>
@@ -1102,7 +1123,7 @@ function LecturerDrawerBody({
               })}
               {items.length === 0 && (
                 <Paper withBorder radius="md" p="md" style={{ borderStyle: "dashed" }}>
-                  <Text size="sm" c="dimmed" ta="center">Bu dönem atanmış ders yok.</Text>
+                  <Text size="sm" c="dimmed" ta="center">{t.lecturers.noAssignedCourses}</Text>
                 </Paper>
               )}
             </Stack>
@@ -1114,28 +1135,28 @@ function LecturerDrawerBody({
       <Group gap="xs" p="md" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
         {canWrite && (
           <Button size="sm" leftSection={<IconPencil size={15} />} onClick={() => onEdit(l)}>
-            Bilgileri düzenle
+            {t.lecturers.editInfo}
           </Button>
         )}
         {/* K-67: hocanın haftalık programı burada; export'u da burada
             (/export/weekly lecturer_id filtresini kabul eder). */}
-        <ExportMenu label="Programı İndir" items={[
+        <ExportMenu label={t.lecturers.downloadSchedule} items={[
           { label: "Excel (.xlsx)", path: `/export/weekly?lecturer_id=${l.id}&format=xlsx` },
           { label: "CSV (.csv)", path: `/export/weekly?lecturer_id=${l.id}&format=csv` },
         ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
-          <Tooltip label={l.active ? "Pasife al" : "Aktifleştir"}>
+          <Tooltip label={l.active ? "Pasife al" : t.lecturers.activate}>
             <ActionIcon variant="subtle" size="lg" color={l.active ? "orange" : "green"}
-              onClick={() => onToggleActive(l)} aria-label={l.active ? "Pasife al" : "Aktifleştir"}>
+              onClick={() => onToggleActive(l)} aria-label={l.active ? "Pasife al" : t.lecturers.activate}>
               {l.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>
         )}
         {canWrite && (
-          <Tooltip label="Sil">
+          <Tooltip label={t.common.delete}>
             <ActionIcon variant="subtle" size="lg" color="red"
-              onClick={() => onDelete(l)} aria-label="Sil">
+              onClick={() => onDelete(l)} aria-label={t.common.delete}>
               <IconTrash size={18} />
             </ActionIcon>
           </Tooltip>

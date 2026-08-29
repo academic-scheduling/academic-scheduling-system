@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  ActionIcon, Badge, Button, Collapse, Group, Paper, Stack, Text,
+  Anchor, Badge, Button, Group, Paper, Stack, Text,
 } from "@mantine/core";
-import { IconChevronDown, IconChevronRight, IconHistory } from "@tabler/icons-react";
+import { IconHistory } from "@tabler/icons-react";
 import { api } from "../api/client";
-import { SEMESTER_LABELS } from "../api/types";
 import type { DraftKind, ScheduleChange } from "../api/types";
 import { BORDER, PAGE_SURFACE, TEXT_MUTED } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
-function tarih(s: string | null): string {
+function tarih(s: string | null, t: Dict): string {
   if (!s) return "";
-  return new Date(s).toLocaleString("tr-TR", {
+  return new Date(s).toLocaleString(t.locale, {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -37,13 +38,16 @@ export default function ChangeFeed({
    *  program sayfasına yönlendirilir (kind'e göre /weekly ya da /exams). */
   onShow?: (c: ScheduleChange) => void;
 }) {
+  const t = useT();
   const [items, setItems] = useState<ScheduleChange[] | null>(null);
-  const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // K-82: `limit + 1` çekilir. Fazladan gelen satır ÇİZİLMEZ; yalnız
+    // "gösterdiğimden fazlası var mı" sorusunu cevaplar — ayrı bir sayaç ucu
+    // açmadan "Hepsini gör"ün görünüp görünmeyeceğine karar verdirir.
     api.get<ScheduleChange[]>(
-      `/schedule-changes?limit=${limit}${kind ? `&kind=${kind}` : ""}`)
+      `/schedule-changes?limit=${limit + 1}${kind ? `&kind=${kind}` : ""}`)
       .then(setItems)
       .catch(() => setItems([]));    // akış ikincil bilgi; hata ekranı basmaz
   }, [limit, kind]);
@@ -56,48 +60,53 @@ export default function ChangeFeed({
     navigate(`${path}?department_id=${c.department_id}&year=${c.year}&semester=${c.semester}`);
   };
 
+  // K-82: panel artık AÇILIR-KAPANIR DEĞİL. K-73'te varsayılan kapalıydı
+  // ("göz yormasın") ama kapalı bir panel, kimsenin haberi olmadan değişen
+  // programı duyurma işini yapamıyordu — panelin var oluş sebebi buydu.
+  const gosterilen = items.slice(0, limit);
+  const fazlasiVar = items.length > limit;
+
   return (
     <Paper radius="md" p="md"
       style={{ border: `1px solid ${BORDER}`, background: PAGE_SURFACE }}>
-      {/* Başlık satırı tıklanınca açılır/kapanır (K-73). */}
-      <Group gap={8} wrap="nowrap" style={{ cursor: "pointer", userSelect: "none" }}
-        onClick={() => setOpen((o) => !o)}>
+      <Group gap={8} wrap="nowrap">
         <IconHistory size={17} style={{ opacity: 0.6, flexShrink: 0 }} />
-        <Text fw={600} fz={15}>Bölümünüzü etkileyen son değişiklikler</Text>
-        <Badge size="sm" variant="light" color="gray">{items.length}</Badge>
-        <ActionIcon variant="subtle" color="gray" ml="auto" aria-label={open ? "Kapat" : "Aç"}>
-          {open ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
-        </ActionIcon>
+        <Text fw={600} fz={15}>{t.changeFeed.title}</Text>
+        {fazlasiVar && (
+          // "Hepsini gör" Yayın Merkezi'nin "Onaylananlar" grubuna gider:
+          // aynı kayıtların tam listesi ve aynı görünürlük kuralı orada (K-80).
+          <Anchor component={Link} to="/publishing" fz={12} fw={600} ml="auto">
+            {t.changeFeed.seeAll}
+          </Anchor>
+        )}
       </Group>
 
-      <Collapse in={open}>
-        <Stack gap={6} mt="sm">
-          {items.map((c) => (
+      <Stack gap={6} mt="sm">
+        {gosterilen.map((c) => (
             <Group key={c.id} gap={8} wrap="nowrap" justify="space-between"
               style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 6 }}>
               <Group gap={8} wrap="wrap" style={{ minWidth: 0 }}>
                 <Text size="sm" fw={500}>
-                  {c.department_name} · {c.year}. sınıf · {SEMESTER_LABELS[c.semester]}
+                  {c.department_name} · {t.courses.yearN(c.year)} · {t.enums.semester[c.semester]}
                 </Text>
                 <Badge size="xs" variant="light"
                   color={c.kind === "EXAM" ? "grape" : "teal"}>
-                  {c.kind === "EXAM" ? "sınav takvimi" : "ders programı"}
+                  {c.kind === "EXAM" ? t.changeFeed.examSchedule : t.changeFeed.weeklySchedule}
                 </Badge>
                 {c.affected_departments.length > 0 && (
                   <Badge size="xs" variant="light" color="orange">
-                    ortak ders — {c.affected_departments.length} bölüm
+                    {t.courseInfo.sharedCourseDepts(c.affected_departments.length)}
                   </Badge>
                 )}
-                <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at)}</Text>
+                <Text size="xs" c={TEXT_MUTED}>{tarih(c.published_at, t)}</Text>
               </Group>
-              <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }}
-                onClick={() => goster(c)}>
-                Göster
-              </Button>
-            </Group>
-          ))}
-        </Stack>
-      </Collapse>
+            <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }}
+              onClick={() => goster(c)}>
+              Göster
+            </Button>
+          </Group>
+        ))}
+      </Stack>
     </Paper>
   );
 }

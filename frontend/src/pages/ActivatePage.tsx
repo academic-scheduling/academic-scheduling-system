@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
 import type { InvitationPreview, MessageResponse } from "../api/types";
+import { useT } from "../i18n";
 
 // Ekranın üç durumu: sunucuya sorulan her şeyde çıkan desen.
 type PreviewState =
@@ -16,6 +17,7 @@ type PreviewState =
   | { phase: "dead"; reason: string };
 
 export default function ActivatePage() {
+  const t = useT();
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const navigate = useNavigate();
@@ -27,22 +29,22 @@ export default function ActivatePage() {
   const form = useForm({
     initialValues: { password: "", confirm: "" },
     validate: {
-      password: (v) => (v.length >= 8 ? null : "Şifre en az 8 karakter olmalı"),
-      confirm: (v, values) => (v === values.password ? null : "Şifreler eşleşmiyor"),
+      password: (v) => (v.length >= 8 ? null : t.auth.passwordTooShort(8)),
+      confirm: (v, values) => (v === values.password ? null : t.auth.passwordsDoNotMatch),
     },
   });
 
   // Açılış ön-doğrulaması (K-24). Token'ı TÜKETMEZ — sadece sorar.
   useEffect(() => {
     if (!token) {
-      setState({ phase: "dead", reason: "Bağlantıda davet kodu yok." });
+      setState({ phase: "dead", reason: t.auth.noInviteCode });
       return;
     }
     api
       .get<InvitationPreview>(`/auth/invitation/${token}`)
       .then((preview) => setState({ phase: "valid", ...preview }))
       .catch((e) => {
-        const reason = e instanceof ApiError ? e.message : "Davet doğrulanamadı.";
+        const reason = e instanceof ApiError ? e.message : t.auth.inviteUnverified;
         setState({ phase: "dead", reason });
       });
   }, [token]);
@@ -57,13 +59,13 @@ export default function ActivatePage() {
       });
       notifications.show({
         color: "green",
-        message: "Hesabınız aktifleştirildi. Şimdi giriş yapabilirsiniz.",
+        message: t.auth.activateDone,
       });
       navigate("/login", { replace: true });
     } catch (e) {
       // POST, GET geçerli dese bile başarısız olabilir: token bu arada
       // dolabilir/kullanılabilir (K-24 TOCTOU). O yüzden hata burada da ele alınır.
-      setSubmitError(e instanceof ApiError ? e.message : "Beklenmeyen bir hata oluştu");
+      setSubmitError(e instanceof ApiError ? e.message : t.auth.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -80,10 +82,10 @@ export default function ActivatePage() {
   if (state.phase === "dead") {
     return (
       <Container size={420} py="xl">
-        <Alert color="red" title="Davet bağlantısı geçersiz" mt="xl">
+        <Alert color="red" title={t.auth.inviteLinkDeadTitle} mt="xl">
           {state.reason}
           <Text mt="sm" size="sm">
-            Yöneticinizden daveti yeniden göndermesini isteyin.
+            {t.auth.inviteLinkDeadDetail}
           </Text>
         </Alert>
       </Container>
@@ -94,14 +96,14 @@ export default function ActivatePage() {
   return (
     <Container size={420} py="xl">
       <Title order={2} ta="center" mt="xl">
-        Hesabınızı Tamamlayın
+        {t.auth.activateTitle}
       </Title>
       <Paper withBorder shadow="sm" p="lg" radius="md" mt="lg">
         <form onSubmit={form.onSubmit(handleSubmit)}>
-          <TextInput label="E-posta" value={state.email} readOnly disabled />
-          <PasswordInput label="Şifre" mt="md" {...form.getInputProps("password")} />
+          <TextInput label={t.auth.email} value={state.email} readOnly disabled />
+          <PasswordInput label={t.auth.password} mt="md" {...form.getInputProps("password")} />
           <PasswordInput
-            label="Şifre (tekrar)"
+            label={t.auth.passwordAgain}
             mt="md"
             {...form.getInputProps("confirm")}
           />
@@ -111,7 +113,7 @@ export default function ActivatePage() {
             </Alert>
           )}
           <Button type="submit" fullWidth mt="lg" loading={submitting}>
-            Hesabı Aktifleştir
+            {t.auth.activateSubmit}
           </Button>
         </form>
       </Paper>

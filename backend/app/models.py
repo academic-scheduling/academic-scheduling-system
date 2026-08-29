@@ -252,6 +252,21 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # K-82: giris zaman damgalari. IKI kolon, cunku iki farkli soruya cevap
+    # veriyorlar ve tek kolon ikisini birden veremez:
+    #   last_login_at     -> "bu hesap en son ne zaman girdi" (Yonetim tablosu)
+    #   previous_login_at -> "SIZ bundan onceki sefer ne zaman girdiniz"
+    #                        (kimlik karti). Tek kolon olsaydi kullanicinin
+    #                        kendi karti hep ICINDE BULUNDUGU oturumu gosterir,
+    #                        yani her zaman "az once" yazardi.
+    # Girste once eskisi previous'a kopyalanir, sonra last yazilir (auth.login).
+    # Ikisi de nullable: hic giris yapmamis (PENDING) hesapta deger yoktur.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    previous_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     @property
     def department_ids(self) -> list[int]:
@@ -444,6 +459,16 @@ class Lecturer(Base):
         back_populates="lecturer"
     )
     exams: Mapped[list["Exam"]] = relationship(back_populates="lecturer")
+    # K-81: bu hocanin GOZETMEN olarak gorevli oldugu sinavlar. Ters yon
+    # bilincli olarak taniml: `exam_invigilators` RESTRICT tasiyor, yani
+    # "bu hoca silinebilir mi?" sorusunun uc bagimlisi var (sube, sinav,
+    # gozetmenlik). Ucuncusu ORM'den okunamiyorsa sorgular onu sessizce
+    # atlar ve silme ancak veritabani duzeyinde patlar.
+    # `secondary` STRING olarak veriliyor: tablo bu siniftan SONRA
+    # tanimlaniyor, nesne olarak referans vermek NameError verirdi.
+    invigilated_exams: Mapped[list["Exam"]] = relationship(
+        secondary="exam_invigilators", back_populates="invigilators"
+    )
 
 
 class Building(Base):
@@ -713,6 +738,38 @@ draft_affected_departments = Table(
 )
 
 
+# K-83: onay talebinin ALICILARI. Taslak onaya gonderilirken gonderen, kendi
+# bolumundeki onay yetkilileri (ve her bolumde yetkili olan ADMIN'ler) arasindan
+# kimlere gittigini SECER; talep yalnizca bu satirlarda adi gecen hesaplarin
+# kuyruguna duser.
+#
+# Neden ayri tablo: alici cok-a-cok (bir talep birden cok kisiye, bir kisi
+# birden cok talebe). Taslakta tek bir `assigned_to` kolonu olsaydi "iki
+# yetkiliden hangisi bakarsa baksin" diyemezdik — kuyruk tek kisiye kilitlenir,
+# o kisi izinliyken talep beklerdi.
+#
+# CASCADE iki yonde de: taslak silinince adresleme anlamsiz kalir; hesap
+# silinince (K-34'te zaten engelli) artik ona gonderilemez.
+draft_approvers = Table(
+    "draft_approvers",
+    Base.metadata,
+    Column(
+        "draft_id",
+        BigInteger,
+        ForeignKey("schedule_drafts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "user_id",
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    # "Bana gelen talepler" sorgusu bu sutundan girer — kuyrugun sicak yolu.
+    Index("idx_draft_approvers_user", "user_id"),
+)
+
+
 class ScheduleDraft(Base):
     """schedule_drafts — bir cohort'un OZEL, alternatif program hali (K-59).
 
@@ -812,6 +869,10 @@ class ScheduleDraft(Base):
     affected_departments: Mapped[list["Department"]] = relationship(
         secondary=draft_affected_departments
     )
+    # K-83: talebin gonderildigi onay yetkilileri. Her gonderimde YENIDEN
+    # yazilir (geri cekip tekrar gonderirken eski adresleme yaniltmasin) ve
+    # gonderenin KENDISI asla iceride olmaz — oz-onay yasak (K-59).
+    approvers: Mapped[list["User"]] = relationship(secondary=draft_approvers)
 
 
 class WeeklyScheduleEntry(Base):
@@ -901,6 +962,39 @@ exam_classrooms = Table(
 )
 
 
+# Sinav <-> gozetmen cok-a-cok baglantisi (K-81). exam_classrooms ile BIREBIR
+# ayni desen: ek kolonu yok, o yuzden model sinifi degil sade Table.
+#
+# NEDEN AYRI TABLO, neden `lecturer_id` (sorumlu) buraya KATLANMADI:
+# sorumlu ile gozetmen ayni sey degil. Sorumlu sinavin sahibi -- her sinavda
+# TAM BIR tane olmak zorunda ve E3/X3 kurallari onun uzerine kurulu. Gozetmen
+# istege bagli ve 0..N. Ikisini tek tabloya katlamak, sorumlunun zorunlulugunu
+# tablo duzeyinde ifade edilemez hale getirir ve "sorumlu" diyen butun
+# mesajlari/kurallari yeniden yazmayi gerektirirdi (yikici migration).
+#
+# RESTRICT: gozetmenligi olan hoca silinemez (sorumluyla ayni koruma).
+# CASCADE: sinav silinince satirlar gider.
+exam_invigilators = Table(
+    "exam_invigilators",
+    Base.metadata,
+    Column(
+        "exam_id",
+        BigInteger,
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "lecturer_id",
+        BigInteger,
+        ForeignKey("lecturers.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    # Birlesik birincil anahtar ayni hocayi ayni sinava iki kez eklemeyi zaten
+    # engelliyor; bu indeks ters yonu (bir hocanin gozetmenlikleri) hizlandirir.
+    Index("idx_exam_invigilators_lecturer", "lecturer_id"),
+)
+
+
 class Exam(Base):
     """exams — bir DERSIN bir sinavi (vize/final/butunleme).
 
@@ -981,6 +1075,12 @@ class Exam(Base):
     classrooms: Mapped[list["Classroom"]] = relationship(
         secondary=exam_classrooms
     )  # tek yonlu
+    # K-81: gozetmenler. Tek yonlu ve `lecturer` (sorumlu) iliskisinden AYRI --
+    # bir hoca ayni sinavda hem sorumlu hem gozetmen olamaz (router zorlar),
+    # ama iki farkli sinavda iki farkli rolde olabilir; E9 tam bunu yakalar.
+    invigilators: Mapped[list["Lecturer"]] = relationship(
+        secondary=exam_invigilators, back_populates="invigilated_exams"
+    )
 
     @property
     def total_expected_students(self) -> int:

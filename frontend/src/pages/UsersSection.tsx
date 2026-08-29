@@ -12,17 +12,30 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
 import type { CapabilityKey, Department, ManagedUser, Role, UserStatus } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 const ALL = "__all__";
 
-/** Sayfa başına kullanıcı satırı. Dashboard tek sayfada dört blok taşıyor;
- *  kullanıcı tablosu diğerlerini aşağı itmemeli. */
-const PAGE_SIZE = 7;
+/** Son giriş damgası: gün + kısa ay + saat. Yıl yok — bir yıldan eski girişte
+ *  saatin bir önemi kalmaz, o zaman da sütun zaten "çok eski" diyor. */
+function girisZamani(iso: string, t: Dict): string {
+  return new Date(iso).toLocaleString(t.locale, {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+}
 
-const STATUS_META: Record<UserStatus, { label: string; color: string }> = {
-  PENDING: { label: "Davetli", color: "yellow" },
-  ACTIVE: { label: "Aktif", color: "green" },
-  DISABLED: { label: "Pasif", color: "gray" },
+/** Sayfa başına kullanıcı satırı.
+ *
+ *  K-82: 7 idi — tablo dashboard'da dört bloktan biriydi ve ötekileri aşağı
+ *  itmemesi gerekiyordu. Kendi sayfasına (Yönetim) taşınınca o kısıt kalktı;
+ *  12 satır tipik bir çalışma grubunu tek sayfada gösteriyor. */
+const PAGE_SIZE = 12;
+
+/** K-79: yalnız RENK burada kaldı — renk dile bağlı değil. Etiketler
+ *  sözlükte (`t.users.status`), çünkü modül düzeyi dil değişimini göremez. */
+const STATUS_COLOR: Record<UserStatus, string> = {
+  PENDING: "yellow", ACTIVE: "green", DISABLED: "gray",
 };
 
 /** Liste sırası: önce çalışanlar, sonra bekleyenler, en altta pasifler.
@@ -45,19 +58,20 @@ const STATUS_ORDER: Record<UserStatus, number> = {
  *  geniş ekranlarda ise sağda boşluk bırakıyordu. Toplam 100 olmalı.
  */
 const COL = {
-  ad: "15%",
-  eposta: "22%",
-  rol: "10%",
-  durum: "9%",
-  bolumler: "17%",
-  yetkiler: "19%",
+  ad: "14%",
+  eposta: "18%",
+  rol: "9%",
+  durum: "8%",
+  bolumler: "15%",
+  yetkiler: "17%",
+  sonGiris: "11%",     // K-82
   eylem: "8%",
 } as const;
 
 /** Bu genişliğin altında sütunlar okunmaz hale gelir; tablo ezilmek yerine
  *  yatay kayar. Telefonda veri tablosunu kaydırmak kabul gören bir desendir —
  *  sütunu yok etmekten ya da 20px'e sıkıştırmaktan iyidir. */
-const TABLE_MIN_WIDTH = 820;
+const TABLE_MIN_WIDTH = 960;   // K-82: sekizinci sütun (son giriş) eklendi
 
 type FormValues = {
   name: string;
@@ -121,6 +135,7 @@ function DepartmentCell({
  *  gerekirdi.
  */
 export default function UsersSection() {
+  const t = useT();
   const { user: me } = useAuth();
 
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -142,9 +157,9 @@ export default function UsersSection() {
   const form = useForm<FormValues>({
     initialValues: BOS_FORM,
     validate: {
-      name: (v) => (v.trim() ? null : "Ad boş olamaz"),
+      name: (v) => (v.trim() ? null : t.users.nameRequired),
       // Düzenlemede e-posta alanı zaten kilitli, doğrulaması da atlanır.
-      email: (v) => (editing || v.trim() ? null : "E-posta boş olamaz"),
+      email: (v) => (editing || v.trim() ? null : t.users.emailRequired),
     },
   });
 
@@ -159,7 +174,7 @@ export default function UsersSection() {
       setDepartments(deps);
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : "Kullanıcılar yüklenemedi");
+      setLoadError(e instanceof ApiError ? e.message : t.users.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -253,18 +268,18 @@ export default function UsersSection() {
       if (editing) {
         // E-posta GÖNDERİLMEZ — kimliktir, kontrat §2 kabul etmiyor (K-34).
         await api.patch<ManagedUser>(`/users/${editing.id}`, ortak);
-        notifications.show({ color: "green", message: "Kullanıcı güncellendi" });
+        notifications.show({ color: "green", message: t.users.updated });
       } else {
         await api.post("/users/invite", { ...ortak, email: v.email.trim() });
         notifications.show({
           color: "green",
-          message: "Davet gönderildi — kullanıcı bağlantıdan hesabını tamamlayacak",
+          message: t.users.invited,
         });
       }
       setFormModal(false);
       await load();
     } catch (e) {
-      const mesaj = e instanceof ApiError ? e.message : "İşlem başarısız";
+      const mesaj = e instanceof ApiError ? e.message : t.common.actionFailed;
       if (e instanceof ApiError && e.status === 409) form.setFieldError("email", mesaj);
       else notifications.show({ color: "red", message: mesaj, autoClose: 7000 });
     } finally {
@@ -276,10 +291,10 @@ export default function UsersSection() {
     setBusy(true);
     try {
       await api.post(`/users/${u.id}/resend-invitation`, {});
-      notifications.show({ color: "green", message: `Davet yeniden gönderildi: ${u.email}` });
+      notifications.show({ color: "green", message: t.users.resent(u.email) });
     } catch (e) {
       notifications.show({
-        color: "red", message: e instanceof ApiError ? e.message : "Gönderilemedi",
+        color: "red", message: e instanceof ApiError ? e.message : t.users.sendFailed,
       });
     } finally {
       setBusy(false);
@@ -297,7 +312,7 @@ export default function UsersSection() {
     } catch (e) {
       notifications.show({
         color: "red", title: "Silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 8000,
       });
       setDeleting(null);
@@ -312,13 +327,13 @@ export default function UsersSection() {
       await api.patch(`/users/${u.id}`, { status: yeni });
       notifications.show({
         color: "green",
-        message: yeni === "DISABLED" ? "Erişim kapatıldı" : "Erişim yeniden açıldı",
+        message: yeni === "DISABLED" ? t.users.accessDisabled : t.users.accessEnabled,
       });
       setDisabling(null);
       await load();
     } catch (e) {
       notifications.show({
-        color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDisabling(null);
@@ -332,9 +347,9 @@ export default function UsersSection() {
 
   return (
     <>
-      <Group justify="space-between" align="baseline" mt="xl" mb="sm">
-        <Title order={4}>Kullanıcılar</Title>
-        <Button size="xs" onClick={openInvite}>+ Kullanıcı Davet Et</Button>
+      <Group justify="space-between" align="baseline" mb="sm">
+        <Title order={4}>{t.users.title}</Title>
+        <Button size="xs" onClick={openInvite}>{t.users.invite}</Button>
       </Group>
 
       <Group mb="sm">
@@ -344,16 +359,16 @@ export default function UsersSection() {
             geniş ekranda sabit ölçüde yan yana. Sabit pikselde telefonda
             yarım kalan, düzensiz bir sıra oluşuyordu. */}
         <TextInput
-          placeholder="Ad veya e-posta ara"
+          placeholder={t.users.searchPlaceholder}
           value={search}
           onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }}
           w={{ base: "100%", xs: 240 }}
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm roller" },
-            { value: "ADMIN", label: "Admin" },
-            { value: "SUB_ACCOUNT", label: "Alt hesap" },
+            { value: ALL, label: t.users.allRoles },
+            { value: "ADMIN", label: t.users.roleAdmin },
+            { value: "SUB_ACCOUNT", label: t.users.roleSub },
           ]}
           value={roleFilter}
           onChange={(v) => { setRoleFilter(v ?? ALL); setPage(1); }}
@@ -362,9 +377,9 @@ export default function UsersSection() {
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm durumlar" },
-            ...(Object.keys(STATUS_META) as UserStatus[]).map((s) => ({
-              value: s, label: STATUS_META[s].label,
+            { value: ALL, label: t.users.allStatuses },
+            ...(Object.keys(STATUS_COLOR) as UserStatus[]).map((s) => ({
+              value: s, label: t.users.status[s],
             })),
           ]}
           value={statusFilter}
@@ -382,12 +397,13 @@ export default function UsersSection() {
         <Table verticalSpacing="xs" highlightOnHover layout="fixed">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th w={COL.ad}>Ad</Table.Th>
-              <Table.Th w={COL.eposta}>E-posta</Table.Th>
-              <Table.Th w={COL.rol}>Rol</Table.Th>
-              <Table.Th w={COL.durum}>Durum</Table.Th>
-              <Table.Th w={COL.bolumler}>Bölümler</Table.Th>
-              <Table.Th w={COL.yetkiler}>Yetkiler</Table.Th>
+              <Table.Th w={COL.ad}>{t.users.name}</Table.Th>
+              <Table.Th w={COL.eposta}>{t.auth.email}</Table.Th>
+              <Table.Th w={COL.rol}>{t.users.role}</Table.Th>
+              <Table.Th w={COL.durum}>{t.users.statusCol}</Table.Th>
+              <Table.Th w={COL.bolumler}>{t.users.departments}</Table.Th>
+              <Table.Th w={COL.yetkiler}>{t.users.permissions}</Table.Th>
+              <Table.Th w={COL.sonGiris}>{t.users.lastLogin}</Table.Th>
               <Table.Th w={COL.eylem} />
             </Table.Tr>
           </Table.Thead>
@@ -395,7 +411,7 @@ export default function UsersSection() {
             {sayfadakiler.map((u) => {
               const kendisi = u.id === me?.id;
               const bekleyen = u.status === "PENDING";
-              const durum = STATUS_META[u.status];
+              const durumRengi = STATUS_COLOR[u.status];
               return (
                 <Table.Tr key={u.id} opacity={u.status === "DISABLED" ? 0.6 : 1}>
                   {/* truncate: sabit genişlikte uzun ad/e-posta sütunu
@@ -403,7 +419,7 @@ export default function UsersSection() {
                   <Table.Td>
                     <Text size="sm" truncate>
                       {u.name}
-                      {kendisi && <Text span size="xs" c="dimmed"> (siz)</Text>}
+                      {kendisi && <Text span size="xs" c="dimmed"> {t.users.you}</Text>}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -415,12 +431,12 @@ export default function UsersSection() {
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    <Badge variant="light" color={durum.color} size="sm">{durum.label}</Badge>
+                    <Badge variant="light" color={durumRengi} size="sm">{t.users.status[u.status]}</Badge>
                   </Table.Td>
                   <Table.Td>
                     {/* ADMIN'in ataması olmaz, her bölümde yetkilidir (K-34). */}
                     {u.role === "ADMIN" ? (
-                      <Text size="sm" c="dimmed">tümü</Text>
+                      <Text size="sm" c="dimmed">{t.users.allShort}</Text>
                     ) : (
                       <DepartmentCell ids={u.department_ids} depById={depById} />
                     )}
@@ -429,31 +445,41 @@ export default function UsersSection() {
                     {/* ADMIN'de bayrak listelenmez: rol muafiyeti zaten hepsini
                         veriyor, beş rozet basmak gürültü olurdu (K-25). */}
                     {u.role === "ADMIN" ? (
-                      <Text size="sm" c="dimmed">tümü</Text>
+                      <Text size="sm" c="dimmed">{t.users.allShort}</Text>
                     ) : (
                       <Group gap={4}>
                         {CAPABILITIES.filter((c) => u[c.key]).map((c) => (
                           <Badge key={c.key} variant="light" size="sm"
                                  color={c.group === "approve" ? "grape" : "teal"}>
-                            {c.label}
+                            {t.enums.capability[c.key]}
                           </Badge>
                         ))}
                         {CAPABILITIES.every((c) => !u[c.key]) && (
-                          <Text size="sm" c="dimmed">sadece okuma</Text>
+                          <Text size="sm" c="dimmed">{t.users.readOnly}</Text>
                         )}
                       </Group>
                     )}
                   </Table.Td>
                   <Table.Td>
+                    {/* K-82: "hiç girmedi" ile "uzun zamandır girmedi" farklı
+                        şeyler. Boş bırakmak ikisini aynı gösterirdi; davet
+                        edilip gelmemiş hesap bu sütunda açıkça görünmeli. */}
+                    {u.last_login_at ? (
+                      <Text size="sm" c="dimmed">{girisZamani(u.last_login_at, t)}</Text>
+                    ) : (
+                      <Text size="sm" c="dimmed" fs="italic">{t.users.neverLoggedIn}</Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
                     <Group gap={2} wrap="nowrap" justify="flex-end">
                       {bekleyen && (
-                        <Tooltip label="Daveti yeniden gönder">
+                        <Tooltip label={t.users.resendInvite}>
                           <ActionIcon variant="subtle" size="sm" onClick={() => resend(u)}>
                             <IconMail size={15} />
                           </ActionIcon>
                         </Tooltip>
                       )}
-                      <Tooltip label="Düzenle">
+                      <Tooltip label={t.common.edit}>
                         <ActionIcon variant="subtle" size="sm" onClick={() => openEdit(u)}>
                           <IconPencil size={15} />
                         </ActionIcon>
@@ -464,21 +490,21 @@ export default function UsersSection() {
                           ikisi de yok — sunucu da reddediyor, düğmeyi
                           göstermek kullanıcıyı boşuna hataya sürüklerdi. */}
                       {!kendisi && (bekleyen ? (
-                        <Tooltip label="Daveti iptal et">
+                        <Tooltip label={t.users.cancelInvite}>
                           <ActionIcon variant="subtle" size="sm" color="red"
                                       onClick={() => setDeleting(u)}>
                             <IconTrash size={15} />
                           </ActionIcon>
                         </Tooltip>
                       ) : u.status === "ACTIVE" ? (
-                        <Tooltip label="Erişimi kapat">
+                        <Tooltip label={t.users.disableAccess}>
                           <ActionIcon variant="subtle" size="sm" color="red"
                                       onClick={() => setDisabling(u)}>
                             <IconUserOff size={15} />
                           </ActionIcon>
                         </Tooltip>
                       ) : (
-                        <Tooltip label="Erişimi aç">
+                        <Tooltip label={t.users.enableAccess}>
                           <ActionIcon variant="subtle" size="sm" color="green"
                                       onClick={() => toggleAccess(u, "ACTIVE")}>
                             <IconUserCheck size={15} />
@@ -494,7 +520,7 @@ export default function UsersSection() {
         </Table>
         </Table.ScrollContainer>
         {gorunen.length === 0 && (
-          <Text c="dimmed" size="sm" p="md">Filtreye uyan kullanıcı yok.</Text>
+          <Text c="dimmed" size="sm" p="md">{t.users.noMatch}</Text>
         )}
       </Paper>
 
@@ -515,29 +541,29 @@ export default function UsersSection() {
       <Modal
         opened={formModal}
         onClose={() => setFormModal(false)}
-        title={editing ? `Düzenle: ${editing.name}` : "Kullanıcı Davet Et"}
+        title={editing ? t.users.editNamed(editing.name) : t.users.inviteTitle}
       >
         <form onSubmit={form.onSubmit(submit)}>
           <Stack>
-            <TextInput label="Ad Soyad" {...form.getInputProps("name")} />
+            <TextInput label={t.users.fullName} {...form.getInputProps("name")} />
             {/* Düzenlemede kilitli: e-posta kimliktir, davet token'ı ona bağlı
                 (K-34). Yanlışsa daveti iptal edip yeniden göndermek gerekir. */}
             <TextInput
-              label="E-posta"
-              placeholder="ad.soyad@muh.example.edu.tr"
+              label={t.auth.email}
+              placeholder={t.users.emailPlaceholder}
               disabled={!!editing}
               {...form.getInputProps("email")}
             />
             <Select
-              label="Rol"
+              label={t.users.role}
               data={[
-                { value: "SUB_ACCOUNT", label: "Alt hesap" },
-                { value: "ADMIN", label: "Admin" },
+                { value: "SUB_ACCOUNT", label: t.users.roleSub },
+                { value: "ADMIN", label: t.users.roleAdmin },
               ]}
               allowDeselect={false}
               disabled={editing?.id === me?.id}
               description={editing?.id === me?.id
-                ? "Kendi rolünüzü değiştiremezsiniz — bunu başka bir admin yapmalı"
+                ? t.users.cannotChangeOwnRole
                 : undefined}
               value={form.values.role}
               onChange={(v) => form.setFieldValue("role", (v ?? "SUB_ACCOUNT") as Role)}
@@ -547,8 +573,8 @@ export default function UsersSection() {
                 zaten yetkilidir, sunucu da gönderileni yok sayar (K-34). */}
             {form.values.role !== "ADMIN" && (
               <MultiSelect
-                label="Bölümler"
-                placeholder={form.values.department_ids.length ? undefined : "Seçin"}
+                label={t.users.departments}
+                placeholder={form.values.department_ids.length ? undefined : t.users.pick}
                 data={depOptions}
                 searchable
                 {...form.getInputProps("department_ids")}
@@ -559,11 +585,11 @@ export default function UsersSection() {
                 hepsini veriyor, sunucu da gönderileni yok sayıyor (K-25). */}
             {form.values.role !== "ADMIN" && (
               <Stack gap={6}>
-                <Text size="sm" fw={500}>Yetkiler</Text>
+                <Text size="sm" fw={500}>{t.users.permissions}</Text>
                 {CAPABILITIES.filter((c) => c.group === "write").map((c) => (
                   <Checkbox
                     key={c.key}
-                    label={c.label}
+                    label={t.enums.capability[c.key]}
                     checked={form.values.caps[c.key]}
                     onChange={(e) =>
                       form.setFieldValue(`caps.${c.key}`, e.currentTarget.checked)}
@@ -574,12 +600,12 @@ export default function UsersSection() {
                     yazabilirim", bu "başkasının yazdığını yayına geçirebilir
                     miyim". Aynı listede sıradan bir kutu gibi durursa yanlışlıkla
                     verilmesi kolaylaşır; ayrı başlık ve açıklama taşıyor. */}
-                <Text size="sm" fw={500} mt="xs">Onay yetkisi</Text>
+                <Text size="sm" fw={500} mt="xs">{t.users.approvePermission}</Text>
                 {CAPABILITIES.filter((c) => c.group === "approve").map((c) => (
                   <Checkbox
                     key={c.key}
-                    label={c.label}
-                    description="Başkalarının taslaklarını inceleyip yayına alabilir. Kendi talebini onaylayamaz."
+                    label={t.enums.capability[c.key]}
+                    description={t.users.approveDescription}
                     checked={form.values.caps[c.key]}
                     onChange={(e) =>
                       form.setFieldValue(`caps.${c.key}`, e.currentTarget.checked)}
@@ -589,39 +615,37 @@ export default function UsersSection() {
             )}
 
             <Button type="submit" loading={busy} mt="sm">
-              {editing ? "Kaydet" : "Daveti Gönder"}
+              {editing ? t.common.save : t.users.sendInvite}
             </Button>
           </Stack>
         </form>
       </Modal>
 
       {/* --- davet iptali --- */}
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Daveti iptal et">
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title={t.users.cancelInvite}>
         <Text>
-          <b>{deleting?.name}</b> ({deleting?.email}) için gönderilen davet silinecek.
+          {t.users.deleteInviteBody(deleting?.name ?? "", deleting?.email ?? "")}
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Davet bağlantısı çalışmaz hale gelir. Kişi henüz giriş yapmadığı için
-          geriye hiçbir kaydı kalmaz.
+          {t.users.deleteInviteHint}
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeleting(null)}>Vazgeç</Button>
-          <Button color="red" loading={busy} onClick={confirmDelete}>Daveti Sil</Button>
+          <Button variant="default" onClick={() => setDeleting(null)}>{t.common.dismiss}</Button>
+          <Button color="red" loading={busy} onClick={confirmDelete}>{t.users.deleteInviteCta}</Button>
         </Group>
       </Modal>
 
       {/* --- erişim kapatma --- */}
-      <Modal opened={disabling !== null} onClose={() => setDisabling(null)} title="Erişimi kapat">
-        <Text><b>{disabling?.name}</b> sisteme giremeyecek.</Text>
+      <Modal opened={disabling !== null} onClose={() => setDisabling(null)} title={t.users.disableAccess}>
+        <Text>{t.users.disableBody(disabling?.name ?? "")}</Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Etki anında: açık oturumu varsa ilk isteğinde düşer. Hesap silinmez —
-          işlem kayıtlarındaki izi korunur, istendiğinde yeniden açılabilir.
+          {t.users.disableHint}
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDisabling(null)}>Vazgeç</Button>
+          <Button variant="default" onClick={() => setDisabling(null)}>{t.common.dismiss}</Button>
           <Button color="red" loading={busy}
                   onClick={() => disabling && toggleAccess(disabling, "DISABLED")}>
-            Erişimi Kapat
+            {t.users.disableCta}
           </Button>
         </Group>
       </Modal>

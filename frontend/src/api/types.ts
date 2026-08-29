@@ -14,6 +14,8 @@ export type Role = "ADMIN" | "SUB_ACCOUNT";
 export type User = {
   id: number;
   name: string;
+  /** K-82: kimlik kartı için. Uç zaten yalnız çağıranın kendisini döner. */
+  email: string;
   role: Role;
   department_ids: number[];
   can_manage_courses: boolean;
@@ -22,6 +24,10 @@ export type User = {
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
   can_approve_schedule: boolean;      // K-59: taslağı yayına alma
+  /** K-82: kimlik kartındaki "önceki girişiniz". BU oturumun değil, bir
+   *  öncekinin damgası — sunucu girişte eskisini buraya kopyalayıp yenisini
+   *  yazıyor. Tek damga olsaydı kart hep "az önce" derdi. İlk girişte null. */
+  previous_login_at: string | null;
 };
 
 /** Kontrat §1 · POST /auth/login cevabı */
@@ -144,11 +150,6 @@ export type BuildingRef = {
 /** K-31 · dersliğin fiziksel türü. Motor okumaz; bilgi + filtre. */
 export type RoomType = "CLASSROOM" | "AMPHI" | "LAB";
 
-export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
-  CLASSROOM: "Sınıf",          // ekranın adı "Derslikler" olduğu için tip "Sınıf"
-  AMPHI: "Amfi",
-  LAB: "Laboratuvar",
-};
 
 /** Kontrat §5 · GET /classrooms elemanı */
 export type Classroom = {
@@ -166,11 +167,6 @@ export type Classroom = {
 
 export type SemesterType = "FALL" | "SPRING" | "SUMMER";
 
-export const SEMESTER_LABELS: Record<SemesterType, string> = {
-  FALL: "Güz",
-  SPRING: "Bahar",
-  SUMMER: "Yaz",
-};
 
 export type SessionType = "THEORY" | "PRACTICE" | "LAB";
 export type DeliveryMode = "FACE_TO_FACE" | "ONLINE_SYNC" | "ONLINE_ASYNC";
@@ -195,9 +191,6 @@ export type WeeklyEntry = {
 /** Kontrat §8 · Sınav türleri (K-16: sınav DERS düzeyindedir, şubeden bağımsız) */
 export type ExamType = "MIDTERM" | "FINAL" | "MAKEUP";
 
-export const EXAM_TYPE_LABELS: Record<ExamType, string> = {
-  MIDTERM: "Vize", FINAL: "Final", MAKEUP: "Bütünleme",
-};
 
 /** Sınav cevabının içine gömülen kısa ders gösterimi. */
 export type CourseRef = { id: number; code: string; name: string };
@@ -225,6 +218,9 @@ export type Exam = {
   /** Çoklu derslik (K-17); boş liste = derslik henüz atanmadı */
   classrooms: ExamClassroomRef[];
   lecturer: SectionLecturerRef;
+  /** K-81: gözetmenler — 0..N, isteğe bağlı. Sorumlu (`lecturer`) BU LİSTEDE
+   *  DEĞİLDİR; sunucu aynı kişinin iki rolde görünmesini reddeder. */
+  invigilators: SectionLecturerRef[];
   /** Türetilir: dersin aktif şubelerinin expected_students toplamı (K-16) */
   total_expected_students: number;
   notes: string | null;
@@ -323,12 +319,24 @@ export type DashboardSummary = {
   classrooms: number;
   lecturers: number;
   courses: number;
-  admins: number;
-  sub_accounts: number;
+  /** K-82: ADMIN dışında **null** — 0 değil. Sıfır "kullanıcı yok" demektir,
+   *  null "sana gösterilmiyor". Ana sayfa null görünce kartı hiç çizmez. */
+  admins: number | null;
+  sub_accounts: number | null;
   weekly_entries: number;
   exams: number;
   unresolved_hard: number;
   unresolved_warnings: number;
+};
+
+/** Kontrat §10 · GET /dashboard/occupancy (K-82) — haftalık doluluk ısı haritası.
+ *
+ *  `grid[slot-1][gün-1]` = o gün/slotta dolu olan AYRI derslik sayısı.
+ *  Izgara her zaman 9×5 (slot 1..9, gün 1..5). */
+export type OccupancySummary = {
+  /** Payda: aktif derslik sayısı. */
+  classrooms: number;
+  grid: number[][];
 };
 
 /** Kontrat §0 · ConflictResult — motorun ürettiği, UI'ın çizdiği ortak nesne. */
@@ -342,6 +350,16 @@ export type ConflictAffectedRef = {
    *  Motor eski girişlerde üretmezse null. */
   department_id: number | null;
   year: number | null;
+  /** K-80: cohort üç boyutludur; rapor dönem süzgeci bunu okur. */
+  semester: SemesterType | null;
+  /** K-80: yerleşim zamanı — rapor tablosunun "ne zaman" sütunu. Haftalıkta
+   *  gün+slot, sınavda tarih+saat dolar; karşı tür için null kalır. Zaman
+   *  mesajın metninde de geçiyor ama oradan ayrıştırmak kırılgan olurdu. */
+  day_of_week: number | null;
+  start_slot: number | null;
+  slot_count: number | null;
+  exam_date: string | null;
+  start_time: string | null;
 };
 
 export type ConflictResult = {
@@ -387,6 +405,9 @@ export type ManagedUser = {
   can_manage_classrooms: boolean;
   can_manage_lecturers: boolean;
   can_approve_schedule: boolean;      // K-59
+  /** K-82: Yönetim tablosunun "Son giriş" sütunu. Başkasına bakan admin için
+   *  anlam doğrudur: "bu hesap en son ne zaman girdi". Hiç girmemişse null. */
+  last_login_at: string | null;
 };
 
 /** Yetenek bayrakları — form ve rozet listelerinin tek kaynağı (K-25, K-59).
@@ -395,12 +416,12 @@ export type ManagedUser = {
  *  "başkasının yazdığını YAYINA geçirebilir miyim" (K-59). Bu yüzden ayrı
  *  bir grup olarak işaretlenir; form onu ayrı başlık altında gösterir. */
 export const CAPABILITIES = [
-  { key: "can_manage_courses", label: "Dersler", group: "write" },
-  { key: "can_manage_weekly", label: "Haftalık Program", group: "write" },
-  { key: "can_manage_exams", label: "Sınavlar", group: "write" },
-  { key: "can_manage_classrooms", label: "Derslikler", group: "write" },
-  { key: "can_manage_lecturers", label: "Öğretim Üyeleri", group: "write" },
-  { key: "can_approve_schedule", label: "Program Onaylama", group: "approve" },
+  { key: "can_manage_courses", group: "write" },
+  { key: "can_manage_weekly", group: "write" },
+  { key: "can_manage_exams", group: "write" },
+  { key: "can_manage_classrooms", group: "write" },
+  { key: "can_manage_lecturers", group: "write" },
+  { key: "can_approve_schedule", group: "approve" },
 ] as const;
 
 export type CapabilityKey = (typeof CAPABILITIES)[number]["key"];
@@ -414,7 +435,8 @@ export type AuditAction =
 
 export type AuditEntityType =
   | "department" | "building" | "classroom" | "lecturer"
-  | "course" | "course_section" | "exam" | "weekly_entry" | "user";
+  | "course" | "course_section" | "exam" | "weekly_entry" | "user"
+  | "schedule_draft";      // K-59 taslakları (K-82'de sözlüğe eklendi)
 
 export type AuditLog = {
   id: number;
@@ -435,39 +457,28 @@ export type AuditLogPage = {
   items: AuditLog[];
 };
 
-export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; color: string }> = {
-  CREATE: { label: "Ekledi", color: "green" },
-  UPDATE: { label: "Düzenledi", color: "blue" },
-  DELETE: { label: "Sildi", color: "red" },
+/** K-79: etiketler sözlükte (`t.enums.auditAction`); burada yalnız RENK. */
+export const AUDIT_ACTION_COLORS: Record<AuditAction, string> = {
+  CREATE: "green",
+  UPDATE: "blue",
+  DELETE: "red",
   // K-59: "SUBMIT" artık YAYINLAMAK değil ONAYA GÖNDERMEK demek. Yayına geçiren
   // tek eylem APPROVE. Eski satırlar da bu etiketle görünür; o dönemde submit
   // gerçekten yayınlamaktı, ama iki ayrı etiket taşımak logu okunmaz yapardı.
-  SUBMIT: { label: "Onaya gönderdi", color: "violet" },
-  APPROVE: { label: "Onayladı (yayına aldı)", color: "green" },
-  REJECT: { label: "Reddetti", color: "red" },
-  WITHDRAW: { label: "Geri çekti", color: "gray" },
+  SUBMIT: "violet",
+  APPROVE: "green",
+  REJECT: "red",
+  WITHDRAW: "gray",
   // K-37: davet akışı. ACTIVATE'in faili davet edilen kişinin kendisidir.
-  INVITE: { label: "Davet etti", color: "cyan" },
-  ACTIVATE: { label: "Hesabını açtı", color: "teal" },
+  INVITE: "cyan",
+  ACTIVATE: "teal",
   // K-43: şifre sıfırlama. İkisinin de faili hesabın sahibidir. Talep ve
   // gerçekleşme AYRI satırlar: "link istendi ama kullanılmadı" durumu
   // denetimde görünmeli (istenmeyen talep = olası saldırı işareti).
-  RESET_REQUEST: { label: "Şifre sıfırlama istedi", color: "orange" },
-  RESET_PASSWORD: { label: "Şifresini yeniledi", color: "grape" },
+  RESET_REQUEST: "orange",
+  RESET_PASSWORD: "grape",
 };
 
-/** Varlık türlerinin Türkçe karşılığı — filtre ve satır metni tek kaynaktan. */
-export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
-  department: "Bölüm",
-  building: "Bina",
-  classroom: "Derslik",
-  lecturer: "Öğretim üyesi",
-  course: "Ders",
-  course_section: "Şube",
-  exam: "Sınav",
-  weekly_entry: "Haftalık giriş",
-  user: "Kullanıcı",
-};
 
 
 /* ==================================================================
@@ -477,11 +488,6 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntityType, string> = {
 /** Taslağın yaşam döngüsü. REJECTED, OPEN gibi DÜZENLENEBİLİR bir durumdur —
  *  ret gerekçesi üstünde durur, sahibi düzeltip yeniden gönderir. */
 export type DraftStatus = "OPEN" | "PENDING" | "APPROVED" | "REJECTED";
-
-export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
-  OPEN: "Taslak", PENDING: "Onay bekliyor",
-  APPROVED: "Onaylandı", REJECTED: "Reddedildi",
-};
 
 export const DRAFT_STATUS_COLORS: Record<DraftStatus, string> = {
   OPEN: "yellow", PENDING: "blue", APPROVED: "green", REJECTED: "red",
@@ -493,19 +499,14 @@ export type DraftUserRef = { id: number; name: string };
  *  inceleme ikisi için de AYNI; ayrışan tek şey satırların şekli. */
 export type DraftKind = "WEEKLY" | "EXAM";
 
-export const DRAFT_KIND_LABELS: Record<DraftKind, string> = {
-  WEEKLY: "haftalık program", EXAM: "sınav takvimi",
-};
-
 /** Taslaktaki satırın adı — çubuk ve temizleme mesajları bunu kullanır. */
-export const DRAFT_ROW_LABELS: Record<DraftKind, string> = {
-  WEEKLY: "yerleşim", EXAM: "sınav",
-};
-
 export type ScheduleDraft = {
   id: number;
   department_id: number;
   department_name: string;
+  /** K-80: kuyrukta ve başlıkta bölüm KODU gösterilir — ad dar sütunda
+   *  kırpılıyor, kod ise kısa ve bölümü tekil olarak tanıtıyor. */
+  department_code: string;
   year: number;
   semester: SemesterType;
   kind: DraftKind;
@@ -519,10 +520,24 @@ export type ScheduleDraft = {
   created_at: string;
   submitted_at: string | null;
   submit_note: string | null;
+  /** K-83: talebin gönderildiği onay yetkilileri. Gönderen "kime gitti"yi,
+   *  alıcı da "benden başka kim bakıyor"u buradan görür. Bekleyen olmayan
+   *  taslakta boştur — adresleme gönderime aittir. */
+  approvers: DraftUserRef[];
   reviewer: DraftUserRef | null;
   reviewed_at: string | null;
   review_note: string | null;
   applied_summary: string | null;
+};
+
+/** K-83: onaya gönderirken seçilebilecek yetkili.
+ *  `is_admin` rozeti admin'in bölüm üyeliği olmasa da listede olduğunu
+ *  anlatır — yoksa "bu kişi neden burada?" sorusu cevapsız kalır. */
+export type DraftApproverCandidate = {
+  id: number;
+  name: string;
+  email: string;
+  is_admin: boolean;
 };
 
 export type DraftPlacement = {
@@ -579,10 +594,6 @@ export type ExamDiffItem = DiffItemBase & {
 
 /** Ayırt edici alan `entity` (K-60): tek listede iki şekil taşınabilsin diye. */
 export type DraftDiffItem = WeeklyDiffItem | ExamDiffItem;
-
-export const DIFF_KIND_LABELS: Record<DiffKind, string> = {
-  ADDED: "Eklendi", REMOVED: "Kaldırıldı", MOVED: "Taşındı",
-};
 
 export const DIFF_KIND_COLORS: Record<DiffKind, string> = {
   ADDED: "green", REMOVED: "red", MOVED: "blue",

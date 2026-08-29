@@ -2853,3 +2853,947 @@ karar sonrası tazelenir.
 DEĞİŞİKLİK/ENGEL/UYARI/DÖNEM + program ızgarası + W9 çakışma kartları + gönderen/
 karar + 3 butonlu footer), REJECTED (adım notu "düzeltip yeniden gönderilebilir"),
 APPROVED (applied_summary özeti + salt-okunur footer) teyit. tsc + vite build temiz.
+
+## K-78 · Yetki matrisi: sistematik regresyon testi (denetim + kanıt) [E] — brief §6.3/§10.2, yol haritası A-5
+Kullanıcı sorusu somuttu: "yetkisiz biri erişemeyeceği şeye erişebiliyor mu?"
+İki iş: (1) mimariyi statik DENETLE, (2) sonucu tek bir regresyon dosyasına kilitle.
+
+**Denetim sonucu — açık YOK.** Her ayrıcalıklı uç katmanlı korunuyor:
+kimlik (`get_current_user` → 401) · yetenek bayrağı (`require_admin`/`require_*`
+bağımlılığı → 403) · bölüm üyeliği (gövdede `_ensure_*_access` → 403) · workgroup
+izolasyonu (`_get_owned_*` id sorgusu workgroup'a bağlı → **404**, varlık sızmaz)
+· çapraz-FK (gövdedeki yabancı id → 400) · öz-onay (`_ensure_not_self` → 403) +
+PENDING kilidi (`_ensure_editable` → 409). Yazan uçların tamamı bir `require_*`
+kapısından geçiyor; çıplak `get_current_user` ile yazan tek grup taslak uçları,
+o da bilerek (K-59: özel taslak kum havuzu; yetki `submit`'te aranır). Geniş
+görünen okuma uçları (`/conflicts`, `/export/*`) bilinçli karar (K-04/K-26), açık
+değil.
+
+**Neden mevcut testler yetmiyordu (eksik olan neydi).** Yetki 33× 403 + 12
+dosyada `foreign_admin` ile ZATEN kanıtlıydı — ama DAĞINIK, özellik-başına. "Hangi
+rol hangi ucu açar" sorusunun tek bir cevabı yoktu. Yeni dosyanın değeri iki katlı:
+ileride bekçisiz bir uç eklenirse tek süpürme yakalar; beş saldırı sınıfı her uçta
+TEK BİÇİMDE iddia edilir.
+
+**`backend/tests/test_k78_authz_matrix.py` — beş sınıf (dıştan içe):**
+- **A · Kimliksiz → 401:** her ayrıcalıklı uç (parametrize, ~33 uç). Sahte id
+  yeter: yetki BAĞIMLILIK katmanında, id çözülmeden patlar.
+- **B · Yanlış rol / bayrak yok → 403:** ADMIN-only uçlar tüm-bayraklı alt hesabı
+  bile reddeder; ders/derslik/hoca/onay uçları bayraksız alt hesabı reddeder.
+- **C · Bayrak var, bölüm değil:** ders yazma → 403, onaya gönderme → 403,
+  ONAYLAMA → **404** (kapsam dışı taslağın varlığı onay yetkisiyle bile sızmaz).
+- **D · Yabancı workgroup admini + gerçek id → 404 (IDOR / URL id değiştirme):**
+  bölüm/ders/şube/hoca/derslik/bina/kullanıcı/taslak/onay — hepsi 404.
+- **E · Taslak yaşam döngüsü:** öz-onay 403 (ADMIN dahil) · PENDING'e yazma 409 ·
+  başkasının taslağı 404.
+
+**Yan düzeltme.** `helpers.sub_headers` `can_approve_schedule` bayrağını bilmiyordu
+(K-25 öncesi imza; k59 testleri kendi `make_account`'uyla aşmıştı). Bayrak
+`sub_headers`'a eklendi (geriye-uyumlu, varsayılan False) — onay senaryoları artık
+ortak yardımcıdan kurulabiliyor.
+
+**Doğrulama.** Yeni dosya 74 test yeşil; tüm paket 604 → **678 yeşil**, regresyon
+yok. Üründe görünür değişiklik yok — bu bir kanıt/sertleştirme turu.
+
+## K-79 · Dil seçeneği (TR/EN): arayüz + sunucu mesajları + export [S+E]
+Kullanıcı: sisteme Türkçe/İngilizce dil seçeneği eklensin.
+
+**Kapsam kararı (kullanıcı).** Üç katman ölçüldü: (1) arayüz metinleri — 13,5k
+satırlık frontend'e gömülü, i18n kütüphanesi yok; (2) sunucu mesajları — 107
+`HTTPException detail` + motorun 22 çakışma cümlesi kurucusu; (3) kullanıcı
+verisi — bölüm/ders/hoca adları. Kullanıcı **(1)+(2)** dedi; (3) kapsam DIŞI:
+ders/hoca adlarının İngilizcesi DB'de yok (yalnız `Department.name_en`, resmî
+sınav başlığı için) ve elle veri girişi ister. Veri Türkçe kalır, arayüz dili
+değişir.
+
+**Tercih CİHAZDA (localStorage), hesapta değil (kullanıcı kararı).** Tema
+(açık/koyu) tercihiyle aynı desen — sunucu turu yok, anında geçiş, DB migration
+gerekmez. Bedeli kabul edildi: aynı kullanıcı başka bilgisayarda dili tekrar
+seçer. Sunucuya `Accept-Language` başlığıyla taşınır; başlık ortak API
+istemcisinde TEK yerde eklenir (`request()` + `download()`), böylece export
+istekleri de dili taşır.
+
+**Sunucu hata mesajları KENARDA çevrilir — 107 raise yerine dokunulmaz.**
+İki yol vardı: her `raise` yerini anahtara çevirmek (107 dokunuş; testlerde
+Türkçe metne dayanan 23 iddia kırılır; büyük ve riskli diff) ya da tek bir
+`HTTPException` handler'ının cevabı çıkışta TR→EN kataloğundan geçirmesi.
+İkincisi seçildi: Türkçe metin KODDA KANONİK kalır, katalog tek dosyada durur,
+mevcut testler varsayılan `tr` ile aynen geçer.
+- Zayıf noktası: Türkçe metin anahtar olduğu için biri mesajı düzenlerse
+  İngilizcesi sessizce Türkçeye düşer. **Bekçi testiyle kapatıldı** (K-78
+  deseninin aynısı): koddaki her `detail=` metnini süpürüp katalogda karşılığı
+  var mı diye bakan test. Katalog eksikse test kırılır.
+- 16 dinamik (f-string) mesaj için katalogda desen (regex) girdileri var; sabit
+  91 mesaj birebir eşleşir.
+
+**Çakışma motoru: dil CONTEXTVAR ile taşınır — motor imzaları değişmez.**
+Mesajlar motorun derininde kuruluyor: `build_result` orchestrator'da 12 yerden
+çağrılıyor, `build_message` tek yerden. `lang` parametresini oraya kadar geçirmek
+5 orchestrator imzası + 4 conflict_service girişi + Intern C'nin sahibi olduğu
+motor sözleşmesi + 71 motor testi demekti. Bunun yerine dil, isteğe özgü AMBIENT
+bir değer olarak `contextvars` ile taşınır: HTTP middleware başlıktan okuyup
+bir kez set eder, `message.py` okur. Motorda tek satır imza değişmez.
+- **Neden middleware, neden Depends DEĞİL:** FastAPI senkron `def` uçları ve
+  senkron bağımlılıkları threadpool'da koşar; bir bağımlılıkta `set()` edilen
+  contextvar o worker'ın kopyasında kalır, uca ULAŞMAZ. Async middleware'de
+  set edilen değer ise threadpool'a kopyalanır (anyio context kopyası) —
+  uçtan motora kadar görünür. Bu ayrım tuzaktır, bu yüzden yazıldı.
+- Varsayılan `"tr"`: motor testleri (istek bağlamı olmadan) aynen çalışır.
+
+**Nerede parametre, nerede ambient (kural).** Çağrı zinciri kısaysa AÇIK
+parametre (export_service ← router: `lang` argümanı); zincir uzun ve sözleşme
+başkasınınsa ambient (motor). Ambient'i "kolay" olduğu için değil, alternatifi
+başkasının sözleşmesini kirlettiği için seçtik.
+
+**Export dili takip eder (kullanıcı kararı).** Excel başlık/sütun adları seçili
+dile göre üretilir. Not: resmî sınav programı başlığı `name_en`/`faculty_en`
+alanlarını kullanmaya devam eder (K-09 formatı) — dil düğmesi ŞABLONU değil
+ETİKETLERİ çevirir.
+
+**Frontend mekanizması: kütüphane YOK, tipli sözlük.** İki dil için Context +
+sözlük yeterli; `en` sözlüğü `typeof tr`'yi sağlamak zorunda, böylece eksik
+anahtar DERLEME anında yakalanır (`tsc --noEmit` zaten doğrulama adımı).
+Dil düğmesi sol raydaki tema düğmesinin yanında.
+
+**Fazlar:** 1) mekanizma (frontend i18n iskeleti + backend katalog/middleware +
+bekçi testi), 2) çakışma motoru mesajları, 3) arayüz metinleri (en büyük parça,
+sayfa sayfa), 4) export başlıkları.
+
+### K-79 tamamlanma notu (Faz 2-4)
+
+**Faz 2 — çakışma motoru.** 22 kural + gün adları + bölüm etiketi çift dilli.
+Dil `get_lang()` ile okunuyor, imzalara `lang` EKLENMEDİ. `_pick(tr, en)`
+deseni: şablon sözlüğü yerine iki dil YAN YANA — eksik çeviri gözle görülür.
+Bekçi testi 22 kuralın hepsi için TR ≠ EN doğruluyor; olmasa yeni bir kural
+yalnız Türkçe mesajla eklenir ve `_pick` sessizce Türkçe dönerdi. Türkçe çıktı
+BİREBİR korundu.
+
+**Faz 4 — export.** Liste çıktıları (CSV + düz XLSX) tamamen çevrildi. Resmî
+ızgaralar (üniversite formatındaki sınav programı + haftalık ızgara) K-09
+şablonlarıdır, DOKUNULMADI — dil düğmesi kuruma giden belgeyi değiştirmemeli.
+Test bu sınırı da koruyor. `lang` açık parametre (router → servis).
+
+**Faz 3 — arayüz.** Tüm sayfalar ve bileşenler çevrildi. Yol boyunca üç kural
+çıktı:
+- **Kaçak ölçütü ALFABE DEĞİL KONUM.** "Türkçe harf ara" yaklaşımı `Derslik
+  Ekle`, `Laboratuvar`, `Ortak`, `336 ders` gibi salt-ASCII Türkçe metinleri
+  tamamen kaçırıyordu. Doğru ölçüt: UI prop'u + JSX iç metni + şablon dizesi.
+- **Modül düzeyi sözlük okuyamaz** (bir kez çalışır, hook çağıramaz). Etiket
+  haritaları sözlüğe taşındı; düz yardımcılar `(…, t: Dict)` parametresi aldı.
+  Parametre VARSAYILANI da olmaz.
+- **Renk/ikon modülde kalır, etiket sözlüğe gider** — renk dile bağlı değil.
+
+**Çevrilmeyenler (bilinçli):** akademik unvanlar (backend CANONICAL_TITLES ile
+eş tutulan VERİ), bölüm/ders/hoca adları (K-79 kapsam kararı), resmî XLSX
+şablonları (K-09).
+
+**Ek (tarih locale'i).** Faz 3'ün ilk turunda ATLANAN bir yüzey: `toLocaleString`
+locale'i. Dört yerde `"tr-TR"` sabitti ve İngilizce arayüzde "15 Ağu 2026"
+basıyordu. Kaçmasının sebebi öğreticidir — kaçak tarayıcısı Türkçe metin arıyor,
+`"tr-TR"` ise Türkçe harf içermeyen bir KOD. Locale sözlüğe alındı (`t.locale`),
+tarih yardımcıları sözlüğü parametre alıyor. **Sıralama/arama locale'i
+(`localeCompare("tr")`) BİLEREK değişmedi:** veri Türkçe, sıralama verinin diline
+göre doğru olmalı — arayüz dilinin sıralamayı bozması hata olurdu.
+
+---
+
+## K-80 · Yayın Merkezi: sadeleştirme + onaylanan programın görüntüsü
+
+**Sorun.** K-77'de kurulan Yayın Merkezi bilgiyi gösteriyordu ama ayıklamıyordu:
+adım çubuğu, her durumda duran "GÖNDEREN VE KARAR" kartı ve boş grup cümlesi yer
+kaplayıp göz yoruyordu; buna karşılık incelerken gerçekten aranan iki bilgi
+(hangi tür program, kim ne zaman gönderdi) sönük bir alt satırda kalıyordu. Ayrıca
+"Yayında" grubunda gösterilecek bir program yoktu.
+
+**Kaldırma ölçütü: her durumda mı duruyor, yoksa söyleyecek sözü olduğunda mı?**
+Adım çubuğu durum rozetinin söylediğini üç kutuda tekrar ediyordu. Karar kartının
+yarısı, kararı verilmemiş kayıtlarda "Henüz karar verilmedi" yazıyordu — yani en
+sık görülen durumda hiçbir şey söylemiyordu. İkisi de kaldırıldı; sağ sütun artık
+KOŞULLU: karar bizdeyse not kutusu, karar verilmişse kim/ne zaman/notu ne. Sütun
+yoksa fark listesi tüm genişliği alıyor. Boş grup cümlesi de gitti (boş grup zaten
+boş görünür), ama sonuçsuz ARAMA cevapsız bırakılmadı: kullanıcı bir şey yazdı.
+
+**Onaylanan taslağın satırları artık SİLİNMİYOR.** K-59'da `apply_draft` farkı
+yayına uyguladıktan sonra taslağın kopyalarını siliyordu; gerekçe "düzenlenebilir
+görünen donmuş bir kopya yanıltıcı olur" idi. Kullanıcı isteği bunu tersine
+çevirdi: "o taslağın onaylanmış hâlinin görüntülenmesi; o cohortta başka bir
+taslak onaylandığında bu değişmeyecek". Arayüz bu kaydı bilerek SALT GÖRÜNTÜ
+gösterdiği için eski gerekçe düştü.
+
+İki mekanizma vardı — satırları korumak ya da onay anında JSON snapshot yazmak.
+Satır koruma seçildi: migration yok, şema ikizi yok, ızgara mevcut tipleri aynen
+alıyor. **Güvenli olmasının sebebi tek bir değişmez:** sistemde "yayında" HER
+YERDE `draft_id IS NULL` demektir — kısmi UNIQUE indeksler dahil. Korunan satırlar
+`draft_id` dolu olduğu için hiçbir sorgunun evrenine sızmaz. Ve görüntü sonraki
+onaylardan ETKİLENMEZ: başka bir onay yayın satırlarına yazar, `draft_id` dolu
+kopyalara dokunmaz. `test_k80_approved_snapshot.py` bu sınırların dördünü de
+koruyor (kalıcılık, sızmama, yeni taslağın yalnız yayını kopyalaması, onaylanan
+taslağın hâlâ donmuş olması).
+
+**Onaylanan kayıtta fark ve çakışma BİLEREK gösterilmiyor.** İkisi de o anki
+yayına karşı hesaplanır; donmuş bir görüntünün yanında canlı bir fark göstermek
+"onaylandı ama 3 değişiklik var" gibi okunurdu. Onay anındaki fark zaten
+`applied_summary`de dondurulmuştu (K-36 deseni) — gösterilen o.
+
+**Karar notu tek alan, iki karar.** `/approve` ucu gövde alır oldu ve
+`review_note`'u onayda da doldurur. Ayrı bir "onay notu" sütunu açılmadı: soru
+ikisinde de aynı — kararı veren ne dedi? Durum hangisi olduğunu zaten söylüyor.
+Zorunluluk ayrışıyor ama: **ret gerekçesiz anlamsızdır** (gönderen neyi
+düzelteceğini bilemez), onay ise kendi başına yeterli bir cevaptır. Bu yüzden
+onayda opsiyonel, rette zorunlu; gövdesiz onay da geçerli kalır. Notun yanında
+NOTU YAZAN da gösteriliyor — not bir kişinin sözüdür.
+
+**"DÖNEM" hücresi "BÖLÜM" oldu.** Yıl ve dönem başlıkta zaten yazıyordu; hücre
+bilgiyi tekrar ediyordu. Bölüm kodu ise kaydı tek başına tanıtıyor ve dar kuyruk
+sütununda kırpılmıyor (`DraftOut.department_code` eklendi). Kuyruk kartları da
+koda geçti; **arama koda göre de çalışıyor** — görünen bir şeyin aranamaması
+tutarsız olurdu.
+
+**Reddedilende çakışma CANLI kalıyor (kullanıcı kararı).** Taslağın satırları
+reddedildiği hâlde duruyor, ama çakışmalar o anki yayına karşı taranıyor: sahibi
+bu taslağı düzeltip yeniden gönderecek, dolayısıyla güncel gerçeği görmesi doğru.
+
+**Yol boyunca:** K-79'un "sıfır kaçak" iddiasında dört boşluk çıktı ("Ortak ders
+— etkilenen", "Taslak silindi", "Silinemedi", "N engel giderilmeli") ve bir buton
+metni. Hepsi konum ölçütüne uyuyordu, yani tarayıcı doğruydu — uygulaması eksik
+kalmıştı. Kapatıldı.
+
+### K-80 eki · görünürlük, oturum ve iki yükleme kusuru
+
+**"Onaylananlar" grubu artık paylaşılıyor — kapsam SIFIRDAN tanımlanmadı.**
+Grup yalnız kendi kayıtlarımı gösteriyordu; başka birinin onayladığı, benim
+bölümümün programını değiştiren bir kayıt listede yoktu. K-59'un gizliliği
+HAZIRLIK evresini korur (OPEN/PENDING/REJECTED), sonucunu değil: onaylanan
+taslak yayına girmiş bir kayıttır ve yayındaki programı zaten görebilen birinin
+onu kimin değiştirdiğini görememesi için sebep yok.
+
+Kapsam sorusunun cevabı sistemde ZATEN vardı — Değişiklik Akışı
+(`/schedule-changes`). Yeni bir kural icat etmek yerine o kural ortak bir
+fonksiyona çıkarıldı (`approved_visibility_filter`): ADMIN workgroup'un
+tamamını, alt hesap üyesi olduğu bölümleri + ortak ders üzerinden etkilenenleri,
+üyeliksiz alt hesap hiçbirini. **İki yüzey aynı soruyu soruyorsa cevabın iki
+sürümü olmamalı** — kopyalansaydı biri gün gelip ötekinden ayrılır ve gizlilik
+sınırını kopya belirlerdi.
+
+Okuma uçları (`/entries`, `/exams`, `GET /schedule-drafts/{id}`) genişledi;
+yazma uçları ile `/diff` ve `/conflicts` sahiplik aramaya DEVAM ediyor: görme
+hakkı düzenleme hakkı değildir, canlı fark da geçmiş kayıtta anlamsızdır.
+Genişlemenin sınırını `test_unapproved_drafts_stay_private_even_from_admin`
+koruyor.
+
+**Sekmeler arası kimlik.** Bir sekmede admin açıkken başka sekmeden alt hesaba
+geçilince ilk sekme eski listeyi göstermeye devam ediyordu. Sunucu tarafında
+sızıntı YOK (token paylaşıldığı için istekler yeni kimlikle gidiyor ve 404
+alıyor); kusur ekranda — ve paylaşılan bir bilgisayarda K-59'u GÖRSEL olarak
+deliyor. `storage` dinleyicisi eklendi, kimlik değişiminde sayfa baştan
+yükleniyor. Nokta atışı state tazelemesi seçilmedi: kimlik uygulamanın her
+yerine dağılmış bir varsayımdır, tek tek tazelemek birini unutmaktır.
+**Karşılaştırılan şey token DEĞİL kimlik** (`auth_uid`): keepalive token'ı 10
+dakikada bir tazeliyor, token'a bakılsaydı iki açık sekme birbirini durmadan
+yenilerdi.
+
+**Mod sıçraması — düz bayrak yetmedi.** Taslak modundaki cohort'a dönünce ekran
+önce yayını çizip taslağa atlıyordu. İlk düzeltme bir boolean'dı ve İŞE
+YARAMADI: yükleme efekti taslak efektinden önce tanımlı, dolayısıyla cohort
+değiştiği render'da bayrak hâlâ önceki cohort'tan kalma `true` oluyor. Bayrağı
+cohort KİMLİĞİNE bağlamak (`modCozulen !== cohortKey`) yarışı kökten bitirdi;
+istek günlüğünde doğrulandı (artık `/weekly-entries` hiç atılmıyor).
+
+**Mantine'de `loading`, `disabled` görünümünü ezer.** "Değişiklikler"e basınca
+"Onaya Gönder" bir an aktif görünüyordu: buton `loading={busy}` alıyordu ve
+`busy` çubuğun ORTAK state'i. Bir butonun yüklenmesi başka bir butonu loading'e
+sokmamalı — o butonun kendi async işi zaten yoktu.
+
+**Izgara açıklaması gerçeğe uyduruldu.** `ProposedGrid` üç durum çiziyor (yeşil
+eklendi, MAVİ TAŞINDI, gri değişmedi) ama açıklama ikisini anlatıyordu; mavi
+rozetlerin ne demek olduğu okunamıyordu. Örnek renkler de gerçek rozetlerle
+eşitlendi (filled/light).
+
+### K-80 eki 2 · çakışma belirteci, kaldırılanlar, gönderim notu, iki kusur
+
+**Bir kapı eklemek yarış getirdi.** Önceki turda konan "mod çözülene kadar
+bekle" kapısı, Yayın Merkezi'nden "Programda düzenle" ile gelindiğinde ekranı
+sonsuza dek yüklemede bırakıyordu (F5 açıyordu). Sebep: mod çözümleme efekti
+bir sunucu turu içeriyor ve cohort her değiştiğinde yeniden koşuyor; URL
+parametreleri `dep/year/sem`'i arka arkaya değiştirdiği için iki koşu üst üste
+biniyor ve YENİSİ önce dönerse ESKİ cevabın `cozuldu`su kapıyı eski cohort'un
+anahtarıyla kapatıyor. **Kural: içinde async iş olan bir efekt, cohort/kimlik
+gibi bir anahtara bağlıysa `iptal` bayrağı ŞARTTIR** — kapının kendisi doğruydu,
+eksiği iptal korumasıydı.
+
+**"Programda gör" yanlış programa götürüyordu.** Yalnız cohort veriliyordu ve
+K-73'ün mod hafızası ekranı o cohort'un açık taslağına düşürüyordu. Onaylanmış
+bir kayıttan "Programda gör" deyip taslağa varmak doğrudan yanlış cevaptır.
+Yayın yolu artık `mode=pub` taşıyor; iki ekran da bunu K-62'nin
+`taslakSecimiAtla` bayrağıyla karşılıyor — yeni mekanizma icat edilmedi, aynı
+soruya (bu gidişte taslağa atlama) verilmiş cevap yeniden kullanıldı.
+
+**Çakışmalar program üzerinde işaretleniyor.** Liste zaten vardı ama "hangi
+ders" sorusunu metinden okumak gerekiyordu. Motor `affected[]` içinde satır
+id'sini veriyor; eşleşen rozetin sol kenarına ince dikey çizgi — hard kırmızı,
+uyarı turuncu. **İki bilgi iki ayrı KANALDA:** rozetin rengi değişikliği
+(yeşil/mavi), sol çubuk çakışmayı taşır. Aynı satır ikisine birden karışırsa
+HARD kazanır; daha ağırı gizlenirse kullanıcı turuncuyu görüp önemsiz sanar.
+
+**Kaldırılanlar ızgarada gösterilemez, o yüzden SAYILIR.** Tek "N değişiklik"
+sayısı onları da içine katıyordu ve ızgarada karşılığı görünmediği için sayı
+tutmuyormuş gibi duruyordu. Başlıkta "N kaldırılan ızgarada görünmez", listede
+tür dökümü.
+
+**Gönderim notu gösterilmiyordu.** `submit_note` K-59'dan beri kaydediliyordu
+ama hiçbir ekranda okunmuyordu — onaylayıcı gönderenin gerekçesini göremiyordu.
+Not artık modalın içinden çıkıp incelemenin yanına, karar notuyla simetrik bir
+kutuya taşındı ve gönderildikten sonra aynı yerde okunur hâle geliyor. Modal
+kaldırıldı: onaya göndermek geri alınabilir (withdraw), araya onay ekranı
+koymak fazladan tıklamaydı.
+
+**"1 değişiklik ama 3 mavi hücre" hata DEĞİL.** Bir yerleşim `slot_count` kadar
+hücreye yayılır ve vurgu `start_slot`'tan okunur; 3 saatlik bir dersin taşınması
+3 hücreyi birden boyar. Değişiklik sayısı yerleşimi sayar, hücreyi değil.
+
+### K-80 eki 3 · eskimiş onay uyarısı ve tekrar temizliği
+
+**Donmuş görüntü ile canlı yayın ayrışabilir — uyarı bunu söyler.** Onaylanan
+kaydın ızgarası onay anına aittir; "Programda gör" ise güncel yayına götürür.
+Arada aynı cohort için başka bir onay geçtiyse ikisi ayrışır ve kullanıcı
+baktığı görüntünün hâlâ yürürlükte olduğunu sanar. Buton **engellenmiyor** —
+güncel yayını görmek meşru bir istektir; uyarı yalnızca beklentiyi düzeltir.
+
+Hesap İSTEMCİDE: "beni ilgilendiren onaylar" listesi zaten yüklü, ek bir sunucu
+turu gerekmiyor ve göremediğim bir onayın uyarısını vermek de anlamsız olurdu
+(kapsam dışıysa zaten benim işim değil). Karşılaştırma `kind`i içerir — sınav
+onayı haftalık programı eskitmez (K-60).
+
+**Tekrar eden açıklamalar kaldırıldı.** "ONAYLANAN PROGRAM / Onay anındaki hâli
+— sonraki değişiklikler yansımaz" başlığı, kaydın onaylandığını durum rozetinin
+ve karar kartının yanında ÜÇÜNCÜ kez söylüyordu; öteki görünümlerle aynı
+"PROGRAM GÖRÜNTÜSÜ" başlığına indi. Not kutularının altındaki "X yazdı" satırı
+da aynı sebeple gitti: kim olduğu hemen üstteki kartta yazılı.
+
+**Kural olarak:** bir bilgi ekranda ikinci kez görünüyorsa, ikinci görünüm
+kendini savunmak zorundadır — farklı bir soruyu cevaplamıyorsa gürültüdür.
+
+### K-80 eki 4 · "Programda gör" yarışının kalıcı çözümü
+
+Önceki turda `mode=pub` niyetini tek seferlik `taslakSecimiAtla` ref'iyle
+taşımıştım; o cohort'ta KAYITLI taslak tercihi varken ekran yine taslağa
+düşüyordu. Sebep aynı sınıf yarış: `setDep/setYear/setSem` peş peşe render
+üretiyor, taslak-seçim efekti birden çok kez koşuyor, ref ilk koşuda tükenince
+ikincisi `readScheduleMode`'dan taslak id'sini okuyup taslağı seçiyor.
+
+**Kural: geçici niyeti ref ile taşımak, o niyeti okuyan efekt birden çok kez
+koşabiliyorsa güvenilmezdir.** Ya niyeti KALICI kıl (idempotent), ya da efektin
+son koşusuna kadar canlı tut. Burada kalıcı seçildi: `writeScheduleMode(...,
+"pub")` K-73'ün tercihine yazıyor; efekt kaç kez koşarsa koşsun `readScheduleMode`
+"pub" döndürüyor. Yan fayda: davranış doğru — kullanıcı yayını istedi, tercih
+yayın oldu; taslağına "Taslağa Dön" ile döner (o da tercihi taslağa yazar).
+
+### K-80 eki 5 · Çakışma Raporu ortak kabuğa taşındı
+
+**Sekme yanlış araçtı.** HARD ve WARNING iki ayrı sekmeydi; sekme "ya o ya bu"
+der, oysa şiddet bir SÜZGEÇ boyutudur ve "hepsini birden gör" en doğal istektir
+— sekmede o seçenek yoktu. Segment (Tümü / Engel / Uyarı) hem seçenekleri hem
+sayıları aynı anda gösteriyor.
+
+**Süzgeç boyutları tamamlandı:** şiddet · cohort (bölüm + sınıf + dönem) · tür ·
+kural. Dönem için backend'e dokunuldu: `affected` ref'i cohort'un yalnız iki
+boyutunu taşıyordu, `semester` motor dict'inde ZATEN vardı ama dışarı
+verilmiyordu.
+
+**Seçenekler VERİDEN türetilir.** Yalnız gerçekten çakışması olan sınıf/dönem/
+kural listelenir. Boş bir seçeneği seçtirip "sonuç yok" göstermek, kullanıcıyı
+kendi verisi hakkında yanıltır — seçenek varsa sonuç da vardır.
+
+**Kart yığını → tek liste.** Satır biçimi Yayın Merkezi'nin değişiklik
+listesiyle aynı; 16 çakışma artık tek ekrana sığıyor. Sıralama HARD ÖNCE
+(yayını engelleyen iş önce görülmeli), sonra kural koduna göre — aynı kuralın
+vuruşları yan yana düşer ve çoğu zaman toplu çözülürler.
+
+**Aynı işaret her ekranda aynı anlama gelir.** Satırın sol kenar çubuğu,
+ızgaradaki çakışma belirtecinin dilini kullanır: kırmızı engel, turuncu uyarı.
+
+**Boş durum ikiye ayrıldı:** gerçekten çakışma yok (iyi haber) ile süzgeç
+sonuçsuz kaldı (ölçüt dar). İkisi aynı cümleyle geçiştirilemez.
+
+**Test notu:** `affected` şeklini iki test birden kilitliyordu — biri motoru
+monkeypatch'leyen sözleşme testi, öteki motorun kendi çıktısı. Monkeypatch'li
+olan sabit bir sözlük döndürdüğü için alanın gerçekten taşınıp taşınmadığını
+göremezdi; gerçek `_affected_ref` üzerinden koşan üçüncü bir test eklendi.
+
+### K-80 eki 6 · Çakışma Raporu tablo oldu
+
+**Liste → tablo.** Her çakışmanın aynı beş sorusu var: hangi tür, hangi kural,
+ne oldu, hangi cohort'ta ve ne zaman, hangi öğeler. Sütun başlığı bu soruları
+BİR KEZ sorar; liste biçiminde her satır kendi düzenini yeniden anlatıyordu.
+
+**Cohort ve zaman alt alta, ve TEKİLLEŞTİRİLMİŞ.** Bir çakışma iki tarafı da
+taşıyabiliyor (W1/W2 bölümler arası) ve yan yana dizilince hangi zamanın hangi
+cohort'a ait olduğu karışıyor. Öte yandan iki taraf çoğu zaman aynı cohort ve
+aynı saatte oluyor — kural zaten "aynı anda" diyor — o yüzden aynı satır iki
+kez yazılmıyor.
+
+**Zaman için backend'e alan eklendi.** Yerleşim zamanı mesajın METNİNDE zaten
+geçiyordu ama sütuna çıkarmak metin ayrıştırmak demekti. Motor dict'i alanları
+zaten tutuyor; ham veriyi vermek hem ucuz hem sağlam. **Biçimlendirme
+istemcide:** gün adları dile bağlı (K-79) ve sunucunun metin üretmesi o metni
+tek dile çivilerdi.
+
+**Tarih/saat ISO STRING olarak çıkıyor, ham `date`/`time` DEĞİL.** İlk denemede
+tam buradan kırıldı ve kırılma beklenmedik bir yerde patladı: `affected` yapısı
+Pydantic'ten geçmeyen bir yoldan da dışarı çıkıyor — onaya gönderme 409'u
+çakışmaları ham `JSONResponse` ile veriyor ve orada `json.dumps` bir `date`
+görünce TypeError atıyor. **Ders: bir çıktı yapısı birden fazla yoldan
+dışarı çıkıyorsa, en dar yolun kısıtına göre tasarlanmalı.** Ayrıca bekçi test
+eklendi (ref ham `json.dumps`'tan geçebilmeli).
+
+**Süzgeçler "Filtrele" popover'ında** (Dersler/Derslikler deseni); yan yana beş
+açılır kutu çoğu zaman kullanılmadan yer kaplıyordu. **Şiddet segmenti hariç:**
+o birincil boyut, durumu zaten görünür ve "Tümü"ye dönmek tek tık — bu yüzden
+açık süzgeç sayacına da girmiyor, yoksa segmentten birini seçmek ekrana ilgisiz
+bir "temizle" butonu düşürüyordu.
+
+### K-80 eki 7 · Kural kataloğu ve sütunların anlamı
+
+**Sütun adı ile içeriği eşleşmeliydi.** "Tür" sütunu haftalık/sınav ayrımını
+gösteriyordu, oysa kullanıcının o başlıktan beklediği ŞİDDET'ti (engel/uyarı).
+Haftalık-sınav ayrımı zaten kural kodundan (W/E/X) ve öğe rozetlerinin
+renginden okunuyor — ayrı bir sütun istemiyor.
+
+**Mesaj yerine kural ADI.** Motorun ürettiği mesaj hangi derslerin, hangi
+saatte çakıştığını yazıyordu; ikisi de artık kendi sütununda duruyor,
+dolayısıyla mesaj üçüncü kez aynı şeyi söylüyordu. Sütunda artık kuralın
+okunur adı var ("Cohort — seçmeli ders çakışması"). **Tam mesaj ipucunda
+korunuyor:** kapasite sayısı gibi mesaja özgü ayrıntı kaybolmasın — bilgiyi
+silmek değil, öne çıkanı değiştirmek istiyorduk.
+
+**Kural kataloğu ("?" pop-up'ı).** Tabloda kod görünüyor ama kodun ne demek
+olduğunu öğrenmenin yolu dokümana gitmekti. 22 kuralın tamamı tek pop-up'ta:
+kod · ad · bir cümlelik koşul, `docs/cakisma_kural_seti_1.md`den türetilmiş.
+**Sıra motorun kod sırası değil KOLLARIN sırası** (W → E → X): kullanıcı bir
+kuralı ararken hangi ekranla ilgili olduğunu bilir, kodun sayısını değil.
+Açıklamalar bilerek tek cümle — 22 satırlık bir listede iki cümlelik
+açıklamalar okunmaz.
+
+**"Cohort / zaman" → "Etkilenen cohort", ve soluk değil.** Cohort, listeyi
+tararken en çok bakılan yer ("bu beni ilgilendiriyor mu"); `dimmed` olması onu
+ikincil gösteriyordu.
+
+## K-81 · Çakışma Raporu: renk, sütun, sessizlik ve terimler [E]
+
+**Kural kodu da ŞİDDETİ söylüyor.** "Tür" sütunu engel/uyarıyı zaten yazıyordu
+ama kural kodu gri bir rozetti; kural KATALOĞUNDA ise şiddet hiç yoktu — 22
+satırlık listede "hangileri yayını durdurur" sorusunun cevabı ancak açıklama
+cümlelerini tek tek okuyarak çıkıyordu, oysa liste tam da göz gezdirmek için
+var. Artık kod rozeti kırmızı (engel) / turuncu (uyarı): ızgaradaki çakışma
+belirteci ve satırın sol kenar çubuğuyla AYNI dil (K-80).
+
+**Sıra ve şiddet tek listede** (`RULE_CATALOG`). Ayrı bir şiddet haritası
+olsaydı ikisi zamanla ayrışırdı — kural eklenir, birine yazılır ötekine
+unutulur. Yan yana durunca eksik alan derleme hatası oluyor.
+
+**"Etkilenen cohort" → "Cohort"; sütun 230 → 300px; yazı 12/normal →
+12.5/500.** "Etkilenen" hiçbir ayrım yapmıyordu (tabloda etkilenmeyen cohort
+zaten yazmaz) ama başlığı içerikten uzun tutuyordu. Asıl kusur sarmaydı:
+"CENG · 3. Sınıf · Bahar · Per 09:30 - 12:15" 230px'e sığmayıp saati alt satıra
+atıyor, tek bir bilgiyi ikiye bölüp satır yüksekliğini de düzensizleştiriyordu.
+Genişlik tahmin değil — parçaların hepsi sınırlı (bölüm KODU, "N. Sınıf",
+dönem, gün+saat), o yüzden `nowrap` güvenli. `minWidth` 880 → 950: bu sayı
+sütun toplamıyla tutarlı kalmazsa dar ekranda kaydırma yerine sıkışma olur ve
+tam da kapattığımız sarma geri gelir.
+
+**Sonuçsuz filtre artık SESSİZ.** "Bu süzgece uyan çakışma yok" cümlesi,
+üstteki segmentte "Engel (0)" yazarken aynı şeyi ikinci kez söylüyordu; sayacı
+okuyan zaten biliyor, okumayana da cümle bir şey öğretmiyor. Boş çerçevenin
+içine boş metin koymaktansa çerçeveyi hiç çizmemek dürüst — ekranda filtre
+çubuğu ve sayaçlar kalıyor. **Gerçekten çakışma yok** hali korunuyor: o bir
+haber (hem de iyi haber), söylenmeli. K-80'in "iki boşluk iki anlam" ayrımı
+duruyor; değişen, ikinci boşluğun cümleye ihtiyacı olmadığının görülmesi.
+
+**Terim temizliği — arayüzün tek kelimesi olmalı.**
+- *süzgeç → filtre*: buton "Filtrele" derken temizleme "Süzgeci temizle"
+  diyordu; aynı şeyin iki adı, kullanıcıya iki ayrı şeymiş gibi geliyor.
+- *hoca → öğretim üyesi* (W2, E3, X3): menü, Öğretim Üyeleri sayfası ve W2'nin
+  kendi açıklaması zaten resmî terimi kullanıyordu; yalnız kural ADI konuşma
+  dilinde kalmıştı. Motorun ürettiği W2 mesajı da düzeltildi (ipuçunda görünür).
+- *mükerrer → yinelenen* (W5, E2): Osmanlıca terim, kuralın ne dediğini
+  anlatmak yerine önce kendini açıklatıyordu.
+Adlar `docs/cakisma_kural_seti_1.md` tablolarında da güncellendi — arayüz ile
+spec ayrışırsa katalog güvenilmez olur.
+
+**Açık soru — W4'ün şiddeti [S bekliyor].** W4 bugün "en az biri seçmeli" olan
+her cohort çakışmasını tek kovaya koyuyor (K-05). Oysa içinde iki farklı durum
+var: *zorunlu × seçmeli*'de cohort'un TAMAMI zorunlu derste olmak zorundadır,
+yani seçmeliye kimse gidemez — seçmeli fiilen kapanır; *seçmeli × seçmeli*'de
+ise öğrenci birini seçer, bu normaldir ve seçmeli havuzlarında bilerek yapılır.
+İkisi aynı uyarıyı üretiyor. Ayrıştırmak (W4a HARD / W4b WARNING) K-05'i
+değiştirmek demektir; hoca kararı olduğu için koda dokunulmadı.
+
+### K-81 eki · "Açıklama" sütunu — K-80'in mesaj kararının revizyonu [S]
+
+K-80 motorun ürettiği tam mesajı tablodan çıkarıp satır ipucuna (tooltip)
+almıştı; gerekçe, mesajın ders adlarını ve saati (kendi sütunlarında zaten
+duran şeyleri) tekrar etmesiydi. **Hoca kararı [S]: mesaj görünür bir sütun
+olarak geri gelsin.** Gerekçe: ipucu keşfedilebilir değil — kullanıcı üstüne
+gelmeden orada bilgi olduğunu bilmiyor, dokunmatikte hover hiç yok.
+
+Redundansı yok saymadık, ONA GÖRE STİLLEDİK: "Çakışma" sütunu kuralın ADINI
+koyu/birincil verir ("ne tür sorun"), yeni "Açıklama" sütunu tam cümleyi
+soluk/ikincil verir ("tam olarak ne oldu" — kapasite sayısı gibi yalnız mesajda
+olan ayrıntı da burada). Tooltip kaldırıldı: aynı metni hem hover hem sütunla
+vermek, üstelik "cursor: help"le hangi hücrede ipucu var diye yanıltarak,
+gereksizdi.
+
+Yerleşim: Çakışma sabit 210px'e alındı (Açıklama esnesin, cümle sarabildiği
+kadar geniş yer alsın), `minWidth` 950 → 1180 (Tür 92 + Kural 104 + Çakışma 210
++ Cohort 300 + Öğeler 170 = 876, Açıklama'ya en az ~300).
+
+**W4 ayrılmadı [S]:** K-81'in "açık soru"su (W4a HARD / W4b WARNING) hoca
+tarafından kapatıldı — W4 tek kova, WARNING olarak kalıyor. K-05 değişmedi.
+
+### K-81 eki 2 · Şiddet rengi, kalan "hoca"lar, Bölümler panel yüksekliği
+
+**Engel ile uyarı ayırt edilemiyordu — sorun TON değil VARYANT'tı.** İkisi de
+`variant="light"` idi; karanlık temada bu varyantın yazı rengi
+`--mantine-color-red-light-color` = **#ffa8a8 (pembe)** ve
+`orange-light-color` = **#ffc078 (şeftali)**. İkisi de aynı açıklıkta pastel,
+yan yana gelince ayrılmıyorlar. "Daha koyu kırmızı" çözüm değildi: pastelin
+yanındaki koyu kırmızı bu kez okunmazdı. Engel artık **DOLGU** (beyaz yazı,
+kırmızı zemin), uyarı açık ton — fark ton farkı değil **biçim** farkı, renk
+körlüğünde ve gri baskıda da ayrılıyor. Engelin daha yüksek sesle konuşması
+semantik olarak da doğru: o, yayını durduran şey. Kural KODU rozeti çerçeveli
+kaldı (Tür rozetiyle tekrar etmesin) ama doygun tondan (`red.5`/`orange.4`);
+satırın sol kenarı da red-6 → red-7.
+
+**Kalan iki "hoca" temizlendi.** K-81'de W2 düzeltilmişti ama motor mesajlarında
+iki yer kalmıştı: E3 "Sınav hoca çakışması" → **"Sınav sorumlusu çakışması …
+aynı öğretim üyesine sahip"**, X3 "Sınav-ders hoca uyarısı" → **"Sınav-ders
+sorumlu uyarısı"**. Kural ADLARI zaten "sorumlu" diyordu; mesajlar adla
+çelişiyordu. `test_overlap.py`'daki iki bekçi de yeni metne göre güncellendi —
+metni değiştirip testi görmezden gelmek, bekçiyi işe yaramaz hale getirirdi.
+
+*Not:* "öğretim görevlisi" değil "öğretim üyesi" kullanıldı — ikisi FARKLI
+akademik unvan, ve arayüzün geri kalanı (menü, Öğretim Üyeleri sayfası, W2)
+"öğretim üyesi" diyor. İki terimi karıştırmak, tek terime indirme amacını
+bozardı.
+
+**Bölümler sayfası: sol listenin altındaki ölü alan.** Liste
+`mah="calc(100vh - 220px)"` ile sınırlıydı; 220 bir TAHMİNDİ ve yanlıştı —
+liste gerçekte y=106'da başlıyor, yani kutu 114px fazla kısıtlanıyordu. Ekranda
+iki kusur olarak görünüyordu: altta ~98px boşluk ve son bölümlerin gereksiz
+kaydırma istemesi (son kart yarım kırpılmış boş bir kutu gibi duruyordu).
+**Çözüm sabiti düzeltmek değil** (aynı tahmin, farklı sayı): panel `md`
+üstünde yapışkan ve tam ekran yüksekliğinde, liste içinde `flex:1` ile artan
+yeri kaplıyor — başlık/arama kutusu değişse bile hesap kendiliğinden doğru
+kalıyor. Ölçüldü: alttaki boşluk 98px → 0, liste yüksekliği 528 → 626.
+`min-height:0` şart, yoksa flex çocuğu içeriğinden küçülmez ve kaydırma
+kutunun dışına taşar. Yan fayda: sağ panel uzunken liste görünürde kalıyor.
+
+### K-81 eki 3 · Sınav derin-bağı, draft_id, hiza ve rozet dili
+
+**Çakışma Raporu'ndaki sınav butonları çalışmıyordu — YARIŞ.** `/exams?highlight=`
+efektinin ilk koşusu `courses` henüz BOŞKEN oluyordu; `fullCourse` bulunamadığı
+için bölüm/sınıf/dönem ayarlanmıyor, ama `setWeek` yine de çalışıyor ve efektin
+sonundaki `setSearchParams({})` highlight parametresini siliyordu. `courses`
+yüklenince efekt tekrar koşuyor fakat bu kez `highlightIds` boş → erken dönüş.
+Bildirilen kusur tam bu: **hafta doğru gidiyor, cohort seçili olanda kalıyor.**
+Koruma (`!courses.length`) WeeklyPage'de vardı, ExamsPage'e yazılmamıştı —
+haftalık butonlarının çalışıp sınav butonlarının çalışmamasının sebebi buydu.
+*Ders:* iki ekran aynı deseni paylaşıyorsa koruma da paylaşılmalı; biri
+düzeltilip öteki unutulduğunda kusur "bazen çalışıyor" diye görünür.
+
+**`draft_id` gönderiliyor ama okunmuyordu.** Yayın Merkezi "Programda düzenle"
+`?draft_id=<id>` ekliyor; her iki program ekranı da parametreyi okumadan
+siliyor ve hangi taslağın açılacağını "bu cohortun İLK açık taslağı" tahmini
+belirliyordu. Aynı cohortta iki taslak varsa yanlışı açılır. Artık URL'nin
+istediği taslak açıkça seçiliyor ve K-73'ün hatırlanan tercihinin ÜSTÜNDE:
+kullanıcı hangi taslağı düzenlemek istediğini bir tık önce söyledi.
+Sınava özgü ikinci yarısı: takvim bir HAFTA gösteriyor ve o hafta
+localStorage'dan geliyor; taslağın sınavları başka haftadaysa ekran boş
+görünüyor ve akış "bozuk" diye okunuyordu. Taslakla gelindiğinde ilk sınavın
+haftasına atlanıyor (bayrak tek seferlik — kullanıcı sonra hafta gezerse
+yeniden yükleme onu geri sürüklemesin).
+
+**Cohort ile "Çakışan öğeler" HİZALANDI.** Cohort satırları tekilleştiriliyor
+("iki taraf aynı cohort ve saatteyse tekrar bilgi katmaz"), öğeler ise yan yana
+diziliyordu. Sonuç: iki öğe, tek cohort satırı — hangi öğenin hangi cohort'a
+ait olduğu okunamıyordu. Artık iki sütun da `affected`i AYNI SIRAYLA, öğe
+başına bir satır yazıyor. **Tekrar eden cohort'lar da yazılıyor** — burada
+tekrar gürültü değil, hizanın kendisi. Sabit satır yüksekliği şart: solda
+12.5px metin, sağda compact-xs düğme var; doğal yükseklikleri farklı olduğu
+için eşitlenmezse listeler birkaç öğeden sonra kayıyor.
+
+**Kural rozeti de dolgulu.** Çerçeveli hâli aynı satırda iki farklı ağırlık
+üretiyordu; Tür ve Kural rozetleri aynı şeyi (şiddeti) söylediğine göre aynı
+biçimde söylemeleri doğru.
+
+**Kural kataloğu hover'la da açılıyor.** Yalnız tıkla açılıyordu ve "?" ikonunun
+tıklanabilir olduğu belli değildi. `HoverCard` DEĞİL kontrollü `Popover`:
+katalog 22 satır ve kaydırılabilir, fare listeye inerken hedeften çıkıp
+kapatabilirdi. Hover açar, **tık sabitler**, sabitken hover'dan çıkmak
+kapatmaz; açılır kutu da hover'ı canlı tutuyor (aradaki boşlukta kapanmasın).
+
+**Haftalıktaki kapsam ipucu kaldırıldı.** "Taslağınızın satırlarına dokunan
+çakışmalar…" cümlesi K-62'de kapsam sorusuna cevaptı; artık her satır etkilenen
+dersi ve cohort'unu kendisi yazdığı için sabit bir başlık gürültüsü olmuştu.
+
+### K-81 eki 4 · Rozet geri alma, taslak butonu yanıp sönmesi, sınav ızgara adımı
+
+**Kural rozeti ÇERÇEVELİYE döndü.** Bir tur dolgulu denendi (Tür rozetiyle aynı
+biçim) ama aynı satırda iki dolu kırmızı blok fazla ağır durdu: satırda ilk
+bakışta okunması gereken şey ŞİDDET, kural kodu ikincil. Çerçeve rengi taşıyıp
+ağırlığı taşımıyor — istenen tam bu ayrım.
+
+**"Taslak Aç" butonu bir an yanlış görünüyordu.** `mevcut` ("bu cohortta açık
+taslağım var mı?") başlangıçta `null` ve sunucu turu bitene kadar null kalıyor;
+buton ise null'ı "taslak yok" diye okuyup FİLLED **"Taslak Aç"** çiziyordu.
+Yani cevap gelene dek ekranda yanlış ve TIKLANABİLİR bir buton duruyordu:
+"Yayına Dön" dedikten hemen sonra hızlı tıklayan kullanıcı yeni taslak
+yaratmayı deniyor ve sunucudan "bu cohort için zaten açık taslağınız var (#22)"
+hatasını alıyordu. Hata doğruydu; kullanıcı o duruma hiç düşmemeliydi.
+Üç seçenek vardı: (a) `loading` — etiket yine yanlış kalır, (b) etiketi son
+bilinen değerde tutmak — cohort değişince o da yanlış, (c) cevap gelene kadar
+**hiç çizmemek**. (c) seçildi: bilinmeyen bir durumun doğru görseli boşluktur.
+`finally` şart — istek hata verse de kapı açılmalı, yoksa buton sonsuza dek
+görünmez kalır.
+
+**Sınav ızgarasının adımı 30 → 60 dakika.** Ekranda bir saat TEK hücre olarak
+çiziliyor ama yerleştirme 30 dakikaya yuvarlıyordu; hücrenin alt yarısına
+tıklamak o hücrenin yarısını seçiyor, üstelik hover işareti de yarım
+yükseklikte çiziliyordu. Görülen kutu ile seçilen aralık uyuşmuyordu. Artık
+adım hücrenin kendisi kadar: tıklanan hücre neyse o seçilir. Buçuklu saat hâlâ
+mümkün — sınav formundaki saat alanından elle yazılır.
+
+**Vitrin `--undo`'su taslakları da siliyor.** `schedule_drafts.department_id ->
+departments.id` yabancı anahtarı var; kullanıcı ZZ cohort'unda "Taslak Aç"
+derse temizlik IntegrityError ile kırılıyordu — yani tam da vitrin
+KULLANILDIKTAN sonra. Gerçek durumda denendi: 12 ders, 14 sınav, 1 taslak
+silindi, sayımlar başlangıca döndü.
+
+## K-81 · Sınav gözetmenleri (E9 · X4) [S onaylı]
+
+Gerçek sistemde bir sınavda sorumluya EK olarak birden çok **gözetmen**
+görevlendiriliyordu; sistemde yalnız tek bir sorumlu tutulabiliyordu.
+
+**Ayrı ara tablo, sorumlu katlanmadı.** `exam_invigilators(exam_id,
+lecturer_id)` — `exam_classrooms` ile birebir aynı desen (ek kolonu yok, sade
+`Table`). `exams.lecturer_id` olduğu gibi kaldı. Sorumluyu da bu tabloya
+katlamak düşünüldü ve REDDEDİLDİ: sorumlu sınavın sahibidir, TAM BİR tane
+olmak zorundadır ve E3/X3 onun üzerine kurulu; ikisini tek tabloya katlamak
+sorumlunun zorunluluğunu tablo düzeyinde ifade edilemez hale getirir ve
+"sorumlu" diyen bütün mesajları/kuralları yeniden yazmayı gerektirirdi.
+Migration bu sayede tamamen EKLEMELİ — geri alma da veri kaybetmiyor.
+
+**Kapsam:** gözetmen SINAV düzeyinde, derslik başına değil. Gerçekte gözetmen
+dersliğe atanır; o daha derin bir model ve bu turda kapsam dışı bırakıldı.
+
+**E9 · Gözetmen çakışması → WARNING (hoca kararı).** Aynı kişi iki sınavda
+birden görevli ve en az bir tarafta gözetmen. **E3 neden HARD kalırken E9
+WARNING:** sorumlu sınavın sahibidir, yerine biri konamaz — çözüm sınavı
+TAŞIMAKTIR, o yüzden yayını durdurur. Gözetmen ise atanabilir/değiştirilebilir:
+çakışma başka bir gözetmen yazılarak çözülür. Bütün sınav takviminin yayınını
+bunun için bloke etmek orantısız olurdu. **Çift raporlama yok:** iki tarafta da
+SORUMLU olan kesişimi E3 zaten veriyor, E9 o durumda susuyor.
+
+**X4 · Gözetmen derste → WARNING.** X3'ün ikizi; X3 zaten WARNING olduğu için
+(K-12: vize haftasında ders fiilen yapılmayabilir) burada şiddet tartışması
+çıkmadı. Sorumlu durumu X3'ün alanı, elenmezse aynı çakışma iki kez raporlanır.
+K-13 (dersin kendi sınavı) istisnası burada da geçerli.
+
+**Sorumlu gözetmen olamaz.** Çakışma kuralı değil, VERİ BÜTÜNLÜĞÜ: aynı kişiyi
+iki rolde göstermek bilgi katmaz ama E9'da kendi kendisiyle çakışıyor gibi
+görünürdü. Üç ayrı kontrol, üçü ayrı mesaj (tekrar / izolasyon / rol çakışması)
+— hepsini tek "geçersiz gözetmen" mesajına toplamak kullanıcıya neyi
+düzelteceğini söylemezdi. PATCH'te karşılaştırma KAYITTAKİ değere karşı yapılır:
+gövde sorumluyu ve listeyi ayrı ayrı taşıyabildiği için gövdedeki iki alanı
+karşılaştırmak yetmez (sorumlu değişip liste dokunulmadığında da denetlenir).
+Arayüzde gözetmen seçeneklerinden sorumlu çıkarılıyor — tersi değil: sorumlu
+zorunlu alan, onu kısıtlamak kullanıcıyı asıl işinden alıkoyardı.
+
+**`Lecturer.invigilated_exams` ters ilişkisi ŞART.** `exam_invigilators`
+RESTRICT taşıyor, yani "bu hoca silinebilir mi?" sorusunun artık ÜÇ bağımlısı
+var (şube, sınav, gözetmenlik). Üçüncüsü ORM'den okunamazsa sorgular onu
+sessizce atlar ve silme ancak veritabanı düzeyinde patlar. Nitekim patladı:
+`test_lecturer_import.py`nin temizlik bekçisi iki bağımlıyı eliyordu, gözetmen
+üreten ilk test dosyası gelince 29 test birden ForeignKeyViolation ile düştü —
+o dosyanın docstring'indeki hikâyenin birebir tekrarı. **Ders: RESTRICT'li yeni
+bir bağ eklenince o bekçi de büyümeli.**
+
+**Arayüz:** formda sorumlunun ALTINDA çoklu seçim (isteğe bağlı olduğu
+placeholder'dan okunuyor). Kartta İSİM değil SAYI yazıyor — kart dar ve zaten
+ders/derslik/sorumlu taşıyor; isimler ipucunda. Gözetmen yoksa satır hiç
+çizilmiyor: "0 gözetmen" bir bilgi değil, isteğe bağlı bir alanın boşluğudur.
+
+Paket 802 yeşil (776 → 802: 10 motor + 12 API testi).
+
+
+---
+
+## K-82 · Ana Sayfa: dashboard'un birleşmesi + Yönetim sayfası [S+E]
+
+**Sorun.** Sistemin iki giriş ekranı vardı ve ikisi de yanlış işi yapıyordu.
+`/` neredeyse boştu — bir başlık, bir "backend çalışıyor" rozeti, bir değişiklik
+akışı. Dolu olan `/dashboard` ise yalnız ADMIN'e açıktı. Yani giriş yapan bir alt
+hesap hiçbir şey görmeyen bir sayfaya düşüyor, göreceği şeyler kapalı kapının
+ardında duruyordu. Dashboard'un kendisi de dağınıktı: sekiz sayaç kartının altında
+ilk beş çakışma satırı, onun altında 630 satırlık kullanıcı yönetimi, onun altında
+filtreli denetim ekranı — dört ayrı iş, tek sayfada, hiçbiri rahat değil.
+
+**"Alt hesap neyi görmemeli?" sorusu yeniden soruldu.** İlk cevap "dashboard'un
+tamamı"ydı ve fazla genişti. `DashboardSummary` alan alan geçildi: bölüm, derslik,
+öğretim üyesi, ders, sınav, haftalık giriş ve çakışma sayıları alt hesabın ZATEN
+listeleyebildiği veriden türüyor (K-26: okuma workgroup genelinde serbest;
+`/conflicts` de herkese açık). Bunları saymak yeni bir şey ifşa etmiyor. Gerçekten
+yönetim bilgisi olan tek şey KULLANICI sayaçlarıydı. O yüzden uç herkese açıldı ve
+`admins` / `sub_accounts` admin dışında **`null`** döner — `0` değil: sıfır
+"kullanıcı yok" demektir, null "sana gösterilmiyor". İstemci null görünce kartı
+hiç çizmiyor. Gizleme kararı istemcide değil sunucuda (brief §10.2).
+
+Aynı gerekçeyle `/dashboard/summary` K-78 matrisinde ADMIN_ONLY listesinden çıkıp
+yeni bir `OPEN_TO_AUTHENTICATED` listesine geçti. O liste boşuna değil: kimliksiz
+istek yine 401 almalı ve bayraksız alt hesap yine 200 almalı — biri gün gelir
+yanlışlıkla `require_admin` koyarsa süpürme yakalar.
+
+**Kullanıcı yönetimi: "Yönetim" sayfası (`/admin`, yalnız ADMIN).** Ayrı bir admin
+KABUĞU açmak gereksiz bulunmuştu (tek ekran için üç katmanlı bir bölge); ayrı bir
+SAYFA ise doğru ölçek. Adı "Kullanıcılar" değil "Yönetim": bugün tek bölümü
+kullanıcı yönetimi ama sınıfı belli bir kapı — programı değil SİSTEMİ yöneten
+ekranlar oraya girer. Sekme çubuğu konmadı; tek sekmeli sekme çubuğu gürültüdür,
+ikinci bölüm gelince eklenir. Menüde de ayraçtan sonra ayrı bir öbekte duruyor:
+"Kullanıcılar" ötekilerin arasına karışırsa bir veri ekranı sanılır. Kendi
+sayfasına çıkınca tablo da rahatladı (sayfa başına 7 → 12 satır).
+
+**İşlem kayıtları ekranı kaldırıldı, denetim izi KALDI.** Kullanıcı isteği
+"herkesin tek tek işlem kaydını tutmaya gerek yok"tu; kaldırılan şey filtreli
+DENETİM EKRANI (`AuditLogSection`), tablo değil. Tablo kontrat §12 borcudur ve
+zaten yerine geleni besliyor: `GET /audit-logs/mine`, "son işlemleriniz". Mevcut
+`/audit-logs`'a "admin değilse `user_id`'yi kendine sabitle" koşulu eklemek de
+mümkündü — eklenmedi, çünkü o zaman TEK ucun yetkisi çağıranın rolüne göre
+değişirdi ve yetki matrisi tek satırda okunamaz hale gelirdi. Yeni uçta filtre
+parametresi yok, kapsam sabit: `current_user`.
+
+Ana sayfada bu akışın hemen altında `ChangeFeed` duruyor ve ikisi karıştırılmamalı:
+biri "ben ne yaptım", öteki "başkasının onayı programımı nasıl değiştirdi" (K-59).
+Ayrı sorular, ayrı uçlar, yan yana.
+
+**İki giriş damgası, çünkü iki ayrı soru var.** `last_login_at` Yönetim
+tablosunun "Son giriş" sütununu besler ve orada anlamı doğrudur: "bu hesap en son
+ne zaman girdi". Ama aynı kolonu kişinin KENDİ kimlik kartında göstermek anlamsız
+olurdu — giriş anında yazıldığı için kart hep "az önce" derdi. Bu yüzden
+`previous_login_at`: girişte önce eskisi buraya kopyalanır, sonra yenisi yazılır.
+Sıra bozulursa kart yine kendi oturumunu gösterir. Damga yazımı audit'e satır
+DÜŞÜRMEZ: her giriş bir "işlem" olsaydı işlem kayıtları girişlerle dolar ve kimin
+neyi DEĞİŞTİRDİĞİ kaybolurdu.
+
+**Kimlik kartı: bu sayfanın asıl gerekçesi.** Sistemde yazma yetkisi İKİ
+BOYUTLUDUR — yetki bayrağı VE bölüm üyeliği (K-25 + K-26) — ama "neden bu düğmeyi
+göremiyorum" sorusunun cevabı hiçbir ekranda yazmıyordu; kullanıcı yetkisini ancak
+bir işi deneyip başarısız olarak öğreniyordu. Kart iki boyutu yan yana koyuyor ve
+altına ikisinin BİRLİKTE gerektiğini yazıyor. Kapalı yetki de listeleniyor (silik):
+listeden düşseydi kullanıcı neyin var olduğunu değil neyin verildiğini görürdü.
+ADMIN'in `department_ids`'i BOŞTUR ve bu "hiçbiri" değil "hepsi" demektir — boş
+listeyi olduğu gibi çizmek kartın en yanıltıcı hâli olurdu. Yeni uç gerekmedi;
+tek eklenen alan `UserPublic.email` (uç zaten yalnız çağıranın kendisini döner).
+
+**Kural bazlı çakışma dağılımı, ilk-beş listesinin YERİNE.** Eski dashboard ham
+çakışma satırlarından beşini listeliyordu: ne bütünü anlatıyordu (yüzlercesi
+arasından beşi) ne de bir iş görüyordu. Dağılım "asıl derdin W9, on vuruş" der ve
+satır tıklanınca Çakışma Raporu'nu o kuralla süzülmüş açar. Yeni uç GEREKMEDİ:
+`/conflicts` zaten `rule_id` + `severity` taşıyor, gruplama istemcide; kural adları
+sözlükte; kol (ders programı / sınav / çapraz) kodun ilk harfinden — motorun kendi
+ayrımı. Tanınmayan kod hiçbir kola konmaz: yanlış kolda görünen satır kullanıcıyı
+yanlış ekrana yollar. Açılış sekmesi çakışması OLAN ilk kol; boş bir sekme
+"çakışma yok" sanısı yaratırdı.
+
+`RULE_CATALOG` bu yüzden `ConflictsPage` içinden `utils/conflictRules`e çıktı. İki
+sayfa listeyi ayrı ayrı taşısaydı yeni bir kural birine yazılıp ötekinde
+unutulurdu — K-80'de "gizlilik kuralı tek yerde dursun" derken kaçındığımızın
+aynısı.
+
+**Derslik doluluk ısı haritası — tek yeni toplama ucu.** Izgaranın şekli uydurma
+değil, sistemin kendi zaman modeli: `slots.py` dokuz slot × beş çalışma günü.
+İstemcide hesaplanamazdı — `/weekly-entries` filtresiz çağrılınca tüm yayın
+satırlarını ders/şube/derslik ilişkileriyle döndürüyor, ana sayfa için ağır bir
+yük. `GET /dashboard/occupancy` birkaç yüz bayt döner. Üç kapsam kuralı sistemin
+başka yerlerindekinin aynısı: yalnız yayın (`draft_id IS NULL`, K-59), dersliksiz
+giriş sayılmaz (online derste derslik olamaz — K-23, dolayısıyla `classroom_id IS
+NOT NULL` online'ı da eler), ve hücrede giriş değil **ayrı derslik** sayılır (aynı
+derslikte aynı saatte iki giriş zaten W1'dir; iki kez saymak dersliği kapasitesinin
+üstünde dolu gösterirdi).
+
+Renk ölçeği haftanın EN YOĞUN hücresine göre normalize edilir, toplam derslik
+sayısına göre değil. Gerçek bir fakültede tek bir saatte dersliklerin tamamı
+dolmaz; ölçek 0-100 olsaydı ızgaranın tamamı en soluk iki tona sıkışır ve harita
+hiçbir şey göstermezdi — oysa blok tam da "hangi saat sıkışık" sorusu için var.
+Kesinlik kaybolmuyor: hücredeki SAYI ve ipucu mutlak gerçeği söylüyor, efsane de
+bu yüzden "az / çok" diyor, "%0 / %100" değil. İki taban rengi (aydınlıkta koyu,
+karanlıkta açık mavi) zorunluydu: tek taban kullanılınca karanlık temada düşük
+oranlı hücreler zeminden ayırt edilemiyordu.
+
+**Hızlı işlemler: yalnız YAPILABİLENLER, ve gerçekten form açanlar.** Yetkisizi
+gri gösterip sebebini yazmak da bir seçenekti; kimlik kartı zaten satır satır
+söylediği için blok yapılamayacak işlerin listesine dönerdi. Hiçbiri kalmıyorsa
+blok hiç çizilmiyor. "Yapabilir" testi iki boyutlu: ders/haftalık/sınav bölüm
+üyeliği de arar, derslik ve öğretim üyesi PAYLAŞIMLI kaynak olduğu için bayrak
+yeter (`canWriteIn`in `departmentId` verilmeyen dalı).
+
+İşlemler ilgili sayfaya yönlendirmekle yetinseydi sol menünün kopyası olurdu; bu
+yüzden `?new=1` ekleme formunu doğrudan açıyor (Dersler, Öğretim Üyeleri,
+Derslikler). Haftalık ve Sınav'da böyle bir form YOK — yerleştirme ızgarada
+yapılır, sınav modalı gün+saat ister — o yüzden onlarda parametre de yok; işlemin
+kendisi ızgarayı açmaktır. Parametre bir kez okunup URL'den temizlenir (yapışırsa
+sayfa her yenilendiğinde form açılır) ve yetkisiz kullanıcıda hiç açılmaz: URL
+elle de yazılabilir, açılan boş form kullanıcıyı sunucudan dönecek 403'e kadar
+boşuna uğraştırırdı.
+
+**Sayaçlar kart olarak kaldı.** Tasarım taslağında tek satırlık bir "envanter
+şeridi" vardı ve daha kompakttı; kullanıcı kararı mevcut kart ızgarasını korumak
+yönünde oldu — sıkıştırma bir hedef değildi.
+
+Kontrat §1/§9/§10/§12 güncellendi. Paket 822 yeşil (802 → 822: `test_k82_home.py`
+16 test + K-78 matrisine 6 parametreli süpürme; `/dashboard/summary`'nin yetki
+testi 403 beklemekten null-alan beklemeye döndü).
+
+### K-82 revizyonu · ilk turdan sonra sadeleştirme
+
+İlk tur çalışır hâle gelince ekranda duran ama iş görmeyen parçalar ayıklandı.
+Ortak ölçüt yine K-80'inki: **her durumda mı duruyor, yoksa söyleyecek sözü
+olduğunda mı?**
+
+**Kaldırılanlar ve nedenleri.** Başlıktaki kapsam yazısı ("tüm bölümler") ve
+"backend çalışıyor · veritabanı bağlı" rozeti: ilki kimlik kartında zaten
+yazıyordu, ikincisi bir GELİŞTİRME tanısıydı — kullanıcı için "her şey yolunda"
+demek, hiçbir şey dememektir; gerçekten çalışmıyorsa sayfa zaten yüklenmez.
+Kimlik kartından "Hesap #1" (kullanıcıya bir şey söylemiyor) ve "Aktif hesap"
+rozeti (oturum açabilmiş olmak zaten kanıtı) düştü. Admin'e gösterilen iki not
+ve "yazma yetkisi iki boyutludur" cümlesi de kalktı: birincisi sütun zaten
+"tümü" derken gereksizdi, ikincisi her ekranda duran bir cümleydi ve bir süre
+sonra okunmuyordu — kartın kendisi iki boyutu zaten yan yana gösteriyor. Alt
+hesapta notlar KALDI, orada gerçekten bilgi taşıyorlar. Kural dağılımından alt
+açıklama ve "Çakışma Raporu" linki de gitti (her satır zaten oraya, üstelik
+kendi kuralıyla süzülmüş gidiyor); ısı haritasının alt başlığı da öyle.
+
+**Kimlik en üste alındı.** Sayfayı açan kişinin ilk sorusu "buradan ne
+yapabilirim"; sayaçlar o sorunun cevabı değil, sistemin durumu.
+
+**Sayaçlar altıya indi ve tıklanabilir oldu.** Yönetici / alt hesap kartları
+ana sayfadan tümüyle çıktı — yönetim bilgisinin yeri Yönetim sayfası; sunucu
+onları hâlâ admin'e döndürüyor ama ana sayfa artık istemiyor. Her kart kendi
+ekranına gidiyor: bir sayı gösterip tıklanamaz olması, kullanıcıyı sol menüde
+aynı yeri aramaya zorluyordu.
+
+**Bölümler alt alta.** Yan yana sarmalanınca satır sonları rastgele düşüyor ve
+liste okunmuyordu; tek sütun hem taramayı kolaylaştırıyor hem kodların hizasını
+koruyor.
+
+**Kural dağılımının sekmeleri sağ üste taşındı.** Kartın en dar kaynağı dikey
+yer ve sekme şeridi tek başına bir satır yiyordu.
+
+**Çakışma Raporu'nun üst segmenti ŞİDDET'ten KOL'a döndü** (Tümü / Ders programı
+/ Sınav / Çapraz). Kullanıcı rapora "haftalık programımda ne var" ya da
+"sınavlarda ne var" diye giriyor; şiddet o soruyu daraltmıyor, ikisini de
+kapsıyor. Ayrıca ana sayfadaki dağılım bloğu da aynı üç kolu kullanıyor — iki
+ekranın aynı listeyi farklı eksende bölmesi iki ayrı zihin haritası
+gerektiriyordu. Şiddet popover'a indi; oradaki eski "Tür" filtresi (haftalık /
+sınav ÖĞESİ) kalktı, çünkü iki kontrol de "ders programı / sınav" diyordu ve
+segment aynı soruyu daha kesin cevaplıyor.
+
+**Derin bağ ÇALIŞMIYORDU.** Ana sayfadan `?rule=W3` ile gelinince rapor
+parametreyi hiç okumuyor, filtresiz liste açıyordu — bağlantı çalışır görünen
+bir hataydı. `rule` artık `department_id`/`year` gibi bir kez okunup URL'den
+temizleniyor.
+
+**"Son işlemleriniz": hiza, sayfalama, temizleme.** Eylem etiketi içeriğe göre
+ölçülünce ("Sildi" ile "Onaya gönderdi") açıklama sütunu her satırda başka
+yerden başlıyordu; sütun sabit genişliğe alındı ve rozet yerine renkli düz
+metin oldu (sabit genişlikte rozetin yarısı boşluk kalıyordu). Sayfa başına beş
+satır, sayfalama İSTEMCİDE: elli satır tek istekte gelir, sayfa değişimi ağ
+turu istemez. **Çöp kutusu düğmesi kaydı SİLMEZ** — silemez de: denetim izini
+failin kendisi silebilseydi iz denetim olmaktan çıkardı (kontrat §12). Düğme
+bir "şimdilik sustur" işareti koyar (localStorage), o andan eski satırlar
+çizilmez, sonra yapılan işlemler yeniden görünür.
+
+**Değişiklik akışı "Son onaylar" oldu ve hep açık.** Eski başlık panelin ne
+olduğunu değil gerekçesini anlatıyordu. K-73'te varsayılan KAPALIYDI ("göz
+yormasın") — ama kapalı bir panel, kimsenin haberi olmadan değişen programı
+duyurma işini yapamaz; panelin var oluş sebebi buydu. Beş satır gösteriliyor;
+`limit + 1` çekilip fazladan gelen satır çizilmeden yalnız "daha var mı"
+sorusunu cevaplıyor — ayrı bir sayaç ucu açmadan "Hepsini gör"ün görünüp
+görünmeyeceğine karar veriyor. Bağlantı Yayın Merkezi'nin "Onaylananlar"
+grubuna gider: aynı kayıtlar ve aynı görünürlük kuralı orada (K-80).
+
+**Isı haritası genişliği sınırlandı.** Sütunlar `1fr` olduğu için kapsayıcı ne
+kadar genişse o kadar açılıyor, hücreler haber niteliğini yitirip birer şeride
+dönüşüyordu.
+
+**X1 kuralının adı değişti:** "Sınav dersi işgal ediyor" → "Sınav — derslik
+çakışması". "İşgal" resmi bir metne ait değil; motorun kendi mesajı zaten
+"Sınav-ders çakışması" diyordu, katalog ondan ayrışıyordu.
+
+**İkinci tur: akış beşe indi, kimlik daraldı.** "Son işlemleriniz"den sayfalama
+ve çöp kutusu düğmesi kaldırıldı. İkisi de bloğu bir DENETİM EKRANI gibi
+kullanmaya davet ediyordu, oysa blok tek bir soruya cevap veriyor: "en son ne
+yaptım". Beş satırlık bir listede sayfalanacak ya da temizlenecek bir şey yok;
+sunucudan da artık beş satır çekiliyor.
+
+Böylece "çöp kutusu gerçekten silsin mi" sorusu da kendiliğinden düştü — silme
+ucu açılmadı. Açılsaydı kendi izini silebilen bir fail demek olurdu ve iz
+denetim olmaktan çıkardı (kontrat §12). **Denetim tablosu yazılmaya devam
+ediyor**: bu bloğun tek kaynağı o, ve arayüzde başka hiçbir yer izin tamamını
+göstermiyor.
+
+Kimlik kartına genişlik sınırı (880px) kondu. Tam genişlikte iki iç sütun
+(bölümler + yetkiler) gereğinden fazla açılıyor ve aralarında koca bir boşluk
+kalıyordu — kart "geniş" değil "boş" görünüyordu.
+
+**Üçüncü tur: denetim tablosu Yönetim sayfasına alındı.** İlk turda arayüzden
+tümüyle kaldırılmıştı; gerekçe "herkesin ilk gördüğü ekranda kim-neyi-değiştirdi
+tablosunun işi yok" idi ve o gerekçe hâlâ geçerli — ama ana sayfadan çıkarmak
+ile sistemden çıkarmak aynı şey değil. İz zaten yazılmaya devam ediyordu
+(kontrat §12 borcu, üstelik "Son işlemleriniz"in tek kaynağı); ona bakabilecek
+tek rol olan admin'in bir yeri yoktu. Yeri Yönetim sayfası: davet, yetki ve
+denetim aynı sınıftan işler.
+
+Blok geri gelirken sayfa başına satır 7'den 12'ye çıktı — dashboard'da dört
+bloktan biriyken ötekileri aşağı itmemesi gerekiyordu, artık tek başına duruyor.
+Yönetim sayfası da böylece iki bölümlü oldu; sekme çubuğu yine konmadı: iki
+bölüm alt alta okunuyor, sekme ancak biri ötekini saklamayı hak edecek kadar
+uzadığında gelir.
+
+**İki akış, iki soru — karıştırılmamalı.** Ana sayfadaki "Son işlemleriniz"
+kişinin KENDİ izidir: filtresiz, sayfasız, beş satır, `/audit-logs/mine`.
+Yönetim'deki "İşlem Kayıtları" bir DENETİM aracıdır: herkesin izi, filtreli,
+sunucu tarafında sayfalı, `/audit-logs`, yalnız ADMIN.
+
+**Dördüncü tur: sayfa tek bir 7/5 ızgarasına oturdu.** Bloklar tek tek doğruydu
+ama sayfa dağınık duruyordu, çünkü her biri kendi genişliğini kendi seçiyordu:
+kimlik kartı 880px'e kadar, sayaçlar tam genişlikte altı ince sütun, alttaki
+bölüm 7/5, ısı haritası 620px. Dört ayrı hizasız kenar.
+
+Çözüm bir düzen kuralı: **sayfada iki sütun var, oranı 7/5, ve HER ızgara aynı
+oranı kullanır.** Üst satır solda kimlik, sağında **3×2 sayaç**; alt bölüm solda
+kural dağılımı + ısı haritası, sağda hızlı işlemler + işlemler + onaylar. İki
+ızgara aynı oranı paylaştığı için sütun kenarları yukarıdan aşağıya tek çizgide
+devam ediyor.
+
+Kartların kendi `maw` sınırları kalktı — genişliği artık ızgara belirliyor.
+Sınır ısı haritasında İÇERİ taşındı (kart sütunu doldurur, ızgara 640px'te
+durur): hücreler `1fr` olduğu için kapsayıcıyla birlikte açılıp haber niteliğini
+yitiriyorlardı. Üst satır `align="stretch"`: kimlik ile sayaç ızgarası aynı
+yerde bitiyor, sayaç kartlarının içeriği de o yüksekliğin ortasında duruyor
+(yoksa sayı tepede asılı kalırdı).
+
+**Beşinci tur: sürekli iki sütun + kart gölgesi.** Dördüncü tur iki AYRI ızgara
+kurmuştu (üstte kimlik+özet, altta dağılım+işlemler); doğal yükseklikte kartlar
+sağ sütunu soldan kısa bırakınca üst ızgaranın altında bir boşluk kalıyordu.
+Çözüm: iki ızgara TEK ızgaraya birleşti, her sütun kendi bloklarını alt alta
+akıtıyor — kısa kalan sütunun altında artık boşluk yok. Sol sütun kimlik →
+kural dağılımı → ısı haritası; sağ sütun 3×2 özet → hızlı işlemler → son
+işlemler → son onaylar. Sütun oranı (7/5) sabit olduğu için dikey kenarlar yine
+hizalı.
+
+Açık modda kart kenarları (1px, çok açık gri) zemine karışıp çerçeveleri
+belirsizleştiriyordu; kartlara hafif bir gölge eklendi. `light-dark()` bir
+box-shadow'un tamamını taşıyamadığı için kural tema attribute'uyla ikiye
+ayrıldı: açık modda sınırı ayıran yumuşak bir gölge, koyu modda yalnız derinlik
+için çok hafif bir gölge (kenar orada zaten görünür). Yalnız ana sayfa kartları
+(`.home-page` altı) etkilenir.

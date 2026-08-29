@@ -1,22 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ActionIcon, Alert, Badge, Button, Grid, Group, Loader, Modal, Paper,
-  ScrollArea, Stack, Table, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton,
-} from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Grid, Group, Loader, Modal, Paper, ScrollArea, Stack, Table, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import {
-  IconAlertTriangle, IconBook2, IconBuilding, IconCalendarEvent,
-  IconCalendarWeek, IconPencil, IconPlus, IconSchool, IconSearch,
-  IconShieldCheck, IconTrash, IconUsers, type IconProps,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconBook2, IconBuilding, IconCalendarEvent, IconCalendarWeek, IconPencil, IconPlus, IconSchool, IconSearch, IconShieldCheck, IconTrash, IconUsers, type IconProps } from "@tabler/icons-react";
 import type { ComponentType, ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth, canWriteIn } from "../auth/AuthContext";
 import { CAPABILITIES } from "../api/types";
 import type { ConflictScan, Course, Department, Lecturer, ManagedUser } from "../api/types";
+import { useT } from "../i18n";
 
 // Bu ekran bir YÖNETİM ekranı değil, bir GENEL BAKIŞ/gezinme merkezidir: her
 // varlığın kendi sayfası var (Dersler, Öğretim Üyeleri, Derslikler, Haftalık,
@@ -46,6 +40,28 @@ const CARD_STYLES = `
   background: var(--mantine-color-blue-light);
   box-shadow: 0 6px 20px rgba(0,0,0,0.10);
 }
+/* K-81 · Sol panel yüksekliği.
+   Liste eskiden mah=calc(100vh - 220px) ile sınırlıydı. 220 bir TAHMİNDİ ve
+   yanlıştı: liste aslında y=106'da başlıyor, dolayısıyla kutu 114px fazla
+   kısıtlanıyordu. Sonucu ekranda iki kusur olarak görünüyordu — altta ~100px
+   ölü alan ve son bölümlerin gereksiz yere kaydırma istemesi (son kart yarım
+   kırpılmış bir kutu gibi duruyordu).
+
+   Çözüm sabiti düzeltmek DEĞİL (aynı tahmin, farklı sayı): panel artık
+   yapışkan ve tam ekran yüksekliğinde, liste de içinde flex:1 ile ARTAN
+   yeri kaplıyor. Böylece başlık/arama kutusu değişse bile hesap kendiliğinden
+   doğru kalıyor. Yan fayda: sağ panel uzunken bölüm listesi görünürde kalıyor.
+
+   min-height:0 şart: flex çocuğu varsayılan olarak içeriğinden küçülmez,
+   bu da kaydırmayı kutunun dışına taşırır. */
+@media (min-width: 62em) {
+  .dept-list-pane {
+    position: sticky;
+    top: 16px;
+    height: calc(100vh - 32px);
+  }
+}
+.dept-list-scroll { flex: 1; min-height: 0; }
 .kpi-card {
   transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
 }
@@ -63,6 +79,7 @@ const CARD_STYLES = `
 type DeptForm = { name: string; code: string };
 
 export default function DepartmentsPage() {
+  const t = useT();
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";       // Bölüm yazma + üye verisi ADMIN'e özel (kontrat §2-§3)
   const navigate = useNavigate();
@@ -91,8 +108,8 @@ export default function DepartmentsPage() {
   const form = useForm<DeptForm>({
     initialValues: { name: "", code: "" },
     validate: {
-      name: (v) => (v.trim() ? null : "Bölüm adı boş olamaz"),
-      code: (v) => (v.trim() ? null : "Bölüm kodu boş olamaz"),
+      name: (v) => (v.trim() ? null : t.departments.nameRequired),
+      code: (v) => (v.trim() ? null : t.departments.codeRequired),
     },
   });
 
@@ -122,7 +139,7 @@ export default function DepartmentsPage() {
         }
       }
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : "Veriler yüklenemedi");
+      setLoadError(e instanceof ApiError ? e.message : t.common.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -210,10 +227,10 @@ export default function DepartmentsPage() {
     try {
       if (editing) {
         await api.patch<Department>(`/departments/${editing.id}`, values);
-        notifications.show({ color: "green", message: "Bölüm güncellendi" });
+        notifications.show({ color: "green", message: t.departments.updated });
       } else {
         const created = await api.post<Department>("/departments", values);
-        notifications.show({ color: "green", message: "Bölüm eklendi" });
+        notifications.show({ color: "green", message: t.departments.created });
         setSelectedId(created.id);   // yeni bölüm hemen sağ panelde açılsın
       }
       setModalOpen(false);
@@ -222,7 +239,7 @@ export default function DepartmentsPage() {
       if (e instanceof ApiError && e.status === 409) {
         form.setFieldError("code", e.message);
       } else {
-        notifications.show({ color: "red", message: e instanceof ApiError ? e.message : "İşlem başarısız" });
+        notifications.show({ color: "red", message: e instanceof ApiError ? e.message : t.common.actionFailed });
       }
     } finally {
       setSubmitting(false);
@@ -234,7 +251,7 @@ export default function DepartmentsPage() {
     setDeleteBusy(true);
     try {
       await api.delete(`/departments/${deleting.id}`);
-      notifications.show({ color: "green", message: "Bölüm silindi" });
+      notifications.show({ color: "green", message: t.departments.deleted });
       if (selectedId === deleting.id) setSelectedId(null);
       setDeleting(null);
       await load();
@@ -242,8 +259,8 @@ export default function DepartmentsPage() {
       // 409 = bağlı veri var; backend mesajı neyin engellediğini sayar (K-27)
       notifications.show({
         color: "red",
-        title: "Bölüm silinemedi",
-        message: e instanceof ApiError ? e.message : "İşlem başarısız",
+        title: t.departments.deleteFailed,
+        message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
       setDeleting(null);
@@ -268,18 +285,16 @@ export default function DepartmentsPage() {
       <Grid gutter="lg" align="stretch" columns={100}>
         {/* ================= SOL PANEL ================= */}
         <Grid.Col span={{ base: 100, md: 30, lg: 21 }}>
-          <Stack gap="sm">
+          <Stack gap="sm" className="dept-list-pane">
             <Group justify="space-between" align="center">
-              <Title order={4}>Bölümler</Title>
+              <Title order={4}>{t.departments.title}</Title>
               {isAdmin && (
-                <Button size="xs" leftSection={<IconPlus size={16} />} onClick={openAdd}>
-                  Bölüm Ekle
-                </Button>
+                <Button size="xs" leftSection={<IconPlus size={16} />} onClick={openAdd}>{t.departments.add}</Button>
               )}
             </Group>
 
             <TextInput
-              placeholder="Ara"
+              placeholder={t.common.search}
               value={query}
               leftSection={<IconSearch size={16} />}
               onChange={(e) => setQuery(e.currentTarget.value)}
@@ -287,11 +302,11 @@ export default function DepartmentsPage() {
 
             {visible.length === 0 ? (
               <Text c="dimmed" size="sm" mt="xs">
-                {query ? "Eşleşen bölüm yok." : "Henüz bölüm yok."}
+                {query ? t.departments.noMatch : t.departments.empty}
               </Text>
             ) : (
-              <ScrollArea.Autosize mah="calc(100vh - 220px)" type="hover">
-                <Stack gap="xs">
+              <ScrollArea className="dept-list-scroll" type="hover">
+                <Stack gap="xs" pr={4}>
                   {visible.map((dep) => (
                     <UnstyledButton
                       key={dep.id}
@@ -305,7 +320,7 @@ export default function DepartmentsPage() {
                     </UnstyledButton>
                   ))}
                 </Stack>
-              </ScrollArea.Autosize>
+              </ScrollArea>
             )}
           </Stack>
         </Grid.Col>
@@ -318,7 +333,7 @@ export default function DepartmentsPage() {
                 <ThemeIcon size={56} radius="xl" variant="light" color="gray">
                   <IconBuilding size={28} />
                 </ThemeIcon>
-                <Text>Genel bakışını görmek için bir bölüm seçin.</Text>
+                <Text>{t.departments.pickOne}</Text>
               </Stack>
             </Paper>
           ) : (
@@ -339,12 +354,12 @@ export default function DepartmentsPage() {
                   </Group>
                   {isAdmin && (
                     <Group gap={4} wrap="nowrap">
-                      <Tooltip label="Bölümü Düzenle">
+                      <Tooltip label={t.departments.edit}>
                         <ActionIcon variant="subtle" color="gray" onClick={() => openEdit(selected)}>
                           <IconPencil size={18} />
                         </ActionIcon>
                       </Tooltip>
-                      <Tooltip label="Bölümü Sil">
+                      <Tooltip label={t.departments.deleteTitle}>
                         <ActionIcon variant="subtle" color="red" onClick={() => setDeleting(selected)}>
                           <IconTrash size={18} />
                         </ActionIcon>
@@ -355,17 +370,17 @@ export default function DepartmentsPage() {
 
                 {/* --- KPI kartları: Dersler, Öğretim Üyeleri, Çakışmalar --- */}
                 <div>
-                  <Text fw={600} mb="sm">Genel Bakış</Text>
+                  <Text fw={600} mb="sm">{t.departments.overview}</Text>
                   <Grid gutter="md">
-                    <KpiCard icon={IconBook2} label="Dersler" value={st?.courses ?? 0}
+                    <KpiCard icon={IconBook2} label={t.departments.courses} value={st?.courses ?? 0}
                       onClick={() => navigate(`/courses?department_id=${selected.id}`)} />
-                    <KpiCard icon={IconSchool} label="Öğretim Üyeleri" value={st?.lecturers ?? 0}
+                    <KpiCard icon={IconSchool} label={t.departments.lecturers} value={st?.lecturers ?? 0}
                       onClick={() => navigate(`/lecturers?department_id=${selected.id}`)} />
                     {/* Çakışma sayacı: bu bölümü etkileyen hard+warning. Tıklayınca
                         rapor bu bölüme süzülü açılır. */}
                     <KpiCard
                       icon={cfTotal > 0 ? IconAlertTriangle : IconShieldCheck}
-                      label="Çakışmalar"
+                      label={t.departments.conflicts}
                       color={cfColor}
                       // Dashboard gibi ayrık: engel (kırmızı) / uyarı (turuncu).
                       valueContent={cfTotal > 0 ? (
@@ -377,7 +392,7 @@ export default function DepartmentsPage() {
                       ) : (
                         <Text span fw={700} fz={28} lh={1} c="green">0</Text>
                       )}
-                      hint={cfTotal > 0 ? "engel / uyarı" : "temiz"}
+                      hint={cfTotal > 0 ? t.departments.conflictHint : t.common.clean}
                       hintColor={cfTotal > 0 ? "dimmed" : "green"}
                       onClick={() => navigate(`/conflicts?department_id=${selected.id}`)}
                     />
@@ -389,19 +404,17 @@ export default function DepartmentsPage() {
                   <Paper withBorder radius="md" p="md">
                     <Group gap="xs" mb="sm">
                       <IconUsers size={18} />
-                      <Text fw={600}>Bölüm Yetkilileri</Text>
+                      <Text fw={600}>{t.departments.managers}</Text>
                     </Group>
                     {deptMembers.length === 0 ? (
-                      <Text c="dimmed" size="sm">
-                        Bu bölüme atanmış yetkili hesap yok.
-                      </Text>
+                      <Text c="dimmed" size="sm">{t.departments.noManagers}</Text>
                     ) : (
                       <Table verticalSpacing="xs" horizontalSpacing="md">
                         <Table.Thead>
                           <Table.Tr>
-                            <Table.Th>İsim</Table.Th>
-                            <Table.Th>Rol</Table.Th>
-                            <Table.Th>Yetkiler</Table.Th>
+                            <Table.Th>{t.common.name}</Table.Th>
+                            <Table.Th>{t.departments.role}</Table.Th>
+                            <Table.Th>{t.departments.permissions}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
@@ -414,25 +427,25 @@ export default function DepartmentsPage() {
                                   <Group gap={6} wrap="nowrap">
                                     <Text size="sm" fw={500} lineClamp={1}>{m.name}</Text>
                                     {m.status !== "ACTIVE" && (
-                                      <Badge size="xs" variant="light" color="gray">Pasif</Badge>
+                                      <Badge size="xs" variant="light" color="gray">{t.departments.inactive}</Badge>
                                     )}
                                   </Group>
                                 </Table.Td>
                                 <Table.Td>
                                   <Badge size="sm" variant="light" color={isAdm ? "grape" : "blue"}>
-                                    {isAdm ? "Yönetici" : "Alt Hesap"}
+                                    {isAdm ? t.common.admin : t.common.subAccount}
                                   </Badge>
                                 </Table.Td>
                                 <Table.Td>
                                   {isAdm ? (
-                                    <Text size="xs" c="dimmed">Tüm yetkiler</Text>
+                                    <Text size="xs" c="dimmed">{t.common.allPermissions}</Text>
                                   ) : caps.length === 0 ? (
-                                    <Text size="xs" c="dimmed">Yalnız görüntüleme</Text>
+                                    <Text size="xs" c="dimmed">{t.common.viewOnly}</Text>
                                   ) : (
                                     <Group gap={4}>
                                       {caps.map((c) => (
                                         <Badge key={c.key} size="xs" variant="outline" color="gray">
-                                          {c.label}
+                                          {t.enums.capability[c.key]}
                                         </Badge>
                                       ))}
                                     </Group>
@@ -455,32 +468,28 @@ export default function DepartmentsPage() {
                     "Aç" butonları GÖRÜNTÜLEMEdir (K-26: herkes tüm bölümleri okur)
                     → herkese açık kalır. */}
                 <Paper withBorder radius="md" p="md">
-                  <Text fw={600} mb="sm">Hızlı İşlemler</Text>
+                  <Text fw={600} mb="sm">{t.departments.quickActions}</Text>
                   <Group gap="sm">
                     {/* add=1: hedef sayfa ekleme formunu açık getirir; department_id
                         de önceden seçili gelir (ders formu bölüm alanı taşır). */}
                     <LockedAction
                       allowed={canWriteIn(user, "can_manage_courses", selected.id)}
-                      tip="Bu bölümde ders ekleme yetkiniz yok"
+                      tip={t.departments.addCourseDenied}
                       icon={<IconBook2 size={16} />}
-                      label="Ders Ekle"
+                      label={t.departments.addCourse}
                       onClick={() => navigate(`/courses?add=1&department_id=${selected.id}`)}
                     />
                     <LockedAction
                       allowed={canWriteIn(user, "can_manage_lecturers")}
-                      tip="Öğretim üyesi ekleme yetkiniz yok"
+                      tip={t.departments.addLecturerDenied}
                       icon={<IconSchool size={16} />}
-                      label="Öğretim Üyesi Ekle"
+                      label={t.departments.addLecturer}
                       onClick={() => navigate(`/lecturers?add=1&department_id=${selected.id}`)}
                     />
                     <Button variant="light" leftSection={<IconCalendarWeek size={16} />}
-                      onClick={() => navigate(`/weekly?department_id=${selected.id}`)}>
-                      Haftalık Programı Aç
-                    </Button>
+                      onClick={() => navigate(`/weekly?department_id=${selected.id}`)}>{t.departments.openWeekly}</Button>
                     <Button variant="light" leftSection={<IconCalendarEvent size={16} />}
-                      onClick={() => navigate(`/exams?department_id=${selected.id}`)}>
-                      Sınav Takvimini Aç
-                    </Button>
+                      onClick={() => navigate(`/exams?department_id=${selected.id}`)}>{t.departments.openExams}</Button>
                   </Group>
                 </Paper>
               </Stack>
@@ -493,12 +502,12 @@ export default function DepartmentsPage() {
       <Modal
         opened={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Bölümü Düzenle" : "Yeni Bölüm"}
+        title={editing ? t.departments.edit : t.departments.newOne}
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
-            <TextInput label="Bölüm Adı" placeholder="Bilgisayar Mühendisliği" {...form.getInputProps("name")} />
-            <TextInput label="Bölüm Kodu" placeholder="CENG" {...form.getInputProps("code")} />
+            <TextInput label={t.departments.nameLabel} placeholder={t.departments.namePlaceholder} {...form.getInputProps("name")} />
+            <TextInput label={t.departments.codeLabel} placeholder="CENG" {...form.getInputProps("code")} />
             <Button type="submit" loading={submitting} mt="sm">
               {editing ? "Kaydet" : "Ekle"}
             </Button>
@@ -506,14 +515,14 @@ export default function DepartmentsPage() {
         </form>
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Bölümü sil">
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title={t.departments.deleteModal}>
         <Text>
-          <b>{deleting?.code}</b> — {deleting?.name} kalıcı olarak silinecek.
-          Bu işlem geri alınamaz.
+          <b>{deleting?.code}</b> — {deleting?.name}{" "}
+          {t.common.permanentDeleteWarning}
         </Text>
         <Group justify="flex-end" mt="lg">
-          <Button variant="default" onClick={() => setDeleting(null)}>Vazgeç</Button>
-          <Button color="red" loading={deleteBusy} onClick={handleDelete}>Sil</Button>
+          <Button variant="default" onClick={() => setDeleting(null)}>{t.common.dismiss}</Button>
+          <Button color="red" loading={deleteBusy} onClick={handleDelete}>{t.common.delete}</Button>
         </Group>
       </Modal>
     </>
@@ -522,7 +531,7 @@ export default function DepartmentsPage() {
 
 // KPI kartı: büyük sayı + küçük başlık + minimal ikon; tıklanınca ilgili
 // sayfaya (bölüm süzgeci uygulanmış) götürür. `valueContent` verilirse sayı
-// yerine o çizilir (çakışma kartında "engel / uyarı" ayrık gösterimi için).
+// yerine o çizilir (çakışma kartında t.departments.conflictHint ayrık gösterimi için).
 function KpiCard({ icon: Icon, label, value, valueContent, onClick, color, hint, hintColor }: {
   icon: ComponentType<IconProps>; label: string; value?: number; valueContent?: ReactNode;
   onClick: () => void; color?: string; hint?: string; hintColor?: string;

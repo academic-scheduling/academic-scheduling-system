@@ -8,9 +8,11 @@ import {
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api/client";
-import { SEMESTER_LABELS, lecturerLabel } from "../api/types";
+import { lecturerLabel } from "../api/types";
 import { turkishOptionsFilter } from "../utils/selectSearch";
 import type { Department, Lecturer, SemesterType } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /** Bir dersin import edilebilir alanlari — parse ciktisi = commit girisi. */
 type CourseFields = {
@@ -62,9 +64,12 @@ type Props = {
   onImported: () => void;             // başarıda listeyi yenile
 };
 
-const SEMESTER_OPTIONS = (["FALL", "SPRING", "SUMMER"] as SemesterType[]).map(
-  (s) => ({ value: s, label: SEMESTER_LABELS[s] }),
-);
+/** K-79: modül düzeyinde SABİT olamaz — sözlük dile göre değişiyor, modül
+ *  düzeyi ise bir kez çalışır ve hook çağıramaz. Sözlüğü alan bir fonksiyon. */
+const semesterOptions = (t: Dict) =>
+  (["FALL", "SPRING", "SUMMER"] as SemesterType[]).map(
+    (s) => ({ value: s, label: t.enums.semester[s] }),
+  );
 
 /** Ad karşılaştırma anahtarı: DEĞİŞMEZ küçük harf + tek boşluk. Türkçe locale
  *  KULLANILMAZ: "I"→"ı" / "i"→"i" ayrımı İngilizce adları bozardı ("PRINCIPLES"
@@ -89,6 +94,7 @@ function duplicateNameSet(list: { name: string }[]): Set<string> {
 export default function ImportCoursesModal({
   opened, onClose, departments, defaultDepartmentId, onImported,
 }: Props) {
+  const t = useT();
   const [depId, setDepId] = useState<string | null>(defaultDepartmentId);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -204,12 +210,12 @@ export default function ImportCoursesModal({
       onImported();
       notifications.show({
         color: "green",
-        message: `${res.added_count} ders eklendi, ${res.sections_created} şube açıldı`,
+        message: t.import.done(res.added_count, res.sections_created),
       });
     } catch (e) {
       notifications.show({
         color: "red",
-        message: e instanceof ApiError ? e.message : "İçe aktarma başarısız",
+        message: e instanceof ApiError ? e.message : t.import.failed,
       });
     } finally {
       setBusy(false);
@@ -237,10 +243,10 @@ export default function ImportCoursesModal({
     });
 
   const modalTitle = result
-    ? "İçe Aktarma Tamamlandı"
+    ? t.import.doneTitle
     : rows
-      ? "Dersleri Seç ve İçe Aktar"
-      : "Bologna'dan Ders İçe Aktar";
+      ? t.import.pickTitle
+      : t.import.title;
 
   return (
     <Modal
@@ -265,7 +271,7 @@ export default function ImportCoursesModal({
               {result.total_parsed} ders işlendi.
             </Text>
           </Alert>
-          <Button onClick={onClose}>Kapat</Button>
+          <Button onClick={onClose}>{t.common.close}</Button>
         </Stack>
       ) : rows ? (
         /* ---- Faz 2: seç / eşle ---- */
@@ -274,8 +280,8 @@ export default function ImportCoursesModal({
             <Text size="sm" c="dimmed">
               {candidateCount} şubesiz ders
               {rows.length - candidateCount > 0 &&
-                ` · ${rows.length - candidateCount} tanesi zaten şubeli`}
-              {dupIdx.length > 0 && ` · ${dupIdx.length} aynı adlı (aşağıda)`}
+                t.import.alreadySectioned(rows.length - candidateCount)}
+              {dupIdx.length > 0 && t.import.duplicateNamed(dupIdx.length)}
             </Text>
             <Button
               variant="subtle"
@@ -296,17 +302,17 @@ export default function ImportCoursesModal({
                       checked={allSelected}
                       indeterminate={someSelected && !allSelected}
                       onChange={toggleAll}
-                      aria-label="Tümünü seç"
+                      aria-label={t.import.selectAll}
                     />
                   </Table.Th>
                   <Table.Th w={40} />
-                  <Table.Th>Kod</Table.Th>
-                  <Table.Th>Ad</Table.Th>
-                  <Table.Th w={64}>Sınıf</Table.Th>
-                  <Table.Th w={84}>Dönem</Table.Th>
+                  <Table.Th>{t.import.code}</Table.Th>
+                  <Table.Th>{t.import.name}</Table.Th>
+                  <Table.Th w={64}>{t.import.classYear}</Table.Th>
+                  <Table.Th w={84}>{t.import.semester}</Table.Th>
                   <Table.Th w={72}>T+U+L</Table.Th>
-                  <Table.Th w={150}>Tür</Table.Th>
-                  <Table.Th w={280}>Hoca / Şube</Table.Th>
+                  <Table.Th w={150}>{t.import.type}</Table.Th>
+                  <Table.Th w={280}>{t.import.lecturerSection}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -375,9 +381,9 @@ export default function ImportCoursesModal({
         /* ---- Faz 1: giriş ---- */
         <Stack>
           <Select
-            label="Hedef bölüm"
-            description="Bologna'daki bölümün dersleri bu bölüme eklenir. Karşılığı yoksa önce Bölümler'den oluşturun."
-            placeholder="Bölüm seçin"
+            label={t.import.targetDepartment}
+            description={t.import.targetHelp}
+            placeholder={t.import.pickDepartment}
             data={departments.map((d) => ({
               value: String(d.id), label: `${d.code} — ${d.name}`,
             }))}
@@ -386,8 +392,8 @@ export default function ImportCoursesModal({
             required
           />
           <TextInput
-            label="Bologna sayfası adresi"
-            description="Bölümün bilgi paketi ders sayfasının URL'ini yapıştırın (…curSunit=… içermeli)."
+            label={t.import.urlLabel}
+            description={t.import.urlHelp}
             placeholder="https://obs.mu.edu.tr/oibs/bologna/index.aspx?...&curSunit=253"
             value={url}
             onChange={(e) => setUrl(e.currentTarget.value)}
@@ -427,6 +433,7 @@ function RowView({
   onPatch: (patch: Partial<CourseFields>) => void;
   onPick: (instructorIdx: number, lecturerId: number | null) => void;
 }) {
+  const t = useT();
   return (
     <>
       <Table.Tr opacity={c.has_sections ? 0.5 : 1}>
@@ -435,7 +442,7 @@ function RowView({
             checked={selected}
             onChange={onToggle}
             disabled={c.has_sections}
-            aria-label={`${c.code} seç`}
+            aria-label={t.import.pickRow(c.code)}
           />
         </Table.Td>
         <Table.Td>
@@ -444,7 +451,7 @@ function RowView({
             color="gray"
             onClick={onEdit}
             disabled={c.has_sections}
-            aria-label={`${c.code} düzenle`}
+            aria-label={t.import.editRow(c.code)}
           >
             <IconPencil size={16} />
           </ActionIcon>
@@ -452,27 +459,27 @@ function RowView({
         <Table.Td>{c.code}</Table.Td>
         <Table.Td>{c.name}</Table.Td>
         <Table.Td>{c.year}. sınıf</Table.Td>
-        <Table.Td>{SEMESTER_LABELS[c.semester]}</Table.Td>
+        <Table.Td>{t.enums.semester[c.semester]}</Table.Td>
         <Table.Td>{c.hours_theory}+{c.hours_practice}+{c.hours_lab}</Table.Td>
         <Table.Td>
           <Group gap={4} wrap="nowrap">
             {c.has_sections ? (
-              <Badge color="gray" variant="light">şubeli</Badge>
+              <Badge color="gray" variant="light">{t.import.sectioned}</Badge>
             ) : c.exists ? (
-              <Badge color="gray" variant="outline">kayıtlı · şubesiz</Badge>
+              <Badge color="gray" variant="outline">{t.import.registeredNoSection}</Badge>
             ) : c.is_elective ? (
-              <Badge color="grape" variant="light">Seçmeli</Badge>
+              <Badge color="grape" variant="light">{t.import.elective}</Badge>
             ) : (
-              <Badge color="blue" variant="light">Zorunlu</Badge>
+              <Badge color="blue" variant="light">{t.import.required}</Badge>
             )}
             {c.is_common && !c.exists && (
-              <Badge color="teal" variant="light">Ortak</Badge>
+              <Badge color="teal" variant="light">{t.import.common}</Badge>
             )}
           </Group>
         </Table.Td>
         <Table.Td>
           {c.has_sections ? (
-            <Text size="xs" c="dimmed">zaten şubeli</Text>
+            <Text size="xs" c="dimmed">{t.import.alreadySectionedTag}</Text>
           ) : (
             <InstructorCell
               instructors={c.instructors}
@@ -488,23 +495,23 @@ function RowView({
           <Collapse in={isEditing}>
             <Group p="sm" align="flex-end" wrap="wrap" bg="var(--mantine-color-default-hover)">
               <TextInput
-                label="Kod" size="xs" w={110}
+                label={t.import.code} size="xs" w={110}
                 value={c.code}
                 onChange={(e) => onPatch({ code: e.currentTarget.value })}
               />
               <TextInput
-                label="Ad" size="xs" style={{ flex: 1, minWidth: 200 }}
+                label={t.import.name} size="xs" style={{ flex: 1, minWidth: 200 }}
                 value={c.name}
                 onChange={(e) => onPatch({ name: e.currentTarget.value })}
               />
               <NumberInput
-                label="Sınıf" size="xs" w={70} min={1} max={8}
+                label={t.import.classYear} size="xs" w={70} min={1} max={8}
                 value={c.year}
                 onChange={(v) => onPatch({ year: Number(v) || 1 })}
               />
               <Select
-                label="Dönem" size="xs" w={100}
-                data={SEMESTER_OPTIONS}
+                label={t.import.semester} size="xs" w={100}
+                data={semesterOptions(t)}
                 value={c.semester}
                 onChange={(v) => v && onPatch({ semester: v as SemesterType })}
                 allowDeselect={false}
@@ -532,17 +539,17 @@ function RowView({
               />
               {/* K-64: Bologna'dan gelen vize sayısı; 1-3, düzeltilebilir. */}
               <NumberInput
-                label="Vize" size="xs" w={64} min={1} max={3}
+                label={t.import.midterm} size="xs" w={64} min={1} max={3}
                 value={c.midterm_count ?? ""}
                 onChange={(v) => onPatch({ midterm_count: v === "" ? null : Number(v) })}
               />
               <Switch
-                label="Seçmeli" size="sm" mb={6}
+                label={t.import.elective} size="sm" mb={6}
                 checked={c.is_elective}
                 onChange={(e) => onPatch({ is_elective: e.currentTarget.checked })}
               />
               <Switch
-                label="Ortak ders" size="sm" mb={6}
+                label={t.import.commonCourse} size="sm" mb={6}
                 checked={c.is_common}
                 onChange={(e) => onPatch({ is_common: e.currentTarget.checked })}
               />
@@ -565,8 +572,9 @@ function InstructorCell({
   lecturerOptions: { value: string; label: string }[];
   onPick: (instructorIdx: number, lecturerId: number | null) => void;
 }) {
+  const t = useT();
   if (instructors.length === 0) {
-    return <Text size="xs" c="dimmed">hoca bulunamadı</Text>;
+    return <Text size="xs" c="dimmed">{t.import.lecturerNotFound}</Text>;
   }
   return (
     <Stack gap={6}>
@@ -583,7 +591,7 @@ function InstructorCell({
               searchable
               clearable
               filter={turkishOptionsFilter}
-              placeholder={unmatched ? "eşleşmedi — hoca seç" : undefined}
+              placeholder={unmatched ? t.import.unmatched : undefined}
               data={lecturerOptions}
               value={picked == null ? null : String(picked)}
               onChange={(v) => onPick(j, v == null ? null : Number(v))}

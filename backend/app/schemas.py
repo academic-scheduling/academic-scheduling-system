@@ -13,6 +13,9 @@ class LoginRequest(BaseModel):
 class UserPublic(BaseModel):
     id: int
     name: str
+    # K-82: ana sayfadaki kimlik karti kisinin KENDI e-postasini gosteriyor.
+    # Gizlilik sorusu dogurmaz — bu uc zaten yalnizca cagiranin kendisini doner.
+    email: str
     role: UserRole
     department_ids: list[int] = []          # K-26: yazma kapsamı
     can_manage_courses: bool = False        # K-25: yetenek bayrakları
@@ -21,6 +24,10 @@ class UserPublic(BaseModel):
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
     can_approve_schedule: bool = False      # K-59: taslağı yayına alma
+    # K-82: kimlik kartindaki "onceki girisiniz". BU oturumun degil, bir
+    # oncekinin damgasi (auth.login sirayi boyle kuruyor). Hic girmemis
+    # hesapta ve ilk giriste null.
+    previous_login_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="after")
@@ -146,6 +153,9 @@ class UserListItem(BaseModel):
     can_manage_classrooms: bool = False
     can_manage_lecturers: bool = False
     can_approve_schedule: bool = False      # K-59
+    # K-82: Yonetim tablosunun "Son giriş" sutunu. Burada anlam DOGRU: baskasina
+    # bakan admin icin "bu hesap en son ne zaman girdi" sorusunun cevabidir.
+    last_login_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
 # --- Bölümler (WP2) ---
@@ -419,10 +429,22 @@ class ConflictAffectedRef(BaseModel):
     type: Literal["weekly_entry", "exam"]
     id: int
     course_code: str | None = None
-    # Çakışma raporu + Bölümler sayacı bölüm/sınıf süzmesi için (kırılgan kod
+    # Çakışma raporu + Bölümler sayacı COHORT süzmesi için (kırılgan kod
     # eşleştirmesi yerine id). Motor eski girişlerde üretmezse None kalır.
+    # K-80: `semester` de taşınıyor — cohort üç boyutlu, ikisi yetmiyordu.
     department_id: int | None = None
     year: int | None = None
+    semester: SemesterType | None = None
+    # K-80: yerleşim zamanı — rapor tablosunun "ne zaman" sütunu. Haftalıkta
+    # gün+slot, sınavda tarih+saat dolar; karşı tür için None kalır.
+    day_of_week: int | None = None
+    start_slot: int | None = None
+    slot_count: int | None = None
+    # ISO STRING (date/time DEĞİL): bu yapı Pydantic'ten geçmeyen bir yoldan
+    # da dönüyor — onaya gönderme 409'u çakışmaları ham JSONResponse ile
+    # veriyor ve orada tip dönüşümü yok.
+    exam_date: str | None = None
+    start_time: str | None = None
 
 class ConflictResultOut(BaseModel):
     severity: Literal["HARD", "WARNING"]
@@ -454,6 +476,11 @@ class ExamCreate(BaseModel):
     duration_minutes: int = Field(ge=10, le=480)
     classroom_ids: list[int] = []             # çoklu derslik; boş = henüz atanmadı (K-17)
     lecturer_id: int
+    # K-81: gözetmenler. İSTEĞE BAĞLI ve 0..N — bu yüzden varsayılanı boş liste,
+    # `None` değil: "gözetmen yok" ile "gözetmen bilgisi verilmedi" ayrımı
+    # CREATE'te anlamsız (yeni kayıtta ikisi de boş demek). Sorumlu bu listede
+    # olamaz; router zorlar.
+    invigilator_ids: list[int] = []
     notes: str | None = None
 
 class ExamUpdate(BaseModel):
@@ -465,6 +492,10 @@ class ExamUpdate(BaseModel):
     duration_minutes: int | None = Field(None, ge=10, le=480)
     classroom_ids: list[int] | None = None    # verilirse liste TAM değişir (K-22)
     lecturer_id: int | None = None
+    # K-81: derslik listesiyle AYNI kural — verilirse liste TAM değişir, `None`
+    # "dokunma" demektir (K-22). Boş liste göndermek "gözetmenleri kaldır"dır;
+    # `None` ile ayrımı burada gerçekten gerekli, o yüzden CREATE'ten farklı.
+    invigilator_ids: list[int] | None = None
     notes: str | None = None
 
 class CourseRef(BaseModel):
@@ -492,6 +523,7 @@ class ExamOut(BaseModel):
     duration_minutes: int
     classrooms: list[ExamClassroomRef]
     lecturer: LecturerOut
+    invigilators: list[LecturerOut]           # K-81: 0..N gözetmen (sorumlu hariç)
     total_expected_students: int              # türetilir: aktif şubelerin toplamı (K-16)
     notes: str | None
     # K-60: `status` KALKTI. Satırın "yayında mı" cevabı artık `draft_id`'den
@@ -569,16 +601,42 @@ class DraftClearRequest(BaseModel):
 
 class DraftSubmitRequest(BaseModel):
     note: str | None = Field(None, max_length=2000)   # PR açıklaması gibi
+    # K-83: talebin kime gideceği. Gönderen, taslağın bölümündeki onay
+    # yetkilileri + adminler arasından seçer; kuyruk yalnız seçilenlere açılır.
+    #
+    # OPSİYONEL ve `None` = "havuzun tamamı" (K-83 öncesi davranış). İki sebep:
+    #   1. Geriye uyum — eski istemci/entegrasyon gönderimi bozulmaz.
+    #   2. "Kim bakarsa baksın" hâlâ geçerli bir niyet; seçim yapmamak, seçim
+    #      ekranını atlamak demek olmalı, gönderimi engellemek değil.
+    # BOŞ LİSTE ise ayrı bir şeydir ve reddedilir: hiç kimseye gönderilmeyen
+    # talep sonsuza dek beklerdi (`min_length=1`).
+    approver_ids: list[int] | None = Field(None, min_length=1)
 
 class DraftUserRef(BaseModel):
     id: int
     name: str
     model_config = ConfigDict(from_attributes=True)
 
+class DraftApproverCandidate(BaseModel):
+    """Onaya gönderirken seçilebilecek bir yetkili (K-83).
+
+    `is_admin` bilerek dışarı veriliyor: admin her bölümde yetkilidir, yani
+    bölüm üyeliği olmasa da listede görünür. Bu ayrım gösterilmezse kullanıcı
+    "bu kişi neden burada?" diye sorar; rozet cevabı listenin içinde verir.
+    """
+    id: int
+    name: str
+    email: str
+    is_admin: bool
+    model_config = ConfigDict(from_attributes=True)
+
 class DraftOut(BaseModel):
     id: int
     department_id: int
     department_name: str
+    # K-80: kuyrukta ve detay basliginda bolum KODU gosteriliyor — ad uzun ve
+    # dar sutunda kirpiliyor, kod ise kisa ve bolumu tekil olarak tanitiyor.
+    department_code: str
     year: int
     semester: SemesterType
     kind: DraftKind                               # K-60: WEEKLY | EXAM
@@ -590,12 +648,17 @@ class DraftOut(BaseModel):
     created_at: datetime
     submitted_at: datetime | None = None
     submit_note: str | None = None
+    # K-83: talebin gönderildiği yetkililer. Gönderen "kime gitti"yi, alıcı da
+    # "benden başka kim bakıyor"u görsün diye kayıtla birlikte taşınır.
+    approvers: list[DraftUserRef] = []
     reviewer: DraftUserRef | None = None
     reviewed_at: datetime | None = None
     review_note: str | None = None
     # Onay anında dondurulan özet — onaylandıktan sonra fark yeniden
-    # hesaplanamaz (taslağın satırları yayına geçip silinir), kayıt kendi
-    # kendine yetsin diye saklanır (K-36 deseni).
+    # hesaplanamaz: taslağın satırları K-80'den beri yerinde duruyor ama fark
+    # O ANKİ yayına karşı hesaplanır, dolayısıyla sonraki onaylar geçtikçe
+    # "onay anında ne uygulandı" sorusunun cevabı kayardı. Kayıt kendi kendine
+    # yetsin diye özet burada saklanır (K-36 deseni).
     applied_summary: str | None = None
 
 class DraftPlacementOut(BaseModel):
@@ -678,6 +741,15 @@ class DraftRejectRequest(BaseModel):
     # Gerekçesiz ret işe yaramaz: gönderen neyi düzelteceğini bilemez.
     note: str = Field(min_length=1, max_length=2000)
 
+class DraftApproveRequest(BaseModel):
+    """Onay notu (K-80) — RETTEN farklı olarak ZORUNLU DEĞİL.
+
+    Ret gerekçesiz anlamsızdır (gönderen neyi düzelteceğini bilemez); onay ise
+    kendi başına yeterli bir cevaptır, not yalnızca varsa değer katar
+    ("2. şubeyi de taşıdım", "gelecek dönem tekrar bakalım").
+    """
+    note: str | None = Field(None, max_length=2000)
+
 class DraftStalenessOut(BaseModel):
     """Taslak açıldıktan sonra programın kaç kez değiştiği (K-59).
 
@@ -738,21 +810,42 @@ class DraftClearResponse(BaseModel):
 # --- Dashboard (WP6, K-33) ---
 
 class DashboardSummary(BaseModel):
-    """GET /dashboard/summary cevabi (kontrat 10, K-33).
+    """GET /dashboard/summary cevabi (kontrat 10, K-33, K-82).
 
-    Sekiz kart cizilir; weekly_entries kart degil ama alan korunuyor
-    (kontrat onu zaten vaat etmisti, kaldirmak kirici degisiklik olurdu).
+    weekly_entries kart degil ama alan korunuyor (kontrat onu zaten vaat
+    etmisti, kaldirmak kirici degisiklik olurdu).
+
+    K-82: uc artik TUM oturumlulara acik — sayaclarin cogu zaten herkesin
+    listeleyebildigi veriden turuyor (K-26: okuma workgroup genelinde serbest),
+    dolayisiyla saymak yeni bir sey ifsa etmiyor. TEK istisna asagidaki iki
+    kullanici sayaci: onlar kullanici yonetimi bilgisidir ve admin disinda
+    None doner — istemci de o iki karti hic cizmez.
     """
     departments: int
     classrooms: int
     lecturers: int
     courses: int
-    admins: int
-    sub_accounts: int
+    admins: int | None = None
+    sub_accounts: int | None = None
     weekly_entries: int
     exams: int
     unresolved_hard: int
     unresolved_warnings: int
+
+
+class OccupancySummary(BaseModel):
+    """GET /dashboard/occupancy cevabi (K-82) — haftalik derslik doluluk isi haritasi.
+
+    `grid[slot-1][gun-1]` = o gun/slotta DOLU olan AYRI derslik sayisi;
+    payda `classrooms` (aktif derslik sayisi). Izgara 9x5 sabittir, cunku
+    zaman modeli oyle: slots.py 9 slot, gun 1..5 (brief 3.4).
+
+    Neden ayri bir uc: ayni sayiyi istemcide hesaplamak butun yayindaki
+    yerlesimleri ders/sube/derslik iliskileriyle birlikte cekmek demekti.
+    Bu cevap birkac yuz bayt.
+    """
+    classrooms: int
+    grid: list[list[int]]
 
 
 # --- Islem kayitlari (WP6, K-35) ---

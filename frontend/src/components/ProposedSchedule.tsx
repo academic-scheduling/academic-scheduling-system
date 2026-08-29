@@ -1,37 +1,82 @@
 import { Fragment, useMemo } from "react";
-import { Badge, Group, ScrollArea, Stack, Text } from "@mantine/core";
-import { EXAM_TYPE_LABELS, lecturerLabel } from "../api/types";
-import type { DraftDiffItem, Exam, WeeklyEntry } from "../api/types";
-import { DAY_SHORT } from "../utils/slots";
+import { Badge, Group, ScrollArea, Stack, Text, Tooltip } from "@mantine/core";
+import { lecturerLabel } from "../api/types";
+import type { ConflictScan, DraftDiffItem, Exam, WeeklyEntry } from "../api/types";
 import { BORDER, GRID_CELL_BG, HEADER_BG, TEXT_MUTED } from "../utils/scheduleTheme";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 /** Onay/inceleme ekranlarının "önerilen program" görüntüsü (K-60).
  *
  *  K-77'de Yayın Merkezi de aynı görüntüyü kullanıyor; bu yüzden ApprovalsPage
  *  içinde gömülü olan iki bileşen buraya taşındı — tek kaynak, iki tüketici.
  *  Vurgu YERLEŞİME bağlanır (şubeye/derse değil): aynı şubenin/dersin değişmeyen
- *  öteki satırı yanlışlıkla "taşındı" görünmesin (K-59 hatası). */
+ *  öteki satırı yanlışlıkla t.draft.movedTag görünmesin (K-59 hatası). */
 
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
 
-const AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
-                 "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-const GUN_KISA = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+/** K-80: hangi satır hangi çakışmaya karışıyor — id → en AĞIR şiddet + mesajlar.
+ *
+ *  Çakışma listesi ekranın altında zaten duruyor ama "hangi ders" sorusunu
+ *  metinden okumak gerekiyordu; ızgarada işaretlenince göz doğrudan yeri
+ *  buluyor. Motor `affected[]` içinde satır id'sini veriyor, eşleme oradan.
+ *
+ *  Bir satır hem hard hem warning'e karışabilir; hard KAZANIR — daha ağır olan
+ *  gösterilmezse kullanıcı turuncu görüp "önemsiz" diye geçer. */
+export type SatirCakisma = { hard: boolean; mesajlar: string[] };
 
-function gunBasligi(iso: string): string {
+export function cakismaHaritasi(
+  scan: ConflictScan | undefined, tur: "weekly_entry" | "exam",
+): Map<number, SatirCakisma> {
+  const m = new Map<number, SatirCakisma>();
+  if (!scan) return m;
+  const ekle = (ids: { type: string; id: number }[], mesaj: string, hard: boolean) => {
+    for (const a of ids) {
+      if (a.type !== tur) continue;
+      const mevcut = m.get(a.id);
+      if (mevcut) {
+        mevcut.hard = mevcut.hard || hard;
+        mevcut.mesajlar.push(mesaj);
+      } else {
+        m.set(a.id, { hard, mesajlar: [mesaj] });
+      }
+    }
+  };
+  for (const c of scan.warnings) ekle(c.affected, `${c.rule_id} · ${c.message}`, false);
+  for (const c of scan.hard) ekle(c.affected, `${c.rule_id} · ${c.message}`, true);
+  return m;
+}
+
+/** Rozetin sol kenarındaki ince dikey belirteç. Rengi ŞİDDETİ taşır; rozetin
+ *  kendi rengi ise DEĞİŞİKLİĞİ taşır (eklendi/taşındı). İki bilgi çakışmasın
+ *  diye ayrı kanallar. */
+function cakismaCizgisi(c: SatirCakisma | undefined): React.CSSProperties {
+  if (!c) return {};
+  return {
+    borderLeft: `3px solid var(--mantine-color-${c.hard ? "red" : "orange"}-6)`,
+    paddingLeft: 4,
+  };
+}
+
+function gunBasligi(iso: string, t: Dict): string {
   const d = new Date(`${iso}T00:00:00`);
-  return `${d.getDate()} ${AY_KISA[d.getMonth()]} ${d.getFullYear()} · ${GUN_KISA[d.getDay()]}`;
+  return `${d.getDate()} ${t.exams.monthsShort[d.getMonth()]} ${d.getFullYear()}`
+    + ` · ${t.days.weekdayShort[d.getDay()]}`;
 }
 
 /** Önerilen sınav takviminin salt-okunur listesi (K-60): sınav bir döneme
  *  yayılır, tek haftalık ızgaraya sığmaz — güne göre gruplanmış kronolojik sıra
  *  "bu değişiklik takvimin bütününde nereye oturuyor" sorusunu cevaplar. */
-export function ProposedExamList({ exams, changed }: {
+export function ProposedExamList({ exams, changed, scan }: {
   exams: Exam[];
   changed: DraftDiffItem[];
+  /** K-80: verilirse çakışan sınavlar listede işaretlenir. */
+  scan?: ConflictScan;
 }) {
+  const t = useT();
+  const cakisma = useMemo(() => cakismaHaritasi(scan, "exam"), [scan]);
   const vurgu = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of changed) {
@@ -52,7 +97,7 @@ export function ProposedExamList({ exams, changed }: {
   }, [exams]);
 
   if (gunler.length === 0) {
-    return <Text size="sm" c="dimmed">Taslakta hiç sınav yok.</Text>;
+    return <Text size="sm" c="dimmed">{t.draft.noExams}</Text>;
   }
 
   return (
@@ -62,7 +107,7 @@ export function ProposedExamList({ exams, changed }: {
           <div key={gun}>
             <Text fz={12} fw={600} c={TEXT_MUTED} mb={4}
               style={{ letterSpacing: "0.02em" }}>
-              {gunBasligi(gun)}
+              {gunBasligi(gun, t)}
             </Text>
             <Stack gap={4}>
               {liste.map((e) => {
@@ -72,12 +117,21 @@ export function ProposedExamList({ exams, changed }: {
                 bit.setMinutes(bit.getMinutes() + e.duration_minutes);
                 const saatAraligi = `${e.start_time.slice(0, 5)}–`
                   + `${String(bit.getHours()).padStart(2, "0")}:${String(bit.getMinutes()).padStart(2, "0")}`;
-                return (
+                // `cak` — `c` DEĞİL: aşağıda derslik listesi `.map((c) => …)`
+                // ile aynı adı kullanıyor ve gölgeleme okunmayı zorlaştırır.
+                const cak = cakisma.get(e.id);
+                // K-80: sol çubuk HER İKİ görünümde de ÇAKIŞMAYI taşır (ızgara
+                // ile tutarlı olsun diye); değişikliği burada arka plan zaten
+                // gösteriyor, çakışma yoksa çubuk eski haline döner.
+                const solCubuk = cak
+                  ? `var(--mantine-color-${cak.hard ? "red" : "orange"}-6)`
+                  : degisen ? "var(--mantine-color-blue-6)" : BORDER;
+                const satir = (
                   <Group key={e.id} gap={8} wrap="nowrap" align="flex-start"
                     style={{
                       background: degisen ? HEADER_BG : GRID_CELL_BG,
                       border: `1px solid ${BORDER}`,
-                      borderLeft: `3px solid ${degisen ? "var(--mantine-color-blue-6)" : BORDER}`,
+                      borderLeft: `3px solid ${solCubuk}`,
                       borderRadius: 6, padding: "6px 9px",
                     }}>
                     <Text fz={12} fw={600} style={{ minWidth: 96,
@@ -88,25 +142,29 @@ export function ProposedExamList({ exams, changed }: {
                       <Group gap={6} wrap="nowrap">
                         <Text fz={13} fw={600} truncate>{e.course.code}</Text>
                         <Badge size="xs" variant="default">
-                          {EXAM_TYPE_LABELS[e.exam_type]}
+                          {t.enums.examType[e.exam_type]}
                           {e.exam_type === "MIDTERM" && e.exam_index > 1
                             ? ` ${e.exam_index}` : ""}
                         </Badge>
                         {degisen && (
                           <Badge size="xs" variant="light" color="blue">
-                            {k === "ADDED" ? "eklendi" : "taşındı"}
+                            {k === "ADDED" ? t.draft.addedTag : t.draft.movedTag}
                           </Badge>
                         )}
                       </Group>
                       <Text fz={12} c={TEXT_MUTED} truncate>
                         {e.classrooms.map((c) => `${c.building.name} ${c.room_code}`)
-                          .join(", ") || "Derslik atanmadı"}
+                          .join(", ") || t.draft.noClassroom}
                         {" · "}{lecturerLabel(e.lecturer)}
-                        {" · "}{e.total_expected_students} öğrenci
+                        {" · "}{t.draft.studentCount(e.total_expected_students)}
                       </Text>
                     </Stack>
                   </Group>
                 );
+                return cak
+                  ? <Tooltip key={e.id} multiline maw={320}
+                      label={cak.mesajlar.join("\n")}>{satir}</Tooltip>
+                  : satir;
               })}
             </Stack>
           </div>
@@ -118,10 +176,14 @@ export function ProposedExamList({ exams, changed }: {
 
 /** Önerilen haftanın salt-okunur ızgarası: fark tablosu "ne değişti"yi söyler,
  *  bu değişikliğin haftanın BÜTÜNÜNDE nereye oturduğunu gösterir. */
-export function ProposedGrid({ entries, changed }: {
+export function ProposedGrid({ entries, changed, scan }: {
   entries: WeeklyEntry[];
   changed: DraftDiffItem[];
+  /** K-80: verilirse çakışan satırlar ızgarada işaretlenir. */
+  scan?: ConflictScan;
 }) {
+  const t = useT();
+  const cakisma = useMemo(() => cakismaHaritasi(scan, "weekly_entry"), [scan]);
   // Vurgu YERLEŞİME bağlanır: şube + hedef gün + hedef slot.
   const vurgu = useMemo(() => {
     const m = new Map<string, string>();
@@ -154,7 +216,7 @@ export function ProposedGrid({ entries, changed }: {
               background: HEADER_BG, padding: "4px 6px", fontSize: 11,
               fontWeight: 600, textAlign: "center", letterSpacing: "0.04em",
             }}>
-              {DAY_SHORT[d]}
+              {t.days.short[d]}
             </div>
           ))}
           {SLOTS.map((s) => (
@@ -175,13 +237,21 @@ export function ProposedGrid({ entries, changed }: {
                     {list.map((e) => {
                       const k = vurgu.get(
                         `${e.section.id}-${e.day_of_week}-${e.start_slot}`);
-                      return (
+                      const c = cakisma.get(e.id);
+                      const rozet = (
                         <Badge key={e.id} size="xs" radius="sm"
                           variant={k ? "filled" : "light"}
-                          color={k === "ADDED" ? "green" : k === "MOVED" ? "blue" : "gray"}>
+                          color={k === "ADDED" ? "green" : k === "MOVED" ? "blue" : "gray"}
+                          style={cakismaCizgisi(c)}>
                           {e.section.course.code}
                         </Badge>
                       );
+                      // Belirteç tek başına "bir sorun var" der; hangi kural
+                      // olduğunu ipucu söyler — liste aşağıda ama göz burada.
+                      return c
+                        ? <Tooltip key={e.id} multiline maw={320}
+                            label={c.mesajlar.join("\n")}>{rozet}</Tooltip>
+                        : rozet;
                     })}
                   </div>
                 );

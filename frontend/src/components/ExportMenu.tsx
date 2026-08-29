@@ -3,6 +3,7 @@ import { Button, Menu } from "@mantine/core";
 import { IconDownload } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api/client";
+import { useT } from "../i18n";
 
 /** Menüdeki tek indirme seçeneği: görünen etiket + indirilecek TAM yol. */
 export type ExportItem = { label: string; path: string; icon?: ReactNode };
@@ -22,8 +23,12 @@ type Props = {
   label?: string;
 };
 
-export default function ExportMenu({ items, disabled, label = "Dışa Aktar" }: Props) {
+export default function ExportMenu({ items, disabled, label }: Props) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
+  // K-79: varsayılan etiket parametre varsayılanı OLAMAZ — o modül düzeyinde
+  // bir kez çözülür; sözlük ise dile göre değişir.
+  const menuLabel = label ?? t.common.export;
 
   const run = async (path: string) => {
     setBusy(true);
@@ -32,7 +37,7 @@ export default function ExportMenu({ items, disabled, label = "Dışa Aktar" }: 
     } catch (e) {
       notifications.show({
         color: "red",
-        message: e instanceof ApiError ? e.message : "İndirme başarısız",
+        message: e instanceof ApiError ? e.message : t.common.downloadFailed,
       });
     } finally {
       setBusy(false);
@@ -46,7 +51,7 @@ export default function ExportMenu({ items, disabled, label = "Dışa Aktar" }: 
           size="xs" radius="md" variant="light" loading={busy} disabled={disabled}
           leftSection={<IconDownload size={16} />}
         >
-          {label}
+          {menuLabel}
         </Button>
       </Menu.Target>
       <Menu.Dropdown>

@@ -3,13 +3,21 @@ import {
   Alert, Badge, Group, Loader, Pagination, Paper, Select, Table, Text, Title,
 } from "@mantine/core";
 import { api, ApiError } from "../api/client";
-import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_LABELS } from "../api/types";
+import { AUDIT_ACTION_COLORS } from "../api/types";
 import type {
   AuditAction, AuditEntityType, AuditLogPage, ManagedUser,
 } from "../api/types";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n/tr";
 
 const ALL = "__all__";
-const PAGE_SIZE = 7;
+
+/** Sayfa başına satır.
+ *
+ *  K-82: 7 idi — dashboard'da dört bloktan biriydi ve ötekileri aşağı itmemesi
+ *  gerekiyordu. Yönetim sayfasında kullanıcı tablosunun altında tek başına
+ *  duruyor; o kısıt kalktı, kullanıcı tablosuyla aynı ölçüye geldi. */
+const PAGE_SIZE = 12;
 
 /** Sütun genişlikleri yüzde — kullanıcı tablosundaki gerekçenin aynısı:
  *  oran sabit kalsın (sayfa değişince kaymasın), genişlik ekrana göre esnesin. */
@@ -25,13 +33,13 @@ const COL = {
 const TABLE_MIN_WIDTH = 900;
 
 /** Tarih + saat, tek satırda okunur biçimde. */
-const bicimle = (iso: string) =>
-  new Date(iso).toLocaleString("tr-TR", {
+const bicimle = (iso: string, t: Dict) =>
+  new Date(iso).toLocaleString(t.locale, {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
 
-/** Dashboard'un işlem kayıtları bloğu (kontrat §12, K-35).
+/** Yönetim sayfasının işlem kayıtları bloğu (kontrat §12, K-35).
  *
  *  Brief §6.3 her create/update/delete'in kullanıcı ve zaman damgasıyla
  *  loglanmasını şart koşuyor; yazma tarafı WP2'den beri çalışıyordu ama
@@ -39,8 +47,16 @@ const bicimle = (iso: string) =>
  *
  *  Sayfalama SUNUCUDA: log tek büyüyen tablodur, kullanıcı listesi gibi
  *  hepsini çekip istemcide dilimlemek kısa sürede taşardı.
+ *
+ *  **K-82: yeri değişti.** Dashboard ana sayfayla birleşince blok bir tur
+ *  kaldırıldı — herkesin ilk gördüğü ekranda "kim neyi değiştirdi" tablosunun
+ *  işi yoktu. Ama izin kendisi silinmedi (kontrat §12 borcu) ve admin'in ona
+ *  bakabileceği bir yer gerekiyordu: Yönetim sayfası. Ana sayfadaki "Son
+ *  işlemleriniz" bununla KARIŞTIRILMAMALI — o kişinin kendi izi, filtresiz ve
+ *  beş satır; bu ise denetim aracı: herkesin izi, filtreli, sayfalı.
  */
 export default function AuditLogSection() {
+  const t = useT();
   const [data, setData] = useState<AuditLogPage | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +77,7 @@ export default function AuditLogSection() {
 
     api.get<AuditLogPage>(`/audit-logs?${params}`)
       .then((d) => { setData(d); setError(null); })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Kayıtlar yüklenemedi"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.audit.loadFailed));
   }, [page, actionFilter, entityFilter, userFilter]);
 
   // Fail filtresi için kullanıcı listesi bir kez çekilir.
@@ -86,11 +102,11 @@ export default function AuditLogSection() {
 
   return (
     <>
-      <Title order={4} mt="xl" mb="sm">İşlem Kayıtları</Title>
+      <Title order={4} mb="sm">{t.audit.title}</Title>
 
       <Group mb="sm">
         <Select
-          data={[{ value: ALL, label: "Tüm kullanıcılar" }, ...userOptions]}
+          data={[{ value: ALL, label: t.audit.allUsers }, ...userOptions]}
           value={userFilter}
           onChange={filtreDegistir(setUserFilter)}
           allowDeselect={false}
@@ -99,9 +115,9 @@ export default function AuditLogSection() {
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm eylemler" },
-            ...(Object.keys(AUDIT_ACTION_LABELS) as AuditAction[]).map((a) => ({
-              value: a, label: AUDIT_ACTION_LABELS[a].label,
+            { value: ALL, label: t.audit.allActions },
+            ...(Object.keys(AUDIT_ACTION_COLORS) as AuditAction[]).map((a) => ({
+              value: a, label: t.enums.auditAction[a],
             })),
           ]}
           value={actionFilter}
@@ -111,9 +127,9 @@ export default function AuditLogSection() {
         />
         <Select
           data={[
-            { value: ALL, label: "Tüm türler" },
-            ...(Object.keys(AUDIT_ENTITY_LABELS) as AuditEntityType[]).map((t) => ({
-              value: t, label: AUDIT_ENTITY_LABELS[t],
+            { value: ALL, label: t.audit.allTypes },
+            ...(Object.keys(t.enums.auditEntity) as AuditEntityType[]).map((tur) => ({
+              value: tur, label: t.enums.auditEntity[tur],
             })),
           ]}
           value={entityFilter}
@@ -134,22 +150,21 @@ export default function AuditLogSection() {
               <Table verticalSpacing="xs" highlightOnHover layout="fixed">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th w={COL.zaman}>Zaman</Table.Th>
-                    <Table.Th w={COL.kim}>Kim</Table.Th>
-                    <Table.Th w={COL.eylem}>Eylem</Table.Th>
-                    <Table.Th w={COL.tur}>Tür</Table.Th>
-                    <Table.Th w={COL.kayit}>Kayıt</Table.Th>
-                    <Table.Th w={COL.degisiklik}>Değişiklik</Table.Th>
+                    <Table.Th w={COL.zaman}>{t.audit.time}</Table.Th>
+                    <Table.Th w={COL.kim}>{t.audit.who}</Table.Th>
+                    <Table.Th w={COL.eylem}>{t.audit.action}</Table.Th>
+                    <Table.Th w={COL.tur}>{t.audit.entityType}</Table.Th>
+                    <Table.Th w={COL.kayit}>{t.audit.record}</Table.Th>
+                    <Table.Th w={COL.degisiklik}>{t.audit.change}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {data.items.map((k) => {
-                    const eylem = AUDIT_ACTION_LABELS[k.action]
-                      ?? { label: k.action, color: "gray" };
+                    const eylemRengi = AUDIT_ACTION_COLORS[k.action] ?? "gray";
                     return (
                       <Table.Tr key={k.id}>
                         <Table.Td>
-                          <Text size="sm" c="dimmed">{bicimle(k.created_at)}</Text>
+                          <Text size="sm" c="dimmed">{bicimle(k.created_at, t)}</Text>
                         </Table.Td>
                         <Table.Td>
                           {/* user null yalnız teorik: PENDING hesap işlem
@@ -157,13 +172,13 @@ export default function AuditLogSection() {
                           <Text size="sm" truncate>{k.user?.name ?? "—"}</Text>
                         </Table.Td>
                         <Table.Td>
-                          <Badge variant="light" color={eylem.color} size="sm">
-                            {eylem.label}
+                          <Badge variant="light" color={eylemRengi} size="sm">
+                            {t.enums.auditAction[k.action] ?? k.action}
                           </Badge>
                         </Table.Td>
                         <Table.Td>
                           <Text size="sm">
-                            {AUDIT_ENTITY_LABELS[k.entity_type as AuditEntityType]
+                            {t.enums.auditEntity[k.entity_type as AuditEntityType]
                               ?? k.entity_type}
                           </Text>
                         </Table.Td>
@@ -200,7 +215,7 @@ export default function AuditLogSection() {
               </Table>
             </Table.ScrollContainer>
             {data.items.length === 0 && (
-              <Text c="dimmed" size="sm" p="md">Filtreye uyan işlem kaydı yok.</Text>
+              <Text c="dimmed" size="sm" p="md">{t.audit.noMatch}</Text>
             )}
           </Paper>
 

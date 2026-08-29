@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.audit import build_change_summary, log_action
@@ -35,19 +36,23 @@ from app.conflict_service import check_exams_save, check_weekly_save, scan_draft
 from app.draft_dispatch import service_for as _svc
 from app.deps import get_db, get_current_user
 from app.models import (
-    Course, CourseSection, Department, DraftKind, DraftStatus, Exam,
-    ScheduleDraft, User, UserRole, WeeklyScheduleEntry,
+    Course, CourseSection, Department, DepartmentMembership, DraftKind,
+    DraftStatus, Exam, ScheduleDraft, User, UserRole, UserStatus,
+    WeeklyScheduleEntry,
 )
 from app.routers.exams import (
     _e2_message, _eager_exam_query, _ensure_weekday, _get_owned_course,
-    _load_classrooms, _normalize_exam_index, _validate_exam_refs,
+    _load_classrooms, _load_invigilators, _normalize_exam_index,
+    _reddet_sorumlu_gozetmen, _validate_exam_refs,
 )
+from app.routers.schedule_changes import approved_visibility_filter
 from app.routers.weekly_entries import (
     _ensure_online_has_no_classroom, _ensure_slot_window, _get_owned_section,
     _validate_classroom, _eager_entry_query,
 )
 from app.schemas import (
-    DraftClearRequest, DraftClearResponse, DraftCreate, DraftDiffOut, DraftOut,
+    DraftApproverCandidate, DraftClearRequest, DraftClearResponse, DraftCreate,
+    DraftDiffOut, DraftOut,
     DraftRename, DraftSubmitRequest, DraftSubmitResponse, ConflictScanOut,
     ExamCreate, ExamOut, ExamSaveResponse, ExamUpdate,
     WeeklyEntryCreate, WeeklyEntryOut, WeeklyEntrySaveResponse, WeeklyEntryUpdate,
@@ -71,7 +76,8 @@ def _get_own_draft(db: Session, user: User, draft_id: int) -> ScheduleDraft:
         db.query(ScheduleDraft)
         .options(selectinload(ScheduleDraft.department),
                  selectinload(ScheduleDraft.owner),
-                 selectinload(ScheduleDraft.reviewer))
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
         .filter(ScheduleDraft.id == draft_id,
                 ScheduleDraft.created_by == user.id,
                 ScheduleDraft.workgroup_id == user.workgroup_id)
@@ -79,6 +85,53 @@ def _get_own_draft(db: Session, user: User, draft_id: int) -> ScheduleDraft:
     )
     if draft is None:
         raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    return draft
+
+
+def _get_readable_draft(db: Session, user: User, draft_id: int) -> ScheduleDraft:
+    """OKUMA icin taslak: benimse her durumda, degilse yalniz ONAYLANMISSA (K-80).
+
+    K-59 gizliligi HAZIRLIK evresini korur: OPEN/PENDING/REJECTED bir taslak
+    sahibinden baskasina — ADMIN dahil — gorunmez. Ama ONAYLANAN taslak artik
+    ozel bir calisma degil, yayina girmis bir kayittir; Yayin Merkezi'nin
+    "Onaylananlar" grubu onun programini gosteriyor ve satirlarini okuyabilmesi
+    gerekiyor.
+
+    Kapsam `/schedule-changes` ile AYNI kuraldan gelir (`approved_visibility_
+    filter`): ADMIN workgroup'un tamamini, alt hesap kendi bolumlerini + ortak
+    ders uzerinden etkilenenleri. Uyeliksiz alt hesaba HICBIRI acilmaz.
+
+    404 (403 degil): kapsam disi bir kaydin varligi da sizdirilmez — dosyanin
+    geri kalaniyla ayni cizgi.
+    """
+    draft = (
+        db.query(ScheduleDraft)
+        .options(selectinload(ScheduleDraft.department),
+                 selectinload(ScheduleDraft.owner),
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
+        .filter(ScheduleDraft.id == draft_id,
+                ScheduleDraft.workgroup_id == user.workgroup_id)
+        .first()
+    )
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    if draft.created_by == user.id:
+        return draft
+    if draft.status is not DraftStatus.APPROVED:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+
+    gorunurluk = approved_visibility_filter(user)
+    if gorunurluk is False:
+        raise HTTPException(status_code=404, detail="Taslak bulunamadı")
+    if gorunurluk is not None:
+        kapsamda = (
+            db.query(ScheduleDraft.id)
+            .filter(ScheduleDraft.id == draft.id, gorunurluk)
+            .first()
+        )
+        if kapsamda is None:
+            raise HTTPException(status_code=404, detail="Taslak bulunamadı")
     return draft
 
 
@@ -112,6 +165,51 @@ def _ensure_can_submit(user: User, draft: ScheduleDraft) -> None:
         raise HTTPException(status_code=403, detail="Haftalık program yönetim yetkisi gerekli")
     if draft.department_id not in {m.department_id for m in user.memberships}:
         raise HTTPException(status_code=403, detail="Bu bölümde yetkiniz yok")
+
+
+def approver_candidates(db: Session, draft: ScheduleDraft, user: User) -> list[User]:
+    """Bu talep KIMLERE gonderilebilir? (K-83)
+
+    Uc kural havuzu belirler:
+
+    1. **Bolum uyesi onay yetkilileri.** `can_approve_schedule` + taslagin
+       bolumunde uyelik — onay kuyrugunun K-25'ten beri suregelen iki boyutu.
+       Havuzu bolumle sinirlamak isin ozu: baska bolumun sorumlusuna gonderilen
+       talep, o kisinin ne yetkisine ne de bilgisine denk duser.
+    2. **ADMIN'ler her zaman icerde**, bolum uyelikleri olmasa bile. Admin
+       butun bolumlerde yetkilidir (K-02'den beri bayraklardan muaf); onu
+       listeden dislamak, cogu kurulusta tek gercek onay merciini adreslenemez
+       yapardi. Secmek yine de gonderenin karari — otomatik eklenmez, sadece
+       listede durur.
+    3. **Gonderenin kendisi asla listede olmaz.** Oz-onay yasak (K-59); kendini
+       secebilmek, bir adim sonra 403 yiyecek bir talep kurmaktan baska bir sey
+       degil.
+
+    ACTIVE sarti: davet edilmis ama hesabini hic acmamis (PENDING) ya da askiya
+    alinmis bir hesaba talep gondermek, talebi sessizce oldurmek olurdu.
+
+    Siralama bolum yetkililerini ONE alir (admin'ler sonda): dogal muhatap
+    bolumun kendi yetkilisidir, admin ust merci olarak arkada durur.
+    """
+    return (
+        db.query(User)
+        .filter(
+            User.workgroup_id == draft.workgroup_id,
+            User.status == UserStatus.ACTIVE,
+            User.id != user.id,
+            or_(
+                User.role == UserRole.ADMIN,
+                and_(
+                    User.can_approve_schedule.is_(True),
+                    User.memberships.any(
+                        DepartmentMembership.department_id == draft.department_id
+                    ),
+                ),
+            ),
+        )
+        .order_by((User.role == UserRole.ADMIN), User.name)
+        .all()
+    )
 
 
 def _ensure_kind(draft: ScheduleDraft, expected: DraftKind) -> None:
@@ -223,13 +321,16 @@ def _default_name(db: Session, payload: DraftCreate) -> str:
 def _to_out(db: Session, draft: ScheduleDraft) -> dict:
     """DraftOut govdesi: sayaclar taslagin O ANKI haline gore hesaplanir."""
     svc = _svc(draft)
-    # Onaylanan taslagin satirlari yayina gecip silinir; canli fark hesabi o
-    # noktada anlamsizdir (bos taslak "her sey kaldirildi" gibi gorunurdu).
+    # Onaylanan taslakta canli fark hesabi ANLAMSIZDIR: kayit gecmistir, farki
+    # onay aninda `applied_summary`ye donmustur. K-80'den beri satirlar yerinde
+    # duruyor, yani hesap KOSAR — ama O ANKI yayina karsi kosar ve sonraki her
+    # onayda kayar; "onaylandi ama 3 degisiklik var" gibi yanlis okunurdu.
     canli = draft.status != DraftStatus.APPROVED
     return {
         "id": draft.id,
         "department_id": draft.department_id,
         "department_name": draft.department.name,
+        "department_code": draft.department.code,
         "year": draft.year,
         "semester": draft.semester,
         "kind": draft.kind,
@@ -241,6 +342,7 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
         "submit_note": draft.submit_note,
+        "approvers": draft.approvers,           # K-83: talep kime gitti
         "reviewer": draft.reviewer,
         "reviewed_at": draft.reviewed_at,
         "review_note": draft.review_note,
@@ -263,7 +365,8 @@ def list_my_drafts(
         db.query(ScheduleDraft)
         .options(selectinload(ScheduleDraft.department),
                  selectinload(ScheduleDraft.owner),
-                 selectinload(ScheduleDraft.reviewer))
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
         .filter(ScheduleDraft.created_by == user.id,
                 ScheduleDraft.workgroup_id == user.workgroup_id)
     )
@@ -336,7 +439,8 @@ def get_draft(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return _to_out(db, _get_own_draft(db, user, draft_id))
+    # K-80: okuma ucu — onaylanan taslak kapsamdaki herkese acik.
+    return _to_out(db, _get_readable_draft(db, user, draft_id))
 
 
 @router.patch("/schedule-drafts/{draft_id}", response_model=DraftOut)
@@ -435,7 +539,8 @@ def list_draft_entries(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    draft = _get_own_draft(db, user, draft_id)
+    # K-80: onaylanan taslagin izgarasi Yayin Merkezi'nde gosteriliyor.
+    draft = _get_readable_draft(db, user, draft_id)
     _ensure_kind(draft, DraftKind.WEEKLY)
     return (
         _eager_entry_query(db, published_only=False)
@@ -589,7 +694,8 @@ def list_draft_exams(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    draft = _get_own_draft(db, user, draft_id)
+    # K-80: onaylanan taslagin sinav listesi Yayin Merkezi'nde gosteriliyor.
+    draft = _get_readable_draft(db, user, draft_id)
     _ensure_kind(draft, DraftKind.EXAM)
     return (
         _eager_exam_query(db, published_only=False)
@@ -629,8 +735,11 @@ def create_draft_exam(
         db, draft, course.id, payload.exam_type, data["exam_index"])
 
     classroom_ids = data.pop("classroom_ids")
+    gozetmen_ids = data.pop("invigilator_ids")            # K-81
+    _reddet_sorumlu_gozetmen(data["lecturer_id"], gozetmen_ids)
     exam = Exam(draft_id=draft.id, created_by=user.id, **data)
     exam.classrooms = _load_classrooms(db, classroom_ids)
+    exam.invigilators = _load_invigilators(db, gozetmen_ids)
     db.add(exam)
     db.flush()
     log_action(db, user, "CREATE", "exam", exam.id, exam, f"Taslak #{draft.id}")
@@ -674,6 +783,18 @@ def update_draft_exam(
     classroom_ids = data.pop("classroom_ids", None)
     if classroom_ids is not None:      # verilirse liste TAM degisir (K-22)
         exam.classrooms = _load_classrooms(db, classroom_ids)
+    # K-81: gozetmen listesi de ayni kural (K-22). Sorumlu/gozetmen catismasi
+    # KAYITTAKI degere karsi denetlenir: PATCH ikisinden yalnizca birini
+    # tasiyor olabilir, o zaman govdedeki iki alani karsilastirmak yetmez.
+    gozetmen_ids = data.pop("invigilator_ids", None)
+    if gozetmen_ids is not None:
+        _reddet_sorumlu_gozetmen(data.get("lecturer_id", exam.lecturer_id), gozetmen_ids)
+        exam.invigilators = _load_invigilators(db, gozetmen_ids)
+    elif "lecturer_id" in data:
+        # Sorumlu DEGISIYOR ama gozetmen listesi dokunulmuyor: yeni sorumlu
+        # zaten gozetmenler arasindaysa cakisir. Sessizce gecerse kayit
+        # tutarsiz kalirdi.
+        _reddet_sorumlu_gozetmen(data["lecturer_id"], [g.id for g in exam.invigilators])
     ozet = build_change_summary(exam, data)
     for field, value in data.items():
         setattr(exam, field, value)
@@ -707,6 +828,28 @@ def delete_draft_exam(
 # ------------------------------------------------------------------
 # Onaya gonderme / geri cekme
 # ------------------------------------------------------------------
+
+@router.get("/schedule-drafts/{draft_id}/approver-candidates",
+            response_model=list[DraftApproverCandidate])
+def list_approver_candidates(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Bu taslagi onaya gonderirken secilebilecek yetkililer (K-83).
+
+    `_ensure_can_submit` ile korunuyor: listeyi gormek gondermenin hazirlik
+    adimidir, gonderemeyecek birinin is arkadaslarinin adres listesini
+    cekmesi icin bir sebep yok.
+    """
+    draft = _get_own_draft(db, user, draft_id)
+    _ensure_can_submit(user, draft)
+    return [
+        {"id": a.id, "name": a.name, "email": a.email,
+         "is_admin": a.role == UserRole.ADMIN}
+        for a in approver_candidates(db, draft, user)
+    ]
+
 
 @router.post("/schedule-drafts/{draft_id}/submit", response_model=DraftSubmitResponse)
 def submit_draft(
@@ -742,13 +885,38 @@ def submit_draft(
                      "conflicts": tablo["hard"]},
         )
 
+    # K-83: talep ADRESLI. Havuz her seferinde yeniden hesaplanir (uyelikler ve
+    # yetkiler arada degismis olabilir); gonderen secim yaptiysa secim havuza
+    # karsi DOGRULANIR — istemciye guvenip yetkisiz birini alici yapamayiz.
+    havuz = {a.id: a for a in approver_candidates(db, draft, user)}
+    if payload.approver_ids is None:
+        # Secim yapilmadi: "kim bakarsa baksin" — havuzun tamami. Bos liste
+        # DEGIL bos SECIM; sema zaten bos listeyi reddediyor.
+        alicilar = list(havuz.values())
+    else:
+        # `set`: ayni id iki kez gelirse ikinci kopya sessizce yutulur —
+        # bag tablosunun bilesik anahtari zaten tekrari kaldirmaz.
+        istenen = set(payload.approver_ids)
+        disarida = istenen - havuz.keys()
+        if disarida:
+            raise HTTPException(
+                status_code=403,
+                detail="Seçilen kişilerden biri bu talebi onaylayamaz — "
+                       "listeyi yenileyip tekrar deneyin",
+            )
+        alicilar = [havuz[i] for i in istenen]
+
     draft.status = DraftStatus.PENDING
     draft.submitted_at = datetime.now(timezone.utc)
     draft.submit_note = payload.note
+    # Adresleme her gonderimde SIFIRDAN yazilir: reddedilip duzeltilen bir
+    # taslak baska birine gonderilebilmeli, eski alicilar uzerinde kalmamali.
+    draft.approvers = alicilar
     # Onceki bir retten kalan gerekce yeni turda yaniltmasin.
     draft.reviewed_by = draft.reviewed_at = draft.review_note = None
     log_action(db, user, "SUBMIT", "schedule_draft", draft.id, draft,
-               "Durum: Taslak → Onay bekliyor")
+               "Durum: Taslak → Onay bekliyor · Onaylayıcı: "
+               + (", ".join(a.name for a in alicilar) or "—"))
     db.commit()
     db.refresh(draft)
     return {"draft": _to_out(db, draft), "warnings": tablo["warnings"]}
@@ -767,6 +935,10 @@ def withdraw_draft(
 
     draft.status = DraftStatus.OPEN
     draft.submitted_at = None
+    # K-83: adresleme gonderime aittir. Geri cekilen talep kimseye gitmiyor
+    # demektir; alicilar kalsaydi "kime gonderildi" bilgisi, artik var olmayan
+    # bir talebi anlatirdi (ve yeniden gonderimde eski secim geri gelirdi).
+    draft.approvers = []
     log_action(db, user, "WITHDRAW", "schedule_draft", draft.id, draft,
                "Durum: Onay bekliyor → Taslak")
     db.commit()

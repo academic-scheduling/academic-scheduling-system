@@ -146,8 +146,10 @@ def test_approval_adds_and_removes_exams():
         assert yayindakiler[0].exam_type.value == "FINAL"
         # Ekleme onaylayanin degil TASLAK SAHIBININ adina yazilir
         assert yayindakiler[0].created_by is not None
-        # Taslagin kopyalari temizlendi
-        assert db.query(Exam).filter(Exam.draft_id == draft["id"]).count() == 0
+        # Taslagin kopyalari K-80'den beri KORUNUR (onaylandigi hal salt
+        # goruntu olarak okunabilsin diye). Taslakta vize silinip final
+        # eklenmisti, dolayisiyla geriye tek satir kalir.
+        assert db.query(Exam).filter(Exam.draft_id == draft["id"]).count() == 1
     finally:
         db.close()
 

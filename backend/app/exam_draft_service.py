@@ -328,9 +328,9 @@ def apply_draft(db: Session, draft: ScheduleDraft) -> list[dict]:
             yeni.classrooms = list(sonraki.classrooms)
             db.add(yeni)
 
-    # Taslagin kopyalari artik gereksiz: onaylanan taslak GECMIS kaydidir.
-    for x in draft_exams(db, draft):
-        db.delete(x)
-
+    # K-80: taslagin sinavlari SILINMEZ — gerekcesi haftaliktakiyle aynidir
+    # (`draft_service.apply_draft`): onaylanan taslagin onaylandigi hali salt
+    # goruntu olarak okunabilmeli, ve `draft_id` dolu satirlar yayin evrenine
+    # (`draft_id IS NULL`) sizmaz.
     db.flush()
     return fark

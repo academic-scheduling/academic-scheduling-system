@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.audit import log_action
@@ -35,9 +36,11 @@ from app.models import (
     WeeklyScheduleEntry,
 )
 from app.routers.exams import _eager_exam_query
+from app.routers.schedule_changes import approved_visibility_filter
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
-    DraftApproveResponse, DraftOut, DraftRejectRequest, DraftReviewOut,
+    DraftApproveRequest, DraftApproveResponse, DraftOut, DraftRejectRequest,
+    DraftReviewOut,
 )
 
 router = APIRouter(tags=["schedule-approvals"])
@@ -47,8 +50,45 @@ router = APIRouter(tags=["schedule-approvals"])
 # Erisim
 # ------------------------------------------------------------------
 
+def _addressed_to(user: User):
+    """K-83: bu talep BANA mi gonderildi?
+
+    Gonderen, taslagi onaya verirken alicilari secer (`draft.approvers`).
+    Kuyruk artik "yetkim var" degil "bana gonderildi" sorusunu soruyor —
+    yetki hala gerekli ama tek basina yeterli degil.
+
+    Ikinci kosul (`~any()`) ADRESSIZ talepleri kapsar; bu iki durumda olur:
+
+      1. **Gecis.** K-83 gocunden ONCE gonderilmis bekleyen taleplerin alicisi
+         yoktur. Onlari "adressiz" diye gizlemek, gecis aninda kuyrukta
+         bekleyen isi gorunmez yapardi.
+      2. **Havuz bostu.** Gonderim aninda adreslenebilecek KIMSE yoktu (henuz
+         ikinci bir yetkili davet edilmemis). Sonradan yetki alan biri cikarsa
+         talep ona gorunur — aksi halde is sonsuza dek kilitli kalirdi.
+
+    Ikisinde de kural K-83 oncesine duser: bayrak + bolum uyeligi. Adresleme
+    VAR ise (havuzda birileri vardi ve gonderen sectiyse) secim baglayicidir —
+    secilmeyen yetkili talebi gormez.
+    """
+    return or_(
+        ScheduleDraft.approvers.any(User.id == user.id),
+        ~ScheduleDraft.approvers.any(),
+    )
+
+
 def _approvable_query(db: Session, user: User):
-    """Onayima acik BEKLEYEN taslaklar (K-25 iki boyut: bayrak + bolum uyeligi).
+    """Onayima acik BEKLEYEN taslaklar.
+
+    Uc boyut birlikte calisir:
+      - **Bayrak** `can_approve_schedule` (ADMIN muaf) — K-25.
+      - **Bolum uyeligi** (ADMIN muaf) — K-25. Adresleme sonradan degisen
+        uyelikleri bilmez; bu yuzden uyelik gecmis bir secimin uzerinden
+        DEGIL, her sorguda CANLI kontrol edilir.
+      - **Adresleme** — talep bana gonderildi mi (K-83).
+
+    Kendi talebim ayrica listelenir (bekledigini bilmelisin): gonderen asla
+    kendi talebinin alicisi olmaz, dolayisiyla adresleme kosulundan gecemez.
+    Onaylayamaz — o kapiyi `_ensure_not_self` kapatir.
 
     OPEN taslaklar girmez — onlar sahibine ozeldir; onay yetkisi yalnizca
     ONAYA GONDERILMIS taslagi gorme hakki verir.
@@ -57,16 +97,20 @@ def _approvable_query(db: Session, user: User):
         db.query(ScheduleDraft)
         .options(selectinload(ScheduleDraft.department),
                  selectinload(ScheduleDraft.owner),
-                 selectinload(ScheduleDraft.reviewer))
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
         .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
                 ScheduleDraft.status == DraftStatus.PENDING)
     )
-    if user.role != UserRole.ADMIN:
-        if not user.can_approve_schedule:
-            return q.filter(False)          # yetkisiz: kuyruk bos
+    if user.role == UserRole.ADMIN:
+        kapsam = _addressed_to(user)
+    elif not user.can_approve_schedule:
+        return q.filter(False)              # yetkisiz: kuyruk bos
+    else:
         uyelikler = [m.department_id for m in user.memberships]
-        q = q.filter(ScheduleDraft.department_id.in_(uyelikler or [-1]))
-    return q
+        kapsam = and_(ScheduleDraft.department_id.in_(uyelikler or [-1]),
+                      _addressed_to(user))
+    return q.filter(or_(ScheduleDraft.created_by == user.id, kapsam))
 
 
 def _get_reviewable(db: Session, user: User, draft_id: int) -> ScheduleDraft:
@@ -88,13 +132,14 @@ def _ensure_not_self(user: User, draft: ScheduleDraft) -> None:
 
 
 def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
-    """DraftOut govdesi. `live=False` onaydan SONRA kullanilir: taslagin
-    satirlari yayina gecip silindigi icin canli fark hesabi anlamsizdir
-    (bos taslak "her sey kaldirildi" gibi gorunurdu)."""
+    """DraftOut govdesi. `live=False` onaydan SONRA kullanilir: kayit artik
+    gecmistir, farki onay aninda `applied_summary`ye donmustur. Canli hesap
+    O ANKI yayina karsi kosacagi icin sonraki onaylarla kayardi."""
     return {
         "id": draft.id,
         "department_id": draft.department_id,
         "department_name": draft.department.name,
+        "department_code": draft.department.code,
         "year": draft.year,
         "semester": draft.semester,
         "kind": draft.kind,
@@ -106,6 +151,7 @@ def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
         "created_at": draft.created_at,
         "submitted_at": draft.submitted_at,
         "submit_note": draft.submit_note,
+        "approvers": draft.approvers,           # K-83: talep kime gitti
         "reviewer": draft.reviewer,
         "reviewed_at": draft.reviewed_at,
         "review_note": draft.review_note,
@@ -129,6 +175,43 @@ def approval_queue(
     """
     drafts = _approvable_query(db, user).order_by(ScheduleDraft.submitted_at).all()
     return [_to_out(db, d) for d in drafts]
+
+
+@router.get("/schedule-approvals/history", response_model=list[DraftOut])
+def approval_history(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """ONAYLANMIS taslaklar — beni ilgilendirenler, yeniden eskiye (K-80).
+
+    Kuyruktan (`/schedule-approvals`) farki iki turlu: durum APPROVED, ve
+    gorunurluk onay YETKISINE degil DEGISIKLIK AKISI kapsamina bakar.
+
+    Neden bu kapsam: onaylanan taslak artik ozel bir calisma degil, yayina
+    girmis bir kayittir. Yayindaki programi zaten gorebilen birinin, o programi
+    kimin ne zaman degistirdigini gorememesi icin bir sebep yok. K-59'un
+    gizliligi HAZIRLIK evresini korur (OPEN/PENDING/REJECTED), sonucunu degil.
+
+    Kapsam `/schedule-changes` ile AYNI fonksiyondan gelir — iki yuzey ayni
+    soruyu soruyor, cevabin iki surumu olmamali.
+    """
+    q = (
+        db.query(ScheduleDraft)
+        .options(selectinload(ScheduleDraft.department),
+                 selectinload(ScheduleDraft.owner),
+                 selectinload(ScheduleDraft.reviewer),
+                 selectinload(ScheduleDraft.approvers))
+        .filter(ScheduleDraft.workgroup_id == user.workgroup_id,
+                ScheduleDraft.status == DraftStatus.APPROVED)
+    )
+    gorunurluk = approved_visibility_filter(user)
+    if gorunurluk is False:
+        return []
+    if gorunurluk is not None:
+        q = q.filter(gorunurluk)
+    drafts = q.order_by(ScheduleDraft.reviewed_at.desc()).all()
+    # live=False: kayit gecmistir, farki `applied_summary`de dondu.
+    return [_to_out(db, d, live=False) for d in drafts]
 
 
 @router.get("/schedule-approvals/{draft_id}", response_model=DraftReviewOut)
@@ -192,10 +275,15 @@ def review_draft(
              response_model=DraftApproveResponse)
 def approve_draft(
     draft_id: int,
+    payload: DraftApproveRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_schedule_approver),
 ):
-    """Taslagin farkini YAYINA uygular. Sistemin tek yayin yazma noktasi."""
+    """Taslagin farkini YAYINA uygular. Sistemin tek yayin yazma noktasi.
+
+    K-80: karar notu onayda da yazilabilir. Govde OPSIYONELDIR (`| None = None`)
+    — not zorunlu olmadigi gibi, gonderilmeyen govde de gecerli bir onaydir.
+    """
     draft = _get_reviewable(db, user, draft_id)
     _ensure_not_self(user, draft)
 
@@ -214,6 +302,10 @@ def approve_draft(
     draft.status = DraftStatus.APPROVED
     draft.reviewed_by = user.id
     draft.reviewed_at = datetime.now(timezone.utc)
+    # K-80: `review_note` artik "karar notu" — retten de onaydan da doldurulur.
+    # Ayni alan, cunku soru ayni: KARARI VEREN ne dedi? Durum zaten hangisi
+    # oldugunu soyluyor, ikinci bir sutun ayrim katmazdi.
+    draft.review_note = payload.note if payload else None
     draft.applied_summary = svc.build_applied_summary(uygulanan)
     # Ortak ders tasindiysa etkilenen bolumler burada donar; degisiklik akisi
     # ("bolumunuzu etkileyen son degisiklikler") bu satirlari okur.

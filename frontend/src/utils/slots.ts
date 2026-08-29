@@ -1,25 +1,11 @@
+import type { Dict } from "../i18n/tr";
+
 /** Slot tablosu ve gün adları (brief §5.1).
  *
  *  9 slot, 45 dakikalık ders + 15 dakikalık ara. Bu tablo hem Haftalık Program
  *  hem Sınav Takvimi ekranlarının temeli; tek kaynakta duruyor ki iki ekran
  *  ayrışmasın.
  */
-
-export const DAY_SHORT: Record<number, string> = {
-  1: "Pzt",
-  2: "Sal",
-  3: "Çar",
-  4: "Per",
-  5: "Cum",
-};
-
-export const DAY_FULL: Record<number, string> = {
-  1: "Pazartesi",
-  2: "Salı",
-  3: "Çarşamba",
-  4: "Perşembe",
-  5: "Cuma",
-};
 
 export const SLOT_TIMES: Record<number, { start: string; end: string }> = {
   1: { start: "08:30", end: "09:15" },
@@ -55,7 +41,10 @@ export function formatSlotRange(
   dayOfWeek: number,
   startSlot: number,
   slotCount: number = 1,
-  dayFormat: DayFormat = "short"
+  dayFormat: DayFormat = "short",
+  // K-79: gün adları sözlükte; bu düz bir yardımcı olduğu için hook yerine
+  // PARAMETRE alır (modül düzeyi dil değişimini göremez).
+  t: Dict,
 ): string {
   const startInfo = SLOT_TIMES[startSlot];
   if (!startInfo) return "";
@@ -68,6 +57,6 @@ export function formatSlotRange(
 
   // Bilinmeyen gün "?" ile görünür kalsın — sessizce düşerse hatalı veri
   // ekranda normal bir kayıt gibi durur.
-  const dayName = (dayFormat === "long" ? DAY_FULL : DAY_SHORT)[dayOfWeek] ?? "?";
+  const dayName = (dayFormat === "long" ? t.days.long : t.days.short)[dayOfWeek] ?? "?";
   return `${dayName} ${timeRange}`;
 }

@@ -6,10 +6,11 @@ from app.conflicts.engine import (
     same_semester,
     e1_exam_classroom_conflict, e2_duplicate_exam,
     e3_exam_lecturer_conflict, e4_exam_cohort_conflict,
+    e9_exam_invigilator_conflict,
     e5_exam_capacity, e5a_missing_exam_capacity, e8_missing_classroom,
     e6_exam_out_of_window, e7_excess_capacity,
     x1_exam_weekly_classroom_conflict, x2_exam_weekly_course_conflict,
-    x3_exam_weekly_lecturer_conflict,
+    x3_exam_weekly_lecturer_conflict, x4_exam_weekly_invigilator_conflict,
 )
 from app.conflicts.message import build_result
 
@@ -72,7 +73,8 @@ def scan_exams(exams):
         for j in range(i + 1, len(exams)):
             a, b = exams[i], exams[j]
             for rule in (e1_exam_classroom_conflict, e2_duplicate_exam,
-                         e3_exam_lecturer_conflict, e4_exam_cohort_conflict):
+                         e3_exam_lecturer_conflict, e4_exam_cohort_conflict,
+                         e9_exam_invigilator_conflict):
                 hit = rule(a, b)
                 if hit:
                     results.append(build_result(
@@ -107,7 +109,8 @@ def scan_cross(exams, weeklies, check_exam_vs_course):
                 continue
             for rule in (x1_exam_weekly_classroom_conflict,
                          x2_exam_weekly_course_conflict,
-                         x3_exam_weekly_lecturer_conflict):
+                         x3_exam_weekly_lecturer_conflict,
+                         x4_exam_weekly_invigilator_conflict):
                 hit = rule(exam, weekly)
                 if hit:
                     results.append(build_result(

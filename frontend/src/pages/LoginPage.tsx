@@ -6,17 +6,19 @@ import {
 } from "@mantine/core";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import { useT } from "../i18n";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm({
     initialValues: { email: "", password: "" },
     validate: {
-      email: (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : "Geçerli bir e-posta adresi girin"),
-      password: (v) => (v.length > 0 ? null : "Şifre boş olamaz"),
+      email: (v) => (/^\S+@\S+\.\S+$/.test(v) ? null : t.auth.invalidEmail),
+      password: (v) => (v.length > 0 ? null : t.auth.passwordRequired),
     },
   });
 
@@ -31,7 +33,7 @@ export default function LoginPage() {
     try {
       await login(values.email, values.password);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Beklenmeyen bir hata oluştu");
+      setError(e instanceof ApiError ? e.message : t.auth.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -40,29 +42,29 @@ export default function LoginPage() {
   return (
     <Container size={420} py="xl">
       <Title order={2} ta="center" mt="xl">
-        Akademik Program Yönetimi
+        {t.auth.title}
       </Title>
       <Paper withBorder shadow="sm" p="lg" radius="md" mt="lg">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <TextInput
-            label="E-posta"
-            placeholder="ad@muh.example.edu.tr"
+            label={t.auth.email}
+            placeholder={t.auth.emailPlaceholder}
             autoFocus
             {...form.getInputProps("email")}
           />
-          <PasswordInput label="Şifre" mt="md" {...form.getInputProps("password")} />
+          <PasswordInput label={t.auth.password} mt="md" {...form.getInputProps("password")} />
           {error && (
             <Alert color="red" mt="md">
               {error}
             </Alert>
           )}
           <Button type="submit" fullWidth mt="lg" loading={submitting}>
-            Giriş
+            {t.auth.loginButton}
           </Button>
           {/* Kayıt ol linki YOK — hesaplar yalnız davetle açılır (wireframe §1).
               Şifre sıfırlama ise hesabı olan kullanıcının kendi yolu (K-43). */}
           <Anchor component={Link} to="/forgot-password" size="sm" mt="md" display="block" ta="center">
-            Şifremi unuttum
+            {t.auth.forgotPassword}
           </Anchor>
         </form>
       </Paper>

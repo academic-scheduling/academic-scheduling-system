@@ -159,7 +159,10 @@ def test_approve_applies_the_move_and_preserves_row_identity():
     # Satirin KIMLIGI korundu: ayni id, yeni yer, hala yayinda
     assert entry_row(yayin_id) == (3, 5, None)
 
-    # Taslagin kopyalari temizlendi, ozet donduruldu
+    # Ozet donduruldu; taslagin kopyalari ise K-80'den beri KORUNUR — Yayin
+    # Merkezi "bu taslak onaylandiginda program neye benziyordu" sorusunu
+    # bu satirlardan cevapliyor. Yayin evrenine sizmadiklarinin guvencesi
+    # `draft_id`nin dolu kalmasi (yayin HER YERDE `draft_id IS NULL`).
     db = SessionLocal()
     try:
         d = db.get(ScheduleDraft, draft["id"])
@@ -167,7 +170,7 @@ def test_approve_applies_the_move_and_preserves_row_identity():
         assert d.reviewed_by is not None and d.reviewed_at is not None
         assert "taşındı" in d.applied_summary
         assert db.query(WeeklyScheduleEntry).filter(
-            WeeklyScheduleEntry.draft_id == d.id).count() == 0
+            WeeklyScheduleEntry.draft_id == d.id).count() == 1
     finally:
         db.close()
 
@@ -318,9 +321,11 @@ def test_approve_records_affected_departments_for_shared_courses():
                        headers=sahip).json()[0]
     client.patch(f"/schedule-drafts/{draft['id']}/entries/{kopya['id']}",
                  json={"day_of_week": 4}, headers=sahip)
+    # K-83: alicilar GONDERIM aninda cozulur — onaylayici hesabin
+    # gonderimden ONCE var olmasi gerekiyor, yoksa talep ona adreslenmez.
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
     client.post(f"/schedule-drafts/{draft['id']}/submit", json={}, headers=sahip)
 
-    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
     assert client.post(f"/schedule-approvals/{draft['id']}/approve",
                        headers=onaylayan).status_code == 200
 
@@ -349,9 +354,11 @@ def test_approve_applies_additions_and_removals():
         "day_of_week": 2, "start_slot": 4, "slot_count": 1,
         "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
     }, headers=sahip)
+    # K-83: alicilar GONDERIM aninda cozulur — onaylayici hesabin
+    # gonderimden ONCE var olmasi gerekiyor, yoksa talep ona adreslenmez.
+    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
     client.post(f"/schedule-drafts/{draft['id']}/submit", json={}, headers=sahip)
 
-    onaylayan = make_account([dep["id"]], can_approve_schedule=True)
     r = client.post(f"/schedule-approvals/{draft['id']}/approve", headers=onaylayan)
     assert r.status_code == 200, r.text
     assert {i["kind"] for i in r.json()["applied"]} == {"ADDED", "REMOVED"}
@@ -424,8 +431,10 @@ def test_reject_returns_the_draft_to_its_owner_with_a_reason():
     yayin_id = publish_entry(sec["id"], cls["id"], day=1, slot=1)
 
     sahip = make_account([dep["id"]], can_manage_weekly=True)
-    draft = submitted_draft(sahip, dep, cls, sec, day=3, slot=5)
+    # K-83: alicilar GONDERIM aninda cozulur — onaylayici hesabin
+    # gonderimden ONCE var olmasi gerekiyor, yoksa talep ona adreslenmez.
     onaylayan = make_account([dep["id"]], can_approve_schedule=True)
+    draft = submitted_draft(sahip, dep, cls, sec, day=3, slot=5)
 
     r = client.post(f"/schedule-approvals/{draft['id']}/reject",
                     json={"note": "Çarşamba 5 amfi bakımda"}, headers=onaylayan)

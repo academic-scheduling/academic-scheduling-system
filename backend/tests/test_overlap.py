@@ -19,6 +19,8 @@ from app.conflicts.engine import e6_exam_out_of_window
 from app.conflicts.engine import x1_exam_weekly_classroom_conflict
 from app.conflicts.engine import x2_exam_weekly_course_conflict
 from app.conflicts.engine import x3_exam_weekly_lecturer_conflict
+from app.conflicts.engine import e9_exam_invigilator_conflict      # K-81
+from app.conflicts.engine import x4_exam_weekly_invigilator_conflict  # K-81
 from app.conflicts.message import build_message, build_result
 from app.conflicts.orchestrator import scan_weekly
 from app.conflicts.engine import sections_conflict
@@ -55,12 +57,18 @@ def test_build_result_shape():
     assert result["severity"] == "HARD"
     assert result["rule_id"] == "W1"
     assert "Derslik çakışması" in result["message"]
-    # affected artık bölüm/sınıf da taşır (rapor + Bölümler sayacı süzmesi için).
+    # affected COHORT ucluSunu (bolum + sinif + donem) ve YERLESIM ZAMANINI
+    # tasir — rapor tablosu ikisini de kendi sutununda gosteriyor (K-80).
+    # Karsi turun alanlari None kalir: haftalik satirda exam_date/start_time.
     assert result["affected"] == [
         {"type": "weekly_entry", "id": 10, "course_code": "CENG2001-1",
-         "department_id": 2, "year": 2},
+         "department_id": 2, "year": 2, "semester": "FALL",
+         "day_of_week": 1, "start_slot": 3, "slot_count": 2,
+         "exam_date": None, "start_time": None},
         {"type": "weekly_entry", "id": 11, "course_code": "MATH1001-1",
-         "department_id": 2, "year": 2},
+         "department_id": 2, "year": 2, "semester": "FALL",
+         "day_of_week": 1, "start_slot": 3, "slot_count": 2,
+         "exam_date": None, "start_time": None},
     ]
   
 
@@ -838,7 +846,8 @@ def test_message_e2():
 def test_message_e3():
     a = base_exam()
     b = base_exam()
-    assert "hoca çakışması" in build_message("E3", a, b).lower()
+    # K-81: "hoca" resmî değil; E3'ün adı zaten "Sınav sorumlusu çakışması".
+    assert "sorumlusu çakışması" in build_message("E3", a, b).lower()
 
 
 def test_message_e4():
@@ -878,7 +887,7 @@ def test_message_x2():
 def test_message_x3():
     exam = base_exam()
     weekly = base_session()
-    assert "hoca" in build_message("X3", exam, weekly).lower()    
+    assert "sorumlu" in build_message("X3", exam, weekly).lower()   # K-81: "hoca" kalktı
 
 # ----------------------------------------- orchestrator testleri ---------------------------------
 
@@ -1167,3 +1176,86 @@ def test_scan_cross_same_semester_still_x1():
     weekly["start_slot"] = 3; weekly["slot_count"] = 2
     results = scan_cross([exam], [weekly], check_exam_vs_course=True)
     assert any(r["rule_id"] == "X1" for r in results)
+
+
+# ======================================================================
+# K-81 · Gozetmen kurallari (E9 · X4)
+# ======================================================================
+#
+# Kurgu notu: `base_exam()` ve `base_session()` fixture'larinda
+# `invigilator_ids` YOKTUR. Bu bilincli — kurallar alani `get` ile okuyor,
+# yani gozetmen kavramini hic bilmeyen eski/minimal dict'ler kirilmiyor.
+# Asagidaki testlerin ilki tam da bunu iddia ediyor.
+
+def test_e9_alan_yoksa_susar():
+    """Gozetmen alani hic olmayan dict'lerde E9 KeyError atmamali, None donmeli."""
+    a = base_exam(); a["id"] = 1
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 9    # E3'un alanina girmesin
+    assert e9_exam_invigilator_conflict(a, b) is None
+
+
+def test_e9_gozetmen_iki_sinavda():
+    a = base_exam(); a["id"] = 1; a["lecturer_id"] = 5; a["invigilator_ids"] = [7]
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 9; b["invigilator_ids"] = [7]
+    hit = e9_exam_invigilator_conflict(a, b)
+    assert hit == {"rule_id": "E9", "severity": "WARNING"}
+
+
+def test_e9_gozetmen_otekinin_sorumlusu():
+    """Roller FARKLI olabilir: birinde gozetmen, otekinde sorumlu — yine ayni kisi."""
+    a = base_exam(); a["id"] = 1; a["lecturer_id"] = 5; a["invigilator_ids"] = [9]
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 9; b["invigilator_ids"] = []
+    assert e9_exam_invigilator_conflict(a, b)["rule_id"] == "E9"
+
+
+def test_e9_iki_sorumlu_ayni_ise_E3E_birakir():
+    """Cift raporlama olmamali: iki tarafta da SORUMLU olan durum E3'un isi."""
+    a = base_exam(); a["id"] = 1; a["lecturer_id"] = 5; a["invigilator_ids"] = [7]
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 5; b["invigilator_ids"] = [7]
+    assert e9_exam_invigilator_conflict(a, b) is None
+    assert e3_exam_lecturer_conflict(a, b)["rule_id"] == "E3"   # orada cikiyor
+
+
+def test_e9_zaman_kesismezse_susar():
+    a = base_exam(); a["id"] = 1; a["lecturer_id"] = 5; a["invigilator_ids"] = [7]
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 9; b["invigilator_ids"] = [7]
+    b["start_time"] = time(14, 0)                    # 90 dk sonra, kesismiyor
+    assert e9_exam_invigilator_conflict(a, b) is None
+
+
+def test_e9_severity_warning_kalmali():
+    """K-81 karari: gozetmen cakismasi yayini ENGELLEMEZ (gozetmen degistirilir)."""
+    a = base_exam(); a["id"] = 1; a["lecturer_id"] = 5; a["invigilator_ids"] = [7]
+    b = base_exam(); b["id"] = 2; b["lecturer_id"] = 9; b["invigilator_ids"] = [7]
+    assert e9_exam_invigilator_conflict(a, b)["severity"] == "WARNING"
+
+
+def test_x4_gozetmen_o_saatte_derste():
+    exam = base_exam(); exam["course_id"] = 1; exam["lecturer_id"] = 5
+    exam["invigilator_ids"] = [7]
+    weekly = base_session(); weekly["course_id"] = 2; weekly["lecturer_id"] = 7
+    # base_exam 15 Haziran 2026 Pazartesi 10:00; slot 3-4 = 10:30-12:15 -> kesisir
+    hit = x4_exam_weekly_invigilator_conflict(exam, weekly)
+    assert hit == {"rule_id": "X4", "severity": "WARNING"}
+
+
+def test_x4_sorumlu_durumunu_X3E_birakir():
+    exam = base_exam(); exam["course_id"] = 1; exam["lecturer_id"] = 7
+    exam["invigilator_ids"] = [7]
+    weekly = base_session(); weekly["course_id"] = 2; weekly["lecturer_id"] = 7
+    assert x4_exam_weekly_invigilator_conflict(exam, weekly) is None
+    assert x3_exam_weekly_lecturer_conflict(exam, weekly)["rule_id"] == "X3"
+
+
+def test_x4_ayni_ders_istisnasi():
+    """K-13: dersin kendi sinavi kendi saatinde sahte cakisma uretmemeli."""
+    exam = base_exam(); exam["course_id"] = 1; exam["lecturer_id"] = 5
+    exam["invigilator_ids"] = [7]
+    weekly = base_session(); weekly["course_id"] = 1; weekly["lecturer_id"] = 7
+    assert x4_exam_weekly_invigilator_conflict(exam, weekly) is None
+
+
+def test_e9_x4_mesajlari_uretiliyor():
+    a = base_exam(); b = base_exam(); b["lecturer_id"] = 9
+    assert "Gözetmen çakışması" in build_message("E9", a, b)
+    assert "gözetmen" in build_message("X4", base_exam(), base_session()).lower()

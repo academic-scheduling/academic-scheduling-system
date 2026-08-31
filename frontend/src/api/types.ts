@@ -195,6 +195,10 @@ export type ExamType = "MIDTERM" | "FINAL" | "MAKEUP";
 /** Sınav cevabının içine gömülen kısa ders gösterimi. */
 export type CourseRef = { id: number; code: string; name: string };
 
+/** Bir dersin T/U/L saatleri. Course üzerindeki üç alanın ("hours_theory" vb.)
+ *  bir arada taşınan hâli: "3T/2U/0L" gibi kısa gösterimler bunu alır. */
+export type CourseHours = { theory: number; practice: number; lab: number };
+
 /** K-17: sınav dersliği `exam_capacity` taşır — `capacity` DEĞİL (boşluklu oturma). */
 export type ExamClassroomRef = {
   id: number;

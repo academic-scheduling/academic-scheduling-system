@@ -909,7 +909,15 @@ export const tr = {
     pickCourseFirst: "Önce ders seçin",
     onlyOneSection: "Bu dersin tek şubesi var",
     noSectionOption: "Şube yok",
-    sessionType: "Oturum türü (T/U/L)",
+    /** Etiket dersin KENDİ saatlerini taşır: "Oturum türü (3T/2U/0L)".
+     *  Kullanıcı hangi bileşenin kaç saat olduğunu modalı kapatıp Dersler
+     *  ekranına gitmeden görür. Ders henüz seçilmediyse harfler tek başına
+     *  kalır. Biçim SÖZLÜKTE kuruluyor çünkü harfler dile bağlı (EN: T/P/L);
+     *  sayıları koda gömüp harfleri çeviriye bırakmak iki dili ayrıştırırdı. */
+    sessionType: (saat?: { theory: number; practice: number; lab: number } | null) =>
+      saat
+        ? `Oturum türü (${saat.theory}T/${saat.practice}U/${saat.lab}L)`
+        : "Oturum türü (T/U/L)",
     deliveryType: "Çevrimiçi türü",
     classroom: "Derslik",
     pickClassroom: "Derslik seç",

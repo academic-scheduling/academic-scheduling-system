@@ -848,7 +848,10 @@ export const en: Dict = {
     pickCourseFirst: "Select a course first",
     onlyOneSection: "This course has a single section",
     noSectionOption: "No section",
-    sessionType: "Session type (T/P/L)",
+    sessionType: (saat) =>
+      saat
+        ? `Session type (${saat.theory}T/${saat.practice}P/${saat.lab}L)`
+        : "Session type (T/P/L)",
     deliveryType: "Delivery type",
     classroom: "Classroom",
     pickClassroom: "Select a classroom",

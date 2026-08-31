@@ -33,7 +33,7 @@ import {
   WEEKLY_ROW_H, paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
-  Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
+  Classroom, ConflictResult, ConflictScan, Course, CourseHours, CourseSection, DeliveryMode, Department,
   ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 import { useT } from "../i18n";
@@ -41,6 +41,10 @@ import { useT } from "../i18n";
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
+/* Oturum türleri SABİT sırada. Eskiden `Object.keys(t.weekly.session)` ile
+   türetiliyordu; artık sıra anlam taşıyor ("saati olan İLK bileşen") ve bir
+   çeviri sözlüğündeki anahtar sırasına bağlı kalamaz. */
+const SESSION_TYPES: SessionType[] = ["THEORY", "PRACTICE", "LAB"];
 const YEARS = ["1", "2", "3", "4"];
 /* Görsel belirteçler Sınav Takvimi ile ORTAK — utils/scheduleTheme.ts.
    İki ekranın ızgara yüksekliği de orada eşitlenir (9 × 91 = 13 × 63). */
@@ -575,6 +579,21 @@ export default function WeeklyPage() {
   }, [allCourses]);
 
 
+  /** Ders id → T/U/L saatleri. EntryModal'ın "Oturum türü" etiketi bunu
+   *  gösterir (3T/2U/0L).
+   *
+   *  Kaynak `courses` DEĞİL `allCourses`: `courses` seçili cohort'a göre
+   *  süzülmüş liste, oysa DÜZENLEMEDE tıklanan giriş cohort filtresi dışında
+   *  kalan bir derse ait olabilir (ortak/servis dersler, K-48). Süzülmüş
+   *  listeden okusaydık etiket o durumda sessizce saatsiz kalırdı. */
+  const hoursByCourse = useMemo(() => {
+    const m = new Map<number, CourseHours>();
+    for (const c of allCourses) {
+      m.set(c.id, { theory: c.hours_theory, practice: c.hours_practice, lab: c.hours_lab });
+    }
+    return m;
+  }, [allCourses]);
+
   const lecturerBySection = useMemo(() => {
     const names = new Map<number, string>();
     for (const course of allCourses) {
@@ -1073,6 +1092,11 @@ export default function WeeklyPage() {
                       <div key={s} style={{
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
+                        // Öğle arası (slot 5) zemini bir ton koyu: ders konulması
+                        // ENGELLENMEZ, yalnız saatin molaya denk geldiği görünür.
+                        // Hover ve sürükleme vurgusu bunun ÜSTÜNE biner, yoksa
+                        // o satırda geri bildirim kaybolur ve ekleme "çalışmıyor"
+                        // gibi durur.
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)"
                           // İmleç boş slottayken bir tık daha koyu + ortada artı.
                           : hoverCell === `${d}-${s}` ? HOVER_CELL_BG
@@ -1093,11 +1117,6 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
-                        // Öğle arası (slot 5) zemini bir ton koyu: ders konulması
-                        // ENGELLENMEZ, yalnız saatin molaya denk geldiği görünür.
-                        // Hover ve sürükleme vurgusu bunun ÜSTÜNE biner, yoksa
-                        // o satırda geri bildirim kaybolur ve ekleme "çalışmıyor"
-                        // gibi durur.
                         onWarningClick={() => {
                           // Bu kartın girişlerini işaretle; aşağıda yalnız bu
                           // girişleri etkileyen çakışma satırları yanacak.
@@ -1187,6 +1206,7 @@ export default function WeeklyPage() {
             : t.weekly.addEntry(t.days.short[placing.day], SLOT_START[placing.slot])}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
+          hoursOf={(id) => hoursByCourse.get(id) ?? null}
           courses={dersler}
           fixedCourseId={birakilan?.id}
           sectionsOf={(courseId) => {
@@ -1229,6 +1249,10 @@ export default function WeeklyPage() {
           title={`${editing.section.course.code}-${editing.section.section_no} · ${t.days.short[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
           onlineBySection={onlineBySection}
+          hoursOf={(id) => hoursByCourse.get(id) ?? null}
+          // Düzenlemede ders seçici çizilmez; değer yalnız "Oturum türü"
+          // etiketinin saatleri bulabilmesi için geçiliyor.
+          fixedCourseId={editing.section.course.id}
           fixedSectionId={editing.section.id}
           initial={{
             classroomId: editing.classroom ? String(editing.classroom.id) : null,
@@ -1480,14 +1504,16 @@ type EntryBody = {
  *  sorulmuyordu. İkisi de kullanıcıyı "neyi yerleştiriyorum" sorusuyla baş başa
  *  bırakıyordu; şimdi ders her durumda GÖRÜNÜR, şube her durumda ayrı satır.
  */
-function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCourseId, sectionsOf, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCourseId, sectionsOf, fixedSectionId, onlineBySection, hoursOf, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
   /** Verilirse modal ders + şube sorar (yerleştirme). Düzenlemede verilmez. */
   courses?: { value: string; label: string }[];
-  /** Sürükleyerek gelindiyse ders bellidir: seçici DOLU ve kilitli gelir. */
+  /** Ders bellidir: yerleştirmede seçici DOLU ve kilitli gelir. Düzenlemede
+   *  seçici hiç ÇİZİLMEZ (`courses` verilmez) ama değer yine geçilir — "Oturum
+   *  türü" etiketi dersin saatlerini buradan bulur. */
   fixedCourseId?: number;
   /** Seçili dersin aktif şubeleri. */
   sectionsOf?: (courseId: number) => { value: string; label: string }[];
@@ -1495,6 +1521,9 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
   fixedSectionId?: number;
   /** K-45: şube id → bileşen bazında online'lık. */
   onlineBySection: Map<number, Record<SessionType, boolean>>;
+  /** Ders id → T/U/L saatleri. Sabit değer YETMEZ: yerleştirmede ders modalın
+   *  İÇİNDE seçilir, dolayısıyla etiket seçimle birlikte değişmeli. */
+  hoursOf: (courseId: number) => CourseHours | null;
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
@@ -1510,6 +1539,47 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
   const [busy, setBusy] = useState(false);
 
   const maxSlots = 9 - startSlot + 1;
+  const dersSaatleri = courseId ? hoursOf(Number(courseId)) : null;
+
+  /** Saatler oturum türü anahtarlarıyla — pasifleştirme buna bakar. */
+  const saatler: Record<SessionType, number> | null = dersSaatleri
+    ? { THEORY: dersSaatleri.theory, PRACTICE: dersSaatleri.practice, LAB: dersSaatleri.lab }
+    : null;
+
+  /** Dersin ÜÇ bileşeni de 0 (veride 8 ders böyle) ya da ders henüz seçilmedi.
+   *  Bu durumda hiçbir şey pasifleşmez: üçünü birden kapatmak açılır listeyi
+   *  ölü bırakır ve o dersi hiç yerleştirilemez hâle getirirdi. Saatsiz ders
+   *  bir VERİ eksiğidir; çözümü ders kaydını düzeltmek, programı kilitlemek
+   *  değil. */
+  const saatsizDers = saatler == null
+    || (saatler.THEORY === 0 && saatler.PRACTICE === 0 && saatler.LAB === 0);
+
+  /** Saati 0 olan bileşen listede pasif — o derste öyle bir oturum yok.
+   *  Sunucu bunu ENGELLEMİYOR (W8 yalnız eksik saati rapor eder), yani buradaki
+   *  kısıt bir kolaylık: yanlış bileşene yerleştirmeyi baştan imkânsız kılar.
+   *
+   *  SEÇİLİ olan asla pasifleşmez. Kayıtlı bir giriş, dersin saatleri sonradan
+   *  değiştiği için saatsiz bir bileşende kalmış olabilir; onu da kapatmak
+   *  Select'i "seçili ama seçilemez" bir değerle bırakır ve kullanıcı
+   *  vazgeçip eski hâline dönemez. */
+  const bilesenPasif = (k: SessionType) =>
+    saatler != null && !saatsizDers && saatler[k] === 0 && k !== sessionType;
+
+  /** YENİ yerleştirmede seçili bileşenin saati 0 ise saati olan ilk bileşene
+   *  kayar. Varsayılan THEORY ve veride teorisi 0 olup uygulaması olan dersler
+   *  var (0/2/0) — o derslerde modal pasif bir seçimle açılıyordu.
+   *
+   *  DÜZENLEMEDE çalışmaz (`courses` verilmez): orada oturum türünü kendiliğinden
+   *  değiştirmek kayıtlı veriyi sessizce bozar; kullanıcı yalnız dersliği
+   *  düzeltmek için açmış olabilir. */
+  const yerlestirme = courses != null;
+  useEffect(() => {
+    if (!yerlestirme || saatler == null || saatsizDers) return;
+    if (saatler[sessionType] > 0) return;
+    const ilkGecerli = SESSION_TYPES.find((k) => saatler[k] > 0);
+    if (ilkGecerli) setSessionType(ilkGecerli);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, yerlestirme]);
   const subeler = courseId && sectionsOf ? sectionsOf(Number(courseId)) : [];
   const tekSube = subeler.length === 1 ? subeler[0].value : null;
 
@@ -1581,9 +1651,13 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
               nothingFoundMessage={t.weekly.noSectionOption} />
           </>
         )}
-        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
-        <Select label={t.weekly.sessionType} value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
-          data={(Object.keys(t.weekly.session) as SessionType[]).map((k) => ({ value: k, label: t.weekly.session[k] }))} />
+        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45).
+            Etiket dersin saatlerini taşır: "Oturum türü (3T/2U/0L)". Ders henüz
+            seçilmemişse (boş slota tıklayarak açılan modal) harflere düşer. */}
+        <Select label={t.weekly.sessionType(dersSaatleri)} value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
+          data={SESSION_TYPES.map((k) => ({
+            value: k, label: t.weekly.session[k], disabled: bilesenPasif(k),
+          }))} />
         {componentOnline ? (
           // Bileşen online: yalnız senkron/asenkron. "Online mı" ders düzeyinde
           // sabit olduğu için burada seçtirilmez.

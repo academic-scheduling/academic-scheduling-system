@@ -871,9 +871,10 @@ export default function CoursesPage() {
                 })),
               ]}
               disabled={!!editingCourse}
-              description={editingCourse
-                ? t.courses.identityLocked
-                : t.courses.departmentLocked}
+              // Aynı not iki modda da: kısıt zaten aynı kısıt (bölüm+sınıf+dönem
+              // dersin adresi) ve düzenlemede farklı bir cümle kurmak onu ayrı
+              // bir kuralmış gibi gösteriyordu.
+              description={t.courses.departmentLocked}
               error={courseForm.errors.department_id}
               value={courseForm.values.is_common
                 ? COMMON_DEP
@@ -897,9 +898,7 @@ export default function CoursesPage() {
             />
             {courseForm.values.is_common && (
               <Stack gap="xs">
-                <Text size="xs" c="dimmed">
-                  {editingCourse ? t.courses.cohortHint : t.courses.commonAddCohortsHint}
-                </Text>
+                <Text size="xs" c="dimmed">{t.courses.cohortHint}</Text>
                 {/* Düzenlemede dersin KENDİ cohort'u kilitli ilk satır olarak
                     görünür. Listenin dışında bırakmak "bu ders hangi
                     bölümlerde" sorusunu eksik cevaplardı — üstteki seçici
@@ -1060,7 +1059,6 @@ export default function CoursesPage() {
                 "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
             <NumberInput
               label={t.courses.midtermCount}
-              description={t.courses.midtermHelp}
               min={1} max={3} clampBehavior="strict"
               {...courseForm.getInputProps("midterm_count")}
             />

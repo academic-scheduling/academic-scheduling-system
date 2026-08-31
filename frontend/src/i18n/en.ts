@@ -599,12 +599,8 @@ export const en: Dict = {
     codeRequired: "Course code cannot be empty",
     nameRequired: "Course name cannot be empty",
     pickDepartment: "Select a department",
-    identityLocked: "The course's identity — cannot be changed",
     commonOption: "Common course (multiple departments)",
     departmentLocked: "The department cannot be changed later.",
-    commonAddCohortsHint:
-      "Every group taking this course (department + year + semester). The first " +
-      "row becomes the course's own department.",
     cohortFailed: (n: number, mesaj: string) =>
       `Group ${n} could not be added: ${mesaj}. Earlier groups were saved; you ` +
       `can add the rest from Edit.`,
@@ -616,16 +612,12 @@ export const en: Dict = {
     practice: "Practice (P)",
     lab: "Lab (L)",
     midtermCount: "Midterm count",
-    midtermHelp:
-      "A course can have 1-3 midterms. Final and make-up are always single.",
     theoryOnline: "Theory online",
     practiceOnline: "Practice online",
     labOnline: "Lab online",
     commonCourse: "Common course",
 
-    cohortHint:
-      "Other department/year/semester groups taking this course. There is no need " +
-      "to add the course's own department — it is already covered.",
+    cohortHint: "At least one department is required.",
     cohortDup:
       "This group is already added (department + year + semester). Choose a " +
       "different year/semester or department.",

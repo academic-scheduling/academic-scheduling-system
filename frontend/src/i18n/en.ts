@@ -600,16 +600,21 @@ export const en: Dict = {
     nameRequired: "Course name cannot be empty",
     pickDepartment: "Select a department",
     identityLocked: "The course's identity — cannot be changed",
+    commonOption: "Common course (multiple departments)",
+    departmentLocked: "The department cannot be changed later.",
+    commonAddCohortsHint:
+      "Every group taking this course (department + year + semester). The first " +
+      "row becomes the course's own department.",
+    cohortFailed: (n: number, mesaj: string) =>
+      `Group ${n} could not be added: ${mesaj}. Earlier groups were saved; you ` +
+      `can add the rest from Edit.`,
     codeLabel: "Course Code",
     nameLabel: "Course Name",
     namePlaceholder: "Statistics",
     typeLabel: "Course Type",
-    typeHelp:
-      "For electives a cohort clash is a warning; for required courses it blocks submission",
     theory: "Theory (T)",
     practice: "Practice (P)",
     lab: "Lab (L)",
-    ectsHelp: "The course's ECTS credit (optional).",
     midtermCount: "Midterm count",
     midtermHelp:
       "A course can have 1-3 midterms. Final and make-up are always single.",
@@ -618,9 +623,6 @@ export const en: Dict = {
     labOnline: "Lab online",
     commonCourse: "Common course",
 
-    commonAddHint:
-      "If a common course with the same code exists, this record is merged under " +
-      "it. You can add its other cohorts from Edit after saving.",
     cohortHint:
       "Other department/year/semester groups taking this course. There is no need " +
       "to add the course's own department — it is already covered.",

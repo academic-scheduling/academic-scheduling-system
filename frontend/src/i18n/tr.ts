@@ -660,15 +660,23 @@ export const tr = {
     nameRequired: "Ders adı boş olamaz",
     pickDepartment: "Bölüm seçin",
     identityLocked: "Dersin kimliği — değiştirilemez (kontrat §6)",
+    /** K-85: Bölüm listesinin başındaki seçenek. Ortak dersin birden çok bölümü
+     *  olduğu için "önce tek bir bölüm seç" yanlış soruydu. */
+    commonOption: "Ortak ders (birden çok bölüm)",
+    departmentLocked: "Bölüm sonradan değiştirilemez.",
+    commonAddCohortsHint:
+      "Bu dersi alan bütün gruplar (bölüm + sınıf + dönem). İlk satır dersin " +
+      "kendi bölümü olur.",
+    cohortFailed: (n: number, mesaj: string) =>
+      `${n}. grup eklenemedi: ${mesaj}. Önceki gruplar kaydedildi; kalanları ` +
+      `Düzenle'den ekleyebilirsiniz.`,
     codeLabel: "Ders Kodu",
     nameLabel: "Ders Adı",
     namePlaceholder: "İstatistik",
     typeLabel: "Ders Türü",
-    typeHelp: "Seçmelide cohort çakışması uyarıdır, zorunluda submit engeli (K-05)",
     theory: "Teori (T)",
     practice: "Uygulama (U)",
     lab: "Lab (L)",
-    ectsHelp: "Dersin AKTS/ECTS kredisi (opsiyonel).",
     midtermCount: "Vize sayısı",
     midtermHelp: "Bir dersin 1-3 vizesi olabilir. Final ve bütünleme her zaman tektir.",
     theoryOnline: "Teori online",
@@ -676,9 +684,6 @@ export const tr = {
     labOnline: "Lab online",
     commonCourse: "Ortak ders",
 
-    commonAddHint:
-      "Aynı kodlu bir ortak ders varsa bu kayıt onun altında toplanır. " +
-      "Aldığı diğer grupları kaydettikten sonra Düzenle'den ekleyebilirsiniz.",
     cohortHint:
       "Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi bölümünü " +
       "eklemeye gerek yok — zaten kapsanıyor.",

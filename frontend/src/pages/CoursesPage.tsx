@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ActionIcon, Alert, Badge, Box, Button, Checkbox, Divider, Drawer, Group, Loader, Modal,
-  NumberInput, Paper, Popover, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table,
+  ActionIcon, Alert, Badge, Box, Button, Checkbox, Drawer, Group, Loader, Modal,
+  NumberInput, Paper, Popover, SegmentedControl, Select, SimpleGrid, Stack, Table,
   Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
@@ -63,6 +63,11 @@ function sortValue(c: Course, key: SortKey): string | number {
     default: return donemNo(c.year, c.semester);
   }
 }
+
+/** K-85: Bölüm seçicisinde "Ortak ders" seçeneğinin değeri. Bir bölüm id'si
+ *  DEĞİL, bir mod işareti: seçilince ders tek bir bölüme değil, altta girilen
+ *  cohort listesine bağlanır. Bölüm id'leri sayı olduğu için çakışma yok. */
+const COMMON_DEP = "__common__";
 
 /** K-48: ortak dersin ek cohort satırı (form içi; department_id string). */
 type CohortRow = { department_id: string; year: number; semester: SemesterType };
@@ -202,7 +207,10 @@ export default function CoursesPage() {
       midterm_count: 1,
     },
     validate: {
-      department_id: (v) => (v ? null : t.courses.pickDepartment),
+      // Ortak derste birincil bölüm alanı BOŞ kalır: bölümler alttaki cohort
+      // listesinde sorulur ve ilki birincil olur (submitCourse orada doğrular).
+      department_id: (v, values) =>
+        (values.is_common || v ? null : t.courses.pickDepartment),
       code: (v) => (v.trim() ? null : t.courses.codeRequired),
       name: (v) => (v.trim() ? null : t.courses.nameRequired),
     },
@@ -444,10 +452,19 @@ export default function CoursesPage() {
     // "Geçersiz cohort bölümü" 400'üne düşürmesin). Aynı üçlü iki kez ya da
     // birincil cohort'la aynı verilmişse istek atmadan uyar (backend zaten 400 döner).
     const cohortRows = v.is_common ? v.cohorts.filter((c) => c.department_id) : [];
-    if (v.is_common && editingCourse) {
-      const seen = new Set([
-        `${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`,
-      ]);
+    if (v.is_common) {
+      // K-85: eklemede birincil cohort da bu listeden gelir, dolayısıyla en az
+      // bir dolu satır şart. Bölüm alanı boş bırakıldığı için form doğrulaması
+      // bunu yakalayamaz (orada is_common muaf tutuluyor).
+      if (!editingCourse && cohortRows.length === 0) {
+        notifications.show({ color: "red", message: t.courses.pickDepartment });
+        return;
+      }
+      // Düzenlemede birincil cohort listenin dışındadır ve satırlar onunla da
+      // çakışmamalı; eklemede böyle bir dış cohort yok (ilki birincil olur).
+      const seen = new Set(editingCourse
+        ? [`${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`]
+        : []);
       for (const c of cohortRows) {
         const key = `${c.department_id}|${c.year}|${c.semester}`;
         if (seen.has(key)) {
@@ -494,18 +511,50 @@ export default function CoursesPage() {
         notifications.show({ color: "green", message: scheduleChanged
           ? t.courses.updatedReset
           : t.courses.updated });
+      } else if (v.is_common) {
+        // K-85: POST'un `cohorts` alanı YOK (CourseCreate, kontrat §6). Ama
+        // K-48 birleştirmesi tam da bunu karşılıyor: aynı KODLU bir ortak ders
+        // varsa gönderilen (bölüm, sınıf, dönem) üçlüsü onun EK cohort'u olarak
+        // ekleniyor (courses.py:219). Yani satır başına bir POST, sözleşmeye
+        // yeni alan eklemeden istenen sonucu veriyor — ilki dersi yaratır,
+        // kalanlar ona cohort ekler.
+        //
+        // SIRALI gönderiliyor, paralel DEĞİL: paralelde iki istek birden
+        // "aynı kodlu ortak ders yok" görüp iki ayrı ders yaratabilir.
+        let created: Course | null = null;
+        for (let i = 0; i < cohortRows.length; i++) {
+          const c = cohortRows[i];
+          const govde = {
+            department_id: Number(c.department_id), year: c.year, semester: c.semester,
+            ...ortak,
+          };
+          if (i === 0) {
+            // İlk satır dersin kendisi: burada hata varsa ortada ders yok,
+            // dış catch normal hata yolunu işletsin.
+            created = await api.post<Course>("/courses", govde);
+          } else {
+            try {
+              created = await api.post<Course>("/courses", govde);
+            } catch (e) {
+              // Kısmi başarı GERÇEK: ders ve önceki gruplar kaydedildi. Sessiz
+              // geçmek "hiçbiri kaydedilmedi" izlenimi verirdi.
+              notifications.show({
+                color: "red", autoClose: 8000,
+                message: t.courses.cohortFailed(
+                  i + 1, e instanceof ApiError ? e.message : t.common.actionFailed),
+              });
+              break;
+            }
+          }
+        }
+        notifications.show({ color: "green", message: t.courses.commonSaved });
+        yeniDersId = created?.id ?? null;
       } else {
-        // K-48: ortak dersse backend aynı kodlu mevcut ortak derse cohort ekleyip
-        // onu döner (birleştirme); değilse yeni kayıt. Ek cohort'lar DÜZENLE'den
-        // yönetilir — create formunda cohort editörü yok.
         const created = await api.post<Course>("/courses", {
           department_id: Number(v.department_id),
           year: v.year, semester: v.semester, ...ortak,
         });
-        notifications.show({
-          color: "green",
-          message: v.is_common ? t.courses.commonSaved : t.courses.created,
-        });
+        notifications.show({ color: "green", message: t.courses.created });
         yeniDersId = created.id;
       }
       setCourseModal(false);
@@ -801,116 +850,85 @@ export default function CoursesPage() {
       >
         <form onSubmit={courseForm.onSubmit(submitCourse)}>
           <Stack>
+            {/* K-85: "Ortak ders" listenin BAŞINDA. Ortak dersin birden çok
+                bölümü olduğu için "önce tek bir bölüm seç" yanlış soruydu;
+                seçilince bölümler hemen ALTTAKİ cohort listesinde sorulur.
+
+                Düzenlemede seçici kilitli: bölüm+sınıf+dönem dersin ADRESİDİR
+                (schedule_drafts aynı üçlüyle anahtarlanır, uq_courses_identity
+                onu benzersiz tutar), taşımak yerleşimleri yanlış cohort'ta
+                bırakırdı. Seçenek listesi düzenlemede TÜM bölümlerden gelir:
+                K-49 ile bir dersi ek cohort'u üzerinden düzenleyen kişi dersin
+                kendi bölümüne yazma yetkisine sahip olmayabilir ve kilitli
+                alan o zaman etiket yerine ham id gösterirdi. */}
             <Select
               label={t.courses.department}
               placeholder={t.courses.pick}
-              data={writableDepartments.map((d) => ({
-                value: String(d.id), label: `${d.code} — ${d.name}`,
-              }))}
-              disabled={!!editingCourse}
-              description={editingCourse ? t.courses.identityLocked : undefined}
-              {...courseForm.getInputProps("department_id")}
-            />
-            <Group grow>
-              <Select
-                label={t.courses.classYear}
-                data={YEARS.map((y) => ({ value: String(y), label: t.courses.yearN(y) }))}
-                value={String(courseForm.values.year)}
-                onChange={(v) => courseForm.setFieldValue("year", Number(v))}
-                disabled={!!editingCourse}
-                allowDeselect={false}
-              />
-              <Select
-                label={t.courses.semester}
-                data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
-                  value: s, label: t.enums.semester[s],
-                }))}
-                value={courseForm.values.semester}
-                onChange={(v) => courseForm.setFieldValue("semester", v as SemesterType)}
-                disabled={!!editingCourse}
-                allowDeselect={false}
-              />
-            </Group>
-            <TextInput label={t.courses.codeLabel} placeholder="CENG2001" {...courseForm.getInputProps("code")} />
-            <TextInput label={t.courses.nameLabel} placeholder={t.courses.namePlaceholder} {...courseForm.getInputProps("name")} />
-            <Select
-              label={t.courses.typeLabel}
-              description={t.courses.typeHelp}
               data={[
-                { value: "false", label: t.courses.required },
-                { value: "true", label: t.courses.elective },
+                { value: COMMON_DEP, label: t.courses.commonOption },
+                ...(editingCourse ? departments : writableDepartments).map((d) => ({
+                  value: String(d.id), label: `${d.code} — ${d.name}`,
+                })),
               ]}
-              allowDeselect={false}
-              {...courseForm.getInputProps("is_elective")}
+              disabled={!!editingCourse}
+              description={editingCourse
+                ? t.courses.identityLocked
+                : t.courses.departmentLocked}
+              error={courseForm.errors.department_id}
+              value={courseForm.values.is_common
+                ? COMMON_DEP
+                : (courseForm.values.department_id || null)}
+              onChange={(val) => {
+                if (val === COMMON_DEP) {
+                  courseForm.setFieldValue("is_common", true);
+                  // Birincil bölüm artık cohort listesinin ilk satırı; tek
+                  // bölümlük alan boşaltılır ki iki yerde iki cevap olmasın.
+                  courseForm.setFieldValue("department_id", "");
+                  if (courseForm.values.cohorts.length === 0) {
+                    courseForm.insertListItem("cohorts", {
+                      department_id: "", year: 1, semester: "FALL" as SemesterType,
+                    });
+                  }
+                } else {
+                  courseForm.setFieldValue("is_common", false);
+                  courseForm.setFieldValue("department_id", val ?? "");
+                }
+              }}
             />
-            <Group grow>
-              <NumberInput label={t.courses.theory} min={0} {...courseForm.getInputProps("hours_theory")} />
-              <NumberInput label={t.courses.practice} min={0} {...courseForm.getInputProps("hours_practice")} />
-              <NumberInput label={t.courses.lab} min={0} {...courseForm.getInputProps("hours_lab")} />
-            </Group>
-            {/* K-55: AKTS/ECTS kredisi. Opsiyonel — boş bırakılabilir (eski dersler
-                ve elle eklemede zorunlu değil; Bologna import'u doldurur). */}
-            <NumberInput
-              label={t.courses.ects}
-              description={t.courses.ectsHelp}
-              min={0}
-              placeholder="—"
-              {...courseForm.getInputProps("ects")}
-            />
-            {/* K-46: dersin vize sayısı. Birden fazlaysa sınav eklerken
-                "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
-            <NumberInput
-              label={t.courses.midtermCount}
-              description={t.courses.midtermHelp}
-              min={1} max={3} clampBehavior="strict"
-              {...courseForm.getInputProps("midterm_count")}
-            />
-            {/* K-45: yalnız SAATİ GİRİLMİŞ bileşen için "online mı" sorulur.
-                Senkron/asenkron burada değil, haftalık girişte seçilir. Hiçbir
-                bileşenin saati yoksa blok hiç görünmez. */}
-            {(courseForm.values.hours_theory > 0
-              || courseForm.values.hours_practice > 0
-              || courseForm.values.hours_lab > 0) && (
-              <Stack gap={6}>
-                <Text size="xs" c="dimmed">{t.courses.onlineComponents}</Text>
-                <Group gap="lg">
-                  {courseForm.values.hours_theory > 0 && (
-                    <Checkbox size="xs" label={t.courses.theoryOnline}
-                      {...courseForm.getInputProps("theory_online", { type: "checkbox" })} />
-                  )}
-                  {courseForm.values.hours_practice > 0 && (
-                    <Checkbox size="xs" label={t.courses.practiceOnline}
-                      {...courseForm.getInputProps("practice_online", { type: "checkbox" })} />
-                  )}
-                  {courseForm.values.hours_lab > 0 && (
-                    <Checkbox size="xs" label={t.courses.labOnline}
-                      {...courseForm.getInputProps("lab_online", { type: "checkbox" })} />
-                  )}
-                </Group>
-              </Stack>
-            )}
-            {/* K-48: ortak (servis) ders — Fizik/Matematik gibi birden çok
-                bölümün aldığı ders. Açılınca aldığı diğer cohort'lar (bölüm+
-                sınıf+dönem) girilir; motor çakışmayı bu cohort'lara karşı da bakar. */}
-            <Divider label={t.courses.commonCourse} labelPosition="left" mt="xs" />
-            <Switch
-              label={t.courses.commonCourse}
-              checked={courseForm.values.is_common}
-              onChange={(e) => courseForm.setFieldValue("is_common", e.currentTarget.checked)}
-            />
-            {/* K-48: ekleme modunda cohort editörü YOK — aynı kodlu ortak ders
-                varsa bu ekleme otomatik onun altında toplanır. Ek cohort'lar
-                kaydettikten sonra Düzenle'den yönetilir. */}
-            {!editingCourse && courseForm.values.is_common && (
-              <Text size="xs" c="dimmed">
-                {t.courses.commonAddHint}
-              </Text>
-            )}
-            {editingCourse && courseForm.values.is_common && (
+            {courseForm.values.is_common && (
               <Stack gap="xs">
                 <Text size="xs" c="dimmed">
-                  {t.courses.cohortHint}
+                  {editingCourse ? t.courses.cohortHint : t.courses.commonAddCohortsHint}
                 </Text>
+                {/* Düzenlemede dersin KENDİ cohort'u kilitli ilk satır olarak
+                    görünür. Listenin dışında bırakmak "bu ders hangi
+                    bölümlerde" sorusunu eksik cevaplardı — üstteki seçici
+                    ortak derste "Ortak ders" yazdığı için bölüm adı başka
+                    hiçbir yerde görünmüyor. */}
+                {editingCourse && (
+                  <Group gap="xs" wrap="nowrap" align="flex-end">
+                    <Select
+                      label={t.courses.department} style={{ flex: 1 }} disabled
+                      data={departments.map((d) => ({
+                        value: String(d.id), label: `${d.code} — ${d.name}` }))}
+                      value={String(editingCourse.department_id)}
+                    />
+                    <Select
+                      label={t.courses.classYear} w={90} disabled
+                      data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
+                      value={String(editingCourse.year)}
+                    />
+                    <Select
+                      label={t.courses.semester} w={100} disabled
+                      data={(Object.keys(t.enums.semester) as SemesterType[]).map((sm) => ({
+                        value: sm, label: t.enums.semester[sm],
+                      }))}
+                      value={editingCourse.semester}
+                    />
+                    {/* Silme ikonunun yeri: sütunlar alttaki satırlarla hizalı kalsın. */}
+                    <div style={{ width: 28, flexShrink: 0 }} />
+                  </Group>
+                )}
                 {courseForm.values.cohorts.map((row, i) => {
                   // K-48: benzersizlik (bölüm+yıl+dönem) ÜÇLÜSÜ üzerinde. Tüm
                   // bölümler listelenir; bir bölümün farklı sınıf/dönemi geçerli
@@ -931,7 +949,7 @@ export default function CoursesPage() {
                   <div key={i}>
                   <Group gap="xs" wrap="nowrap" align="flex-end">
                     <Select
-                      label={i === 0 ? t.courses.department : undefined}
+                      label={!editingCourse && i === 0 ? t.courses.department : undefined}
                       placeholder={t.courses.department}
                       style={{ flex: 1 }}
                       searchable
@@ -943,7 +961,7 @@ export default function CoursesPage() {
                         courseForm.setFieldValue(`cohorts.${i}.department_id`, val ?? "")}
                     />
                     <Select
-                      label={i === 0 ? t.courses.classYear : undefined}
+                      label={!editingCourse && i === 0 ? t.courses.classYear : undefined}
                       w={90}
                       error={dup}
                       data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
@@ -953,7 +971,7 @@ export default function CoursesPage() {
                       allowDeselect={false}
                     />
                     <Select
-                      label={i === 0 ? t.courses.semester : undefined}
+                      label={!editingCourse && i === 0 ? t.courses.semester : undefined}
                       w={100}
                       error={dup}
                       data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
@@ -988,6 +1006,86 @@ export default function CoursesPage() {
                 >
                   {t.courses.addCohort}
                 </Button>
+              </Stack>
+            )}
+            {/* Ortak derste sınıf/dönem burada SORULMAZ: her cohort'un kendi
+                sınıf/dönemi var ve ikisini birden sormak çelişkili cevap üretir. */}
+            {!courseForm.values.is_common && (
+            <Group grow>
+              <Select
+                label={t.courses.classYear}
+                data={YEARS.map((y) => ({ value: String(y), label: t.courses.yearN(y) }))}
+                value={String(courseForm.values.year)}
+                onChange={(v) => courseForm.setFieldValue("year", Number(v))}
+                disabled={!!editingCourse}
+                allowDeselect={false}
+              />
+              <Select
+                label={t.courses.semester}
+                data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({
+                  value: s, label: t.enums.semester[s],
+                }))}
+                value={courseForm.values.semester}
+                onChange={(v) => courseForm.setFieldValue("semester", v as SemesterType)}
+                disabled={!!editingCourse}
+                allowDeselect={false}
+              />
+            </Group>
+            )}
+            <TextInput label={t.courses.codeLabel} placeholder="CENG2001" {...courseForm.getInputProps("code")} />
+            <TextInput label={t.courses.nameLabel} placeholder={t.courses.namePlaceholder} {...courseForm.getInputProps("name")} />
+            <Select
+              label={t.courses.typeLabel}
+              data={[
+                { value: "false", label: t.courses.required },
+                { value: "true", label: t.courses.elective },
+              ]}
+              allowDeselect={false}
+              {...courseForm.getInputProps("is_elective")}
+            />
+            <Group grow>
+              <NumberInput label={t.courses.theory} min={0} {...courseForm.getInputProps("hours_theory")} />
+              <NumberInput label={t.courses.practice} min={0} {...courseForm.getInputProps("hours_practice")} />
+              <NumberInput label={t.courses.lab} min={0} {...courseForm.getInputProps("hours_lab")} />
+            </Group>
+            {/* K-55: AKTS/ECTS kredisi. Opsiyonel — boş bırakılabilir (eski dersler
+                ve elle eklemede zorunlu değil; Bologna import'u doldurur). */}
+            <NumberInput
+              label={t.courses.ects}
+              min={0}
+              placeholder="—"
+              {...courseForm.getInputProps("ects")}
+            />
+            {/* K-46: dersin vize sayısı. Birden fazlaysa sınav eklerken
+                "kaçıncı vize" sorulur ve o sayıya kadar E2 üretilmez. */}
+            <NumberInput
+              label={t.courses.midtermCount}
+              description={t.courses.midtermHelp}
+              min={1} max={3} clampBehavior="strict"
+              {...courseForm.getInputProps("midterm_count")}
+            />
+            {/* K-45: yalnız SAATİ GİRİLMİŞ bileşen için "online mı" sorulur.
+                Senkron/asenkron burada değil, haftalık girişte seçilir. Hiçbir
+                bileşenin saati yoksa blok hiç görünmez. */}
+            {(courseForm.values.hours_theory > 0
+              || courseForm.values.hours_practice > 0
+              || courseForm.values.hours_lab > 0) && (
+              <Stack gap={6}>
+                <Text size="xs" c="dimmed">{t.courses.onlineComponents}</Text>
+                <Group gap="lg">
+                  {courseForm.values.hours_theory > 0 && (
+                    <Checkbox size="xs" label={t.courses.theoryOnline}
+                      {...courseForm.getInputProps("theory_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_practice > 0 && (
+                    <Checkbox size="xs" label={t.courses.practiceOnline}
+                      {...courseForm.getInputProps("practice_online", { type: "checkbox" })} />
+                  )}
+                  {courseForm.values.hours_lab > 0 && (
+                    <Checkbox size="xs" label={t.courses.labOnline}
+                      {...courseForm.getInputProps("lab_online", { type: "checkbox" })} />
+                  )}
+                </Group>
               </Stack>
             )}
             <Button type="submit" loading={busy} mt="sm">

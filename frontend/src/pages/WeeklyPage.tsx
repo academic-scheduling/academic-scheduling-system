@@ -20,12 +20,14 @@ import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
 import { turkishOptionsFilter } from "../utils/selectSearch";
+import { LUNCH_SLOT } from "../utils/slots";
 import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
 import { CourseInfoButton } from "../components/CourseInfoButton";
 import { ConflictList } from "../components/ConflictList";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, LUNCH_CELL_BG,
+  MIN_DAY_W, MIN_LANE_W,
   PAGE_SURFACE, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
   WEEKLY_ROW_H, paletteItemStyle,
@@ -1073,7 +1075,8 @@ export default function WeeklyPage() {
                         borderTop: `1px solid ${LINE}`,
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)"
                           // İmleç boş slottayken bir tık daha koyu + ortada artı.
-                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : GRID_CELL_BG,
+                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG
+                          : s === LUNCH_SLOT ? LUNCH_CELL_BG : GRID_CELL_BG,
                         pointerEvents: "none",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "background 120ms ease",
@@ -1090,6 +1093,11 @@ export default function WeeklyPage() {
                         hard={c.entries.some((e) => hardIds.has(e.id))}
                         warn={c.entries.some((e) => warnIds.has(e.id))}
                         lecturerName={lecturerBySection.get(c.entries[0].section.id)}
+                        // Öğle arası (slot 5) zemini bir ton koyu: ders konulması
+                        // ENGELLENMEZ, yalnız saatin molaya denk geldiği görünür.
+                        // Hover ve sürükleme vurgusu bunun ÜSTÜNE biner, yoksa
+                        // o satırda geri bildirim kaybolur ve ekleme "çalışmıyor"
+                        // gibi durur.
                         onWarningClick={() => {
                           // Bu kartın girişlerini işaretle; aşağıda yalnız bu
                           // girişleri etkileyen çakışma satırları yanacak.

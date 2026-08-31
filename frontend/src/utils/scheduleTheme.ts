@@ -46,6 +46,23 @@ export const DRAFT_BORDER = "light-dark(#FDE68A, #6B5D2A)";
  *  gri hücre, karanlıkta açık yüzey / koyu hücre. */
 export const GRID_CELL_BG = "light-dark(#F8FAFC, #242629)";
 
+/** ÖĞLE ARASI bandının zemini (slots.LUNCH_SLOT = 12:30-13:15).
+ *
+ *  Ders konulması engellenmiyor, yalnız "bu saat öğle molasına denk geliyor"
+ *  bilgisi veriliyor -- bu yüzden metin ya da ikon değil, yalnız zemin tonu.
+ *
+ *  Ton NÖTR: paletin kendi slate ailesinden (BORDER ile aynı değer), hiç
+ *  sıcaklık taşımıyor. Sıcak/bej bir ton denenmişti ve turuncuya kaçıp
+ *  ACCENT.warn ile karışıyordu; öğle arası bir UYARI değil, günün sabit bir
+ *  dilimi.
+ *
+ *  Yön: band iki temada da zeminden DAHA KOYU. Böylece "çukurda kalan şerit"
+ *  okuması ışık/karanlık fark etmeksizin aynı; HOVER_CELL_BG ise her zaman
+ *  açığa gittiği için öğle satırında da vurgu görünür kalır (yoksa o satırda
+ *  ekleme geri bildirimi kaybolur ve arayüz bozuk sanılır).
+ */
+export const LUNCH_CELL_BG = "light-dark(#E2E8F0, #191B1E)";
+
 export const TIME_COLOR = "light-dark(#94A3B8, #6E7178)";    // saat cetveli — susturulmuş
 export const TEXT_MUTED = "light-dark(#64748B, #909296)";    // ikincil metin (derslik, hoca)
 export const TEXT_BODY = "light-dark(#334155, #C1C2C5)";     // ikincilden bir ton belirgin

@@ -297,8 +297,7 @@ export const tr = {
     capacityPositive: "Kapasite 0'dan büyük olmalı",
     examCapacityTooBig: "Sınav kontenjanı kapasiteyi aşamaz (K-21)",
     examCapacityHelp:
-      "Boşluklu oturma düzeni. Opsiyonel (K-21) — boş bırakılırsa sınav " +
-      "yerleşiminde uyarı çıkar.",
+      "Boşluklu oturma düzeni. Boş bırakılırsa sınav yerleşiminde uyarı çıkar.",
     deleteHint:
       'Programa veya sınava girmiş bir derslik silinemez; onun yerine "Pasife al" kullanın.',
 

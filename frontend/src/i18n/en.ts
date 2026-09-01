@@ -272,8 +272,7 @@ export const en: Dict = {
     capacityPositive: "Capacity must be greater than 0",
     examCapacityTooBig: "Exam capacity cannot exceed the regular capacity",
     examCapacityHelp:
-      "Spaced seating layout. Optional — if left empty, a warning appears " +
-      "during exam placement.",
+      "Spaced seating layout. If left empty, a warning appears during exam placement.",
     deleteHint:
       'A classroom used in a schedule or exam cannot be deleted; use "Deactivate" instead.',
 

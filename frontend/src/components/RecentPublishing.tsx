@@ -30,9 +30,9 @@ type DurumStil = {
   pill: string;       // rozet zemini
   border: string;     // kart kenarlığı
   bg: string;         // kart zemini
-  /** Dolu düğmenin YAZI rengi. Aydınlıkta beyaz, ama koyu temada `color`
-   *  açık bir pastel (#E8B84B gibi) ve üstünde beyaz okunmuyor — o yüzden
-   *  ayrı bir alan, `#fff` sabiti değil. */
+  /** Düğme yazısının rengi (zemin `color`). Aydınlıkta beyaz, ama koyu temada
+   *  `color` açık bir pastel (#E8B84B gibi) ve üstünde beyaz okunmuyor — o
+   *  yüzden ayrı bir alan, `#fff` sabiti değil. */
   onColor: string;
   Icon: ComponentType<IconProps>;
 };
@@ -163,13 +163,6 @@ export default function RecentPublishing() {
             const st = STATUS[d.status];
             const kind = KIND_STYLE[d.kind === "EXAM" ? "EXAM" : "WEEKLY"];
             const not = aciklama(d);
-            // Tasarımın kuralı: reddedilen kart ve DEĞİŞİKLİĞİ OLAN açık taslak
-            // dolu düğme alır, ötekiler beyaz/çerçeveli. İkisi de "burada
-            // yapılacak bir iş var" diyen kartlar — biri düzeltilmeyi, öteki
-            // onaya gönderilmeyi bekliyor. Onay bekleyen ve onaylanan kartta
-            // kullanıcıya düşen bir iş yok, düğme de sessiz kalıyor.
-            const dolu = d.status === "REJECTED"
-              || (d.status === "OPEN" && d.change_count > 0);
             return (
               <div key={d.id} style={{
                 border: `1px solid ${st.border}`,
@@ -227,18 +220,21 @@ export default function RecentPublishing() {
                   {not ?? ""}
                 </Text>
 
-                {/* Düğme HER KARTTA aynı: buradaki iş "bak", karar Yayın
-                    Merkezi'nde veriliyor. Tasarımda etiket duruma göre
-                    değişiyor (Geri çek / Onaya gönder / Aç); ana sayfada tek
-                    tıkla geri alınamaz sonuç doğuran bir eylem istemiyoruz. */}
+                {/* Etiket HER KARTTA aynı ("Görüntüle"): buradaki iş "bak",
+                    karar Yayın Merkezi'nde veriliyor. Tasarımda etiket duruma
+                    göre değişiyor (Geri çek / Onaya gönder / Aç) ve dolgu
+                    "asıl eylem" olanı işaretliyor; etiket tekleşince o ayrım
+                    keyfi kalırdı, o yüzden RENK devraldı: her düğme kendi
+                    durumunun rengiyle dolu. Kart hangi durumdaysa düğmesi de
+                    onu söylüyor. */}
                 <UnstyledButton
                   onClick={() => navigate(`/publishing?draft_id=${d.id}`)}
                   style={{
                     display: "inline-flex", alignItems: "center", justifyContent: "center",
                     height: 32, padding: "0 12px", fontSize: 12, fontWeight: 600,
-                    border: dolu ? "none" : "1px solid light-dark(#CBD5E1, #4A4E57)",
-                    background: dolu ? st.color : "light-dark(#FFFFFF, #2C2E33)",
-                    color: dolu ? st.onColor : "light-dark(#334155, #C1C2C5)",
+                    border: "none",
+                    background: st.color,
+                    color: st.onColor,
                     borderRadius: 6,
                   }}>
                   {t.recentPublishing.view}

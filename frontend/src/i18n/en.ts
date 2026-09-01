@@ -768,6 +768,7 @@ export const en: Dict = {
     notLoaded: "Could not be loaded",
 
     session: { THEORY: "Theory", PRACTICE: "Practice", LAB: "Lab" },
+    sessionBadge: { THEORY: "Theory", PRACTICE: "Prac.", LAB: "Lab" },
     delivery: {
       FACE_TO_FACE: "In person",
       ONLINE_SYNC: "Online (synchronous)",

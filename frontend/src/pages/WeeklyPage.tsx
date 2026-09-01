@@ -1405,9 +1405,27 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}>
       <Group gap={4} justify="space-between" wrap="nowrap" align="flex-start">
-        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em", minWidth: 0 }}>
-          {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
-        </div>
+        {/* Kod ve tür çipi BİRLİKTE solda kalmalı; dıştaki space-between aksi
+            halde çipi kartın ortasına savurur. */}
+        <Group gap={5} wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+          <div style={{
+            fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em", minWidth: 0,
+            // Çip eklendiği için kod artık taşabilir: taşarsa "…" ile kesilsin,
+            // kartın dışına sarkmasın.
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
+          </div>
+          {/* K-85: oturum türü YALNIZ Uygulama ve Lab'da yazılır. Teori
+              varsayılan ve kartların çoğu teori; hepsine "Teori" yazmak bilgi
+              değil gürültü olurdu. Toplu kartta da tek tür geçerli — küme
+              anahtarı session_type'ı içeriyor, karışık tür bir kümede toplanmaz. */}
+          {e.session_type !== "THEORY" && (
+            <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0 }}>
+              {t.weekly.sessionBadge[e.session_type]}
+            </Badge>
+          )}
+        </Group>
         {many && (
           <Badge size="xs" variant="filled" color="gray" style={{ flexShrink: 0 }}>
             {c.entries.length}

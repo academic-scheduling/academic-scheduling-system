@@ -833,6 +833,11 @@ export const tr = {
     notLoaded: "Yüklenemedi",
 
     session: { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" },
+    /** Izgara kartındaki oturum türü çipi — dar alan için kısa. Teori de
+     *  burada ama kart onu ÇİZMİYOR (varsayılan tür; her karta yazmak
+     *  gürültü olurdu). Sözlükte tutuluyor ki tür eklenirse burası eksik
+     *  kalmasın. */
+    sessionBadge: { THEORY: "Teori", PRACTICE: "Uyg.", LAB: "Lab" },
     delivery: {
       FACE_TO_FACE: "Yüz yüze",
       ONLINE_SYNC: "Online (eşzamanlı)",

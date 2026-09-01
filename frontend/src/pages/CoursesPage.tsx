@@ -306,11 +306,26 @@ export default function CoursesPage() {
   // görünürler (K-56/K-57 iki-tablo ayrımının yerini alan yeni tasarım).
   const rows = useMemo(() => {
     let list = visible;
-    // K-68: KATEGORİ segmenti. "Ortak" is_common'ı; "1-4" ise o sınıfın
-    // ortak-OLMAYAN derslerini (ortak dersler yalnız "Ortak" kategorisinde,
-    // yıl sütunları "—"). Yıl zaten sunucuda süzülür; burada ortak dışlanır.
+    // KATEGORİ segmenti. "Ortak" is_common'ı süzer; "1-4" o sınıfın dersleri.
+    //
+    // K-85: sınıf segmenti ortak dersleri artık DIŞLAMIYOR. K-68'de ortak ders
+    // yalnız "Ortak" kategorisinde görünüyordu, ama ENG 3802 gerçekten CENG'in
+    // 3. sınıf dersidir — "3. sınıf"a basan kişi onu görmemekle yanlış bilgi
+    // alıyordu. Karar dersin EFEKTİF cohort kümesine bakar (birincil ∪ ek),
+    // yalnız birincile değil; motorun cohort testiyle (courseInCohort) aynı dil.
+    const yilKapsiyor = (c: Course, yil: number) => {
+      // Bölüm süzgeci açıksa yalnız O bölümün cohort'ları sayılır: aynı ortak
+      // ders CENG'de 3., EEE'de 1. sınıf olabilir ve EEE süzgeciyle 3. sınıfta
+      // görünmemeli. Süzgeç kapalıysa hangi bölüm olduğu fark etmez.
+      const dep = depFilter ? Number(depFilter) : null;
+      const uyar = (d: number, y: number) => y === yil && (dep === null || d === dep);
+      if (uyar(c.department_id, c.year)) return true;
+      // Ek cohort'lar yalnız ortak derste dolu; normal derste bu satır boş geçer
+      // ve kural eski hâline (c.year === yil) iner.
+      return c.extra_cohorts.some((ec) => uyar(ec.department_id, ec.year));
+    };
     if (seg === "common") list = list.filter((c) => c.is_common);
-    else if (seg !== "all") list = list.filter((c) => !c.is_common && c.year === Number(seg));
+    else if (seg !== "all") list = list.filter((c) => yilKapsiyor(c, Number(seg)));
     // K-68: ders türü (popover) — ortak/normal fark etmeksizin is_elective.
     if (typeFilter === "required") list = list.filter((c) => !c.is_elective);
     else if (typeFilter === "elective") list = list.filter((c) => c.is_elective);
@@ -324,7 +339,7 @@ export default function CoursesPage() {
       if (cmp === 0) cmp = a.code.localeCompare(b.code, "tr");  // eşitlikte kod
       return cmp * dir;
     });
-  }, [visible, seg, typeFilter, onlyActive, sortKey, sortDir]);
+  }, [visible, seg, typeFilter, onlyActive, sortKey, sortDir, depFilter]);
 
   const countLabel = t.courses.courseCount(rows.length);
 

@@ -436,9 +436,17 @@ export default function CoursesPage() {
       year: c.year, semester: c.semester, code: c.code, name: c.name,
       is_elective: String(c.is_elective),
       is_common: c.is_common,
-      cohorts: c.extra_cohorts.map((ec) => ({
-        department_id: String(ec.department_id), year: ec.year, semester: ec.semester,
-      })),
+      // K-85: form dersin TAM cohort kümesini tutar (birincil + ek). PATCH de
+      // artık tam küme bekliyor; birincili listeye koymak onu da silinebilir
+      // kılan şeyin kendisi. Ortak olmayan derste küme kavramı yok → boş.
+      cohorts: c.is_common
+        ? [
+            { department_id: String(c.department_id), year: c.year, semester: c.semester },
+            ...c.extra_cohorts.map((ec) => ({
+              department_id: String(ec.department_id), year: ec.year, semester: ec.semester,
+            })),
+          ]
+        : [],
       hours_theory: c.hours_theory, hours_practice: c.hours_practice, hours_lab: c.hours_lab,
       ects: c.ects ?? "",
       theory_online: c.theory_online, practice_online: c.practice_online, lab_online: c.lab_online,
@@ -453,18 +461,15 @@ export default function CoursesPage() {
     // birincil cohort'la aynı verilmişse istek atmadan uyar (backend zaten 400 döner).
     const cohortRows = v.is_common ? v.cohorts.filter((c) => c.department_id) : [];
     if (v.is_common) {
-      // K-85: eklemede birincil cohort da bu listeden gelir, dolayısıyla en az
-      // bir dolu satır şart. Bölüm alanı boş bırakıldığı için form doğrulaması
-      // bunu yakalayamaz (orada is_common muaf tutuluyor).
-      if (!editingCourse && cohortRows.length === 0) {
+      // K-85: liste dersin TAM cohort kümesi (ekleme ve düzenleme aynı). Ortak
+      // ders en az bir cohort'a bağlı kalmalı; bölüm alanı boş bırakıldığı için
+      // form doğrulaması bunu yakalayamaz (orada is_common muaf tutuluyor).
+      if (cohortRows.length === 0) {
         notifications.show({ color: "red", message: t.courses.pickDepartment });
         return;
       }
-      // Düzenlemede birincil cohort listenin dışındadır ve satırlar onunla da
-      // çakışmamalı; eklemede böyle bir dış cohort yok (ilki birincil olur).
-      const seen = new Set(editingCourse
-        ? [`${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`]
-        : []);
+      // Kümenin dışında ayrıca denetlenecek bir cohort YOK: birincil de listede.
+      const seen = new Set<string>();
       for (const c of cohortRows) {
         const key = `${c.department_id}|${c.year}|${c.semester}`;
         if (seen.has(key)) {
@@ -505,8 +510,11 @@ export default function CoursesPage() {
       && schedFields.some((f) => ortak[f] !== editingCourse[f]);
     try {
       if (editingCourse) {
-        // Kimlik alanları (bölüm/yıl/dönem) gönderilmez — kontrat §6.
-        // cohorts PATCH'te tam listeyle değişir (K-48).
+        // Kimlik alanları (bölüm/yıl/dönem) AYRICA gönderilmez — kontrat §6.
+        // K-85: ortak derste kimliği `cohorts` taşıyor. Liste dersin TAM cohort
+        // kümesi; mevcut birincil listeden çıkarılmışsa sunucu listenin ilkini
+        // birincile terfi ettirir. Ortak olmayan derste liste boştur ve kimlik
+        // gerçekten değişmez.
         await api.patch<Course>(`/courses/${editingCourse.id}`, { ...ortak, cohorts: cohortsPayload });
         notifications.show({ color: "green", message: scheduleChanged
           ? t.courses.updatedReset
@@ -899,56 +907,23 @@ export default function CoursesPage() {
             {courseForm.values.is_common && (
               <Stack gap="xs">
                 <Text size="xs" c="dimmed">{t.courses.cohortHint}</Text>
-                {/* Düzenlemede dersin KENDİ cohort'u kilitli ilk satır olarak
-                    görünür. Listenin dışında bırakmak "bu ders hangi
-                    bölümlerde" sorusunu eksik cevaplardı — üstteki seçici
-                    ortak derste "Ortak ders" yazdığı için bölüm adı başka
-                    hiçbir yerde görünmüyor. */}
-                {editingCourse && (
-                  <Group gap="xs" wrap="nowrap" align="flex-end">
-                    <Select
-                      label={t.courses.department} style={{ flex: 1 }} disabled
-                      data={departments.map((d) => ({
-                        value: String(d.id), label: `${d.code} — ${d.name}` }))}
-                      value={String(editingCourse.department_id)}
-                    />
-                    <Select
-                      label={t.courses.classYear} w={90} disabled
-                      data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
-                      value={String(editingCourse.year)}
-                    />
-                    <Select
-                      label={t.courses.semester} w={100} disabled
-                      data={(Object.keys(t.enums.semester) as SemesterType[]).map((sm) => ({
-                        value: sm, label: t.enums.semester[sm],
-                      }))}
-                      value={editingCourse.semester}
-                    />
-                    {/* Silme ikonunun yeri: sütunlar alttaki satırlarla hizalı kalsın. */}
-                    <div style={{ width: 28, flexShrink: 0 }} />
-                  </Group>
-                )}
                 {courseForm.values.cohorts.map((row, i) => {
                   // K-48: benzersizlik (bölüm+yıl+dönem) ÜÇLÜSÜ üzerinde. Tüm
                   // bölümler listelenir; bir bölümün farklı sınıf/dönemi geçerli
-                  // bir ek cohort'tur. Yalnız aynı üçlü tekrarlanırsa uyarılır
-                  // (birincil cohort ya da daha önceki bir satırla çakışma).
+                  // bir cohort'tur. Yalnız aynı üçlü tekrarlanırsa uyarılır.
+                  // K-85: karşılaştırılacak DIŞ bir birincil cohort yok — o da
+                  // listenin bir satırı.
                   const key = row.department_id
                     ? `${row.department_id}|${row.year}|${row.semester}` : null;
-                  const primaryKey = editingCourse
-                    ? `${editingCourse.department_id}|${editingCourse.year}|${editingCourse.semester}`
-                    : null;
-                  const dup = key != null && (
-                    key === primaryKey ||
+                  const dup = key != null &&
                     courseForm.values.cohorts.some(
                       (cc, j) => j < i && cc.department_id &&
-                        `${cc.department_id}|${cc.year}|${cc.semester}` === key)
-                  );
+                        `${cc.department_id}|${cc.year}|${cc.semester}` === key);
                   return (
                   <div key={i}>
                   <Group gap="xs" wrap="nowrap" align="flex-end">
                     <Select
-                      label={!editingCourse && i === 0 ? t.courses.department : undefined}
+                      label={i === 0 ? t.courses.department : undefined}
                       placeholder={t.courses.department}
                       style={{ flex: 1 }}
                       searchable
@@ -960,7 +935,7 @@ export default function CoursesPage() {
                         courseForm.setFieldValue(`cohorts.${i}.department_id`, val ?? "")}
                     />
                     <Select
-                      label={!editingCourse && i === 0 ? t.courses.classYear : undefined}
+                      label={i === 0 ? t.courses.classYear : undefined}
                       w={90}
                       error={dup}
                       data={YEARS.map((y) => ({ value: String(y), label: `${y}.` }))}
@@ -970,7 +945,7 @@ export default function CoursesPage() {
                       allowDeselect={false}
                     />
                     <Select
-                      label={!editingCourse && i === 0 ? t.courses.semester : undefined}
+                      label={i === 0 ? t.courses.semester : undefined}
                       w={100}
                       error={dup}
                       data={(Object.keys(t.enums.semester) as SemesterType[]).map((s) => ({

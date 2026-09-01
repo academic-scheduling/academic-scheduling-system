@@ -348,7 +348,12 @@ class SectionOut(BaseModel):
 # --- Ortak (servis) ders cohort'ları (K-48) ---
 
 class CourseCohortIn(BaseModel):
-    """Ortak dersin EK cohort'u: aldığı bir başka (bölüm, yıl, dönem)."""
+    """Ortak dersin bir cohort'u: dersi alan bir (bölüm, yıl, dönem) üçlüsü.
+
+    K-85: artık "EK" değil. PATCH'teki liste kümenin TAMAMINI taşır; hangisinin
+    `courses` satırında (birincil), hangilerinin `course_cohorts` tablosunda
+    durduğu bir DEPOLAMA ayrıntısı ve istemciyi ilgilendirmez.
+    """
     department_id: int
     year: int = Field(ge=1, le=6)
     semester: SemesterType
@@ -383,12 +388,25 @@ class CourseCreate(BaseModel):
 class CourseUpdate(BaseModel):
     # Kimlik alanları (department/year/semester) PATCH'le DEĞİŞMEZ —
     # yanlış girildiyse ders pasife alınıp yeniden açılır. code/name/T+U+L düzeltilebilir.
+    #
+    # TEK İSTİSNA (K-85): ortak derste `cohorts` listesi birincili düşürürse
+    # kimlik terfi eden cohort'a taşınır (aşağıya bak). Ortak ders bir bölüme
+    # değil, onu alan bölüm kümesine bağlıdır; kümeden çıkarılamayan bir üye
+    # olması depolamadan doğan bir ayrıcalıktı.
     code: str | None = None
     name: str | None = None
     is_elective: bool | None = None
     is_common: bool | None = None             # K-48
-    # K-48: ek cohort'ların TAM listesi (verilirse mevcut ek cohort'lar bununla
-    # değiştirilir). Yalnız is_common ders için anlamlı; boş liste = ek cohort yok.
+    # K-85: dersi alan cohort'ların TAM listesi — BİRİNCİL DAHİL. Verilirse
+    # dersin cohort kümesi bununla değiştirilir. Mevcut birincil listede yoksa
+    # listenin ilki birincile terfi eder (dersin bölüm/yıl/dönemi o üçlüye
+    # taşınır); böylece ortak dersin herhangi bir bölümü çıkarılabilir.
+    #
+    # K-48'de bu liste yalnız EK cohort'ları taşıyordu ve birincil silinemiyordu
+    # — motorun eşit işlediği bir kümede depolamadan doğan bir ayrıcalıktı.
+    #
+    # Yalnız is_common ders için anlamlı. Ortak derste BOŞ liste reddedilir
+    # (400); ortak olmayan derste yalnız boş liste kabul edilir.
     cohorts: list[CourseCohortIn] | None = None
     hours_theory: int | None = Field(None, ge=0)
     hours_practice: int | None = Field(None, ge=0)

@@ -380,16 +380,40 @@ Cevap 201 · Hata 409: kod+bölüm+yıl+dönem zaten var.
   dersleri de döndürür — X'in kendi dersi olmasa bile.)
 
 ### PATCH /courses/{id} · pasife alma: `{ "active": false }`
-Ortak ders + ek cohort'lar (K-48): `{ "is_common": true, "cohorts":
-  [ { "department_id": 2, "year": 1, "semester": "FALL" }, ... ] }`
-  ← `cohorts` verilirse ek cohort'lar bu listeyle **tam değiştirilir** (boş liste
-  = ek cohort yok). Yalnız `is_common:true` derste anlamlı. `is_common:false`
-  yapılırsa ek cohort'lar temizlenir.
-  Hata 400: ortak olmayan derse ek cohort · ek cohort dersin birincil cohort'uyla
-  aynı · aynı cohort iki kez · yabancı workgroup bölümü (izolasyon).
+Ortak dersin cohort kümesi (K-48, **K-85'te değişti**): `{ "is_common": true,
+  "cohorts": [ { "department_id": 2, "year": 1, "semester": "FALL" }, ... ] }`
+  ← `cohorts` verilirse dersin cohort kümesi bu listeyle **tam değiştirilir**.
+  Liste **BİRİNCİL COHORT'U DA İÇERİR** — K-48'de yalnız EK cohort'ları taşıyordu.
+  Yalnız `is_common:true` derste anlamlı; `is_common:false` yapılırsa ek
+  cohort'lar temizlenir (o durumda yalnız boş liste kabul edilir).
+
+  **Birincil terfi (K-85).** Mevcut birincil `(department_id, year, semester)`
+  listede duruyorsa yerinde kalır. Listede YOKSA listenin **ilki** birincile
+  terfi eder: dersin `department_id/year/semester` alanları o üçlüye taşınır ve
+  eski birincil kümeden düşer. Böylece ortak dersin herhangi bir bölümü
+  çıkarılabilir — K-48'de dersin ilk girilen bölümü silinemiyordu, çünkü
+  `courses` satırının kendisiydi. Motor birincile zaten ayrıcalık tanımıyor
+  (efektif cohort = birincil ∪ ek); ayrıcalık yalnızca depolamadan geliyordu.
+
+  Bu, "dersin kimlik alanları (bölüm/sınıf/dönem) PATCH'le değişmez" kuralının
+  **tek istisnası** ve yalnız `is_common:true` derste geçerlidir. Normal derste
+  kimlik hâlâ değişmez: ders yanlış açıldıysa pasife alınıp yeniden açılır.
+  Sebep — o üçlü dersin adresidir: `schedule_drafts` aynı üçlüyle anahtarlanır,
+  `uq_courses_identity` onu benzersiz tutar ve yazma yetkisi ona bakar.
+
+  Hata 400: ortak olmayan derse cohort · **boş liste** (ortak ders en az bir
+  cohort'a bağlı kalmalı) · aynı cohort iki kez · yabancı workgroup bölümü
+  (izolasyon).
+  Hata 409: terfi eden üçlü + dersin kodu başka bir kayıtta zaten var
+  (`uq_courses_identity`). Kod ve birincil aynı PATCH'te değişebildiği için
+  denetim **efektif** (kod, bölüm, sınıf, dönem) üzerinden tek seferde yapılır.
   Not: cohort EKLERKEN o bölümde üyelik aranmaz (yalnız workgroup izolasyonu) —
-  bir bölümü cohort olarak işaretlemek, o bölümde üye olmayı gerektirmez.
+  bir bölümü cohort olarak işaretlemek, o bölümde üye olmayı gerektirmez. Aynısı
+  TERFİ EDEN cohort için de geçerli; aksi halde bir bölümün kendini kümeden
+  çıkarabilmesi, kalan bölümlerden birindeki üyeliğine bağlı olurdu.
   (K-49: bir kez cohort olan bölümün yetkilisi artık dersi düzenleyebilir; §6 başı.)
+  Uyarı: kendi bölümünü kümeden çıkaran yetkili, o ders üzerindeki K-49 erişimini
+  de kaybeder (admin erişimi sürer).
 ### DELETE /courses/{id}   ← K-32
 Yalnız **hiç şubesi ve hiç sınavı olmayan** ders silinir.
 Cevap 204 · Hata 409: `{ "detail": "Bu ders silinemez: 2 şube ve 1 sınav bağlı. Önce bunları kaldırın." }`

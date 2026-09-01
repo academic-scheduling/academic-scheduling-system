@@ -284,7 +284,10 @@ def test_clear_preserves_shared_courses_by_default():
     # Dersi ortak yap ve tuketen bolumu ek cohort olarak ekle (K-48)
     r = client.patch(f"/courses/{course['id']}", json={
         "is_common": True,
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     assert r.status_code == 200, r.text
     publish_entry(sec["id"], cls["id"])
@@ -306,7 +309,10 @@ def test_shared_course_diff_names_the_affected_departments():
     tuketen = make_department(h)
     client.patch(f"/courses/{course['id']}", json={
         "is_common": True,
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     publish_entry(sec["id"], cls["id"], day=1, slot=1)
 

@@ -286,7 +286,10 @@ def test_shared_course_exam_records_affected_departments():
     tuketen = make_department(h)
     r = client.patch(f"/courses/{course['id']}", json={
         "is_common": True,      # istek alani `cohorts`, cevap alani `extra_cohorts`
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     assert r.status_code == 200, r.text
     assert len(r.json()["extra_cohorts"]) == 1, r.text

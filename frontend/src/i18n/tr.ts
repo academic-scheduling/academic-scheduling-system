@@ -1210,6 +1210,8 @@ export const tr = {
     placementDone: "Yerleşim tamam",
     noSections: "Şube yok — Dersler'den ekleyin.",
   },
+    sectionNo: (no: number) => `Şube ${no}`,
+    openInCourses: "Ayrıntılar için Dersler'de aç →",
 
   import: {
     title: "Bologna'dan Ders İçe Aktar",

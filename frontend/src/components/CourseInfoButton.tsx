@@ -154,7 +154,7 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
                     return (
                     <Group key={s.id} gap={6} wrap="nowrap" justify="space-between" align="center">
                       <Text fz={11} lh={1.25} truncate style={{ minWidth: 0 }}>
-                        <Text span fw={600}>Şube {s.section_no}</Text>{" "}
+                        <Text span fw={600}>{t.courseInfo.sectionNo(s.section_no)}</Text>{" "}
                         {lecturerLabel(s.lecturer)}
                       </Text>
                       {ilr && (ilr.tam ? (
@@ -177,7 +177,7 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
 
           <Anchor component="button" type="button" fz="xs"
             onClick={() => { onOpenChange(false); onOpenCourses(); }}>
-            Ayrıntılar için Dersler'de aç →
+            {t.courseInfo.openInCourses}
           </Anchor>
         </Stack>
       </Popover.Dropdown>

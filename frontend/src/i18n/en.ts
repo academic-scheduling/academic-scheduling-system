@@ -1101,6 +1101,8 @@ export const en: Dict = {
     placementDone: "Placement complete",
     noSections: "No sections — add one from Courses.",
   },
+    sectionNo: (no: number) => `Section ${no}`,
+    openInCourses: "Open in Courses for details →",
 
   import: {
     title: "Import Courses from Bologna",

@@ -860,7 +860,16 @@ export default function WeeklyPage() {
             <Tooltip label={t.weekly.densityTip}>
               <SegmentedControl size="xs" radius="md" value={density}
                 onChange={(v) => setDensity(v as "compact" | "expand")}
-                styles={{ root: { height: CONTROL_H }, label: { paddingBlock: 2 } }}
+                // paddingBlock ile yükseklik zorlamak etiketi kutunun ÜSTÜNE
+                // yapıştırıyordu (altta ~7px, üstte ~4px boşluk kalıyor ve
+                // kontrol havada duruyordu). Doğrusu: etiket kutuyu doldursun,
+                // metni flex ile ortalasın — kalan boşluğu Mantine'in kendi
+                // dolgusu simetrik dağıtır.
+                styles={{
+                  root: { height: CONTROL_H },
+                  control: { height: "100%" },
+                  label: { height: "100%", display: "flex", alignItems: "center", paddingBlock: 0 },
+                }}
                 data={[
                   { value: "compact", label: t.weekly.densityCompact },
                   { value: "expand", label: t.weekly.densityExpand },

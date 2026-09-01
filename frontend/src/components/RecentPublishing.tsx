@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Anchor, Badge, Button, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Anchor, Badge, Button, Group, Paper, SimpleGrid, Text } from "@mantine/core";
 import {
   IconArrowBackUp, IconCircleCheck, IconClockHour4, IconFilePencil,
   type IconProps,

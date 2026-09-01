@@ -72,11 +72,27 @@ const KIND_STYLE = {
   EXAM:   { bg: "light-dark(#F5F3FF, #272042)", fg: "light-dark(#6D28D9, #B49BF0)" },
 };
 
-/** Çakışma sayacı: sıfırda susturulmuş, sıfırdan büyükte kırmızı. Tasarım
- *  engel/uyarı ayrımı YAPMIYOR — sayaç "bak buraya" diyen bir işaret, kuralın
- *  ağırlığı Yayın Merkezi'nde okunuyor. (`blocking_count` yine de elde.) */
+/* Sayaç renkleri. Tasarım çakışmayı tek kırmızı sayı olarak gösteriyordu ama
+ * K-05'te engel ile uyarının ağırlığı farklı: engel onaya göndermeyi DURDURUR,
+ * uyarı durdurmaz. Tek sayı ikisini eşitliyor ve "3 çakışma" gören kişi işin
+ * durup durmadığını bilemiyordu — bu yüzden iki ayrı sayaç, iki ayrı renk.
+ * Sıfır olan sayaç susturuluyor ki göz yalnız dolu olana gitsin. */
 const NOTR = "light-dark(#94A3B8, #6E7178)";
-const CAKISMA = "light-dark(#EF4444, #F08A8A)";
+const ENGEL = "light-dark(#EF4444, #F08A8A)";
+const UYARI = "light-dark(#D97706, #E8B84B)";
+
+/** Bir sayaç: büyük sayı + küçük etiket. İkisi aynı satırda tabanına oturur. */
+function Sayac({ n, renk, etiket }: { n: number; renk: string; etiket: string }) {
+  return (
+    <>
+      <span style={{
+        fontSize: 20, fontWeight: 700, lineHeight: 1, color: renk,
+        fontVariantNumeric: "tabular-nums",
+      }}>{n}</span>
+      <Text fz={12} c={TEXT_MUTED}>{etiket}</Text>
+    </>
+  );
+}
 
 /** Gün + saat; yıl yok — panel SON hareketleri gösteriyor, yıl gürültü olurdu. */
 function kisaZaman(iso: string, t: Dict): string {
@@ -180,14 +196,14 @@ export default function RecentPublishing() {
                   }}>
                     <st.Icon size={13} />{t.draft.status[d.status]}
                   </span>
-                  {/* Tür etiketi Değişiklik Akışı'ndaki sözcüklerin AYNISI —
-                      aynı kavram iki ekranda iki farklı adla anılmasın. */}
                   <span style={{
                     display: "inline-flex", alignItems: "center", height: 20,
                     padding: "0 8px", borderRadius: 10, background: kind.bg,
                     color: kind.fg, fontSize: 11, fontWeight: 600,
                   }}>
-                    {d.kind === "EXAM" ? t.changeFeed.examSchedule : t.changeFeed.weeklySchedule}
+                    {d.kind === "EXAM"
+                      ? t.recentPublishing.examSchedule
+                      : t.recentPublishing.weeklySchedule}
                   </span>
                 </div>
 
@@ -200,16 +216,21 @@ export default function RecentPublishing() {
                   </Text>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span style={{
-                    fontSize: 20, fontWeight: 700, lineHeight: 1,
-                    color: d.conflict_count === 0 ? NOTR : CAKISMA,
-                    fontVariantNumeric: "tabular-nums",
-                  }}>{d.conflict_count}</span>
-                  <Text fz={12} c={TEXT_MUTED}>
-                    {t.recentPublishing.conflicts} · {t.publishing.changeCount(d.change_count)}
-                  </Text>
+                {/* Uyarı sayısı TÜRETİLİYOR: sunucu toplamı ve engeli veriyor,
+                    üçüncü bir alan aynı gerçeği iki yerde tutmak olurdu. */}
+                <div style={{
+                  display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap",
+                }}>
+                  <Sayac n={d.blocking_count} etiket={t.recentPublishing.blocking}
+                    renk={d.blocking_count === 0 ? NOTR : ENGEL} />
+                  <Text fz={12} c={TEXT_MUTED}>·</Text>
+                  <Sayac n={d.conflict_count - d.blocking_count}
+                    etiket={t.recentPublishing.warnings}
+                    renk={d.conflict_count - d.blocking_count === 0 ? NOTR : UYARI} />
                 </div>
+                <Text fz={12} c={TEXT_MUTED} mt={-3}>
+                  {t.publishing.changeCount(d.change_count)}
+                </Text>
 
                 {/* Düğmeleri hizalayan şey BU: kartlar farklı uzunlukta not
                     taşısa da (ya da hiç taşımasa da) blok aynı yeri kaplar.

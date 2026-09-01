@@ -1188,19 +1188,17 @@ export const tr = {
   recentPublishing: {
     title: "Taslaklar ve onaylar",
     openCenter: "Yayın Merkezi",
-    conflicts: "çakışma",
-    view: "Görüntüle",
-    empty: "Henüz taslak ya da onay yok.",
-  },
-
-  changeFeed: {
-    // K-82: başlık kısaldı. Uzun hâli ("Bölümünüzü etkileyen son
-    // değişiklikler") panelin ne olduğunu değil gerekçesini anlatıyordu;
-    // gerekçe kalıcı bir başlık olamayacak kadar uzundu.
-    title: "Son onaylar",
-    seeAll: "Hepsini gör",
+    /** Çakışma sayacı İKİYE ayrılıyor: K-05'te engel onaya göndermeyi
+     *  DURDURUR, uyarı durdurmaz. Tek sayı ikisini eşitliyor ve "3 çakışma"
+     *  gören kişi işin durup durmadığını bilemiyordu. */
+    blocking: "engel",
+    warnings: "uyarı",
+    /** Tür rozeti. Silinen changeFeed sözlüğünden taşındı — tek tüketicisi
+     *  kalmıştı. */
     examSchedule: "sınav takvimi",
     weeklySchedule: "ders programı",
+    view: "Görüntüle",
+    empty: "Henüz taslak ya da onay yok.",
   },
 
   courseInfo: {

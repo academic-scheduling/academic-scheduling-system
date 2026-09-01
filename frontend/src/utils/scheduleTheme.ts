@@ -35,11 +35,6 @@ export const BORDER_HOVER = "light-dark(#CBD5E1, #4A4E57)";  // hover'da bir tı
 export const HEADER_BG = "light-dark(#E4EAF1, #2A2C31)";     // gün başlığı bandı
 export const SIDEBAR_BG = "light-dark(#F8FAFC, #1E1F23)";    // sol panel zemini
 export const PAGE_SURFACE = "light-dark(#FFFFFF, #2C2E33)";  // kart zemini (en açık katman)
-// K-59: taslak modu şeridi. Kullanıcının "şu an yayına mı yazıyorum" sorusunu
-// hiç sormaması gerekir; şerit bu yüzden zeminden AYRIŞIR. Koyu temada açık
-// sarı kullanmak ekranı yırtıyordu — iki tema için ayrı ton.
-export const DRAFT_SURFACE = "light-dark(#FFFBEB, #33301F)";
-export const DRAFT_BORDER = "light-dark(#FDE68A, #6B5D2A)";
 
 /** BOŞ slotun zemini: ızgara gövdesinden bir ton, karttan iki ton koyu.
  *  Böylece kart "dolu", boşluk "boş" olarak okunur — aydınlıkta beyaz kart /
@@ -71,7 +66,6 @@ export const LUNCH_CELL_BG = "light-dark(#D8DFE9, #191B1E)";
 
 export const TIME_COLOR = "light-dark(#94A3B8, #6E7178)";    // saat cetveli — susturulmuş
 export const TEXT_MUTED = "light-dark(#64748B, #909296)";    // ikincil metin (derslik, hoca)
-export const TEXT_BODY = "light-dark(#334155, #C1C2C5)";     // ikincilden bir ton belirgin
 export const TEXT_STRONG = "light-dark(#0F172A, #E6E8EC)";   // ders kodu
 
 /** Durum vurgusu — YALNIZ ince sol çizgide ve küçük ikonda kullanılır.
@@ -99,15 +93,11 @@ export const SIDE_W = 214;     // sol ders paneli
 export const MIN_DAY_W = 172;  // bir günün en dar hâli
 export const MIN_LANE_W = 176; // paralel kart şeridinin en dar hâli
 
-/** Izgara gövdesinin yüksekliği. İki ekranın dikey ölçeği farklı — haftalıkta
- *  9 slot, sınavda 08:00-21:00 arası 13 saatlik dilim — ama TOPLAM yükseklik
- *  aynı olmalı ki iki sayfa arasında geçerken takvim "zıplamasın".
- *  Sayılar bunun için seçildi:  9 × 91 = 819  ·  13 × 63 = 819
- *  (Sınav penceresi 21:00'de kalır: K-06 akşam sınavına izin veriyor, pencereyi
- *  daraltmak geç saatli bir sınavı sessizce kırpardı.) */
-export const GRID_BODY_H = 819;
-export const WEEKLY_ROW_H = 91;   // bir slot
-export const EXAM_HOUR_H = 63;    // bir saat
+/** Bir slotun yüksekliği. Sınav ızgarası da bir SAATİ bu yükseklikte çiziyor
+ *  (K-76): eskiden 63px'ti — 13 saati haftalığın boyuna sıkıştırmak için — ve
+ *  "yarım slot" gibi duruyordu. Artık sınav ızgarası uzuyor, görünür yükseklik
+ *  haftalıkla eşitlenip fazlası kaydırılıyor (ExamsPage.VISIBLE_H). */
+export const WEEKLY_ROW_H = 91;
 
 /** Kart iç yerleşimi — iki ekranda da aynı. */
 export const CARD_RADIUS = 10;

@@ -1082,16 +1082,17 @@ export const en: Dict = {
   recentPublishing: {
     title: "Drafts and approvals",
     openCenter: "Publishing Center",
-    conflicts: "conflicts",
+    /** Çakışma sayacı İKİYE ayrılıyor: K-05'te engel onaya göndermeyi
+     *  DURDURUR, uyarı durdurmaz. Tek sayı ikisini eşitliyor ve "3 çakışma"
+     *  gören kişi işin durup durmadığını bilemiyordu. */
+    blocking: "blocking",
+    warnings: "warnings",
+    /** Tür rozeti. Silinen changeFeed sözlüğünden taşındı — tek tüketicisi
+     *  kalmıştı. */
+    examSchedule: "exam schedule",
+    weeklySchedule: "class schedule",
     view: "View",
     empty: "No drafts or approvals yet.",
-  },
-
-  changeFeed: {
-    title: "Recent approvals",
-    seeAll: "See all",
-    examSchedule: "exam schedule",
-    weeklySchedule: "weekly schedule",
   },
 
   courseInfo: {

@@ -520,6 +520,12 @@ export type ScheduleDraft = {
   /** Yayına göre kaç fark var. CANLI hesaplanır (K-59) — taslak açıldığındaki
    *  hale göre değil, O ANKİ yayına göre. */
   change_count: number;
+  /** K-85: çakışma sayaçları. change_count ile aynı kural — onaylanmış kayıtta
+   *  0 (canlı tarama o anki yayına karşı koşar, sonraki onaylarla kayar).
+   *  İkisi ayrı çünkü K-05'te ağırlıkları farklı: engel onaya göndermeyi
+   *  durdurur, uyarı durdurmaz. */
+  conflict_count: number;
+  blocking_count: number;
   owner: DraftUserRef;
   created_at: string;
   /** K-85: taslağın SON DEĞİŞİKLİK zamanı — içindeki yerleşim/sınav yazmaları

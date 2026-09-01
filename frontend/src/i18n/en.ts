@@ -1082,6 +1082,7 @@ export const en: Dict = {
   recentPublishing: {
     title: "Drafts and approvals",
     openCenter: "Publishing Center",
+    conflicts: "conflicts",
     view: "View",
     empty: "No drafts or approvals yet.",
   },

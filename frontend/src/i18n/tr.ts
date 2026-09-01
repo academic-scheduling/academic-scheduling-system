@@ -1188,6 +1188,7 @@ export const tr = {
   recentPublishing: {
     title: "Taslaklar ve onaylar",
     openCenter: "Yayın Merkezi",
+    conflicts: "çakışma",
     view: "Görüntüle",
     empty: "Henüz taslak ya da onay yok.",
   },

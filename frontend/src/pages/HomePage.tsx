@@ -96,18 +96,6 @@ export default function HomePage() {
     <Stack gap="lg" className="home-page">
       <Title order={3}>{t.home.title}</Title>
 
-      {/* K-85: "Son onaylar" (ChangeFeed) bandının yerini aldı. O yalnız BİTMİŞ
-          işleri gösteriyordu; "şu an neyin üzerinde çalışıyorum" ve "bana ne
-          geldi" soruları cevapsız kalıyordu. Bant sayfanın TEPESİNDE ve TAM
-          GENİŞLİKTE: dört kart sağ sütuna sığmıyor, ayrıca bu panel bir sonraki
-          işi işaret ediyor — sayaçların altına gömülmemeli. */}
-      <RecentPublishing />
-
-      {/* TEK IZGARA, iki sürekli sütun (7/5). İki sütun da kendi bloklarını
-          alt alta akıtıyor; böylece kısa kalan bir sütunun altında boşluk
-          KALMIYOR. Sütun oranı sabit olduğu için dikey kenarlar da hizalı.
-          Sol: kimlik → kural dağılımı → ısı haritası. Sağ: 3×2 özet → hızlı
-          işlemler → son işlemler → son onaylar. */}
       <Grid gutter="lg" align="flex-start">
         <Grid.Col span={{ base: 12, lg: LEFT }}>
           <Stack gap="lg">
@@ -150,6 +138,19 @@ export default function HomePage() {
           </Stack>
         </Grid.Col>
       </Grid>
+
+      {/* K-85: "Son onaylar" (ChangeFeed) bandının yerini aldı. O yalnız BİTMİŞ
+          işleri gösteriyordu; "şu an neyin üzerinde çalışıyorum" ve "bana ne
+          geldi" soruları cevapsız kalıyordu. Bant sayfanın TEPESİNDE ve TAM
+          GENİŞLİKTE: dört kart sağ sütuna sığmıyor, ayrıca bu panel bir sonraki
+          işi işaret ediyor — sayaçların altına gömülmemeli. */}
+      <RecentPublishing />
+
+      {/* TEK IZGARA, iki sürekli sütun (7/5). İki sütun da kendi bloklarını
+          alt alta akıtıyor; böylece kısa kalan bir sütunun altında boşluk
+          KALMIYOR. Sütun oranı sabit olduğu için dikey kenarlar da hizalı.
+          Sol: kimlik → kural dağılımı → ısı haritası. Sağ: 3×2 özet → hızlı
+          işlemler → son işlemler → son onaylar. */}
     </Stack>
   );
 }
@@ -284,7 +285,7 @@ const ACTION_COL = 104;
 
 /** "Son işlemleriniz" — kendi denetim izinizin son satırları (K-82).
  *
- *  Üstteki `RecentPublishing` ile karıştırılmamalı: bu "ben ne yaptım"
+ *  Alttaki `RecentPublishing` ile karıştırılmamalı: bu "ben ne yaptım"
  *  (denetim izi), o "hangi taslak/onay bekliyor" (yapılacak iş). İkisi ayrı
  *  sorular, ayrı uçlar.
  */

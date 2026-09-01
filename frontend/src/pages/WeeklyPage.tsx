@@ -8,7 +8,7 @@ import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck,
-  IconMapPin, IconPlus, IconTrash, IconWorld, IconX,
+  IconMapPin, IconPlus, IconTrash, IconUser, IconWorld, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
@@ -1347,7 +1347,14 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
     : `${online ? t.weekly.online : e.classroom?.room_code ?? "—"}`;
 
   const canDrag = canWrite && !many;
-  const showLecturer = !many && c.slot_count > 1 && lecturerName;
+  /* K-85: HOCA ile DERSLİK yer değiştirdi.
+     1 slotluk kart 89px; dolgu düşünce ~73px kalıyor ve kod + ders adı +
+     tek meta satırı zaten ~64px yer tutuyor. Yani dördüncü satır TAŞIYOR ve
+     ikisinden biri seçilmek zorunda. Eskiden her zaman derslik yazılıyor,
+     hoca yalnız çok slotlu kartta görünüyordu; artık tersi.
+     Toplu kart (paralel şubeler) bunun DIŞINDA: orada tek bir hoca yazmak
+     yanlış olur, meta satırı şube/derslik özetini taşımaya devam eder. */
+  const showRoom = !many && c.slot_count > 1;
 
   return (
     <div
@@ -1416,10 +1423,21 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
         {e.section.course.name}
       </div>
       <Group gap={4} wrap="nowrap" mt={5} style={{ color: TEXT_MUTED, minWidth: 0 }}>
-        {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
-        <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
+        {many
+          ? (online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />)
+          : <IconUser size={14} stroke={1.8} />}
+        <Text size="xs" c="dimmed" truncate>
+          {many ? altSatir : (lecturerName ?? "—")}
+        </Text>
       </Group>
-      {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
+      {showRoom && (
+        <Group gap={4} wrap="nowrap" mt={3} style={{ color: TEXT_MUTED, minWidth: 0 }}>
+          {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
+          {/* altSatir tek girişte zaten online'ı da karşılıyor (t.weekly.online).
+              Eskiden burada elle yazılmış "Online" vardı ve çeviriyi atlıyordu. */}
+          <Text size="xs" c="dimmed" truncate>{altSatir}</Text>
+        </Group>
+      )}
       {(hard || warn) && (
         <span title={hard ? t.weekly.hardTip : t.weekly.warnTip}
           onClick={(ev) => {

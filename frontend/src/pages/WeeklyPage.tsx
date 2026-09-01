@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, ScrollArea, Select, Stack, Text, TextInput, Title, Tooltip,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -82,12 +82,22 @@ type Drag =
 // karşılığı; palet + sürükle-bırak (yazılabilir) aynen çalışır.
 const COMMON_YEAR = "common";
 
-/** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler. */
-function layoutDay(entries: WeeklyEntry[]): Cluster[] {
+/** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler.
+ *
+ *  `genis` (K-85): kümeleme KAPALI — paralel şubeler tek kartta toplanmaz, her
+ *  giriş kendi kartını alır. Kompakt mod varsayılan çünkü servis derslerinin
+ *  7-8 şubesi aynı slotta olabiliyor ve hepsini ayrı şeride açmak kartları
+ *  ~11px'e düşürüp ızgarayı okunmaz ediyor; ama "hangi şube nerede" sorusunu
+ *  ancak ayrı kartlar cevaplıyor. Karar kullanıcının. */
+function layoutDay(entries: WeeklyEntry[], genis = false): Cluster[] {
   // 1) Aynı ders + aynı zaman + aynı oturum türü → tek küme (paralel şubeler)
   const groups = new Map<string, WeeklyEntry[]>();
   for (const e of entries) {
-    const key = `${e.section.course.id}|${e.start_slot}|${e.slot_count}|${e.session_type}`;
+    // Geniş modda anahtara şube no + giriş id'si eklenir: no sıralamayı
+    // (şeritler şube sırasına göre dizilsin) id ise benzersizliği verir.
+    // padStart olmadan "10" < "2" diye sıralanırdı.
+    const key = `${e.section.course.id}|${e.start_slot}|${e.slot_count}|${e.session_type}`
+      + (genis ? `|${String(e.section.section_no).padStart(3, "0")}|${e.id}` : "");
     const arr = groups.get(key);
     if (arr) arr.push(e);
     else groups.set(key, [e]);
@@ -163,6 +173,12 @@ export default function WeeklyPage() {
     key: "weekly-year", defaultValue: "1", getInitialValueInEffect: false });
   const [sem, setSem] = useLocalStorage<SemesterType>({
     key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
+  /** K-85: kart yoğunluğu. "compact" paralel şubeleri tek kartta toplar
+   *  (varsayılan), "expand" hepsini ayrı çizer. Cohort seçimleriyle aynı yerde
+   *  saklanıyor: bu da bir GÖRÜNÜM tercihi ve her açılışta yeniden
+   *  seçilmemeli. */
+  const [density, setDensity] = useLocalStorage<"compact" | "expand">({
+    key: "weekly-density", defaultValue: "compact", getInitialValueInEffect: false });
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   // Workgroup'un TÜM dersleri bir kez çekilir. Üç iş birden görür: paletin
@@ -611,9 +627,11 @@ export default function WeeklyPage() {
 
   const byDay = useMemo(() => {
     const m = new Map<number, Cluster[]>();
-    for (const d of DAYS) m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d)));
+    for (const d of DAYS) {
+      m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d), density === "expand"));
+    }
     return m;
-  }, [entries]);
+  }, [entries, density]);
 
   const showConflicts = (conflicts: ConflictResult[], baslik: string) => {
     if (!conflicts.length) {
@@ -837,6 +855,17 @@ export default function WeeklyPage() {
           </Group>
 
           <Group gap={6} align="center" wrap="wrap">
+            {/* K-85: yoğunluk bir GÖRÜNÜM tercihi, bir eylem değil — bu yüzden
+                eylem grubunun en solunda, Geri Al'dan önce duruyor. */}
+            <Tooltip label={t.weekly.densityTip}>
+              <SegmentedControl size="xs" radius="md" value={density}
+                onChange={(v) => setDensity(v as "compact" | "expand")}
+                styles={{ root: { height: CONTROL_H }, label: { paddingBlock: 2 } }}
+                data={[
+                  { value: "compact", label: t.weekly.densityCompact },
+                  { value: "expand", label: t.weekly.densityExpand },
+                ]} />
+            </Tooltip>
             {/* K-76: Geri Al yalnız simge (yazı kaldırıldı); sayı tooltip'te. */}
             {canWrite && (
               <Tooltip label={t.weekly.undoTip(undoCount)}>

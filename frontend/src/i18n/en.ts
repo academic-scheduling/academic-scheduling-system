@@ -767,6 +767,10 @@ export const en: Dict = {
     loadFailed: "The schedule could not be loaded",
     notLoaded: "Could not be loaded",
 
+    densityCompact: "Compact",
+    densityExpand: "Expanded",
+    densityTip:
+      "Compact: parallel sections of the same course and time share one card. Expanded: every section gets its own card.",
     session: { THEORY: "Theory", PRACTICE: "Practice", LAB: "Lab" },
     sessionBadge: { THEORY: "Theory", PRACTICE: "Prac.", LAB: "Lab" },
     delivery: {
@@ -1097,12 +1101,12 @@ export const en: Dict = {
     noExams: "No exam added.",
     /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
      *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sectionNo: (no: number) => `Section ${no}`,
+    openInCourses: "Open in Courses for details →",
     sessionLetters: { THEORY: "T", PRACTICE: "P", LAB: "L" },
     placementDone: "Placement complete",
     noSections: "No sections — add one from Courses.",
   },
-    sectionNo: (no: number) => `Section ${no}`,
-    openInCourses: "Open in Courses for details →",
 
   import: {
     title: "Import Courses from Bologna",

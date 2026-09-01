@@ -832,6 +832,10 @@ export const tr = {
     loadFailed: "Program yüklenemedi",
     notLoaded: "Yüklenemedi",
 
+    densityCompact: "Kompakt",
+    densityExpand: "Geniş",
+    densityTip:
+      "Kompakt: aynı ders + saatteki paralel şubeler tek kartta. Geniş: her şube ayrı kartta.",
     session: { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" },
     /** Izgara kartındaki oturum türü çipi — dar alan için kısa. Teori de
      *  burada ama kart onu ÇİZMİYOR (varsayılan tür; her karta yazmak
@@ -1206,12 +1210,12 @@ export const tr = {
     noExams: "Sınav eklenmedi.",
     /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
      *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sectionNo: (no: number) => `Şube ${no}`,
+    openInCourses: "Ayrıntılar için Dersler'de aç →",
     sessionLetters: { THEORY: "T", PRACTICE: "U", LAB: "L" },
     placementDone: "Yerleşim tamam",
     noSections: "Şube yok — Dersler'den ekleyin.",
   },
-    sectionNo: (no: number) => `Şube ${no}`,
-    openInCourses: "Ayrıntılar için Dersler'de aç →",
 
   import: {
     title: "Bologna'dan Ders İçe Aktar",

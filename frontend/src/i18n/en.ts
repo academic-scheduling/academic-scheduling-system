@@ -1079,6 +1079,13 @@ export const en: Dict = {
     submitFailed: "Could not be sent",
   },
 
+  recentPublishing: {
+    title: "Drafts and approvals",
+    openCenter: "Publishing Center",
+    view: "View",
+    empty: "No drafts or approvals yet.",
+  },
+
   changeFeed: {
     title: "Recent approvals",
     seeAll: "See all",

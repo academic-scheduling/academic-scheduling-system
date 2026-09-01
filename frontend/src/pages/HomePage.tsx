@@ -14,7 +14,7 @@ import type {
   AuditLog, ConflictScan, DashboardSummary, Department, OccupancySummary, User,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import ChangeFeed from "../components/ChangeFeed";
+import RecentPublishing from "../components/RecentPublishing";
 import IdentityCard from "../components/IdentityCard";
 import OccupancyHeatmap from "../components/OccupancyHeatmap";
 import RuleBreakdown from "../components/RuleBreakdown";
@@ -96,6 +96,13 @@ export default function HomePage() {
     <Stack gap="lg" className="home-page">
       <Title order={3}>{t.home.title}</Title>
 
+      {/* K-85: "Son onaylar" (ChangeFeed) bandının yerini aldı. O yalnız BİTMİŞ
+          işleri gösteriyordu; "şu an neyin üzerinde çalışıyorum" ve "bana ne
+          geldi" soruları cevapsız kalıyordu. Bant sayfanın TEPESİNDE ve TAM
+          GENİŞLİKTE: dört kart sağ sütuna sığmıyor, ayrıca bu panel bir sonraki
+          işi işaret ediyor — sayaçların altına gömülmemeli. */}
+      <RecentPublishing />
+
       {/* TEK IZGARA, iki sürekli sütun (7/5). İki sütun da kendi bloklarını
           alt alta akıtıyor; böylece kısa kalan bir sütunun altında boşluk
           KALMIYOR. Sütun oranı sabit olduğu için dikey kenarlar da hizalı.
@@ -140,10 +147,6 @@ export default function HomePage() {
 
             <QuickActions user={user} />
             <MyActivity items={activity} />
-            {/* K-59: taslaklar özel, onaylar arka planda — program haber
-                verilmeden değişebiliyor. "Sizin yaptıklarınız"ın hemen altında
-                "size yapılanlar" duruyor. */}
-            <ChangeFeed limit={5} />
           </Stack>
         </Grid.Col>
       </Grid>
@@ -281,9 +284,9 @@ const ACTION_COL = 104;
 
 /** "Son işlemleriniz" — kendi denetim izinizin son satırları (K-82).
  *
- *  Yanındaki `ChangeFeed` ile karıştırılmamalı: bu "ben ne yaptım", o
- *  "başkasının onayı programımı nasıl değiştirdi" (K-59). İkisi ayrı sorular,
- *  ayrı uçlar.
+ *  Üstteki `RecentPublishing` ile karıştırılmamalı: bu "ben ne yaptım"
+ *  (denetim izi), o "hangi taslak/onay bekliyor" (yapılacak iş). İkisi ayrı
+ *  sorular, ayrı uçlar.
  */
 function MyActivity({ items }: { items: AuditLog[] | null }) {
   const t = useT();

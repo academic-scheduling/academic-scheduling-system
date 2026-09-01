@@ -522,6 +522,10 @@ export type ScheduleDraft = {
   change_count: number;
   owner: DraftUserRef;
   created_at: string;
+  /** K-85: taslağın SON DEĞİŞİKLİK zamanı — içindeki yerleşim/sınav yazmaları
+   *  ve yaşam döngüsü olayları (gönderim, geri çekme, onay, ret) buraya
+   *  dokunur. Ana sayfadaki "Taslaklar ve onaylar" bandı buna göre sıralar. */
+  updated_at: string;
   submitted_at: string | null;
   submit_note: string | null;
   /** K-83: talebin gönderildiği onay yetkilileri. Gönderen "kime gitti"yi,

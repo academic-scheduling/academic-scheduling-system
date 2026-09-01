@@ -1185,6 +1185,13 @@ export const tr = {
     submitFailed: "Gönderilemedi",
   },
 
+  recentPublishing: {
+    title: "Taslaklar ve onaylar",
+    openCenter: "Yayın Merkezi",
+    view: "Görüntüle",
+    empty: "Henüz taslak ya da onay yok.",
+  },
+
   changeFeed: {
     // K-82: başlık kısaldı. Uzun hâli ("Bölümünüzü etkileyen son
     // değişiklikler") panelin ne olduğunu değil gerekçesini anlatıyordu;

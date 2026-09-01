@@ -26,10 +26,14 @@ const LIMIT = 4;
  *  koyu rampasına (scheduleTheme) uyacak biçimde eklendi. `light-dark()` ile
  *  ikisi tek değerde duruyor — sabit hex iki tema için ayrı ayrı yönetilirdi. */
 type DurumStil = {
-  color: string;      // rozet yazısı + ikon
+  color: string;      // rozet yazısı + ikon + DOLU düğmenin zemini
   pill: string;       // rozet zemini
   border: string;     // kart kenarlığı
   bg: string;         // kart zemini
+  /** Dolu düğmenin YAZI rengi. Aydınlıkta beyaz, ama koyu temada `color`
+   *  açık bir pastel (#E8B84B gibi) ve üstünde beyaz okunmuyor — o yüzden
+   *  ayrı bir alan, `#fff` sabiti değil. */
+  onColor: string;
   Icon: ComponentType<IconProps>;
 };
 
@@ -37,21 +41,25 @@ const STATUS: Record<DraftStatus, DurumStil> = {
   OPEN: {
     color: "light-dark(#B45309, #E8B84B)", pill: "light-dark(#FFFBEB, #33301F)",
     border: "light-dark(#FDE68A, #6B5D2A)", bg: "light-dark(#FFFEFA, #2A2822)",
+    onColor: "light-dark(#FFFFFF, #241E0B)",
     Icon: IconFilePencil,
   },
   PENDING: {
     color: "light-dark(#2563EB, #6EA8FE)", pill: "light-dark(#EFF6FF, #1E2738)",
     border: "light-dark(#BFDBFE, #2F4A78)", bg: "light-dark(#FCFDFF, #24272E)",
+    onColor: "light-dark(#FFFFFF, #0F1930)",
     Icon: IconClockHour4,
   },
   REJECTED: {
     color: "light-dark(#EF4444, #F08A8A)", pill: "light-dark(#FEF2F2, #35211F)",
     border: "light-dark(#FECACA, #6E3B3B)", bg: "light-dark(#FFFCFC, #2B2426)",
+    onColor: "light-dark(#FFFFFF, #2B1414)",
     Icon: IconArrowBackUp,
   },
   APPROVED: {
     color: "light-dark(#16A34A, #5FD08A)", pill: "light-dark(#F0FDF4, #1B2E22)",
     border: "light-dark(#BBF7D0, #2F6B45)", bg: "light-dark(#FCFFFD, #232A26)",
+    onColor: "light-dark(#FFFFFF, #0E2417)",
     Icon: IconCircleCheck,
   },
 };
@@ -155,6 +163,13 @@ export default function RecentPublishing() {
             const st = STATUS[d.status];
             const kind = KIND_STYLE[d.kind === "EXAM" ? "EXAM" : "WEEKLY"];
             const not = aciklama(d);
+            // Tasarımın kuralı: reddedilen kart ve DEĞİŞİKLİĞİ OLAN açık taslak
+            // dolu düğme alır, ötekiler beyaz/çerçeveli. İkisi de "burada
+            // yapılacak bir iş var" diyen kartlar — biri düzeltilmeyi, öteki
+            // onaya gönderilmeyi bekliyor. Onay bekleyen ve onaylanan kartta
+            // kullanıcıya düşen bir iş yok, düğme de sessiz kalıyor.
+            const dolu = d.status === "REJECTED"
+              || (d.status === "OPEN" && d.change_count > 0);
             return (
               <div key={d.id} style={{
                 border: `1px solid ${st.border}`,
@@ -221,9 +236,9 @@ export default function RecentPublishing() {
                   style={{
                     display: "inline-flex", alignItems: "center", justifyContent: "center",
                     height: 32, padding: "0 12px", fontSize: 12, fontWeight: 600,
-                    border: "1px solid light-dark(#CBD5E1, #4A4E57)",
-                    background: "light-dark(#FFFFFF, #2C2E33)",
-                    color: "light-dark(#334155, #C1C2C5)",
+                    border: dolu ? "none" : "1px solid light-dark(#CBD5E1, #4A4E57)",
+                    background: dolu ? st.color : "light-dark(#FFFFFF, #2C2E33)",
+                    color: dolu ? st.onColor : "light-dark(#334155, #C1C2C5)",
                     borderRadius: 6,
                   }}>
                   {t.recentPublishing.view}

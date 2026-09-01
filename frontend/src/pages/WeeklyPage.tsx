@@ -1353,8 +1353,13 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
      ikisinden biri seçilmek zorunda. Eskiden her zaman derslik yazılıyor,
      hoca yalnız çok slotlu kartta görünüyordu; artık tersi.
      Toplu kart (paralel şubeler) bunun DIŞINDA: orada tek bir hoca yazmak
-     yanlış olur, meta satırı şube/derslik özetini taşımaya devam eder. */
-  const showRoom = !many && c.slot_count > 1;
+     yanlış olur, meta satırı şube/derslik özetini taşımaya devam eder.
+
+     Deneme: ikisi de HER kartta yazılıyor. Ölçü dar — 1 slotluk kartın iç
+     yüksekliği 73px ve dört satır ~82px tutuyordu; satır aralıkları ve meta
+     satırlarının satır yüksekliği sıkıştırılarak yer açıldı. Kart zaten
+     overflow:hidden, yani hesap tutmazsa taşan satır sessizce kırpılır. */
+  const showRoom = !many;
 
   return (
     <div
@@ -1422,20 +1427,24 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
       <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
         {e.section.course.name}
       </div>
-      <Group gap={4} wrap="nowrap" mt={5} style={{ color: TEXT_MUTED, minWidth: 0 }}>
+      <Group gap={4} wrap="nowrap" mt={4} style={{ color: TEXT_MUTED, minWidth: 0 }}>
         {many
           ? (online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />)
           : <IconUser size={14} stroke={1.8} />}
-        <Text size="xs" c="dimmed" truncate>
+        <Text size="xs" c="dimmed" truncate lh={1.2}>
           {many ? altSatir : (lecturerName ?? "—")}
         </Text>
       </Group>
       {showRoom && (
-        <Group gap={4} wrap="nowrap" mt={3} style={{ color: TEXT_MUTED, minWidth: 0 }}>
+        // Uyarı ikonu sağ-altta MUTLAK konumlu; 1 slotluk kartta tam bu satırın
+        // hizasına düşüyor. Sağdan yer ayrılmazsa kırpılan metin ikonun altına
+        // girer ve ikisi de okunmaz olur.
+        <Group gap={4} wrap="nowrap" mt={2}
+          style={{ color: TEXT_MUTED, minWidth: 0, paddingRight: (hard || warn) ? 22 : 0 }}>
           {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
           {/* altSatir tek girişte zaten online'ı da karşılıyor (t.weekly.online).
               Eskiden burada elle yazılmış "Online" vardı ve çeviriyi atlıyordu. */}
-          <Text size="xs" c="dimmed" truncate>{altSatir}</Text>
+          <Text size="xs" c="dimmed" truncate lh={1.2}>{altSatir}</Text>
         </Group>
       )}
       {(hard || warn) && (

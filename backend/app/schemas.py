@@ -664,6 +664,10 @@ class DraftOut(BaseModel):
     change_count: int                             # yayına göre kaç fark var
     owner: DraftUserRef
     created_at: datetime
+    # K-85: taslağın son değişiklik zamanı — içindeki yerleşim/sınav yazmaları
+    # da buraya dokunur (yaşam döngüsü olayları da). Ana sayfadaki "son
+    # kayıtlar" listesi bu alana göre sıralar.
+    updated_at: datetime
     submitted_at: datetime | None = None
     submit_note: str | None = None
     # K-83: talebin gönderildiği yetkililer. Gönderen "kime gitti"yi, alıcı da

@@ -34,6 +34,7 @@ from app.audit import build_change_summary, log_action
 from app.cohort import cohort_course_filter
 from app.conflict_service import check_exams_save, check_weekly_save, scan_draft
 from app.draft_dispatch import service_for as _svc
+from app.draft_service import touch_draft
 from app.deps import get_db, get_current_user
 from app.models import (
     Course, CourseSection, Department, DepartmentMembership, DraftKind,
@@ -340,6 +341,7 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "change_count": len(svc.compute_diff(db, draft)) if canli else 0,
         "owner": draft.owner,
         "created_at": draft.created_at,
+        "updated_at": draft.updated_at,
         "submitted_at": draft.submitted_at,
         "submit_note": draft.submit_note,
         "approvers": draft.approvers,           # K-83: talep kime gitti
@@ -455,6 +457,7 @@ def rename_draft(
     ozet = build_change_summary(draft, {"name": payload.name})
     draft.name = payload.name
     log_action(db, user, "UPDATE", "schedule_draft", draft.id, draft, ozet)
+    touch_draft(draft)
     db.commit()
     return _to_out(db, draft)
 
@@ -495,6 +498,7 @@ def clear_draft_entries(
     log_action(db, user, "UPDATE", "schedule_draft", draft.id, draft,
                f"Taslak temizlendi: {silinen} {birim} silindi"
                + (f", {korunan} ortak ders korundu" if korunan else ""))
+    touch_draft(draft)
     db.commit()
     return {"deleted": silinen, "preserved_shared": korunan}
 
@@ -577,6 +581,7 @@ def create_draft_entry(
     db.flush()
     log_action(db, user, "CREATE", "weekly_entry", entry.id, entry,
                f"Taslak #{draft.id}")
+    touch_draft(draft)
     db.commit()
 
     entry = (_eager_entry_query(db, published_only=False)
@@ -623,6 +628,7 @@ def update_draft_entry(
     for field, value in data.items():
         setattr(entry, field, value)
     log_action(db, user, "UPDATE", "weekly_entry", entry.id, entry, ozet)
+    touch_draft(draft)
     db.commit()
 
     entry = (_eager_entry_query(db, published_only=False)
@@ -647,6 +653,7 @@ def delete_draft_entry(
     log_action(db, user, "DELETE", "weekly_entry", entry.id, entry,
                f"Taslak #{draft.id}")
     db.delete(entry)
+    touch_draft(draft)
     db.commit()
 
 
@@ -743,6 +750,7 @@ def create_draft_exam(
     db.add(exam)
     db.flush()
     log_action(db, user, "CREATE", "exam", exam.id, exam, f"Taslak #{draft.id}")
+    touch_draft(draft)
     db.commit()
 
     exam = (_eager_exam_query(db, published_only=False)
@@ -799,6 +807,7 @@ def update_draft_exam(
     for field, value in data.items():
         setattr(exam, field, value)
     log_action(db, user, "UPDATE", "exam", exam.id, exam, ozet)
+    touch_draft(draft)
     db.commit()
 
     exam = (_eager_exam_query(db, published_only=False)
@@ -822,6 +831,7 @@ def delete_draft_exam(
     exam = _get_draft_exam(db, draft, exam_id)
     log_action(db, user, "DELETE", "exam", exam.id, exam, f"Taslak #{draft.id}")
     db.delete(exam)
+    touch_draft(draft)
     db.commit()
 
 
@@ -917,6 +927,7 @@ def submit_draft(
     log_action(db, user, "SUBMIT", "schedule_draft", draft.id, draft,
                "Durum: Taslak → Onay bekliyor · Onaylayıcı: "
                + (", ".join(a.name for a in alicilar) or "—"))
+    touch_draft(draft)
     db.commit()
     db.refresh(draft)
     return {"draft": _to_out(db, draft), "warnings": tablo["warnings"]}
@@ -941,6 +952,7 @@ def withdraw_draft(
     draft.approvers = []
     log_action(db, user, "WITHDRAW", "schedule_draft", draft.id, draft,
                "Durum: Onay bekliyor → Taslak")
+    touch_draft(draft)
     db.commit()
     db.refresh(draft)
     return _to_out(db, draft)

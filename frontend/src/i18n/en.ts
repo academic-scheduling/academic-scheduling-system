@@ -1095,6 +1095,10 @@ export const en: Dict = {
     common: "Common",
     exams: "Exams",
     noExams: "No exam added.",
+    /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
+     *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sessionLetters: { THEORY: "T", PRACTICE: "P", LAB: "L" },
+    placementDone: "Placement complete",
     noSections: "No sections — add one from Courses.",
   },
 

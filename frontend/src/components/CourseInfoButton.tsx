@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { ActionIcon, Anchor, Badge, Group, Popover, Stack, Text } from "@mantine/core";
-import { IconInfoCircle } from "@tabler/icons-react";
+import { IconCheck, IconInfoCircle } from "@tabler/icons-react";
 import { lecturerLabel } from "../api/types";
-import type { Course } from "../api/types";
+import type { Course, SessionType } from "../api/types";
 import { useT } from "../i18n";
 
 /** Programdaki (haftalık/sınav) ders listelerinde dersin sağındaki "i" — tıklayınca
@@ -16,7 +16,11 @@ import { useT } from "../i18n";
 /** Sınav sayfası pop-up'ında gösterilecek tek sınav satırı. */
 export type CourseInfoExam = { label: string; date: string; time: string };
 
-export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, exams }: {
+/** Oturum türleri sabit sırada: ilerleme metni hep aynı okunsun. */
+const SESSION_TYPES: SessionType[] = ["THEORY", "PRACTICE", "LAB"];
+
+export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, exams,
+                                   placedBySection }: {
   course: Course;
   opened: boolean;
   onOpenChange: (opened: boolean) => void;
@@ -24,8 +28,38 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
   /** Verilirse (Sınavlar sayfası) şube YERİNE sınav bilgisi gösterilir. Undefined
    *  ise (Haftalık) şube listesi gösterilir. */
   exams?: CourseInfoExam[];
+  /** K-85: şube id → o şubede YERLEŞEN slot sayısı (T/U/L ayrı ayrı).
+   *
+   *  Verilirse her şube satırının sağında ilerleme görünür: hedefleri
+   *  karşılıyorsa tik, karşılamıyorsa "T3/3 · L0/2". Amaç paletteki tikin NEDEN
+   *  gelmediğini şube kırılımında görebilmek — palet yalnız ders düzeyinde
+   *  "tamam/eksik" diyor.
+   *
+   *  Sınavlar sayfasında verilmez: orada haftalık yerleşim kavramı yok. */
+  placedBySection?: Map<number, Record<SessionType, number>>;
 }) {
   const t = useT();
+
+  /** Bir şubenin T/U/L ilerlemesi. Kural PALETLE BİREBİR AYNI (konan >= hedef,
+   *  üç bileşen için): ikisi ayrışırsa pop-up ile paletteki tik birbirini
+   *  yalanlar.
+   *
+   *  Saati 0 olan bileşen listelenmez — ama YERLEŞMİŞSE listelenir. "T5/3"
+   *  gibi bir satır, oturum türü yanlış seçilmiş bir yerleşimi ele veren tek
+   *  işarettir (lab bloğu Teori olarak kaydedilirse sayı böyle şişer). */
+  const ilerleme = (sectionId: number) => {
+    if (!placedBySection) return null;
+    const konan = placedBySection.get(sectionId) ?? { THEORY: 0, PRACTICE: 0, LAB: 0 };
+    const hedef: Record<SessionType, number> = {
+      THEORY: course.hours_theory,
+      PRACTICE: course.hours_practice,
+      LAB: course.hours_lab,
+    };
+    const parcalar = SESSION_TYPES
+      .filter((k) => hedef[k] > 0 || konan[k] > 0)
+      .map((k) => `${t.courseInfo.sessionLetters[k]}${konan[k]}/${hedef[k]}`);
+    return { tam: SESSION_TYPES.every((k) => konan[k] >= hedef[k]), metin: parcalar.join(" · ") };
+  };
   const sections = [...course.sections]
     .filter((s) => s.active)
     .sort((a, b) => a.section_no - b.section_no);
@@ -38,7 +72,9 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
   useEffect(() => { if (!opened) setPinned(false); }, [opened]);
 
   return (
-    <Popover width={280} position="right-start" withArrow shadow="md" withinPortal
+    // İlerleme sütunu eklenince 280px'e hoca adı + "T3/3 · L0/2" birlikte
+    // sığmıyor ve isimler agresif kırpılıyordu; o sütun varken pop-up genişler.
+    <Popover width={placedBySection ? 344 : 280} position="right-start" withArrow shadow="md" withinPortal
       opened={opened} onChange={onOpenChange}>
       <Popover.Target>
         <ActionIcon
@@ -113,12 +149,27 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
                 <Text fz={11} c="dimmed">{t.courseInfo.noSections}</Text>
               ) : (
                 <Stack gap={1}>
-                  {sections.map((s) => (
-                    <Text key={s.id} fz={11} lh={1.25} truncate>
-                      <Text span fw={600}>Şube {s.section_no}</Text>{" "}
-                      {lecturerLabel(s.lecturer)}
-                    </Text>
-                  ))}
+                  {sections.map((s) => {
+                    const ilr = ilerleme(s.id);
+                    return (
+                    <Group key={s.id} gap={6} wrap="nowrap" justify="space-between" align="center">
+                      <Text fz={11} lh={1.25} truncate style={{ minWidth: 0 }}>
+                        <Text span fw={600}>Şube {s.section_no}</Text>{" "}
+                        {lecturerLabel(s.lecturer)}
+                      </Text>
+                      {ilr && (ilr.tam ? (
+                        // Palet tikiyle AYNI ikon ve renk: aynı şeyi söyleyen
+                        // iki farklı işaret olmasın.
+                        <IconCheck size={13} stroke={2.4} color="#16A34A"
+                          style={{ flexShrink: 0 }} aria-label={t.courseInfo.placementDone} />
+                      ) : (
+                        <Text fz={10} c="dimmed" style={{
+                          flexShrink: 0, fontVariantNumeric: "tabular-nums",
+                        }}>{ilr.metin}</Text>
+                      ))}
+                    </Group>
+                    );
+                  })}
                 </Stack>
               )}
             </div>

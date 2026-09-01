@@ -921,6 +921,10 @@ export default function WeeklyPage() {
                         diye CourseInfoButton kendi tıklamasını durdurur. */}
                     <CourseInfoButton
                       course={r.course}
+                      // K-85: pop-up'ta şube başına T/U/L ilerlemesi görünsün —
+                      // paletteki tik ders düzeyinde "eksik" derken hangi şubenin
+                      // neyi eksik olduğu ancak burada okunuyor.
+                      placedBySection={placedBySection}
                       opened={openInfoId === r.course.id}
                       onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
                       onOpenCourses={() =>
@@ -975,6 +979,10 @@ export default function WeeklyPage() {
                     )}
                     <CourseInfoButton
                       course={r.course}
+                      // K-85: pop-up'ta şube başına T/U/L ilerlemesi görünsün —
+                      // paletteki tik ders düzeyinde "eksik" derken hangi şubenin
+                      // neyi eksik olduğu ancak burada okunuyor.
+                      placedBySection={placedBySection}
                       opened={openInfoId === r.course.id}
                       onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
                       onOpenCourses={() =>

@@ -1204,6 +1204,10 @@ export const tr = {
     common: "Ortak",
     exams: "Sınavlar",
     noExams: "Sınav eklenmedi.",
+    /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
+     *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sessionLetters: { THEORY: "T", PRACTICE: "U", LAB: "L" },
+    placementDone: "Yerleşim tamam",
     noSections: "Şube yok — Dersler'den ekleyin.",
   },
 

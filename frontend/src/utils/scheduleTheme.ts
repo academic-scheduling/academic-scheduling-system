@@ -20,7 +20,7 @@ import type { CSSProperties } from "react";
 
 /** Saat/slot satırlarını ayıran yatay çizgi — bilinçli olarak çok silik:
  *  ızgara okunmayı desteklemeli, dikkati kendine çekmemeli. */
-export const LINE = "light-dark(#F1F5F9, #2C2C2C)";
+export const LINE = "light-dark(#E3E9F0, #2C2C2C)";
 
 /** Günleri ayıran DİKEY çizgi. Yataydan belirgin biçimde ayrık: bir günün
  *  nerede bitip diğerinin nerede başladığı takvimin en temel okuma sınırıdır. */
@@ -28,11 +28,11 @@ export const DAY_LINE = "light-dark(#94A3B8, #4A4E57)";
 
 /** İmleç boş bir slotun üzerindeyken o alana düşen vurgu — "buraya
  *  eklenebilir" sinyali. Artı işaretiyle birlikte görünür. */
-export const HOVER_CELL_BG = "light-dark(#E9EEF5, #31343B)";
+export const HOVER_CELL_BG = "light-dark(#E1E8F1, #31343B)";
 
 export const BORDER = "light-dark(#E2E8F0, #373A40)";        // kart ve panel kenarı
 export const BORDER_HOVER = "light-dark(#CBD5E1, #4A4E57)";  // hover'da bir tık belirginleşir
-export const HEADER_BG = "light-dark(#EEF2F7, #2A2C31)";     // gün başlığı bandı
+export const HEADER_BG = "light-dark(#E4EAF1, #2A2C31)";     // gün başlığı bandı
 export const SIDEBAR_BG = "light-dark(#F8FAFC, #1E1F23)";    // sol panel zemini
 export const PAGE_SURFACE = "light-dark(#FFFFFF, #2C2E33)";  // kart zemini (en açık katman)
 // K-59: taslak modu şeridi. Kullanıcının "şu an yayına mı yazıyorum" sorusunu
@@ -43,8 +43,14 @@ export const DRAFT_BORDER = "light-dark(#FDE68A, #6B5D2A)";
 
 /** BOŞ slotun zemini: ızgara gövdesinden bir ton, karttan iki ton koyu.
  *  Böylece kart "dolu", boşluk "boş" olarak okunur — aydınlıkta beyaz kart /
- *  gri hücre, karanlıkta açık yüzey / koyu hücre. */
-export const GRID_CELL_BG = "light-dark(#F8FAFC, #242629)";
+ *  gri hücre, karanlıkta açık yüzey / koyu hücre.
+ *
+ *  K-85: aydınlık değer #F8FAFC idi ve beyaz kartla neredeyse aynı okunuyordu —
+ *  dolu/boş ayrımı kayboluyordu. Bir ton koyulaştırıldı. Tek başına yetmezdi:
+ *  LINE bu değerden AÇIK kalıp çizgileri ters çevirirdi, HOVER ve HEADER_BG ise
+ *  yeni zemine yapışırdı. Bu yüzden aydınlık rampanın tamamı birlikte kaydı;
+ *  sıralama korunuyor: kart (#FFF) > hücre > başlık ≈ hover > öğle bandı. */
+export const GRID_CELL_BG = "light-dark(#EDF1F6, #242629)";
 
 /** ÖĞLE ARASI bandının zemini (slots.LUNCH_SLOT = 12:30-13:15).
  *
@@ -61,7 +67,7 @@ export const GRID_CELL_BG = "light-dark(#F8FAFC, #242629)";
  *  açığa gittiği için öğle satırında da vurgu görünür kalır (yoksa o satırda
  *  ekleme geri bildirimi kaybolur ve arayüz bozuk sanılır).
  */
-export const LUNCH_CELL_BG = "light-dark(#E2E8F0, #191B1E)";
+export const LUNCH_CELL_BG = "light-dark(#D8DFE9, #191B1E)";
 
 export const TIME_COLOR = "light-dark(#94A3B8, #6E7178)";    // saat cetveli — susturulmuş
 export const TEXT_MUTED = "light-dark(#64748B, #909296)";    // ikincil metin (derslik, hoca)

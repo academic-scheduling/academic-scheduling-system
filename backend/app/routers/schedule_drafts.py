@@ -319,6 +319,26 @@ def _default_name(db: Session, payload: DraftCreate) -> str:
     return f"{dep.code} · {payload.year}. sınıf · {donem} · {tur}"
 
 
+def _cakisma_sayaclari(db: Session, draft: ScheduleDraft, canli: bool) -> dict:
+    """DraftOut'un cakisma sayaclari (K-85).
+
+    `change_count` ile AYNI kurala tabi: onaylanmis kayitta hesap yapilmaz.
+    Kayit gecmistir ve canli tarama O ANKI yayina karsi kosar; sonraki her
+    onayda kayar, "onaylandi ama 3 cakismasi var" gibi yanlis okunurdu (K-80).
+
+    Sayac neden BURADA, istemcide dort ayri istekle degil: /conflicts ucu
+    taslagin SAHIBINE ozel (_get_own_draft). Kuyruktaki baskasinin talebi icin
+    calismaz, dolayisiyla ana sayfa kartlarinin bir kismi sayacsiz kalirdi.
+    """
+    if not canli:
+        return {"conflict_count": 0, "blocking_count": 0}
+    tablo = scan_draft(db, draft)
+    return {
+        "conflict_count": len(tablo["hard"]) + len(tablo["warnings"]),
+        "blocking_count": len(tablo["hard"]),
+    }
+
+
 def _to_out(db: Session, draft: ScheduleDraft) -> dict:
     """DraftOut govdesi: sayaclar taslagin O ANKI haline gore hesaplanir."""
     svc = _svc(draft)
@@ -339,6 +359,7 @@ def _to_out(db: Session, draft: ScheduleDraft) -> dict:
         "status": draft.status,
         "entry_count": svc.draft_row_count(db, draft),
         "change_count": len(svc.compute_diff(db, draft)) if canli else 0,
+        **_cakisma_sayaclari(db, draft, canli),
         "owner": draft.owner,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,

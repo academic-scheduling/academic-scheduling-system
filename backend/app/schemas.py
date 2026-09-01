@@ -662,6 +662,13 @@ class DraftOut(BaseModel):
     status: DraftStatus
     entry_count: int                              # taslaktaki yerleşim/sınav sayısı
     change_count: int                             # yayına göre kaç fark var
+    # K-85: taslağın çakışma sayaçları. `change_count` gibi CANLI hesaplanır ve
+    # aynı kuralı izler: onaylanmış kayıtta 0 döner (kayıt geçmiştir; canlı
+    # hesap O ANKİ yayına karşı koşar ve sonraki onaylarla kayar — K-80).
+    # İkisi ayrı çünkü K-05'te ağırlıkları farklı: engel onaya göndermeyi
+    # durdurur, uyarı durdurmaz.
+    conflict_count: int = 0                       # engel + uyarı
+    blocking_count: int = 0                       # yalnız engel (K-05)
     owner: DraftUserRef
     created_at: datetime
     # K-85: taslağın son değişiklik zamanı — içindeki yerleşim/sınav yazmaları

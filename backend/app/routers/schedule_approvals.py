@@ -37,6 +37,7 @@ from app.models import (
 )
 from app.routers.exams import _eager_exam_query
 from app.routers.schedule_changes import approved_visibility_filter
+from app.routers.schedule_drafts import _cakisma_sayaclari
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
     DraftApproveRequest, DraftApproveResponse, DraftOut, DraftRejectRequest,
@@ -147,6 +148,7 @@ def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
         "status": draft.status,
         "entry_count": _svc(draft).draft_row_count(db, draft),
         "change_count": len(_svc(draft).compute_diff(db, draft)) if live else 0,
+        **_cakisma_sayaclari(db, draft, live),
         "owner": draft.owner,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,

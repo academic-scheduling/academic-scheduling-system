@@ -246,7 +246,28 @@ def test_izinsiz_adresler_reddedilir(url):
     "https://muhendislik.mu.edu.tr/tr/personel/akademik",
     "https://www.mu.edu.tr/tr/personel/ornekkisi",
     "https://mu.edu.tr/tr/personel/ornekkisi",
+    "https://obs.mu.edu.tr/oibs/bologna/progCourses.aspx",   # Bologna import
 ])
 def test_kurum_adresleri_kabul_edilir(url):
     """Liste ve detay farklı alt alanlarda; kısıt çalışan import'u kırmamalı."""
     assert adres_izinli_mi(url) is True
+
+
+def test_bologna_yonlendirmesi_de_denetlenir():
+    """Bologna import'u da aynı kapıdan geçer.
+
+    Buradaki adres sabit (`obs.mu.edu.tr`) ama 302 zinciri isteği başka yere
+    taşıyabilirdi. İki çıkış yolu aynı kurala tabi olmalı, yoksa kural değil
+    istisna olur.
+    """
+    import httpx
+
+    from app.bologna_import import _yonlendirmeyi_izle
+
+    sahte = httpx.Response(
+        302,
+        headers={"location": "http://169.254.169.254/latest/meta-data/"},
+        request=httpx.Request("GET", "https://obs.mu.edu.tr/oibs/bologna/progCourses.aspx"),
+    )
+    with pytest.raises(httpx.HTTPError, match="Izin verilmeyen adrese yonlendirme"):
+        _yonlendirmeyi_izle(sahte, 5)

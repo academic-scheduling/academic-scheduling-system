@@ -26,6 +26,7 @@ import httpx
 from bs4 import BeautifulSoup, NavigableString
 
 from app.normalize import normalize_lecturer_name, split_title
+from app.scrapers.mu_akademik import adres_izinli_mi
 
 BOLOGNA_URL = "https://obs.mu.edu.tr/oibs/bologna/progCourses.aspx"
 # K-50 ile ayni: bazi sunucular UA'siz istegi reddediyor; kaynak kendi
@@ -84,14 +85,43 @@ def extract_cursunit(url: str) -> str:
     return m.group(1)
 
 
+# Yonlendirme zinciri icin ust sinir; sonsuz donguyu keser.
+_MAX_YONLENDIRME = 10
+
+
+def _yonlendirmeyi_izle(r: httpx.Response, timeout: float) -> httpx.Response:
+    """302 zincirini ELLE, her adimi dogrulayarak izler.
+
+    `follow_redirects=True` kullanilmiyor: o durumda istegin nereye gittigini
+    tamamen KAYNAK SITE belirlerdi. obs.mu.edu.tr sabit bir adres olsa da bir
+    `Location` basligi istegi ic aga ya da bulut metadata ucuna tasiyabilirdi
+    (SSRF). Hedef, K-50 scraper'indaki kapinin aynisidir; iki cikis yolu ayni
+    kurala tabi olmali, yoksa kural degil istisna olur.
+    """
+    for _ in range(_MAX_YONLENDIRME):
+        if not r.is_redirect:
+            return r
+        hedef = r.headers.get("location")
+        if not hedef:
+            raise httpx.HTTPError(f"Yonlendirme adressiz ({r.url})")
+        sonraki = str(r.url.join(hedef))
+        if not adres_izinli_mi(sonraki):
+            raise httpx.HTTPError(f"Izin verilmeyen adrese yonlendirme: {sonraki}")
+        # 302 sonrasi metot GET'e duser (httpx'in follow_redirects davranisi).
+        r = httpx.get(sonraki, headers=_HEADERS, timeout=timeout,
+                      follow_redirects=False)
+    raise httpx.HTTPError("Cok fazla yonlendirme")
+
+
 def fetch_bologna_html(cur_sunit: str) -> str:
     """Bolumun Turkce ders sayfasini ceker. Ag/HTTP hatasi cagirana yansir."""
     r = httpx.get(
         BOLOGNA_URL,
         params={"lang": "tr", "curSunit": cur_sunit},
         timeout=30,
-        follow_redirects=True,
+        follow_redirects=False,
     )
+    r = _yonlendirmeyi_izle(r, 30)
     r.raise_for_status()
     return r.text
 
@@ -238,8 +268,8 @@ def fetch_course_detail(
     """Tek dersin detayini postback zinciriyle ceker.
 
     Liste sayfasina, o satirin event_target'i + gizli alanlarla POST atilir;
-    sunucu 302 ile progCourseDetails.aspx?curCourse=<ID>'ye yonlendirir, httpx
-    takip eder. Istek basina taze baglanti (K-50 deseni; havuz throttle altinda
+    sunucu 302 ile progCourseDetails.aspx?curCourse=<ID>'ye yonlendirir; zinciri
+    dogrulayarak biz izleriz (_yonlendirmeyi_izle). Istek basina taze baglanti (K-50 deseni; havuz throttle altinda
     bayatliyordu). Ag/HTTP hatasi cagirana yansir.
     """
     payload = dict(hidden_fields)
@@ -251,8 +281,11 @@ def fetch_course_detail(
         data=payload,
         headers=_HEADERS,
         timeout=_TIMEOUT,
-        follow_redirects=True,
+        follow_redirects=False,
     )
+    # Yonlendirme burada BEKLENEN akisin parcasi (302 -> progCourseDetails.aspx),
+    # ama hedefi yine biz denetliyoruz.
+    r = _yonlendirmeyi_izle(r, _TIMEOUT)
     r.raise_for_status()
     return parse_detail(r.text)
 

@@ -26,10 +26,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 
+from app.config import settings
 from app.normalize import canonical_title
 
 # Sunucudan sunucuya çekim; kimliğimizi dürüstçe bildiren bir UA (bazı sunucular
@@ -181,15 +183,82 @@ def parse_detail(html: str) -> PersonDetail:
 # Ağ katmanı (endpoint buradan çağırır; testler saf ayrıştırıcıyı monkeypatch'ler)
 # ----------------------------------------------------------------------------
 
+def adres_izinli_mi(url: str) -> bool:
+    """Bu adrese çıkmaya izin var mı? (SSRF kapısı)
+
+    Detay sayfalarının adresi liste sayfasındaki `href`'lerden geliyor — yani
+    nereye istek atacağımızı KAYNAK SİTE söylüyor. Kaynak site ele geçirilse
+    ya da yapılandırmadaki liste URL'i değiştirilse, sunucu linkte ne yazıyorsa
+    oraya bağlanırdı: `http://169.254.169.254/...` (bulut metadata), iç ağdaki
+    yönetim panelleri, `http://db:5432` gibi. Yanıt gövdesi kullanıcıya geri
+    dönmediği için bu "kör" bir SSRF olurdu ama yine de sunucuyu saldırganın
+    isteklerini taşıyan bir vekile çevirirdi.
+
+    İki koşul aranır:
+      1. Şema http/https — `file://`, `gopher://` vb. tamamen kapalı.
+      2. Host, izin verilen alan adlarından birine ait (kendisi ya da alt alanı).
+
+    Alt alan kabul edilir çünkü liste `muhendislik.mu.edu.tr`'de, detay
+    `www.mu.edu.tr`'de durur; tam host eşitliği çalışan import'u kırardı.
+    Nokta sınırında karşılaştırılır: "kotumu.edu.tr" gibi bir adres
+    "mu.edu.tr" ile bitiyor görünse de kabul EDİLMEZ.
+    """
+    parcali = urlparse(url)
+    if parcali.scheme not in ("http", "https"):
+        return False
+
+    host = (parcali.hostname or "").lower()
+    if not host:
+        return False
+
+    return any(
+        host == izinli or host.endswith("." + izinli)
+        for izinli in settings.lecturer_import_allowed_host_list
+    )
+
+
+# Yonlendirme zinciri icin ust sinir: httpx'in varsayilaniyla ayni mertebede,
+# sonsuz donguyu keser.
+_MAX_YONLENDIRME = 10
+
+
 def _get(url: str) -> str:
-    try:
-        resp = httpx.get(
-            url, headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True
-        )
-        resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise ScrapeError(f"Sayfa çekilemedi ({url}): {exc}") from exc
-    return resp.text
+    """Sayfayı çeker; her adımda adres iznini yeniden doğrular.
+
+    Yönlendirmeler httpx'e BIRAKILMAZ (`follow_redirects=False`), elle
+    izlenir. Sebebi: `follow_redirects=True` olsaydı kapı yalnız İLK adrese
+    bakardı; izinli bir adres `Location: http://169.254.169.254/` döndürerek
+    isteği istediği yere taşıyabilirdi. Zincirin her halkası aynı kapıdan
+    geçmeli, yoksa kapı yok demektir.
+    """
+    su_anki = url
+    for _ in range(_MAX_YONLENDIRME):
+        if not adres_izinli_mi(su_anki):
+            # ScrapeError: cagiran zaten bunu yakalayip 502'ye ceviriyor ve tek
+            # kisilik cekimlerde kisiyi detaysiz birakip import'u surduruyor.
+            raise ScrapeError(f"İzin verilmeyen adres: {su_anki}")
+        try:
+            resp = httpx.get(
+                su_anki, headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=False
+            )
+        except httpx.HTTPError as exc:
+            raise ScrapeError(f"Sayfa çekilemedi ({su_anki}): {exc}") from exc
+
+        if resp.is_redirect:
+            hedef = resp.headers.get("location")
+            if not hedef:
+                raise ScrapeError(f"Yönlendirme adressiz ({su_anki})")
+            # Location goreli olabilir; mutlaklastirilmadan denetlenemez.
+            su_anki = str(resp.url.join(hedef))
+            continue
+
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ScrapeError(f"Sayfa çekilemedi ({su_anki}): {exc}") from exc
+        return resp.text
+
+    raise ScrapeError(f"Çok fazla yönlendirme ({url})")
 
 
 def fetch_list(url: str) -> list[PersonRef]:

@@ -1,5 +1,13 @@
 from datetime import datetime, timedelta, timezone
-from jose import jwt, JWTError
+
+# PyJWT (python-jose DEGIL): jose 2021'den beri bakimsiz ve iki CVE tasiyor
+# (CVE-2024-33663 algoritma karisikligi, CVE-2024-33664 JWE ile bellek
+# tuketimi). Ikisi de burada dogrudan somurulemiyordu -- decode'da
+# algorithms=["HS256"] zaten sabitti ve JWE hic kullanilmiyor -- ama bakimsiz
+# bir imza kutuphanesine yaslanmak, bir sonraki acigin yamanmayacagi anlamina
+# gelir. PyJWT ayni API'yi verir ve aktif surdurulur.
+import jwt
+from jwt import PyJWTError
 from passlib.context import CryptContext
 from app.config import settings
 import secrets
@@ -20,10 +28,15 @@ def create_access_token(data: dict) -> str:
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 def decode_access_token(token: str) -> dict | None:
+    """Token'i dogrular; gecersiz/suresi dolmus ise None doner.
+
+    `algorithms` TEK elemanli ve sabit: istemcinin gonderdigi basliktaki `alg`
+    degeri asla dikkate alinmaz. Aksi halde saldirgan `alg: none` diyerek imza
+    dogrulamasini atlatmaya calisabilirdi. PyJWT `exp`'i kendisi denetler.
+    """
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
-    except JWTError:
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except PyJWTError:
         return None
 
 def generate_invitation_token() -> str:

@@ -35,7 +35,19 @@ def get_current_user(credentials=Depends(bearer_scheme), db=Depends(get_db)) -> 
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = db.get(User, int(user_id)) 
+    # `sub` sayiya cevrilemiyorsa bu bir KIMLIK hatasidir, sunucu hatasi degil:
+    # ham int() cagrisi ValueError firlatip 401 yerine 500 dondururdu (ve
+    # istemciye yigin izi dusen bir hata sayfasi verirdi).
+    try:
+        user_key = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = db.get(User, user_key)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

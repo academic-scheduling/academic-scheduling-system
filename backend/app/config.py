@@ -4,7 +4,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # .env repo kokunde durur, ama backend her zaman backend/ dizininden calistirilir
-# (README ve .claude/launch.json boyle: cwd=backend). pydantic-settings goreli
+# (README ve arac yapilandirmasi boyle: cwd=backend). pydantic-settings goreli
 # env_file yolunu CALISMA DIZININE gore cozer ve dosyayi bulamazsa SESSIZCE
 # atlar -- hata vermez. Yani "backend/ icinden calistirinca .env hic okunmuyor,
 # her ayar kod icindeki varsayilaniyla kaliyor" durumu fark edilmeden surer.

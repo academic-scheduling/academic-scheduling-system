@@ -235,7 +235,8 @@ dist/
 ehthumbs.db
 Thumbs.db
 
-# Claude Code araç ayarları (kişisel/yerel — paylaşılmaz)
+# Editör/araç ayarları (kişisel/yerel — paylaşılmaz). Desen aynen kalmalı:
+# klasörü repodan uzak tutan tek satır bu.
 .claude/
 
 # Elle alınan reset/yedek dökümleri (repo'ya girmez)

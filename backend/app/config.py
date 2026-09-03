@@ -53,6 +53,23 @@ class Settings(BaseSettings):
     # K-44 · Ayni hesap icin saatte en fazla kac sifirlama maili. CAPTCHA'yi
     # elle gecen birine karsi ikinci katman: mail bombardimanini durdurur.
     password_reset_max_per_hour: int = 3
+
+    # --- Giris kaba kuvvet freni ---
+    # Sifirlama ucu iki katmanla korunuyordu ama /auth/login hicbiriyle
+    # korunmuyordu: yanlis parola hicbir yere yazilmadigi icin sinirsizca
+    # denenebiliyordu. Asagidaki pencere iki ayri sayimla calisir:
+    #
+    #   e-posta basina  — tek hesabin parolasini deneyen saldirgani durdurur
+    #   IP basina       — hesap degistirerek e-posta sinirini asmayi kapatir
+    #
+    # E-posta siniri bilerek GENIS: dar tutmak, birinin hesabini bilerek
+    # kilitlemesine (hizmet engelleme) izin verirdi. Asil daralma IP'de.
+    # Sayilan yalniz BASARISIZLIK; basarili giris satir birakmaz, yani normal
+    # kullanim kendi kendini kilitlemez.
+    login_max_failures_per_email: int = 10
+    login_max_failures_per_ip: int = 30
+    login_failure_window_minutes: int = 15
+
     frontend_base_url: str = "http://localhost:5173"
     mail_from: str = "no-reply@muh.example.edu.tr"
 
@@ -73,11 +90,30 @@ class Settings(BaseSettings):
     # (I/O-bound): paralel istek toplam sureyi ~10 kat kisaltir. Havuz kucuk
     # tutulur -- kaynak siteyi bombalamamak icin (paralel ama kibar).
     lecturer_import_concurrency: int = 8
+    # Import'un cikabilecegi alan adlari (virgulle ayrilir). Detay sayfalarinin
+    # adresi liste sayfasindaki LINKLERDEN geliyor; yani adresi kaynak site
+    # belirliyor, biz degil. Kaynak site ele gecirilse (ya da yapilandirmadaki
+    # URL kotu niyetli bir adrese cevrilse) sunucu, linkte ne yaziyorsa oraya
+    # istek atardi -- ic aglara ve bulut metadata uclarina dahil (SSRF).
+    # Sunucunun cikabilecegi yeri LISTE degil BIZ belirleyelim.
+    #
+    # Neden host degil alan adi: liste muhendislik.mu.edu.tr'de, detay
+    # www.mu.edu.tr'de duruyor -- ayni kurum, farkli alt alan. Tam host esitligi
+    # calisan import'u kirardi.
+    lecturer_import_allowed_hosts: str = "mu.edu.tr"
 
     # "production" degerinde, asagidaki dogrulama dev varsayilanlariyla
     # acilmayi reddeder. Varsayilan "development" oldugu icin mevcut yerel
     # kurulumlar ve testler bundan etkilenmez.
     environment: str = "development"
+
+    @property
+    def lecturer_import_allowed_host_list(self) -> list[str]:
+        return [
+            h.strip().lower().lstrip(".")
+            for h in self.lecturer_import_allowed_hosts.split(",")
+            if h.strip()
+        ]
 
     @property
     def cors_origin_list(self) -> list[str]:

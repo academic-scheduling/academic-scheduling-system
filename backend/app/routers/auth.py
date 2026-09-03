@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,15 +17,93 @@ from app.security import (
 )
 from app.mailer import send_password_reset_email
 from app.recaptcha import verify_captcha
-from app.models import User, UserStatus, InvitationToken, PasswordResetToken
+from app.models import (
+    User, UserStatus, InvitationToken, PasswordResetToken, LoginAttempt,
+)
 from app.audit import log_action
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Hesap yokken de bir bcrypt dogrulamasi kosturmak icin kullanilan sahte hash.
+# "correct horse battery staple" degil, hicbir parolanin uretmedigi bir deger
+# olmasi yeterli; onemli olan SURE, sonuc degil. Modul yuklenirken bir kez
+# uretilir (her istekte hash'lemek gereksiz pahali olurdu).
+_KUKLA_HASH = hash_password(secrets.token_urlsafe(32))
+
+
+def _giris_frenlendi_mi(db: Session, email: str, ip: str | None) -> bool:
+    """Bu adres ya da bu IP son pencerede sinirini doldurdu mu?
+
+    Iki ayri sayim: e-posta basina (tek hesaba yuklenen saldiri) ve IP basina
+    (hesap degistirerek e-posta sinirini asma). Ikisinden biri dolmussa fren
+    devrededir.
+    """
+    since = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.login_failure_window_minutes
+    )
+
+    eposta_denemesi = db.query(func.count(LoginAttempt.id)).filter(
+        LoginAttempt.email_hash == hash_token(email.strip().lower()),
+        LoginAttempt.created_at >= since,
+    ).scalar()
+    if eposta_denemesi >= settings.login_max_failures_per_email:
+        return True
+
+    if ip is None:
+        # IP okunamiyorsa (vekil basligi yok) yalniz e-posta sayimi kalir.
+        return False
+
+    ip_denemesi = db.query(func.count(LoginAttempt.id)).filter(
+        LoginAttempt.ip == ip,
+        LoginAttempt.created_at >= since,
+    ).scalar()
+    return ip_denemesi >= settings.login_max_failures_per_ip
+
+
+def _basarisizligi_yaz(db: Session, email: str, ip: str | None) -> None:
+    """Basarisiz denemeyi deftere isler. E-posta HAM saklanmaz (bkz. model)."""
+    db.add(LoginAttempt(email_hash=hash_token(email.strip().lower()), ip=ip))
+    db.commit()
+
+
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """Oturum acar.
+
+    KABA KUVVET FRENI: basarisiz denemeler `login_attempts`'e yazilir ve
+    pencere icinde sinir dolduysa parola HIC denenmeden 429 doner.
+
+    Burada 429 sizinti DEGIL (sifirlamadaki sessiz sinirin aksine): sayac
+    girilen adresin kayitli olup olmadigina bakmadan, HER basarisiz denemeyi
+    sayar. Yani 429'u var olmayan bir adresle de almak mumkun; cevap hesabin
+    varligi hakkinda bir sey soylemez. Sifirlamada durum tersiydi -- orada
+    sinir yalniz gercek ve ACTIVE hesaplarda tetiklenebildigi icin farkli bir
+    kod dondurmek "bu adres kayitli" demek olurdu.
+
+    ZAMANLAMA: hesap bulunamasa bile bir bcrypt dogrulamasi kosturulur.
+    Aksi halde yanit suresi ("hemen" / "~100ms") adresin kayitli olup
+    olmadigini ele verirdi -- K-43'te forgot-password icin ozenle kapatilan
+    sizintinin aynisi.
+    """
+    ip = request.client.host if request.client else None
+
+    if _giris_frenlendi_mi(db, payload.email, ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla başarısız giriş denemesi, lütfen sonra tekrar deneyin",
+        )
+
     user = db.query(User).filter(User.email == payload.email).first()
-    if user is None or user.password_hash is None or not verify_password(payload.password, user.password_hash) :
+
+    # Sira onemli: dogrulama HER durumda kosar. `user is None` halinde kukla
+    # hash kullanilir ve sonuc zaten atilir; amac harcanan sureyi esitlemek.
+    parola_dogru = verify_password(
+        payload.password,
+        user.password_hash if user is not None and user.password_hash else _KUKLA_HASH,
+    )
+
+    if user is None or user.password_hash is None or not parola_dogru:
+        _basarisizligi_yaz(db, payload.email, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-posta veya şifre hatalı",

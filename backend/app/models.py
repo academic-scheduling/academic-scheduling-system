@@ -347,6 +347,43 @@ class PasswordResetToken(Base):
     user: Mapped["User"] = relationship(back_populates="password_reset_tokens")
 
 
+class LoginAttempt(Base):
+    """login_attempts — BASARISIZ giris denemelerinin kaydi (kaba kuvvet freni).
+
+    Neden ayri bir tablo: sifirlama sinirinin (K-44) sayaci
+    password_reset_tokens'in kendisiydi, cunku her talep zaten bir satir
+    yaziyordu. Giriste boyle dogal bir defter yok -- basarisiz bir deneme
+    hicbir sey yazmiyordu, bu yuzden sinirsizca tekrarlanabiliyordu.
+
+    Neden e-posta HAM saklanmiyor: tablo var olmayan adresleri de kaydeder
+    (saldirgan rastgele adres dener). Ham biriktirmek, sisteme hic kayitli
+    olmayan insanlarin adreslerinden bir liste uretirdi. sha256 sayaci saymaya
+    yeter, listeyi uretmez.
+
+    YALNIZ basarisizliklar yazilir: basarili giris satir birakmaz, yoksa
+    normal kullanim kendi kendini kilitlerdi. Sayac zaten pencere disina
+    dusen satirlari gormez (bkz. auth._giris_frenlendi_mi).
+    """
+
+    __tablename__ = "login_attempts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # Girilen adresin sha256'si -- hesabin var olup olmadigindan bagimsiz.
+    email_hash: Mapped[str] = mapped_column(String(64))
+    # Istegin geldigi adres. Vekil arkasindaysa bilinmeyebilir; NULL olabilir.
+    ip: Mapped[str | None] = mapped_column(String(45))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        # Iki sayim da (adrese gore, IP'ye gore) zaman penceresiyle birlikte
+        # yapilir; indeksler o iki sorguyu karsilar.
+        Index("idx_login_attempts_email", "email_hash", "created_at"),
+        Index("idx_login_attempts_ip", "ip", "created_at"),
+    )
+
+
 class Department(Base):
     """departments — bir calisma grubu icindeki bolum (or. Bilgisayar Muh.)."""
 

@@ -5,12 +5,25 @@
 #                                        backend/frontend elle, hizli yeniden
 #                                        yukleme ile calistirilir)
 #
-# Buradaki sifreler ve SECRET_KEY YEREL DENEME icindir; hicbiri gizli degildir
-# ve yayina cikarken degismeleri gerekir (backend acilirken ENVIRONMENT=production
-# ile dev varsayilanlarini reddeder -- app/config.py).
+# GUVENLIK — bu dosya YEREL kullanim icindir:
+#
+#   * Asagidaki varsayilan sifreler ve SECRET_KEY depoda ACIK duruyor; yani
+#     herkes tarafindan bilinebilir. Bu anahtarla imzalanan bir JWT taklit
+#     edilebilir -- depoyu okuyan biri kendini yonetici ilan edebilirdi.
+#   * Bu yuzden yayinlanan portlarin HEPSI 127.0.0.1'e baglidir: konteynerler
+#     yalniz bu makineden erisilebilir, agdan DEGIL. Sunucuya kurup disariya
+#     acmak isteyen, bagi bilerek genisletmek zorunda kalir -- ve o an
+#     asagidaki degerleri de vermek zorundadir.
+#   * Her deger ortam degiskeniyle ezilebilir (${DEGISKEN:-varsayilan}). Ornek:
+#       ENVIRONMENT=production SECRET_KEY=<rastgele> DB_PASSWORD=<gizli>
+#       ADMIN_PASSWORD=<gizli> docker compose up
+#     Rastgele anahtar uretmek icin:
+#       python -c "import secrets; print(secrets.token_urlsafe(48))"
+#     ENVIRONMENT=production, dev varsayilanlarindan biri kalmissa uygulamanin
+#     ACILMASINI REDDEDER (app/config.py).
 
 x-backend-ortam: &backend-ortam
-  DATABASE_URL: postgresql+psycopg://app:app_dev_password@db:5432/scheduling
+  DATABASE_URL: postgresql+psycopg://app:${DB_PASSWORD:-app_dev_password}@db:5432/scheduling
   # Mailpit: mailler internete CIKMAZ, http://localhost:8025 adresinde birikir.
   SMTP_HOST: mailpit
   SMTP_PORT: 1025
@@ -23,8 +36,12 @@ x-backend-ortam: &backend-ortam
   FRONTEND_BASE_URL: http://localhost:8080
   CORS_ORIGINS: http://localhost:8080
   ALLOWED_EMAIL_DOMAINS: muh.example.edu.tr,gmail.com,hotmail.com,outlook.com
-  SECRET_KEY: yerel-deneme-icin-anahtar-yayinda-degismeli
-  ENVIRONMENT: development
+  SECRET_KEY: ${SECRET_KEY:-yerel-deneme-icin-anahtar-yayinda-degismeli}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  # bootstrap.py bunlari okur; verilmezse belgelenmis varsayilanlar kullanilir.
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@muh.example.edu.tr}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+  RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
 
 services:
   db:
@@ -32,10 +49,10 @@ services:
     container_name: scheduling_db
     environment:
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: app_dev_password
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app_dev_password}
       POSTGRES_DB: scheduling
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -48,10 +65,11 @@ services:
     image: axllent/mailpit:latest
     container_name: scheduling_mail
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
 
-  # Tek seferlik: sema kurulumu + (bossa) demo verisi. Bitince kapanir.
+  # Tek seferlik: sema kurulumu + acilis asgarisi (workgroup + yonetici).
+  # Bitince kapanir.
   # backend bunun BASARIYLA bitmesini bekler; yarim sema uzerinde acilmaz.
   init:
     build: ./backend
@@ -68,7 +86,7 @@ services:
     container_name: scheduling_api
     environment: *backend-ortam
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       init:
         condition: service_completed_successfully
@@ -87,7 +105,7 @@ services:
     build: ./frontend
     container_name: scheduling_web
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       - backend
     restart: unless-stopped

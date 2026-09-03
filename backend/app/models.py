@@ -837,6 +837,17 @@ class ScheduleDraft(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # K-85: taslagin SON DEGISIKLIK zamani. created_at/submitted_at/reviewed_at
+    # ucu de YASAM DONGUSU olayi; "icinde en son ne zaman calisildi" sorusunu
+    # hicbiri cevaplamiyordu. Girislerin kendi created_at'ine bakmak tasimayi ve
+    # silmeyi kacirir (o kolonlar guncellenmez).
+    #
+    # onupdate=now() BILEREK YOK: o yalniz TASLAK satiri guncellenince tetiklenir,
+    # oysa degisiklikler cocuk tablolarda (weekly_schedule_entries, exams) oluyor.
+    # Bu yuzden yazma uclarinda acik olarak dokunuluyor -- schedule_drafts._touch.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     # --- onaya gonderim ---
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

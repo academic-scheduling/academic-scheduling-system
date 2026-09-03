@@ -2,13 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Modal, NumberInput,
-  Paper, ScrollArea, Select, Stack, Text, TextInput, Title, Tooltip,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Title, Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle, IconAlertTriangle, IconArrowBackUp, IconCheck,
-  IconMapPin, IconPlus, IconTrash, IconWorld, IconX,
+  IconMapPin, IconPlus, IconTrash, IconUser, IconWorld, IconX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import ExportMenu from "../components/ExportMenu";
@@ -20,18 +20,20 @@ import { useDragEdgeScroll } from "../hooks/useDragEdgeScroll";
 import { useUndoStack } from "../hooks/useUndoStack";
 import type { UndoEntity } from "../hooks/useUndoStack";
 import { turkishOptionsFilter } from "../utils/selectSearch";
+import { LUNCH_SLOT } from "../utils/slots";
 import { readScheduleMode, writeScheduleMode } from "../utils/scheduleMode";
 import { CourseInfoButton } from "../components/CourseInfoButton";
 import { ConflictList } from "../components/ConflictList";
 import {
   ACCENT, BORDER, BORDER_HOVER, CARD_PADDING, CARD_RADIUS, CONTROL_H, DAY_LINE,
-  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, MIN_DAY_W, MIN_LANE_W,
+  GRID_CELL_BG, HEAD_H, HEADER_BG, HOVER_CELL_BG, LINE, LUNCH_CELL_BG,
+  MIN_DAY_W, MIN_LANE_W,
   PAGE_SURFACE, SHADOW, SHADOW_HOVER,
   SHADOW_SELECTED, SIDEBAR_BG, SIDE_W, TEXT_MUTED, TEXT_STRONG, TIME_COL_W, TIME_COLOR,
   WEEKLY_ROW_H, paletteItemStyle,
 } from "../utils/scheduleTheme";
 import type {
-  Classroom, ConflictResult, ConflictScan, Course, CourseSection, DeliveryMode, Department,
+  Classroom, ConflictResult, ConflictScan, Course, CourseHours, CourseSection, DeliveryMode, Department,
   ScheduleDraft, SemesterType, SessionType, WeeklyEntry,
 } from "../api/types";
 import { useT } from "../i18n";
@@ -39,6 +41,10 @@ import { useT } from "../i18n";
 const DAYS = [1, 2, 3, 4, 5];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const SLOT_START = ["", "08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
+/* Oturum türleri SABİT sırada. Eskiden `Object.keys(t.weekly.session)` ile
+   türetiliyordu; artık sıra anlam taşıyor ("saati olan İLK bileşen") ve bir
+   çeviri sözlüğündeki anahtar sırasına bağlı kalamaz. */
+const SESSION_TYPES: SessionType[] = ["THEORY", "PRACTICE", "LAB"];
 const YEARS = ["1", "2", "3", "4"];
 /* Görsel belirteçler Sınav Takvimi ile ORTAK — utils/scheduleTheme.ts.
    İki ekranın ızgara yüksekliği de orada eşitlenir (9 × 91 = 13 × 63). */
@@ -76,12 +82,22 @@ type Drag =
 // karşılığı; palet + sürükle-bırak (yazılabilir) aynen çalışır.
 const COMMON_YEAR = "common";
 
-/** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler. */
-function layoutDay(entries: WeeklyEntry[]): Cluster[] {
+/** Bir günün girişlerini önce KÜMELERE toplar, sonra yan yana şeritlere böler.
+ *
+ *  `genis` (K-85): kümeleme KAPALI — paralel şubeler tek kartta toplanmaz, her
+ *  giriş kendi kartını alır. Kompakt mod varsayılan çünkü servis derslerinin
+ *  7-8 şubesi aynı slotta olabiliyor ve hepsini ayrı şeride açmak kartları
+ *  ~11px'e düşürüp ızgarayı okunmaz ediyor; ama "hangi şube nerede" sorusunu
+ *  ancak ayrı kartlar cevaplıyor. Karar kullanıcının. */
+function layoutDay(entries: WeeklyEntry[], genis = false): Cluster[] {
   // 1) Aynı ders + aynı zaman + aynı oturum türü → tek küme (paralel şubeler)
   const groups = new Map<string, WeeklyEntry[]>();
   for (const e of entries) {
-    const key = `${e.section.course.id}|${e.start_slot}|${e.slot_count}|${e.session_type}`;
+    // Geniş modda anahtara şube no + giriş id'si eklenir: no sıralamayı
+    // (şeritler şube sırasına göre dizilsin) id ise benzersizliği verir.
+    // padStart olmadan "10" < "2" diye sıralanırdı.
+    const key = `${e.section.course.id}|${e.start_slot}|${e.slot_count}|${e.session_type}`
+      + (genis ? `|${String(e.section.section_no).padStart(3, "0")}|${e.id}` : "");
     const arr = groups.get(key);
     if (arr) arr.push(e);
     else groups.set(key, [e]);
@@ -157,6 +173,12 @@ export default function WeeklyPage() {
     key: "weekly-year", defaultValue: "1", getInitialValueInEffect: false });
   const [sem, setSem] = useLocalStorage<SemesterType>({
     key: "weekly-sem", defaultValue: "SPRING", getInitialValueInEffect: false });
+  /** K-85: kart yoğunluğu. "compact" paralel şubeleri tek kartta toplar
+   *  (varsayılan), "expand" hepsini ayrı çizer. Cohort seçimleriyle aynı yerde
+   *  saklanıyor: bu da bir GÖRÜNÜM tercihi ve her açılışta yeniden
+   *  seçilmemeli. */
+  const [density, setDensity] = useLocalStorage<"compact" | "expand">({
+    key: "weekly-density", defaultValue: "compact", getInitialValueInEffect: false });
 
   const [entries, setEntries] = useState<WeeklyEntry[]>([]);
   // Workgroup'un TÜM dersleri bir kez çekilir. Üç iş birden görür: paletin
@@ -573,6 +595,21 @@ export default function WeeklyPage() {
   }, [allCourses]);
 
 
+  /** Ders id → T/U/L saatleri. EntryModal'ın "Oturum türü" etiketi bunu
+   *  gösterir (3T/2U/0L).
+   *
+   *  Kaynak `courses` DEĞİL `allCourses`: `courses` seçili cohort'a göre
+   *  süzülmüş liste, oysa DÜZENLEMEDE tıklanan giriş cohort filtresi dışında
+   *  kalan bir derse ait olabilir (ortak/servis dersler, K-48). Süzülmüş
+   *  listeden okusaydık etiket o durumda sessizce saatsiz kalırdı. */
+  const hoursByCourse = useMemo(() => {
+    const m = new Map<number, CourseHours>();
+    for (const c of allCourses) {
+      m.set(c.id, { theory: c.hours_theory, practice: c.hours_practice, lab: c.hours_lab });
+    }
+    return m;
+  }, [allCourses]);
+
   const lecturerBySection = useMemo(() => {
     const names = new Map<number, string>();
     for (const course of allCourses) {
@@ -590,9 +627,11 @@ export default function WeeklyPage() {
 
   const byDay = useMemo(() => {
     const m = new Map<number, Cluster[]>();
-    for (const d of DAYS) m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d)));
+    for (const d of DAYS) {
+      m.set(d, layoutDay(entries.filter((e) => e.day_of_week === d), density === "expand"));
+    }
     return m;
-  }, [entries]);
+  }, [entries, density]);
 
   const showConflicts = (conflicts: ConflictResult[], baslik: string) => {
     if (!conflicts.length) {
@@ -816,6 +855,26 @@ export default function WeeklyPage() {
           </Group>
 
           <Group gap={6} align="center" wrap="wrap">
+            {/* K-85: yoğunluk bir GÖRÜNÜM tercihi, bir eylem değil — bu yüzden
+                eylem grubunun en solunda, Geri Al'dan önce duruyor. */}
+            <Tooltip label={t.weekly.densityTip}>
+              <SegmentedControl size="xs" radius="md" value={density}
+                onChange={(v) => setDensity(v as "compact" | "expand")}
+                // paddingBlock ile yükseklik zorlamak etiketi kutunun ÜSTÜNE
+                // yapıştırıyordu (altta ~7px, üstte ~4px boşluk kalıyor ve
+                // kontrol havada duruyordu). Doğrusu: etiket kutuyu doldursun,
+                // metni flex ile ortalasın — kalan boşluğu Mantine'in kendi
+                // dolgusu simetrik dağıtır.
+                styles={{
+                  root: { height: CONTROL_H },
+                  control: { height: "100%" },
+                  label: { height: "100%", display: "flex", alignItems: "center", paddingBlock: 0 },
+                }}
+                data={[
+                  { value: "compact", label: t.weekly.densityCompact },
+                  { value: "expand", label: t.weekly.densityExpand },
+                ]} />
+            </Tooltip>
             {/* K-76: Geri Al yalnız simge (yazı kaldırıldı); sayı tooltip'te. */}
             {canWrite && (
               <Tooltip label={t.weekly.undoTip(undoCount)}>
@@ -900,6 +959,10 @@ export default function WeeklyPage() {
                         diye CourseInfoButton kendi tıklamasını durdurur. */}
                     <CourseInfoButton
                       course={r.course}
+                      // K-85: pop-up'ta şube başına T/U/L ilerlemesi görünsün —
+                      // paletteki tik ders düzeyinde "eksik" derken hangi şubenin
+                      // neyi eksik olduğu ancak burada okunuyor.
+                      placedBySection={placedBySection}
                       opened={openInfoId === r.course.id}
                       onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
                       onOpenCourses={() =>
@@ -954,6 +1017,10 @@ export default function WeeklyPage() {
                     )}
                     <CourseInfoButton
                       course={r.course}
+                      // K-85: pop-up'ta şube başına T/U/L ilerlemesi görünsün —
+                      // paletteki tik ders düzeyinde "eksik" derken hangi şubenin
+                      // neyi eksik olduğu ancak burada okunuyor.
+                      placedBySection={placedBySection}
                       opened={openInfoId === r.course.id}
                       onOpenChange={(o) => setOpenInfoId(o ? r.course.id : null)}
                       onOpenCourses={() =>
@@ -1071,9 +1138,15 @@ export default function WeeklyPage() {
                       <div key={s} style={{
                         position: "absolute", top: (s - 1) * ROW_H, left: 0, right: 0, height: ROW_H,
                         borderTop: `1px solid ${LINE}`,
+                        // Öğle arası (slot 5) zemini bir ton koyu: ders konulması
+                        // ENGELLENMEZ, yalnız saatin molaya denk geldiği görünür.
+                        // Hover ve sürükleme vurgusu bunun ÜSTÜNE biner, yoksa
+                        // o satırda geri bildirim kaybolur ve ekleme "çalışmıyor"
+                        // gibi durur.
                         background: over === `${d}-${s}` ? "var(--mantine-color-blue-light)"
                           // İmleç boş slottayken bir tık daha koyu + ortada artı.
-                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG : GRID_CELL_BG,
+                          : hoverCell === `${d}-${s}` ? HOVER_CELL_BG
+                          : s === LUNCH_SLOT ? LUNCH_CELL_BG : GRID_CELL_BG,
                         pointerEvents: "none",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "background 120ms ease",
@@ -1179,6 +1252,7 @@ export default function WeeklyPage() {
             : t.weekly.addEntry(t.days.short[placing.day], SLOT_START[placing.slot])}
           classrooms={classrooms} startSlot={placing.slot}
           onlineBySection={onlineBySection}
+          hoursOf={(id) => hoursByCourse.get(id) ?? null}
           courses={dersler}
           fixedCourseId={birakilan?.id}
           sectionsOf={(courseId) => {
@@ -1221,6 +1295,10 @@ export default function WeeklyPage() {
           title={`${editing.section.course.code}-${editing.section.section_no} · ${t.days.short[editing.day_of_week]} ${SLOT_START[editing.start_slot]}`}
           classrooms={classrooms} startSlot={editing.start_slot}
           onlineBySection={onlineBySection}
+          hoursOf={(id) => hoursByCourse.get(id) ?? null}
+          // Düzenlemede ders seçici çizilmez; değer yalnız "Oturum türü"
+          // etiketinin saatleri bulabilmesi için geçiliyor.
+          fixedCourseId={editing.section.course.id}
           fixedSectionId={editing.section.id}
           initial={{
             classroomId: editing.classroom ? String(editing.classroom.id) : null,
@@ -1315,7 +1393,19 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
     : `${online ? t.weekly.online : e.classroom?.room_code ?? "—"}`;
 
   const canDrag = canWrite && !many;
-  const showLecturer = !many && c.slot_count > 1 && lecturerName;
+  /* K-85: HOCA ile DERSLİK yer değiştirdi.
+     1 slotluk kart 89px; dolgu düşünce ~73px kalıyor ve kod + ders adı +
+     tek meta satırı zaten ~64px yer tutuyor. Yani dördüncü satır TAŞIYOR ve
+     ikisinden biri seçilmek zorunda. Eskiden her zaman derslik yazılıyor,
+     hoca yalnız çok slotlu kartta görünüyordu; artık tersi.
+     Toplu kart (paralel şubeler) bunun DIŞINDA: orada tek bir hoca yazmak
+     yanlış olur, meta satırı şube/derslik özetini taşımaya devam eder.
+
+     Deneme: ikisi de HER kartta yazılıyor. Ölçü dar — 1 slotluk kartın iç
+     yüksekliği 73px ve dört satır ~82px tutuyordu; satır aralıkları ve meta
+     satırlarının satır yüksekliği sıkıştırılarak yer açıldı. Kart zaten
+     overflow:hidden, yani hesap tutmazsa taşan satır sessizce kırpılır. */
+  const showRoom = !many;
 
   return (
     <div
@@ -1361,9 +1451,27 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}>
       <Group gap={4} justify="space-between" wrap="nowrap" align="flex-start">
-        <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em", minWidth: 0 }}>
-          {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
-        </div>
+        {/* Kod ve tür çipi BİRLİKTE solda kalmalı; dıştaki space-between aksi
+            halde çipi kartın ortasına savurur. */}
+        <Group gap={5} wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+          <div style={{
+            fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em", minWidth: 0,
+            // Çip eklendiği için kod artık taşabilir: taşarsa "…" ile kesilsin,
+            // kartın dışına sarkmasın.
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {e.section.course.code}{many ? "" : `-${e.section.section_no}`}
+          </div>
+          {/* K-85: oturum türü YALNIZ Uygulama ve Lab'da yazılır. Teori
+              varsayılan ve kartların çoğu teori; hepsine "Teori" yazmak bilgi
+              değil gürültü olurdu. Toplu kartta da tek tür geçerli — küme
+              anahtarı session_type'ı içeriyor, karışık tür bir kümede toplanmaz. */}
+          {e.session_type !== "THEORY" && (
+            <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0 }}>
+              {t.weekly.sessionBadge[e.session_type]}
+            </Badge>
+          )}
+        </Group>
         {many && (
           <Badge size="xs" variant="filled" color="gray" style={{ flexShrink: 0 }}>
             {c.entries.length}
@@ -1383,11 +1491,26 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
       <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
         {e.section.course.name}
       </div>
-      <Group gap={4} wrap="nowrap" mt={5} style={{ color: TEXT_MUTED, minWidth: 0 }}>
-        {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
-        <Text size="xs" c="dimmed" truncate>{online ? "Online" : altSatir}</Text>
+      <Group gap={4} wrap="nowrap" mt={4} style={{ color: TEXT_MUTED, minWidth: 0 }}>
+        {many
+          ? (online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />)
+          : <IconUser size={14} stroke={1.8} />}
+        <Text size="xs" c="dimmed" truncate lh={1.2}>
+          {many ? altSatir : (lecturerName ?? "—")}
+        </Text>
       </Group>
-      {showLecturer && <Text size="xs" c="dimmed" truncate mt={3}>{lecturerName}</Text>}
+      {showRoom && (
+        // Uyarı ikonu sağ-altta MUTLAK konumlu; 1 slotluk kartta tam bu satırın
+        // hizasına düşüyor. Sağdan yer ayrılmazsa kırpılan metin ikonun altına
+        // girer ve ikisi de okunmaz olur.
+        <Group gap={4} wrap="nowrap" mt={2}
+          style={{ color: TEXT_MUTED, minWidth: 0, paddingRight: (hard || warn) ? 22 : 0 }}>
+          {online ? <IconWorld size={14} stroke={1.8} /> : <IconMapPin size={14} stroke={1.8} />}
+          {/* altSatir tek girişte zaten online'ı da karşılıyor (t.weekly.online).
+              Eskiden burada elle yazılmış "Online" vardı ve çeviriyi atlıyordu. */}
+          <Text size="xs" c="dimmed" truncate lh={1.2}>{altSatir}</Text>
+        </Group>
+      )}
       {(hard || warn) && (
         <span title={hard ? t.weekly.hardTip : t.weekly.warnTip}
           onClick={(ev) => {
@@ -1472,14 +1595,16 @@ type EntryBody = {
  *  sorulmuyordu. İkisi de kullanıcıyı "neyi yerleştiriyorum" sorusuyla baş başa
  *  bırakıyordu; şimdi ders her durumda GÖRÜNÜR, şube her durumda ayrı satır.
  */
-function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCourseId, sectionsOf, fixedSectionId, onlineBySection, onClose, onSubmit, onDone }: {
+function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCourseId, sectionsOf, fixedSectionId, onlineBySection, hoursOf, onClose, onSubmit, onDone }: {
   title: string;
   classrooms: Classroom[];
   startSlot: number;
   initial?: { classroomId: string | null; sessionType: SessionType; delivery: DeliveryMode; slotCount: number };
   /** Verilirse modal ders + şube sorar (yerleştirme). Düzenlemede verilmez. */
   courses?: { value: string; label: string }[];
-  /** Sürükleyerek gelindiyse ders bellidir: seçici DOLU ve kilitli gelir. */
+  /** Ders bellidir: yerleştirmede seçici DOLU ve kilitli gelir. Düzenlemede
+   *  seçici hiç ÇİZİLMEZ (`courses` verilmez) ama değer yine geçilir — "Oturum
+   *  türü" etiketi dersin saatlerini buradan bulur. */
   fixedCourseId?: number;
   /** Seçili dersin aktif şubeleri. */
   sectionsOf?: (courseId: number) => { value: string; label: string }[];
@@ -1487,6 +1612,9 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
   fixedSectionId?: number;
   /** K-45: şube id → bileşen bazında online'lık. */
   onlineBySection: Map<number, Record<SessionType, boolean>>;
+  /** Ders id → T/U/L saatleri. Sabit değer YETMEZ: yerleştirmede ders modalın
+   *  İÇİNDE seçilir, dolayısıyla etiket seçimle birlikte değişmeli. */
+  hoursOf: (courseId: number) => CourseHours | null;
   onClose: () => void;
   onSubmit: (body: EntryBody) => Promise<{ conflicts: ConflictResult[] }>;
   onDone: (conflicts: ConflictResult[]) => void;
@@ -1502,6 +1630,47 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
   const [busy, setBusy] = useState(false);
 
   const maxSlots = 9 - startSlot + 1;
+  const dersSaatleri = courseId ? hoursOf(Number(courseId)) : null;
+
+  /** Saatler oturum türü anahtarlarıyla — pasifleştirme buna bakar. */
+  const saatler: Record<SessionType, number> | null = dersSaatleri
+    ? { THEORY: dersSaatleri.theory, PRACTICE: dersSaatleri.practice, LAB: dersSaatleri.lab }
+    : null;
+
+  /** Dersin ÜÇ bileşeni de 0 (veride 8 ders böyle) ya da ders henüz seçilmedi.
+   *  Bu durumda hiçbir şey pasifleşmez: üçünü birden kapatmak açılır listeyi
+   *  ölü bırakır ve o dersi hiç yerleştirilemez hâle getirirdi. Saatsiz ders
+   *  bir VERİ eksiğidir; çözümü ders kaydını düzeltmek, programı kilitlemek
+   *  değil. */
+  const saatsizDers = saatler == null
+    || (saatler.THEORY === 0 && saatler.PRACTICE === 0 && saatler.LAB === 0);
+
+  /** Saati 0 olan bileşen listede pasif — o derste öyle bir oturum yok.
+   *  Sunucu bunu ENGELLEMİYOR (W8 yalnız eksik saati rapor eder), yani buradaki
+   *  kısıt bir kolaylık: yanlış bileşene yerleştirmeyi baştan imkânsız kılar.
+   *
+   *  SEÇİLİ olan asla pasifleşmez. Kayıtlı bir giriş, dersin saatleri sonradan
+   *  değiştiği için saatsiz bir bileşende kalmış olabilir; onu da kapatmak
+   *  Select'i "seçili ama seçilemez" bir değerle bırakır ve kullanıcı
+   *  vazgeçip eski hâline dönemez. */
+  const bilesenPasif = (k: SessionType) =>
+    saatler != null && !saatsizDers && saatler[k] === 0 && k !== sessionType;
+
+  /** YENİ yerleştirmede seçili bileşenin saati 0 ise saati olan ilk bileşene
+   *  kayar. Varsayılan THEORY ve veride teorisi 0 olup uygulaması olan dersler
+   *  var (0/2/0) — o derslerde modal pasif bir seçimle açılıyordu.
+   *
+   *  DÜZENLEMEDE çalışmaz (`courses` verilmez): orada oturum türünü kendiliğinden
+   *  değiştirmek kayıtlı veriyi sessizce bozar; kullanıcı yalnız dersliği
+   *  düzeltmek için açmış olabilir. */
+  const yerlestirme = courses != null;
+  useEffect(() => {
+    if (!yerlestirme || saatler == null || saatsizDers) return;
+    if (saatler[sessionType] > 0) return;
+    const ilkGecerli = SESSION_TYPES.find((k) => saatler[k] > 0);
+    if (ilkGecerli) setSessionType(ilkGecerli);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, yerlestirme]);
   const subeler = courseId && sectionsOf ? sectionsOf(Number(courseId)) : [];
   const tekSube = subeler.length === 1 ? subeler[0].value : null;
 
@@ -1573,9 +1742,13 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
               nothingFoundMessage={t.weekly.noSectionOption} />
           </>
         )}
-        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45). */}
-        <Select label={t.weekly.sessionType} value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
-          data={(Object.keys(t.weekly.session) as SessionType[]).map((k) => ({ value: k, label: t.weekly.session[k] }))} />
+        {/* Oturum türü ÖNCE: online'lık buna göre belirlenir (K-45).
+            Etiket dersin saatlerini taşır: "Oturum türü (3T/2U/0L)". Ders henüz
+            seçilmemişse (boş slota tıklayarak açılan modal) harflere düşer. */}
+        <Select label={t.weekly.sessionType(dersSaatleri)} value={sessionType} onChange={(v) => v && setSessionType(v as SessionType)}
+          data={SESSION_TYPES.map((k) => ({
+            value: k, label: t.weekly.session[k], disabled: bilesenPasif(k),
+          }))} />
         {componentOnline ? (
           // Bileşen online: yalnız senkron/asenkron. "Online mı" ders düzeyinde
           // sabit olduğu için burada seçtirilmez.

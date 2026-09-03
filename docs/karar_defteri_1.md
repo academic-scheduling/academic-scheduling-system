@@ -2317,8 +2317,8 @@ tamamı şubesiz. Hoca listesi 93 kişi (yalnız Mühendislik kadrosu) — servi
 dersi hocaları eşleşmez, elle eşlenir ya da şubesiz kalır.
 
 ## K-65 · Dersler ekranı: tek sıralanabilir tablo + sağ Drawer + TÜR segmenti [E] — K-56 revizyonu
-**Bağlam (kullanıcı):** Claude Design'da (`claude.ai/design`, proje
-`a0c09d60…`, dosya `Dersler Yeni.dc.html`) Dersler sayfasının yeni arayüzü
+**Bağlam (kullanıcı):** Tasarım aracında (proje `a0c09d60…`, dosya
+`Dersler Yeni.dc.html`) Dersler sayfasının yeni arayüzü
 tasarlandı; "bu dersler sayfasının arayüzünü mevcut arayüze implement edelim".
 Mockup ham `<div>`+DC-runtime; Mantine v7'ye çevrildi. K-56'nın iki-tablo +
 satır-içi akordeon düzenini geri alır.
@@ -2374,7 +2374,7 @@ build temiz; temiz yenilemede konsol/ağ hatası yok.
 
 ## K-66 · Öğretim Üyeleri + Derslikler ekranları K-65 arayüzüne geçti [E]
 **Bağlam (kullanıcı):** "Aynı arayüz değişikliklerini derslikler ve öğretim
-üyeleri sayfasına da yapalım." Claude Design mockup'ları (`Öğretim Üyeleri.dc.html`,
+üyeleri sayfasına da yapalım." Tasarım mockup'ları (`Öğretim Üyeleri.dc.html`,
 `Derslikler.dc.html`) K-65'in kabuğunu (tek sıralanabilir tablo + sağ Drawer +
 TÜR segmenti + filtre popover + zebra + memo satır) bu iki ekrana taşıdı. Yalnız
 frontend (`LecturersPage.tsx`, `ClassroomsPage.tsx`); API/şema değişmedi.

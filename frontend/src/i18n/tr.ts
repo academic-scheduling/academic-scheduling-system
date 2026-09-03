@@ -297,8 +297,7 @@ export const tr = {
     capacityPositive: "Kapasite 0'dan büyük olmalı",
     examCapacityTooBig: "Sınav kontenjanı kapasiteyi aşamaz (K-21)",
     examCapacityHelp:
-      "Boşluklu oturma düzeni. Opsiyonel (K-21) — boş bırakılırsa sınav " +
-      "yerleşiminde uyarı çıkar.",
+      "Boşluklu oturma düzeni. Boş bırakılırsa sınav yerleşiminde uyarı çıkar.",
     deleteHint:
       'Programa veya sınava girmiş bir derslik silinemez; onun yerine "Pasife al" kullanın.',
 
@@ -659,29 +658,27 @@ export const tr = {
     codeRequired: "Ders kodu boş olamaz",
     nameRequired: "Ders adı boş olamaz",
     pickDepartment: "Bölüm seçin",
-    identityLocked: "Dersin kimliği — değiştirilemez (kontrat §6)",
+    /** K-85: Bölüm listesinin başındaki seçenek. Ortak dersin birden çok bölümü
+     *  olduğu için "önce tek bir bölüm seç" yanlış soruydu. */
+    commonOption: "Ortak ders (birden çok bölüm)",
+    departmentLocked: "Bölüm sonradan değiştirilemez.",
+    cohortFailed: (n: number, mesaj: string) =>
+      `${n}. grup eklenemedi: ${mesaj}. Önceki gruplar kaydedildi; kalanları ` +
+      `Düzenle'den ekleyebilirsiniz.`,
     codeLabel: "Ders Kodu",
     nameLabel: "Ders Adı",
     namePlaceholder: "İstatistik",
     typeLabel: "Ders Türü",
-    typeHelp: "Seçmelide cohort çakışması uyarıdır, zorunluda submit engeli (K-05)",
     theory: "Teori (T)",
     practice: "Uygulama (U)",
     lab: "Lab (L)",
-    ectsHelp: "Dersin AKTS/ECTS kredisi (opsiyonel).",
     midtermCount: "Vize sayısı",
-    midtermHelp: "Bir dersin 1-3 vizesi olabilir. Final ve bütünleme her zaman tektir.",
     theoryOnline: "Teori online",
     practiceOnline: "Uygulama online",
     labOnline: "Lab online",
     commonCourse: "Ortak ders",
 
-    commonAddHint:
-      "Aynı kodlu bir ortak ders varsa bu kayıt onun altında toplanır. " +
-      "Aldığı diğer grupları kaydettikten sonra Düzenle'den ekleyebilirsiniz.",
-    cohortHint:
-      "Bu dersi alan diğer bölüm/sınıf/dönem grupları. Dersin kendi bölümünü " +
-      "eklemeye gerek yok — zaten kapsanıyor.",
+    cohortHint: "En az bir bölüm olmalı.",
     cohortDup:
       "Bu grup zaten ekli (bölüm + sınıf + dönem). Farklı bir sınıf/dönem ya da " +
       "bölüm seçin.",
@@ -835,7 +832,16 @@ export const tr = {
     loadFailed: "Program yüklenemedi",
     notLoaded: "Yüklenemedi",
 
+    densityCompact: "Kompakt",
+    densityExpand: "Geniş",
+    densityTip:
+      "Kompakt: aynı ders + saatteki paralel şubeler tek kartta. Geniş: her şube ayrı kartta.",
     session: { THEORY: "Teori", PRACTICE: "Uygulama", LAB: "Lab" },
+    /** Izgara kartındaki oturum türü çipi — dar alan için kısa. Teori de
+     *  burada ama kart onu ÇİZMİYOR (varsayılan tür; her karta yazmak
+     *  gürültü olurdu). Sözlükte tutuluyor ki tür eklenirse burası eksik
+     *  kalmasın. */
+    sessionBadge: { THEORY: "Teori", PRACTICE: "Uyg.", LAB: "Lab" },
     delivery: {
       FACE_TO_FACE: "Yüz yüze",
       ONLINE_SYNC: "Online (eşzamanlı)",
@@ -909,7 +915,15 @@ export const tr = {
     pickCourseFirst: "Önce ders seçin",
     onlyOneSection: "Bu dersin tek şubesi var",
     noSectionOption: "Şube yok",
-    sessionType: "Oturum türü (T/U/L)",
+    /** Etiket dersin KENDİ saatlerini taşır: "Oturum türü (3T/2U/0L)".
+     *  Kullanıcı hangi bileşenin kaç saat olduğunu modalı kapatıp Dersler
+     *  ekranına gitmeden görür. Ders henüz seçilmediyse harfler tek başına
+     *  kalır. Biçim SÖZLÜKTE kuruluyor çünkü harfler dile bağlı (EN: T/P/L);
+     *  sayıları koda gömüp harfleri çeviriye bırakmak iki dili ayrıştırırdı. */
+    sessionType: (saat?: { theory: number; practice: number; lab: number } | null) =>
+      saat
+        ? `Oturum türü (${saat.theory}T/${saat.practice}U/${saat.lab}L)`
+        : "Oturum türü (T/U/L)",
     deliveryType: "Çevrimiçi türü",
     classroom: "Derslik",
     pickClassroom: "Derslik seç",
@@ -1171,14 +1185,20 @@ export const tr = {
     submitFailed: "Gönderilemedi",
   },
 
-  changeFeed: {
-    // K-82: başlık kısaldı. Uzun hâli ("Bölümünüzü etkileyen son
-    // değişiklikler") panelin ne olduğunu değil gerekçesini anlatıyordu;
-    // gerekçe kalıcı bir başlık olamayacak kadar uzundu.
-    title: "Son onaylar",
-    seeAll: "Hepsini gör",
+  recentPublishing: {
+    title: "Taslaklar ve onaylar",
+    openCenter: "Yayın Merkezi",
+    /** Çakışma sayacı İKİYE ayrılıyor: K-05'te engel onaya göndermeyi
+     *  DURDURUR, uyarı durdurmaz. Tek sayı ikisini eşitliyor ve "3 çakışma"
+     *  gören kişi işin durup durmadığını bilemiyordu. */
+    blocking: "engel",
+    warnings: "uyarı",
+    /** Tür rozeti. Silinen changeFeed sözlüğünden taşındı — tek tüketicisi
+     *  kalmıştı. */
     examSchedule: "sınav takvimi",
     weeklySchedule: "ders programı",
+    view: "Görüntüle",
+    empty: "Henüz taslak ya da onay yok.",
   },
 
   courseInfo: {
@@ -1194,6 +1214,12 @@ export const tr = {
     common: "Ortak",
     exams: "Sınavlar",
     noExams: "Sınav eklenmedi.",
+    /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
+     *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sectionNo: (no: number) => `Şube ${no}`,
+    openInCourses: "Ayrıntılar için Dersler'de aç →",
+    sessionLetters: { THEORY: "T", PRACTICE: "U", LAB: "L" },
+    placementDone: "Yerleşim tamam",
     noSections: "Şube yok — Dersler'den ekleyin.",
   },
 

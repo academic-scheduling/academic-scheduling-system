@@ -149,3 +149,38 @@ def _prepare_test_database():
     yield
     # Test verisi scheduling_test'te kalir; dev veritabanina hicbir sekilde
     # dokunulmaz. Bir sonraki kosum bastaki DROP SCHEMA ile sifirlar.
+
+
+# ---------------------------------------------------------------------------
+# POSTA SUSTURMA (K-86) — testler ASLA gercek mail gondermez.
+# ---------------------------------------------------------------------------
+# Bazi testler (test_wp6_users, test_wp6_audit_logs) davet ucunu cagiriyor ama
+# mailer'i taklit etmiyor; gonderim gercekten deneniyordu. Mailpit ayakta
+# oldugu surece bu gorunmezdi -- mail bir yere dusuyor, kimse fark etmiyordu.
+# .env gercek bir SMTP'ye cevrildigi anda ayni testler GERCEK mail gondermeye
+# baslar: var olmayan adreslere onlarca deneme, her kosumda. Yeni bir gonderen
+# hesabinda geri donen mailler itibari dogrudan zedeler.
+#
+# Cozum tek testte degil burada: _send butun oturum boyunca degistirilir, yani
+# hangi test ne yaparsa yapsin mail makineden CIKAMAZ. Testler kendi
+# monkeypatch'lerini yapmaya devam edebilir; bu onlarin altinda ikinci bir
+# emniyet katmani.
+@pytest.fixture(autouse=True, scope="session")
+def postayi_sustur():
+    """Oturum boyunca SMTP gonderimini keser; gonderilenleri listede tutar."""
+    import app.mailer
+
+    gonderilenler: list[dict] = []
+    orijinal = app.mailer._send
+
+    def sahte_send(to_email, subject, body, reply_to=None, html_body=None):
+        gonderilenler.append({
+            "to": to_email, "subject": subject, "body": body,
+            "reply_to": reply_to, "html": html_body,
+        })
+
+    app.mailer._send = sahte_send
+    try:
+        yield gonderilenler
+    finally:
+        app.mailer._send = orijinal

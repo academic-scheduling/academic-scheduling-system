@@ -227,6 +227,71 @@ def test_removing_and_adding_show_up_in_the_diff():
     assert turler == {"REMOVED", "ADDED"}
 
 
+def test_updated_at_moves_when_the_draft_content_changes():
+    """K-85: taslagin ICINDE yapilan degisiklik updated_at'i ileri tasir.
+
+    Ana sayfadaki "son kayitlar" listesi bu alana gore siralaniyor. Girislerin
+    kendi created_at'ine bakmak yetmezdi: TASIMA ve SILME o kolonu
+    guncellemiyor, dolayisiyla "uzerinde calistigim taslak" listede yukari
+    cikmazdi.
+    """
+    h = admin_headers()
+    dep, lec, cls, course, sec = base_setup(h)
+    draft = create_draft(h, dep["id"])
+    acilis = draft["updated_at"]
+
+    # 1) EKLEME
+    r = client.post(f"/schedule-drafts/{draft['id']}/entries", json={
+        "section_id": sec["id"], "classroom_id": cls["id"],
+        "day_of_week": 1, "start_slot": 1, "slot_count": 1,
+        "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    entry_id = r.json()["entry"]["id"]
+    ekleme = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+    assert ekleme > acilis
+
+    # 2) TASIMA — girisin created_at'i degismez, updated_at ilerlemeli
+    assert client.patch(f"/schedule-drafts/{draft['id']}/entries/{entry_id}",
+                        json={"day_of_week": 3}, headers=h).status_code == 200
+    tasima = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+    assert tasima > ekleme
+
+    # 3) SILME
+    assert client.delete(f"/schedule-drafts/{draft['id']}/entries/{entry_id}",
+                         headers=h).status_code == 204
+    silme = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+    assert silme > tasima
+
+
+def test_updated_at_moves_on_submit_and_withdraw():
+    """Yasam dongusu olaylari da ayni alani ileri tasir (K-85).
+
+    Kullanicinin "en son ne oldu" sorusu "icini duzenledim" ile "onaya
+    gonderdim"i ayirmiyor; iki ayri sira anahtari tutmak listeyi
+    aciklanamaz hale getirirdi.
+    """
+    h = admin_headers()
+    dep, lec, cls, course, sec = base_setup(h)
+    draft = create_draft(h, dep["id"])
+    client.post(f"/schedule-drafts/{draft['id']}/entries", json={
+        "section_id": sec["id"], "classroom_id": cls["id"],
+        "day_of_week": 1, "start_slot": 1, "slot_count": 1,
+        "session_type": "THEORY", "delivery_mode": "FACE_TO_FACE",
+    }, headers=h)
+    once = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+
+    assert client.post(f"/schedule-drafts/{draft['id']}/submit",
+                       json={}, headers=h).status_code == 200
+    gonderim = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+    assert gonderim > once
+
+    assert client.post(f"/schedule-drafts/{draft['id']}/withdraw",
+                       headers=h).status_code == 200
+    geri = client.get(f"/schedule-drafts/{draft['id']}", headers=h).json()["updated_at"]
+    assert geri > gonderim
+
+
 def test_diff_is_live_against_the_current_published_program():
     """K-59'un merkezi: taban saklanmaz. Yayin degisirse ayni taslagin farki da
     degisir — onaylayici her zaman O ANKI gercege bakar."""
@@ -284,7 +349,10 @@ def test_clear_preserves_shared_courses_by_default():
     # Dersi ortak yap ve tuketen bolumu ek cohort olarak ekle (K-48)
     r = client.patch(f"/courses/{course['id']}", json={
         "is_common": True,
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     assert r.status_code == 200, r.text
     publish_entry(sec["id"], cls["id"])
@@ -306,7 +374,10 @@ def test_shared_course_diff_names_the_affected_departments():
     tuketen = make_department(h)
     client.patch(f"/courses/{course['id']}", json={
         "is_common": True,
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     publish_entry(sec["id"], cls["id"], day=1, slot=1)
 

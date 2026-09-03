@@ -138,8 +138,8 @@ ERRORS: dict[str, str] = {
         "The exam supervisor cannot also be added as an invigilator",
     "Geçersiz cohort bölümü": "Invalid cohort department",
     "Bu derste bu şube no zaten var": "This section number already exists for this course",
-    "Dersin kendi cohort'u ek olarak eklenemez (zaten kapsanıyor)":
-        "The course's own cohort cannot be added as extra (already covered)",
+    "Ortak dersin en az bir cohort'u olmalı":
+        "A common course must have at least one cohort",
     "Aynı cohort iki kez verildi": "The same cohort was given twice",
 
     # --- hoca / derslik / bina ---

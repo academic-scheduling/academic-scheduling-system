@@ -272,8 +272,7 @@ export const en: Dict = {
     capacityPositive: "Capacity must be greater than 0",
     examCapacityTooBig: "Exam capacity cannot exceed the regular capacity",
     examCapacityHelp:
-      "Spaced seating layout. Optional — if left empty, a warning appears " +
-      "during exam placement.",
+      "Spaced seating layout. If left empty, a warning appears during exam placement.",
     deleteHint:
       'A classroom used in a schedule or exam cannot be deleted; use "Deactivate" instead.',
 
@@ -599,31 +598,25 @@ export const en: Dict = {
     codeRequired: "Course code cannot be empty",
     nameRequired: "Course name cannot be empty",
     pickDepartment: "Select a department",
-    identityLocked: "The course's identity — cannot be changed",
+    commonOption: "Common course (multiple departments)",
+    departmentLocked: "The department cannot be changed later.",
+    cohortFailed: (n: number, mesaj: string) =>
+      `Group ${n} could not be added: ${mesaj}. Earlier groups were saved; you ` +
+      `can add the rest from Edit.`,
     codeLabel: "Course Code",
     nameLabel: "Course Name",
     namePlaceholder: "Statistics",
     typeLabel: "Course Type",
-    typeHelp:
-      "For electives a cohort clash is a warning; for required courses it blocks submission",
     theory: "Theory (T)",
     practice: "Practice (P)",
     lab: "Lab (L)",
-    ectsHelp: "The course's ECTS credit (optional).",
     midtermCount: "Midterm count",
-    midtermHelp:
-      "A course can have 1-3 midterms. Final and make-up are always single.",
     theoryOnline: "Theory online",
     practiceOnline: "Practice online",
     labOnline: "Lab online",
     commonCourse: "Common course",
 
-    commonAddHint:
-      "If a common course with the same code exists, this record is merged under " +
-      "it. You can add its other cohorts from Edit after saving.",
-    cohortHint:
-      "Other department/year/semester groups taking this course. There is no need " +
-      "to add the course's own department — it is already covered.",
+    cohortHint: "At least one department is required.",
     cohortDup:
       "This group is already added (department + year + semester). Choose a " +
       "different year/semester or department.",
@@ -774,7 +767,12 @@ export const en: Dict = {
     loadFailed: "The schedule could not be loaded",
     notLoaded: "Could not be loaded",
 
+    densityCompact: "Compact",
+    densityExpand: "Expanded",
+    densityTip:
+      "Compact: parallel sections of the same course and time share one card. Expanded: every section gets its own card.",
     session: { THEORY: "Theory", PRACTICE: "Practice", LAB: "Lab" },
+    sessionBadge: { THEORY: "Theory", PRACTICE: "Prac.", LAB: "Lab" },
     delivery: {
       FACE_TO_FACE: "In person",
       ONLINE_SYNC: "Online (synchronous)",
@@ -848,7 +846,10 @@ export const en: Dict = {
     pickCourseFirst: "Select a course first",
     onlyOneSection: "This course has a single section",
     noSectionOption: "No section",
-    sessionType: "Session type (T/P/L)",
+    sessionType: (saat) =>
+      saat
+        ? `Session type (${saat.theory}T/${saat.practice}P/${saat.lab}L)`
+        : "Session type (T/P/L)",
     deliveryType: "Delivery type",
     classroom: "Classroom",
     pickClassroom: "Select a classroom",
@@ -1078,11 +1079,20 @@ export const en: Dict = {
     submitFailed: "Could not be sent",
   },
 
-  changeFeed: {
-    title: "Recent approvals",
-    seeAll: "See all",
+  recentPublishing: {
+    title: "Drafts and approvals",
+    openCenter: "Publishing Center",
+    /** Çakışma sayacı İKİYE ayrılıyor: K-05'te engel onaya göndermeyi
+     *  DURDURUR, uyarı durdurmaz. Tek sayı ikisini eşitliyor ve "3 çakışma"
+     *  gören kişi işin durup durmadığını bilemiyordu. */
+    blocking: "blocking",
+    warnings: "warnings",
+    /** Tür rozeti. Silinen changeFeed sözlüğünden taşındı — tek tüketicisi
+     *  kalmıştı. */
     examSchedule: "exam schedule",
-    weeklySchedule: "weekly schedule",
+    weeklySchedule: "class schedule",
+    view: "View",
+    empty: "No drafts or approvals yet.",
   },
 
   courseInfo: {
@@ -1098,6 +1108,12 @@ export const en: Dict = {
     common: "Common",
     exams: "Exams",
     noExams: "No exam added.",
+    /** K-85: şube satırındaki yerleşim ilerlemesi "T3/3 · L0/2" biçiminde
+     *  kuruluyor; yalnız HARFLER dile bağlı (EN: T/P/L), sayı ve ayraç değil. */
+    sectionNo: (no: number) => `Section ${no}`,
+    openInCourses: "Open in Courses for details →",
+    sessionLetters: { THEORY: "T", PRACTICE: "P", LAB: "L" },
+    placementDone: "Placement complete",
     noSections: "No sections — add one from Courses.",
   },
 

@@ -277,13 +277,19 @@ def test_add_extra_cohorts_to_common_course():
     depA = make_department(h)
     depB = make_department(h)
     course = make_course(h, depA)                      # depA-2-SPRING (birincil)
+    # K-85: liste TAM küme — birincil de içinde. Birincil listede olduğu için
+    # yerinde kalır, depB ek cohort olur.
     r = _patch_course(h, course["id"], {
         "is_common": True,
-        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+        "cohorts": [
+            {"department_id": depA["id"], "year": 2, "semester": "SPRING"},
+            {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+        ],
     })
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["is_common"] is True
+    assert body["department_id"] == depA["id"]         # birincil taşınmadı
     assert len(body["extra_cohorts"]) == 1
     ec = body["extra_cohorts"][0]
     assert ec["department_id"] == depB["id"]
@@ -295,14 +301,16 @@ def test_extra_cohort_replace_is_full():
     h = admin_headers()
     depA = make_department(h); depB = make_department(h); depC = make_department(h)
     course = make_course(h, depA)
+    birincil = {"department_id": depA["id"], "year": 2, "semester": "SPRING"}
     _patch_course(h, course["id"], {
         "is_common": True,
-        "cohorts": [{"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
+        "cohorts": [birincil, {"department_id": depB["id"], "year": 2, "semester": "SPRING"}],
     })
-    # ikinci PATCH tam değiştirir: artık yalnız depC kalmalı
+    # ikinci PATCH tam değiştirir: birincilin yanında artık yalnız depC kalmalı
     body = _patch_course(h, course["id"], {
-        "cohorts": [{"department_id": depC["id"], "year": 1, "semester": "FALL"}],
+        "cohorts": [birincil, {"department_id": depC["id"], "year": 1, "semester": "FALL"}],
     }).json()
+    assert body["department_id"] == depA["id"]
     assert len(body["extra_cohorts"]) == 1
     assert body["extra_cohorts"][0]["department_id"] == depC["id"]
 
@@ -313,12 +321,15 @@ def test_extra_cohort_replace_retaining_one_no_500():
     h = admin_headers()
     depA = make_department(h); depB = make_department(h); depC = make_department(h)
     course = make_course(h, depA)
+    birincil = {"department_id": depA["id"], "year": 2, "semester": "SPRING"}
     _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        birincil,
         {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
         {"department_id": depC["id"], "year": 1, "semester": "FALL"},
     ]})
     # depB korunur, depC çıkar
     r = _patch_course(h, course["id"], {"cohorts": [
+        birincil,
         {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
     ]})
     assert r.status_code == 200, r.text
@@ -349,7 +360,12 @@ def test_extra_cohort_on_non_common_rejected():
     assert r.status_code == 400
 
 
-def test_extra_cohort_primary_rejected():
+def test_cohort_set_may_contain_primary():
+    """K-85: birincil cohort artık listeye DAHİL (K-48'de reddediliyordu).
+
+    Liste kümenin tamamı olduğu için birincili yazmak normaldir; yalnız
+    birincil verilirse ders tek cohort'lu ortak ders olur, ek cohort kalmaz.
+    """
     h = admin_headers()
     depA = make_department(h)
     course = make_course(h, depA)                       # depA-2-SPRING
@@ -357,7 +373,83 @@ def test_extra_cohort_primary_rejected():
         "is_common": True,
         "cohorts": [{"department_id": depA["id"], "year": 2, "semester": "SPRING"}],
     })
-    assert r.status_code == 400                          # birincil cohort ek olamaz
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["department_id"] == depA["id"]
+    assert body["extra_cohorts"] == []
+
+
+def test_cohort_set_can_drop_primary():
+    """K-85: dersin BİRİNCİL bölümü de listeden çıkarılabilir.
+
+    Asıl kazanım bu: K-48'de ortak dersin ilk girilen bölümü silinemiyordu.
+    Çakışma motoru birincile ayrıcalık tanımadığı için (birincil ∪ ek) bu
+    kısıt yalnızca depolamadan geliyordu. Birincil listeden çıkınca kalan
+    cohort'lardan biri onun yerine geçer; ders bölümsüz kalmaz.
+    """
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)                       # depA-2-SPRING
+    _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        {"department_id": depA["id"], "year": 2, "semester": "SPRING"},
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+    ]})
+    # depA artık bu dersi almıyor
+    r = _patch_course(h, course["id"], {"cohorts": [
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+    ]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["department_id"] == depB["id"]          # depB birincile terfi etti
+    assert body["year"] == 2 and body["semester"] == "SPRING"
+    assert body["extra_cohorts"] == []                  # depA'nın satırı da kalmadı
+
+
+def test_cohort_set_promotes_first_when_primary_dropped():
+    """Birincil listede yoksa terfi eden LİSTENİN İLKİdir (belirlenmiş sıra)."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h); depC = make_department(h)
+    course = make_course(h, depA)
+    r = _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        {"department_id": depC["id"], "year": 1, "semester": "FALL"},
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+    ]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["department_id"] == depC["id"]
+    assert body["year"] == 1 and body["semester"] == "FALL"
+    assert len(body["extra_cohorts"]) == 1
+    assert body["extra_cohorts"][0]["department_id"] == depB["id"]
+
+
+def test_cohort_set_empty_rejected():
+    """Ortak ders en az bir cohort'a bağlı kalmalı — bölümsüz ders yok."""
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    course = make_course(h, depA)
+    _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        {"department_id": depA["id"], "year": 2, "semester": "SPRING"},
+        {"department_id": depB["id"], "year": 2, "semester": "SPRING"},
+    ]})
+    r = _patch_course(h, course["id"], {"cohorts": []})
+    assert r.status_code == 400
+
+
+def test_cohort_promotion_identity_clash_rejected():
+    """Terfi eden üçlü uq_courses_identity'ye takılıyorsa 409 — sessiz 500 değil.
+
+    Kod ve birincil AYNI PATCH'te değişebildiği için kimlik denetimi tek yerde
+    ve efektif değerler üzerinden yapılır.
+    """
+    h = admin_headers()
+    depA = make_department(h); depB = make_department(h)
+    kod = _u("CE")
+    make_course(h, depB, code=kod, year=1, semester="FALL")   # depB-1-FALL/kod dolu
+    course = make_course(h, depA, code=kod)                   # depA-2-SPRING/kod
+    r = _patch_course(h, course["id"], {"is_common": True, "cohorts": [
+        {"department_id": depB["id"], "year": 1, "semester": "FALL"},
+    ]})
+    assert r.status_code == 409, r.text
 
 
 def test_extra_cohort_duplicate_rejected():
@@ -392,7 +484,10 @@ def test_extra_cohorts_visible_in_list():
     course = make_course(h, depA)
     _patch_course(h, course["id"], {
         "is_common": True,
-        "cohorts": [{"department_id": depB["id"], "year": 3, "semester": "FALL"}],
+        "cohorts": [
+            {"department_id": depA["id"], "year": 2, "semester": "SPRING"},
+            {"department_id": depB["id"], "year": 3, "semester": "FALL"},
+        ],
     })
     got = client.get(f"/courses?department_id={depA['id']}", headers=h).json()
     mine = next(c for c in got if c["id"] == course["id"])

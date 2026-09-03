@@ -20,7 +20,7 @@ import type { CSSProperties } from "react";
 
 /** Saat/slot satırlarını ayıran yatay çizgi — bilinçli olarak çok silik:
  *  ızgara okunmayı desteklemeli, dikkati kendine çekmemeli. */
-export const LINE = "light-dark(#F1F5F9, #2C2C2C)";
+export const LINE = "light-dark(#E3E9F0, #2C2C2C)";
 
 /** Günleri ayıran DİKEY çizgi. Yataydan belirgin biçimde ayrık: bir günün
  *  nerede bitip diğerinin nerede başladığı takvimin en temel okuma sınırıdır. */
@@ -28,27 +28,44 @@ export const DAY_LINE = "light-dark(#94A3B8, #4A4E57)";
 
 /** İmleç boş bir slotun üzerindeyken o alana düşen vurgu — "buraya
  *  eklenebilir" sinyali. Artı işaretiyle birlikte görünür. */
-export const HOVER_CELL_BG = "light-dark(#E9EEF5, #31343B)";
+export const HOVER_CELL_BG = "light-dark(#E1E8F1, #31343B)";
 
 export const BORDER = "light-dark(#E2E8F0, #373A40)";        // kart ve panel kenarı
 export const BORDER_HOVER = "light-dark(#CBD5E1, #4A4E57)";  // hover'da bir tık belirginleşir
-export const HEADER_BG = "light-dark(#EEF2F7, #2A2C31)";     // gün başlığı bandı
+export const HEADER_BG = "light-dark(#E4EAF1, #2A2C31)";     // gün başlığı bandı
 export const SIDEBAR_BG = "light-dark(#F8FAFC, #1E1F23)";    // sol panel zemini
 export const PAGE_SURFACE = "light-dark(#FFFFFF, #2C2E33)";  // kart zemini (en açık katman)
-// K-59: taslak modu şeridi. Kullanıcının "şu an yayına mı yazıyorum" sorusunu
-// hiç sormaması gerekir; şerit bu yüzden zeminden AYRIŞIR. Koyu temada açık
-// sarı kullanmak ekranı yırtıyordu — iki tema için ayrı ton.
-export const DRAFT_SURFACE = "light-dark(#FFFBEB, #33301F)";
-export const DRAFT_BORDER = "light-dark(#FDE68A, #6B5D2A)";
 
 /** BOŞ slotun zemini: ızgara gövdesinden bir ton, karttan iki ton koyu.
  *  Böylece kart "dolu", boşluk "boş" olarak okunur — aydınlıkta beyaz kart /
- *  gri hücre, karanlıkta açık yüzey / koyu hücre. */
-export const GRID_CELL_BG = "light-dark(#F8FAFC, #242629)";
+ *  gri hücre, karanlıkta açık yüzey / koyu hücre.
+ *
+ *  K-85: aydınlık değer #F8FAFC idi ve beyaz kartla neredeyse aynı okunuyordu —
+ *  dolu/boş ayrımı kayboluyordu. Bir ton koyulaştırıldı. Tek başına yetmezdi:
+ *  LINE bu değerden AÇIK kalıp çizgileri ters çevirirdi, HOVER ve HEADER_BG ise
+ *  yeni zemine yapışırdı. Bu yüzden aydınlık rampanın tamamı birlikte kaydı;
+ *  sıralama korunuyor: kart (#FFF) > hücre > başlık ≈ hover > öğle bandı. */
+export const GRID_CELL_BG = "light-dark(#EDF1F6, #242629)";
+
+/** ÖĞLE ARASI bandının zemini (slots.LUNCH_SLOT = 12:30-13:15).
+ *
+ *  Ders konulması engellenmiyor, yalnız "bu saat öğle molasına denk geliyor"
+ *  bilgisi veriliyor -- bu yüzden metin ya da ikon değil, yalnız zemin tonu.
+ *
+ *  Ton NÖTR: paletin kendi slate ailesinden (BORDER ile aynı değer), hiç
+ *  sıcaklık taşımıyor. Sıcak/bej bir ton denenmişti ve turuncuya kaçıp
+ *  ACCENT.warn ile karışıyordu; öğle arası bir UYARI değil, günün sabit bir
+ *  dilimi.
+ *
+ *  Yön: band iki temada da zeminden DAHA KOYU. Böylece "çukurda kalan şerit"
+ *  okuması ışık/karanlık fark etmeksizin aynı; HOVER_CELL_BG ise her zaman
+ *  açığa gittiği için öğle satırında da vurgu görünür kalır (yoksa o satırda
+ *  ekleme geri bildirimi kaybolur ve arayüz bozuk sanılır).
+ */
+export const LUNCH_CELL_BG = "light-dark(#D8DFE9, #191B1E)";
 
 export const TIME_COLOR = "light-dark(#94A3B8, #6E7178)";    // saat cetveli — susturulmuş
 export const TEXT_MUTED = "light-dark(#64748B, #909296)";    // ikincil metin (derslik, hoca)
-export const TEXT_BODY = "light-dark(#334155, #C1C2C5)";     // ikincilden bir ton belirgin
 export const TEXT_STRONG = "light-dark(#0F172A, #E6E8EC)";   // ders kodu
 
 /** Durum vurgusu — YALNIZ ince sol çizgide ve küçük ikonda kullanılır.
@@ -76,15 +93,11 @@ export const SIDE_W = 214;     // sol ders paneli
 export const MIN_DAY_W = 172;  // bir günün en dar hâli
 export const MIN_LANE_W = 176; // paralel kart şeridinin en dar hâli
 
-/** Izgara gövdesinin yüksekliği. İki ekranın dikey ölçeği farklı — haftalıkta
- *  9 slot, sınavda 08:00-21:00 arası 13 saatlik dilim — ama TOPLAM yükseklik
- *  aynı olmalı ki iki sayfa arasında geçerken takvim "zıplamasın".
- *  Sayılar bunun için seçildi:  9 × 91 = 819  ·  13 × 63 = 819
- *  (Sınav penceresi 21:00'de kalır: K-06 akşam sınavına izin veriyor, pencereyi
- *  daraltmak geç saatli bir sınavı sessizce kırpardı.) */
-export const GRID_BODY_H = 819;
-export const WEEKLY_ROW_H = 91;   // bir slot
-export const EXAM_HOUR_H = 63;    // bir saat
+/** Bir slotun yüksekliği. Sınav ızgarası da bir SAATİ bu yükseklikte çiziyor
+ *  (K-76): eskiden 63px'ti — 13 saati haftalığın boyuna sıkıştırmak için — ve
+ *  "yarım slot" gibi duruyordu. Artık sınav ızgarası uzuyor, görünür yükseklik
+ *  haftalıkla eşitlenip fazlası kaydırılıyor (ExamsPage.VISIBLE_H). */
+export const WEEKLY_ROW_H = 91;
 
 /** Kart iç yerleşimi — iki ekranda da aynı. */
 export const CARD_RADIUS = 10;

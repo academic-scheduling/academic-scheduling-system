@@ -172,6 +172,11 @@ export default function PublishingCenterPage() {
   const [selId, setSelId] = useState<number | null>(
     params.get("draft_id") ? Number(params.get("draft_id")) : null);
 
+  /** Uc ucun de dondugu an. Derin baglanti cozumu bunu bekler: `approved` ve
+   *  `queue` bos dizi olarak basliyor, yani "bos" ile "henuz gelmedi" ayirt
+   *  edilemiyor ve grup erken secilirse yanlis secilir. */
+  const [allLoaded, setAllLoaded] = useState(false);
+
   const load = () => {
     const jobs: Promise<unknown>[] = [
       api.get<ScheduleDraft[]>("/schedule-drafts").then(setMyDrafts),
@@ -186,6 +191,7 @@ export default function PublishingCenterPage() {
       jobs.push(api.get<ScheduleDraft[]>("/schedule-approvals").then(setQueue));
     }
     Promise.all(jobs)
+      .then(() => setAllLoaded(true))
       .catch((e) => setError(e instanceof ApiError ? e.message : t.publishing.loadFailed));
     // Sol menüdeki bekleyen rozetini de tazele.
     window.dispatchEvent(new Event("publishing:refresh"));
@@ -220,14 +226,36 @@ export default function PublishingCenterPage() {
     () => list.find((d) => d.id === selId) ?? list[0] ?? null,
     [list, selId]);
 
+  /** K-85: `?draft_id=N` ile gelen kayıt hangi gruptaysa O GRUP açılır.
+   *
+   *  Grup her zaman PENDING başlıyordu. Başka bir gruptaki kayda gelen bağlantı
+   *  (ana sayfadaki "Görüntüle" düğmesi) listede bulunamıyor, `cur` ilk bekleyen
+   *  kayda düşüyor ve aşağıdaki URL efekti draft_id'yi ONUN id'siyle yeniden
+   *  yazıp bağlantıyı sessizce yok ediyordu — kullanıcı istediğinden başka bir
+   *  kaydın önünde buluyordu kendini.
+   *
+   *  Bir KEZ çalışır: sonrasında grup sekmesi kullanıcınındır, seçili kayıt her
+   *  değiştiğinde onu geri zorlamak sekmeyi kullanılamaz hale getirirdi. */
+  const [deepLinkDone, setDeepLinkDone] = useState(selId === null);
+  useEffect(() => {
+    if (deepLinkDone || !allLoaded) return;
+    const grup = (Object.keys(byGroup) as Group[])
+      .find((g) => byGroup[g].some((d) => d.id === selId));
+    if (grup) setGroup(grup);
+    setDeepLinkDone(true);
+  }, [allLoaded, byGroup, selId, deepLinkDone]);
+
   // Seçili kaydı URL'e yansıt (derin bağlantı + yenilemede korunur).
   useEffect(() => {
+    // Derin bağlantı çözülmeden URL'e DOKUNMA: o an `cur` hâlâ yanlış gruptan
+    // geliyor ve yazılan id gelen bağlantıyı ezerdi.
+    if (!deepLinkDone) return;
     if (cur && String(cur.id) !== params.get("draft_id")) {
       const next = new URLSearchParams(params);
       next.set("draft_id", String(cur.id));
       setParams(next, { replace: true });
     }
-  }, [cur, params, setParams]);
+  }, [cur, params, setParams, deepLinkDone]);
 
   const loaded = myDrafts !== null;
 

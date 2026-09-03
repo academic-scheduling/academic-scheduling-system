@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Box, Text } from "@mantine/core";
-import { SLOT_TIMES } from "../utils/slots";
+import { LUNCH_SLOT, SLOT_TIMES } from "../utils/slots";
+import { LUNCH_CELL_BG } from "../utils/scheduleTheme";
 import { useT } from "../i18n";
 
 /** Izgaraya yerleştirilecek tek blok. day: 1-5 (Pzt-Cum), startSlot: 1-9. */
@@ -72,7 +73,13 @@ export default function MiniWeekGrid({
                   fontWeight: 700,
                   overflow: "hidden",
                   whiteSpace: "nowrap",
-                  background: c ? "var(--mantine-color-blue-light)" : "transparent",
+                  // Boş hücre kural olarak saydam; öğle arası satırı (slot 5)
+                  // bir ton koyu zeminle işaretlenir -- Haftalık Program ızgarasıyla
+                  // aynı dil. Dolu hücre kendi rengini korur: yerleştirme
+                  // engellenmediği için öğle saatindeki ders diğerleriyle aynı
+                  // görünmeli.
+                  background: c ? "var(--mantine-color-blue-light)"
+                    : slot === LUNCH_SLOT ? LUNCH_CELL_BG : "transparent",
                   color: c ? "var(--mantine-color-blue-light-color)" : undefined,
                   border: c ? "none" : "1px solid var(--mantine-color-default-border)",
                 }}

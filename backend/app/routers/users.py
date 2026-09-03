@@ -110,7 +110,10 @@ def invite_user(
     # 8. Commit, sonra mail
     db.commit()
     db.refresh(user)
-    send_invitation_email(user.email, user.name, raw_token)
+    send_invitation_email(
+        user.email, user.name, raw_token,
+        inviter_name=admin.name, inviter_email=admin.email,
+    )
 
     return user
 
@@ -139,7 +142,10 @@ def resend_invitation(
     # görmek doğru bilgidir — davetin tekrarlandığını gösterir.
     log_action(db, admin, "INVITE", "user", user.id, user)
     db.commit()
-    send_invitation_email(user.email, user.name, raw_token)
+    send_invitation_email(
+        user.email, user.name, raw_token,
+        inviter_name=admin.name, inviter_email=admin.email,
+    )
 
     return MessageResponse(message="Davet yeniden gönderildi")
 

@@ -235,8 +235,16 @@ dist/
 ehthumbs.db
 Thumbs.db
 
-# Claude Code araç ayarları (kişisel/yerel — paylaşılmaz)
+# Editör/araç ayarları (kişisel/yerel — paylaşılmaz). Desen aynen kalmalı:
+# klasörü repodan uzak tutan tek satır bu.
 .claude/
 
 # Elle alınan reset/yedek dökümleri (repo'ya girmez)
 backend/reset_backup_*.json
+
+# --- Yerel (git'e girmeyen) seed verisi ---
+# Gercek kadro/kisi verisi burada durur ve ASLA commit edilmez: repo herkese
+# acik oldugu icin gercek kisilerin ad ve e-postalari koda gomulu gitmemeli.
+# seed_engineering.py bu klasoru arar; bulamazsa repodaki kurgusal ornegi
+# kullanir. Takip edilmeyen dosya oldugu icin `git pull` bunu silmez.
+backend/seed_local/

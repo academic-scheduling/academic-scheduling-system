@@ -195,6 +195,10 @@ export type ExamType = "MIDTERM" | "FINAL" | "MAKEUP";
 /** Sınav cevabının içine gömülen kısa ders gösterimi. */
 export type CourseRef = { id: number; code: string; name: string };
 
+/** Bir dersin T/U/L saatleri. Course üzerindeki üç alanın ("hours_theory" vb.)
+ *  bir arada taşınan hâli: "3T/2U/0L" gibi kısa gösterimler bunu alır. */
+export type CourseHours = { theory: number; practice: number; lab: number };
+
 /** K-17: sınav dersliği `exam_capacity` taşır — `capacity` DEĞİL (boşluklu oturma). */
 export type ExamClassroomRef = {
   id: number;
@@ -516,8 +520,18 @@ export type ScheduleDraft = {
   /** Yayına göre kaç fark var. CANLI hesaplanır (K-59) — taslak açıldığındaki
    *  hale göre değil, O ANKİ yayına göre. */
   change_count: number;
+  /** K-85: çakışma sayaçları. change_count ile aynı kural — onaylanmış kayıtta
+   *  0 (canlı tarama o anki yayına karşı koşar, sonraki onaylarla kayar).
+   *  İkisi ayrı çünkü K-05'te ağırlıkları farklı: engel onaya göndermeyi
+   *  durdurur, uyarı durdurmaz. */
+  conflict_count: number;
+  blocking_count: number;
   owner: DraftUserRef;
   created_at: string;
+  /** K-85: taslağın SON DEĞİŞİKLİK zamanı — içindeki yerleşim/sınav yazmaları
+   *  ve yaşam döngüsü olayları (gönderim, geri çekme, onay, ret) buraya
+   *  dokunur. Ana sayfadaki "Taslaklar ve onaylar" bandı buna göre sıralar. */
+  updated_at: string;
   submitted_at: string | null;
   submit_note: string | null;
   /** K-83: talebin gönderildiği onay yetkilileri. Gönderen "kime gitti"yi,

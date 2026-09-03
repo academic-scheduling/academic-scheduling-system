@@ -12,6 +12,8 @@ farki artik yeni yayina gore hesaplanir; onaylayici neyin geri alinacagini
 ekranda GORUR. Sorun uzerine yazmak degil, sessizce yazmakti.
 """
 
+from datetime import datetime, timezone
+
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,6 +27,25 @@ from app.models import (
 # ==================================================================
 # Kapsam: taslagin cohort'una giren YAYIN satirlari
 # ==================================================================
+
+
+def touch_draft(draft: ScheduleDraft) -> None:
+    """Taslagin son degisiklik zamanini simdiye ceker (K-85).
+
+    ACIK bir cagri, cunku degisikliklerin cogu COCUK tablolarda oluyor
+    (weekly_schedule_entries, exams): ORM'in onupdate'i taslak SATIRINA
+    dokunulmadigi surece tetiklenmez.
+
+    Yasam dongusu olaylari (gonderim, geri cekme, onay, ret) da buraya dokunur.
+    Kullanicinin "en son ne oldu" sorusu "icini duzenledim" ile "onaya
+    gonderdim"i ayirmiyor; iki ayri sira anahtari tutmak ana sayfadaki listeyi
+    aciklanamaz hale getirirdi.
+
+    Router'da DEGIL burada: iki router da (schedule_drafts, schedule_approvals)
+    cagiriyor ve biri otekini import etmiyor.
+    """
+    draft.updated_at = datetime.now(timezone.utc)
+
 
 def _cohort_query(db: Session, draft: ScheduleDraft):
     """Taslagin cohort'una ait YAYIN satirlari (draft_id IS NULL).

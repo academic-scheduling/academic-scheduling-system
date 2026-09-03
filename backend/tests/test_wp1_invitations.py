@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.db import SessionLocal
 from app.models import InvitationToken
+from app.config import settings
 from app.security import hash_token
 
 client = TestClient(app)
@@ -32,7 +33,7 @@ def test_invite_success(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(email=to_email, token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(email=to_email, token=raw_token),
     )
     email = unique_email()
     r = client.post("/users/invite",
@@ -45,11 +46,37 @@ def test_invite_success(monkeypatch):
 
 
 def test_invite_bad_domain(monkeypatch):
+    """İzinli listede olmayan bir uzantı reddedilmeli.
+
+    Test, izinli listeyi KENDİSİ sabitliyor. Eskiden sabit bir "dışarıdaki"
+    adres (hotmail) kullanılıyordu ve test, .env'deki
+    ALLOWED_EMAIL_DOMAINS'in o uzantıyı içermemesine bel bağlıyordu. Liste
+    genişletildiği gün test, kodda hiçbir şey bozulmadığı halde kırıldı —
+    testin doğruladığı davranış değil, ortamın yapılandırması değişmişti.
+    Listeyi burada sabitleyerek test yapılandırmadan bağımsız hale geliyor.
+    """
     monkeypatch.setattr("app.routers.users.send_invitation_email", lambda *a, **k: None)
+    monkeypatch.setattr(settings, "allowed_email_domains", "muh.example.edu.tr")
     r = client.post("/users/invite",
-                    json={"name": "Dış", "email": "biri@hotmail.com"},
+                    json={"name": "Dış", "email": "biri@izinsiz-uzanti.example"},
                     headers=admin_headers())
     assert r.status_code == 400
+
+
+def test_invite_allowed_domain_configurable(monkeypatch):
+    """Aynı adres, izinli listeye eklendiğinde kabul edilmeli.
+
+    Yukarıdaki testin aynadaki hali: reddin sebebi adresin kendisi değil,
+    yapılandırma. İkisi birlikte "liste gerçekten okunuyor" der.
+    """
+    monkeypatch.setattr("app.routers.users.send_invitation_email", lambda *a, **k: None)
+    monkeypatch.setattr(
+        settings, "allowed_email_domains", "muh.example.edu.tr,izinsiz-uzanti.example"
+    )
+    r = client.post("/users/invite",
+                    json={"name": "Dış", "email": unique_email("izinsiz-uzanti.example")},
+                    headers=admin_headers())
+    assert r.status_code == 201, r.text
 
 
 def test_invite_duplicate_email(monkeypatch):
@@ -64,7 +91,7 @@ def test_invite_forbidden_for_subaccount(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     pw = "subhesap123"
@@ -82,7 +109,7 @@ def test_preview_returns_owner(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Önizleme", "email": email}, headers=admin_headers())
@@ -97,7 +124,7 @@ def test_preview_does_not_consume_token(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Yanmaz", "email": email}, headers=admin_headers())
@@ -120,7 +147,7 @@ def test_preview_used_token(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Kullanılmış", "email": email}, headers=admin_headers())
@@ -136,7 +163,7 @@ def test_preview_expired_token(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Süresi Dolan", "email": email}, headers=admin_headers())
@@ -158,7 +185,7 @@ def test_preview_requires_no_auth(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     client.post("/users/invite", json={"name": "Public", "email": unique_email()}, headers=admin_headers())
     r = client.get(f"/auth/invitation/{captured['token']}")   # başlıksız
@@ -171,7 +198,7 @@ def test_complete_invitation_flow(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Aktif", "email": email}, headers=admin_headers())
@@ -197,7 +224,7 @@ def test_complete_invitation_expired(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: captured.update(token=raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: captured.update(token=raw_token),
     )
     email = unique_email()
     client.post("/users/invite", json={"name": "Süre", "email": email}, headers=admin_headers())
@@ -220,7 +247,7 @@ def test_resend_invalidates_old_token(monkeypatch):
     tokens = []
     monkeypatch.setattr(
         "app.routers.users.send_invitation_email",
-        lambda to_email, to_name, raw_token: tokens.append(raw_token),
+        lambda to_email, to_name, raw_token, *a, **k: tokens.append(raw_token),
     )
     email = unique_email()
     h = admin_headers()

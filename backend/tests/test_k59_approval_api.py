@@ -311,7 +311,10 @@ def test_approve_records_affected_departments_for_shared_courses():
                           headers=h).json()
     client.patch(f"/courses/{course['id']}", json={
         "is_common": True,
-        "cohorts": [{"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
+        # K-85: liste TAM cohort kumesi -- dersin KENDI cohort'u da icinde
+        # olmali, yoksa tuketen bolum birincile terfi eder ve sahip duser.
+        "cohorts": [{"department_id": dep["id"], "year": 1, "semester": "FALL"},
+                    {"department_id": tuketen["id"], "year": 1, "semester": "FALL"}],
     }, headers=h)
     publish_entry(sec["id"], cls["id"], day=1, slot=1)
 

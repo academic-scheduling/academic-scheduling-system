@@ -62,10 +62,10 @@ def test_parse_list_reads_real_cards():
     assert len(people) == 2
     # K-52: full_name yalnız ad; unvan AYRI ve kanonikleştirilmiş.
     by_name = {p.full_name: p for p in people}
-    assert "Ali Arslan KAYA" in by_name
-    assert by_name["Ali Arslan KAYA"].title == "Prof. Dr."       # site "Prof.Dr." → kanonik
+    assert "Necmi Kaan BOZKURT" in by_name
+    assert by_name["Necmi Kaan BOZKURT"].title == "Prof. Dr."       # site "Prof.Dr." → kanonik
     # Site açık form yazar ("Doktor Öğretim Üyesi") → kısa forma iner.
-    assert by_name["Erdem TÜRK"].title == "Dr. Öğr. Üyesi"
+    assert by_name["Serkan AYDIN"].title == "Dr. Öğr. Üyesi"
     # Detay linki absolute ve /personel/ içerir; liste sayfasına dönmez
     for p in people:
         assert p.detail_url.startswith("https://www.mu.edu.tr/tr/personel/")
@@ -77,7 +77,7 @@ def test_parse_detail_reads_units_and_email():
     # Görev ≠ Kadro (gerçek örnek: Görev İnşaat, Kadro Jeoloji)
     assert d.duty_unit == "İnşaat Mühendisliği"
     assert d.cadre_unit == "Jeoloji Mühendisliği"
-    assert d.email == "muratgul@mu.edu.tr"
+    assert d.email == "tarikozkan@mu.edu.tr"
 
 
 def test_parse_detail_ignores_education_section():
@@ -110,7 +110,7 @@ def test_canonical_title(raw, expected):
 
 @pytest.mark.parametrize("full,title,name", [
     ("Doç. Dr. Ayşe Kaya", "Doç. Dr.", "Ayşe Kaya"),
-    ("Prof.Dr. Ali Arslan KAYA", "Prof. Dr.", "Ali Arslan KAYA"),
+    ("Prof.Dr. Necmi Kaan BOZKURT", "Prof. Dr.", "Necmi Kaan BOZKURT"),
     ("Doktor Öğretim Üyesi Web Demir", "Dr. Öğr. Üyesi", "Web Demir"),
     ("Ayşe Kaya", None, "Ayşe Kaya"),        # unvansız → ad aynen
     ("Prof. Dr.", None, "Prof. Dr."),        # yalnız unvan, ad yok → bölme

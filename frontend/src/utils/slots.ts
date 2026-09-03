@@ -19,6 +19,20 @@ export const SLOT_TIMES: Record<number, { start: string; end: string }> = {
   9: { start: "16:30", end: "17:15" },
 };
 
+/** Öğle arası bandı: slot 5 (12:30-13:15).
+ *
+ *  Izgarada bu satır 12:30'da başlar ve bir sonraki slot 13:30'da açıldığı için
+ *  görsel olarak 12:30-13:30 aralığını kaplar — kullanıcının öğle molası olarak
+ *  gördüğü aralık tam olarak budur.
+ *
+ *  Yalnızca GÖRSEL bir işaret: bu slota ders yerleştirmek ENGELLENMEZ. Bölümler
+ *  yoğun dönemlerde bu saati bilerek kullanabiliyor; kural koymak yerine
+ *  programı kuran kişiye "burası öğle arasına denk geliyor" bilgisini vermek
+ *  yeterli. Bu yüzden kısıt katmanında (conflict_service) değil, tema
+ *  katmanında karşılığı var: scheduleTheme.LUNCH_CELL_BG.
+ */
+export const LUNCH_SLOT = 5;
+
 /** Günün son slotu — tablodan türetiliyor ki slot sayısı değişirse burası da
  *  kendiliğinden güncellensin. */
 const MAX_SLOT = Math.max(...Object.keys(SLOT_TIMES).map(Number));

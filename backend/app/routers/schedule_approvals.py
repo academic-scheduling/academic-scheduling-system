@@ -28,7 +28,7 @@ from app.audit import log_action
 from app.conflict_service import scan_draft
 from app.draft_dispatch import service_for as _svc
 from app.draft_service import (
-    diff_affected_department_ids, publications_since_opened,
+    diff_affected_department_ids, publications_since_opened, touch_draft,
 )
 from app.deps import get_db, get_current_user, require_schedule_approver
 from app.models import (
@@ -37,6 +37,7 @@ from app.models import (
 )
 from app.routers.exams import _eager_exam_query
 from app.routers.schedule_changes import approved_visibility_filter
+from app.routers.schedule_drafts import _cakisma_sayaclari
 from app.routers.weekly_entries import _eager_entry_query
 from app.schemas import (
     DraftApproveRequest, DraftApproveResponse, DraftOut, DraftRejectRequest,
@@ -147,8 +148,10 @@ def _to_out(db: Session, draft: ScheduleDraft, *, live: bool = True) -> dict:
         "status": draft.status,
         "entry_count": _svc(draft).draft_row_count(db, draft),
         "change_count": len(_svc(draft).compute_diff(db, draft)) if live else 0,
+        **_cakisma_sayaclari(db, draft, live),
         "owner": draft.owner,
         "created_at": draft.created_at,
+        "updated_at": draft.updated_at,
         "submitted_at": draft.submitted_at,
         "submit_note": draft.submit_note,
         "approvers": draft.approvers,           # K-83: talep kime gitti
@@ -317,6 +320,7 @@ def approve_draft(
 
     log_action(db, user, "APPROVE", "schedule_draft", draft.id, draft,
                draft.applied_summary)
+    touch_draft(draft)
     db.commit()
     db.refresh(draft)
     return {
@@ -347,6 +351,7 @@ def reject_draft(
     draft.review_note = payload.note
     log_action(db, user, "REJECT", "schedule_draft", draft.id, draft,
                "Durum: Onay bekliyor → Reddedildi")
+    touch_draft(draft)
     db.commit()
     db.refresh(draft)
     return _to_out(db, draft)

@@ -23,8 +23,15 @@ export default function OccupancyHeatmap({ data }: { data: OccupancySummary }) {
   const slotlar = Object.keys(SLOT_TIMES).map(Number).sort((a, b) => a - b);
   const payda = data.classrooms;
 
-  // Hiç yerleşim yoksa boş bir ızgara çizmek yerine tek cümle: dokuz satır
-  // sıfır, kullanıcıya "bir şey bozuk mu" dedirtir.
+  /** Haftada hiç yerleşim var mı. K-85: ızgarayı GİZLEMEZ, yalnız altına bir
+   *  açıklama satırı ekler.
+   *
+   *  Eskiden hiç yerleşim yokken ızgara hiç çizilmiyor, yerine tek cümle
+   *  konuyordu ("dokuz satır sıfır kullanıcıya bir şey bozuk mu dedirtir").
+   *  Ters etki yaptı: yeni kurulan bir sistemde tablo hiç görünmediği için
+   *  "böyle bir ekran var mı" sorusu doğuyordu. Boş ızgara bilgi taşır —
+   *  haftanın şeklini ve saat aralığını gösterir; sıfırların ne anlama
+   *  geldiğini alttaki cümle söylüyor. */
   const doluVar = data.grid.some((satir) => satir.some((h) => h > 0));
 
   /** Renk ölçeği HAFTANIN EN YOĞUN hücresine göre normalize edilir, toplam
@@ -60,31 +67,32 @@ export default function OccupancyHeatmap({ data }: { data: OccupancySummary }) {
         </Group>
       </Group>
 
-      {!doluVar ? (
-        <Text fz={13} c={TEXT_MUTED}>{t.home.occupancy.empty}</Text>
-      ) : (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: `56px repeat(${GUNLER.length}, minmax(0, 1fr))`,
-          gap: 4,
-          maxWidth: 640,
-        }}>
-          <span />
-          {GUNLER.map((g) => (
-            <Text key={g} fz={11} fw={600} ta="center" c={TEXT_MUTED}>
-              {t.days.short[g]}
-            </Text>
-          ))}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: `56px repeat(${GUNLER.length}, minmax(0, 1fr))`,
+        gap: 4,
+        maxWidth: 640,
+      }}>
+        <span />
+        {GUNLER.map((g) => (
+          <Text key={g} fz={11} fw={600} ta="center" c={TEXT_MUTED}>
+            {t.days.short[g]}
+          </Text>
+        ))}
 
-          {slotlar.map((slot) => {
-            const satir = data.grid[slot - 1] ?? [];
-            const saat = SLOT_TIMES[slot].start;
-            return (
-              <Hucreler key={slot} saat={saat} satir={satir}
-                payda={payda} enYogun={enYogun} />
-            );
-          })}
-        </div>
+        {slotlar.map((slot) => {
+          const satir = data.grid[slot - 1] ?? [];
+          const saat = SLOT_TIMES[slot].start;
+          return (
+            <Hucreler key={slot} saat={saat} satir={satir}
+              payda={payda} enYogun={enYogun} />
+          );
+        })}
+      </div>
+
+      {/* Izgara boşken sıfırların sebebini söyler; yerine GEÇMEZ. */}
+      {!doluVar && (
+        <Text fz={13} c={TEXT_MUTED} mt="sm">{t.home.occupancy.empty}</Text>
       )}
     </Paper>
   );

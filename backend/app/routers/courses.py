@@ -117,36 +117,58 @@ def _covered_cohorts(course: Course) -> set[tuple[int, int, SemesterType]]:
     return covered
 
 
-def _build_extra_cohorts(
+def _resolve_cohort_set(
     db: Session, user: User, course: Course, cohorts_in: list
-) -> list[CourseCohort]:
-    """Ortak dersin EK cohort listesini doğrular ve CourseCohort nesneleri üretir (K-48).
+) -> tuple[tuple[int, int, SemesterType], list[CourseCohort]]:
+    """Ortak dersin TAM cohort kümesini çözer → (birincil, ek'ler). K-85
+
+    K-48'de bu liste yalnız EK cohort'ları taşıyordu; birincil cohort
+    (courses satırının kendisi) listenin DIŞINDAydı ve bu yüzden silinemiyordu.
+    Oysa çakışma motoru birincile hiçbir ayrıcalık tanımaz (_course_cohorts:
+    birincil ∪ ek) — ayrıcalık yalnızca DEPOLAMADAN geliyordu ve arayüze "bu
+    bölüm silinemez" diye sızıyordu. Ortak ders bir bölüme değil, onu alan
+    bölüm KÜMESİNE bağlıdır; API de artık bunu söylüyor.
+
+    Liste kümenin tamamı:
+      - mevcut birincil listedeyse yerinde kalır (K-48 davranışı),
+      - listede yoksa listenin İLKİ birincile terfi eder, kalanlar ek olur.
+    Böylece "bu bölüm artık bu dersi almıyor" ifade edilebilir hale gelir.
 
     Doğrulamalar:
-    - Bölüm bizim workgroup'ta mı (izolasyon). Üyelik ARANMAZ: tüketen bölüm
-      yalnız çakışma için cohort sağlar, yazma hakkı vermez — sahibi bölümün
-      yetkisi zaten üstte denetlendi.
-    - Ek cohort, dersin BİRİNCİL cohort'uyla aynı olamaz (zaten kapsanıyor).
+    - Liste boş olamaz: ortak ders en az bir cohort'a bağlı kalmalı (courses
+      satırının kendisi bir cohort'tur, bölümsüz ders diye bir şey yok).
+    - Bölüm bizim workgroup'ta mı (izolasyon). Üyelik ARANMAZ — K-48'in "cohort
+      olmak üyelik gerektirmez" prensibi terfi eden cohort için de geçerli;
+      aksi halde bir bölümün kendini listeden çıkarabilmesi, kalan bölümlerden
+      birindeki üyeliğine bağlı olurdu.
     - Liste içinde tekrar olamaz.
+
+    Terfi eden üçlünün uq_courses_identity'ye takılıp takılmadığı BURADA
+    denetlenmez: kod da aynı PATCH'te değişebildiği için tek bir efektif kimlik
+    denetimi update_course içinde yapılır.
     """
-    primary = (course.department_id, course.year, course.semester)
+    if not cohorts_in:
+        raise HTTPException(
+            status_code=400,
+            detail="Ortak dersin en az bir cohort'u olmalı")
+
+    keys: list[tuple[int, int, SemesterType]] = []
     seen: set[tuple[int, int, SemesterType]] = set()
-    result: list[CourseCohort] = []
     for c in cohorts_in:
         dep = db.get(Department, c.department_id)
         if dep is None or dep.workgroup_id != user.workgroup_id:
             raise HTTPException(status_code=400, detail="Geçersiz cohort bölümü")
         key = (c.department_id, c.year, c.semester)
-        if key == primary:
-            raise HTTPException(
-                status_code=400,
-                detail="Dersin kendi cohort'u ek olarak eklenemez (zaten kapsanıyor)")
         if key in seen:
             raise HTTPException(status_code=400, detail="Aynı cohort iki kez verildi")
         seen.add(key)
-        result.append(CourseCohort(
-            department_id=c.department_id, year=c.year, semester=c.semester))
-    return result
+        keys.append(key)
+
+    mevcut = (course.department_id, course.year, course.semester)
+    birincil = mevcut if mevcut in seen else keys[0]
+    ekler = [CourseCohort(department_id=d, year=y, semester=sem)
+             for (d, y, sem) in keys if (d, y, sem) != birincil]
+    return birincil, ekler
 
 
 def _validate_section_refs(db: Session, user: User, data: dict) -> None:
@@ -276,6 +298,9 @@ def update_course(
     cohorts_in = payload.cohorts if cohorts_set else None
     eff_is_common = data.get("is_common", course.is_common)
     new_cohorts: list[CourseCohort] | None = None
+    # K-85: cohort kümesi birincili DEĞİŞTİREBİLİR (terfi). Dolu ise dersin yeni
+    # (bölüm, yıl, dönem) üçlüsüdür.
+    new_primary: tuple[int, int, SemesterType] | None = None
     if cohorts_in is not None:
         if not eff_is_common:
             if cohorts_in:
@@ -284,14 +309,23 @@ def update_course(
                     detail="Ortak olmayan derse ek cohort eklenemez — önce dersi ortak işaretleyin")
             new_cohorts = []
         else:
-            new_cohorts = _build_extra_cohorts(db, user, course, cohorts_in)
+            birincil, new_cohorts = _resolve_cohort_set(db, user, course, cohorts_in)
+            if birincil != (course.department_id, course.year, course.semester):
+                new_primary = birincil
 
-    if "code" in data and data["code"] != course.code:
+    # K-85: kimlik denetimi TEK yerde. Eskiden yalnız kod değişimine bakılıyordu;
+    # artık birincil cohort da terfiyle değişebiliyor ve ikisi AYNI PATCH'te
+    # gelebilir. Ayrı ayrı denetlemek, "kod eski birincile göre boş ama yeni
+    # birincile göre dolu" durumunu kaçırır ve UNIQUE ihlali 500'e döner.
+    eff_code = data.get("code", course.code)
+    eff_primary = new_primary or (course.department_id, course.year, course.semester)
+    if (eff_code, eff_primary) != (
+            course.code, (course.department_id, course.year, course.semester)):
         clash = db.query(Course).filter(
-            Course.department_id == course.department_id,
-            Course.year == course.year,
-            Course.semester == course.semester,
-            Course.code == data["code"],
+            Course.department_id == eff_primary[0],
+            Course.year == eff_primary[1],
+            Course.semester == eff_primary[2],
+            Course.code == eff_code,
             Course.id != course.id,
         ).first()
         if clash:
@@ -384,8 +418,22 @@ def update_course(
         # sahibi değişikliği kendi ekranında W8/çakışma uyarısı olarak görecek.
 
     ozet = build_change_summary(course, data)
+    # Birincil cohort değişimi `data` içinde YOK (ilişkiden türüyor), ama denetim
+    # kaydında görünmeli: dersin adresi değişiyor. Özet MUTASYONDAN ÖNCE
+    # tamamlanır — eski değerler hâlâ nesnenin üzerinde.
+    if new_primary is not None:
+        eski_dep = db.get(Department, course.department_id)
+        yeni_dep = db.get(Department, new_primary[0])
+        not_ = (f"Birincil cohort: {eski_dep.name} {course.year}/{course.semester.value}"
+                f" → {yeni_dep.name} {new_primary[1]}/{new_primary[2].value}")
+        ozet = f"{ozet} · {not_}" if ozet else not_
+
     for field, value in data.items():
         setattr(course, field, value)
+    # Ek cohort uzlaştırmasından ÖNCE: `wanted` kümesi yeni birincile göre
+    # kuruldu, eski birinciline göre değil.
+    if new_primary is not None:
+        course.department_id, course.year, course.semester = new_primary
     # K-48: is_common uygulandıktan SONRA ek cohort'ları senkronla. Ortak
     # değilse ek cohort tutulmaz; ortak + yeni liste verildiyse KİMLİĞE GÖRE
     # uzlaştırılır (koru/çıkar/ekle). Blindly "= new_cohorts" YAPMA: korunan bir

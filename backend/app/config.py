@@ -1,5 +1,19 @@
+from pathlib import Path
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env repo kokunde durur, ama backend her zaman backend/ dizininden calistirilir
+# (README ve arac yapilandirmasi boyle: cwd=backend). pydantic-settings goreli
+# env_file yolunu CALISMA DIZININE gore cozer ve dosyayi bulamazsa SESSIZCE
+# atlar -- hata vermez. Yani "backend/ icinden calistirinca .env hic okunmuyor,
+# her ayar kod icindeki varsayilaniyla kaliyor" durumu fark edilmeden surer.
+# Dev'de bu gorunmez (varsayilanlar zaten dev degerleri), ama .env'e gercek bir
+# SMTP sifresi ya da SECRET_KEY yazildigi anda "neden hicbir sey degismedi"
+# sorusuna donusur. Yolu dosyanin kendi konumundan turetiyoruz: config.py ->
+# app/ -> backend/ -> repo koku. Boylece hangi dizinden calistirilirsa
+# calistirilsin ayni .env okunur.
+_ENV_DOSYASI = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -19,7 +33,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_starttls: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=_ENV_DOSYASI, env_file_encoding="utf-8")
 
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

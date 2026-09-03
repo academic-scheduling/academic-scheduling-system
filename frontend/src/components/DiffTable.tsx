@@ -4,14 +4,20 @@ import type {
   DraftDiffItem, DraftExamPlacement, DraftPlacement,
 } from "../api/types";
 import { useT } from "../i18n";
+import { formatSlotRange } from "../utils/slots";
 import type { Dict } from "../i18n/tr";
 
-/** Haftalık yerleşimin okunur konumu: "Çar 5 · A Blok 101". */
+/** Haftalık yerleşimin okunur konumu: "Çar 10:30 - 12:15 · A Blok 101".
+ *
+ *  K-85: eskiden SLOT NUMARASI yazıyordu ("Çar 5-7"). Slot numarası bir iç
+ *  temsil; kullanıcı programı saatle okuyor ve fark tablosu onay öncesi son
+ *  kontrol noktası — orada "6-8" görmek, kişiyi slot tablosunu ezberlemeye
+ *  zorluyordu. Aralık `formatSlotRange` ile kuruluyor: ızgaranın, dersin
+ *  detayının ve export'un kullandığı aynı kaynak. */
 export function placementText(p: DraftPlacement | null, t: Dict): string {
   if (!p) return "—";
-  const gun = t.days.short[p.day_of_week] ?? String(p.day_of_week);
-  const bitis = p.slot_count > 1 ? `-${p.start_slot + p.slot_count - 1}` : "";
-  return `${gun} ${p.start_slot}${bitis}${p.classroom_label ? ` · ${p.classroom_label}` : ""}`;
+  return formatSlotRange(p.day_of_week, p.start_slot, p.slot_count, "short", t)
+    + (p.classroom_label ? ` · ${p.classroom_label}` : "");
 }
 
 /** Sınav yerleşiminin okunur konumu: "15 Eyl 09:00 (90 dk) · B Blok 202". */

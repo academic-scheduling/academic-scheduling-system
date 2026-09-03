@@ -132,7 +132,3 @@ Tasarım kararlarının tamamı `docs/karar_defteri_1.md` içindedir.
 
 Tasarım belgeleri `docs/` klasöründedir: karar defteri, çakışma kural seti,
 veritabanı şeması, API kontratı, wireframe şartnamesi.
-
-## Lisans
-
-MIT — ayrıntı için `LICENSE` dosyasına bakın.

@@ -1,3 +1,31 @@
+# Tum sistemi ayaga kaldirir: veritabani, e-posta yakalayici, backend, arayuz.
+#
+#   docker compose up                 -> her sey (depoyu ilk kez deneyen icin)
+#   docker compose up db mailpit      -> yalniz bagimliliklar (ekip gelistirmesi:
+#                                        backend/frontend elle, hizli yeniden
+#                                        yukleme ile calistirilir)
+#
+# Buradaki sifreler ve SECRET_KEY YEREL DENEME icindir; hicbiri gizli degildir
+# ve yayina cikarken degismeleri gerekir (backend acilirken ENVIRONMENT=production
+# ile dev varsayilanlarini reddeder -- app/config.py).
+
+x-backend-ortam: &backend-ortam
+  DATABASE_URL: postgresql+psycopg://app:app_dev_password@db:5432/scheduling
+  # Mailpit: mailler internete CIKMAZ, http://localhost:8025 adresinde birikir.
+  SMTP_HOST: mailpit
+  SMTP_PORT: 1025
+  SMTP_STARTTLS: "false"
+  SMTP_USER: ""
+  SMTP_PASSWORD: ""
+  MAIL_FROM: no-reply@muh.example.edu.tr
+  # Davet ve sifre sifirlama linkleri bu adresten uretilir; tarayicinin
+  # arayuzu gordugu adresle ayni olmali, yoksa link calismaz.
+  FRONTEND_BASE_URL: http://localhost:8080
+  CORS_ORIGINS: http://localhost:8080
+  ALLOWED_EMAIL_DOMAINS: muh.example.edu.tr,gmail.com,hotmail.com,outlook.com
+  SECRET_KEY: yerel-deneme-icin-anahtar-yayinda-degismeli
+  ENVIRONMENT: development
+
 services:
   db:
     image: postgres:16
@@ -22,6 +50,47 @@ services:
     ports:
       - "8025:8025"
       - "1025:1025"
+
+  # Tek seferlik: sema kurulumu + (bossa) demo verisi. Bitince kapanir.
+  # backend bunun BASARIYLA bitmesini bekler; yarim sema uzerinde acilmaz.
+  init:
+    build: ./backend
+    container_name: scheduling_init
+    command: python bootstrap.py
+    environment: *backend-ortam
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build: ./backend
+    container_name: scheduling_api
+    environment: *backend-ortam
+    ports:
+      - "8000:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      # Imajda curl yok; python zaten var.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)"]
+      # 30s: saglik kontrolu bir gozetim araci, log kaynagi degil.
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    container_name: scheduling_web
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:

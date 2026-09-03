@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +8,26 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.db import check_db_connection
 from app.i18n import parse_accept_language, set_lang, translate_error
+
+
+# --------------------------------------------------------------------------
+# Saglik kontrolu log'lari susturulur (K-87)
+# --------------------------------------------------------------------------
+# Docker'in healthcheck'i /health ucunu duzenli araliklarla cagirir. Her cagri
+# bir erisim log'u satiri uretir; saatler icinde binlerce satir birikir ve
+# gercek istekler bu selin icinde kaybolur. Bir sorun aranirken log'un ise
+# yarar olmasi, sessiz kalmasindan daha onemli.
+#
+# Filtre uvicorn'un ERISIM logger'ina takilir: hata log'lari etkilenmez, yani
+# /health gercekten patlarsa yine gorulur. Docker'in kendisi de saglik
+# durumunu `docker compose ps` ile ayrica bildiriyor -- bilgi kaybolmuyor,
+# yalnizca dogru yere tasiniyor.
+class _SaglikKontroluFiltresi(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET /health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_SaglikKontroluFiltresi())
 
 app = FastAPI(title="Akademik Program ve Sinav Cakisma Yonetimi", version="0.1.0")
 

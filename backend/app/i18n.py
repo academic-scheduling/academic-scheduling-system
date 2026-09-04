@@ -97,6 +97,8 @@ ERRORS: dict[str, str] = {
     "User account is not active": "User account is not active",
     "Admin privileges required": "Admin privileges required",
     "E-posta veya şifre hatalı": "Incorrect email or password",
+    "Çok fazla başarısız giriş denemesi, lütfen sonra tekrar deneyin":
+        "Too many failed sign-in attempts, please try again later",
     "Hesap aktif değil": "Account is not active",
     "Kullanıcı hesabı aktif değil": "User account is not active",
     "Doğrulama başarısız, lütfen tekrar deneyin":

@@ -110,12 +110,37 @@ def weekly_rows(entries, lang: str = "tr") -> list[list]:
     return rows
 
 
+# Excel/LibreOffice, bir hucre bu isaretlerin biriyle BASLIYORSA icerigi metin
+# degil FORMUL sayar. Ders adi, hoca adi, derslik kodu gibi alanlarin hepsini
+# kullanicilar yaziyor; "=HYPERLINK(...)" adinda bir ders acan biri, o export'u
+# acan HERKESIN makinesinde hucreyi calistirabilirdi (CSV injection).
+#
+# Kacis: basa tek tirnak konur. Excel bunu "bu hucre metindir" olarak okur ve
+# tirnagi ekranda GOSTERMEZ; yani goruntu degismez, formul yorumu kalkar.
+_FORMUL_BASLANGICLARI = ("=", "+", "-", "@", "\t", "\r")
+
+
+def formulu_kacir(deger):
+    """Hucre degerini formul olarak yorumlanamaz hale getirir.
+
+    Yalniz METIN degerlere dokunur: sayilar ve tarihler zaten formul olamaz ve
+    onlara tirnak eklemek Excel'de sayi olma ozelliklerini bozardi.
+    """
+    if isinstance(deger, str) and deger.startswith(_FORMUL_BASLANGICLARI):
+        return "'" + deger
+    return deger
+
+
+def _satiri_kacir(satir) -> list:
+    return [formulu_kacir(h) for h in satir]
+
+
 def to_csv_bytes(headers: list[str], rows: list[list]) -> bytes:
     """UTF-8 BOM'lu CSV — Excel Turkce karakterleri dogru acsin diye."""
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerow(_satiri_kacir(headers))
+    writer.writerows(_satiri_kacir(r) for r in rows)
     return buf.getvalue().encode("utf-8-sig")
 
 
@@ -126,13 +151,15 @@ def to_xlsx_bytes(headers: list[str], rows: list[list], sheet_name: str = "Progr
     ws = wb.active
     ws.title = sheet_name[:31]  # Excel sayfa adi en fazla 31 karakter
 
-    ws.append(headers)
+    ws.append(_satiri_kacir(headers))
     for cell in ws[1]:  # baslik satiri: kalin + ortali
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center")
 
     for row in rows:
-        ws.append(row)
+        # CSV ile ayni gerekce: openpyxl da "=" ile baslayan bir metni formul
+        # hucresi olarak yazar.
+        ws.append(_satiri_kacir(row))
 
     ws.freeze_panes = "A2"  # kaydirinca baslik sabit kalir
 
@@ -265,7 +292,7 @@ def build_classrooms_xlsx(entries, lang: str = "tr") -> bytes:
                 cell = ws.cell(row=row, column=2 + i)
                 cell.alignment, cell.border = center, border
                 if (day, slot) in occ:
-                    cell.value = _cell_text(occ[(day, slot)], lang)
+                    cell.value = formulu_kacir(_cell_text(occ[(day, slot)], lang))
             row += 1
 
         row += 1  # bloklar arasi bos satir

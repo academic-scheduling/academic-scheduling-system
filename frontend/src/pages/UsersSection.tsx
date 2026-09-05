@@ -306,12 +306,12 @@ export default function UsersSection() {
     setBusy(true);
     try {
       await api.delete(`/users/${deleting.id}`);
-      notifications.show({ color: "green", message: "Davet iptal edildi" });
+      notifications.show({ color: "green", message: t.users.inviteCancelled });
       setDeleting(null);
       await load();
     } catch (e) {
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 8000,
       });
@@ -427,7 +427,7 @@ export default function UsersSection() {
                   </Table.Td>
                   <Table.Td>
                     <Badge variant="light" color={u.role === "ADMIN" ? "blue" : "gray"} size="sm">
-                      {u.role === "ADMIN" ? "Admin" : "Alt hesap"}
+                      {u.role === "ADMIN" ? t.common.admin : t.common.subAccount}
                     </Badge>
                   </Table.Td>
                   <Table.Td>

@@ -82,7 +82,7 @@ export default function DiffTable({ items, maxHeight = 460 }: {
                       düşer. Onaylayanın bunu kaçırmaması gerekir. */}
                   {i.is_shared && (
                     <Text size="xs" c="orange.7">
-                      Ortak ders — etkilenen:{" "}
+                      {t.draft.sharedAffected}{" "}
                       {i.affected_departments.map((d) => d.name).join(", ") || "—"}
                     </Text>
                   )}

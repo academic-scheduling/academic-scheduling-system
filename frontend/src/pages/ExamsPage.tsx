@@ -1050,7 +1050,7 @@ export default function ExamsPage() {
           onSaved={(info) => {
             if (info.created) {
               recordUndo({
-                label: `${info.created.course.code} ${examTypeLabel(info.created, t)} ekleme`,
+                label: t.exams.undoAddLabel(`${info.created.course.code} ${examTypeLabel(info.created, t)}`),
                 entity: writeBase,
                 action: { type: "delete", id: info.created.id },
               });
@@ -1404,7 +1404,7 @@ function ExamCard({ e, hard, warn, highlight, listHover, editable, onWarningClic
 // K-46: kart/başlık etiketi. Birden çok vizeli derste sırayı gösterir
 // ("2. Vize"); tek vize / final / büt için sade tür adı ("Vize", "Final").
 function examTypeLabel(e: { exam_type: ExamType; exam_index: number }, t: Dict): string {
-  if (e.exam_type === "MIDTERM" && e.exam_index > 1) return `${e.exam_index}. Vize`;
+  if (e.exam_type === "MIDTERM" && e.exam_index > 1) return t.exams.midtermNo(e.exam_index);
   return t.enums.examType[e.exam_type];
 }
 
@@ -1534,7 +1534,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         onDone(res.conflicts, t.exams.added);
       }
     } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Kaydedilemedi" });
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : t.common.saveFailed });
     } finally {
       setBusy(false);
     }
@@ -1559,7 +1559,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
             onChange={(v) => v && setVizeNo(Number(v))}
             data={Array.from({ length: midtermCount }, (_, i) => i + 1).map((i) => ({
               value: String(i),
-              label: `${i}. vize${usedVizeNo.has(i) ? t.exams.registered : ""}`,
+              label: `${t.exams.midtermNo(i)}${usedVizeNo.has(i) ? t.exams.registered : ""}`,
               disabled: usedVizeNo.has(i),
             }))} />
         )}
@@ -1587,7 +1587,7 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
           placeholder={odalar.length ? undefined : t.exams.pickClassrooms}
           data={classrooms.map((c) => ({
             value: String(c.id),
-            label: `${c.building.name} ${c.room_code}${c.exam_capacity != null ? t.exams.capacityOf(c.exam_capacity) : " · kontenjan yok"}` }))} />
+            label: `${c.building.name} ${c.room_code}${c.exam_capacity != null ? t.exams.capacityOf(c.exam_capacity) : t.exams.noQuota}` }))} />
         <Select label={t.exams.supervisor} value={hoca} onChange={setHoca} searchable
           placeholder={t.exams.pickLecturer}
           data={lecturers.map((l) => ({ value: String(l.id), label: lecturerLabel(l) }))} />

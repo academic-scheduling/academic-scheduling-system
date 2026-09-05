@@ -67,6 +67,10 @@ export const tr = {
     // CRUD ekranlarının ortak metinleri — üç sayfada birebir tekrar ediyordu.
     dismiss: "Vazgeç",
     actionFailed: "İşlem başarısız",
+    deleteFailed: "Silinemedi",
+    saveFailed: "Kaydedilemedi",
+    underConstruction: "Bu ekran henüz yapım aşamasında.",
+    deactivate: "Pasife al",
     loadFailed: "Veriler yüklenemedi",
     permanentDeleteWarning: "kalıcı olarak silinecek. Bu işlem geri alınamaz.",
     admin: "Yönetici",
@@ -302,6 +306,9 @@ export const tr = {
       'Programa veya sınava girmiş bir derslik silinemez; onun yerine "Pasife al" kullanın.',
 
     updated: "Derslik güncellendi",
+    created: "Derslik eklendi",
+    deleted: "Derslik silindi",
+    newOne: "Yeni Derslik",
     disabled: "Derslik pasife alındı",
     enabled: "Derslik aktifleştirildi",
     activate: "Aktifleştir",
@@ -362,6 +369,11 @@ export const tr = {
     allDepartments: "Tüm bölümler",
     allTitles: "Tüm unvanlar",
     hideInactive: "Pasif kayıtları gizle",
+    inactiveHidden: "Pasifler gizli",
+    staff: "Kadrolu",
+    filter: "Filtre",
+    clear: "Temizle",
+    courseCount: (n: number) => `${n} ders`,
     noMatch: "Filtreye uyan öğretim üyesi yok.",
     empty: "Henüz öğretim üyesi yok.",
     personCount: (n: number) => `${n} kişi`,
@@ -376,6 +388,8 @@ export const tr = {
       "Kaynak site geçici olarak erişilemez olabilir ya da sayfa yapısı " +
       "değişmiş olabilir. Sorun sürerse yöneticinize bildirin.",
     noChange: "Değişiklik yok",
+    nAdded: (n: number) => `${n} eklendi`,
+    addN: (n: number) => `${n} ekle`,
     nUpdated: (n: number) => `${n} güncellendi`,
     nSkipped: (n: number) => `${n} atlandı`,
     foundSummary: (total: number, known: number, fresh: number) =>
@@ -554,6 +568,7 @@ export const tr = {
 
     resendInvite: "Daveti yeniden gönder",
     cancelInvite: "Daveti iptal et",
+    inviteCancelled: "Davet iptal edildi",
     disableAccess: "Erişimi kapat",
     enableAccess: "Erişimi aç",
 
@@ -688,6 +703,17 @@ export const tr = {
       "Aynı grup (bölüm + sınıf + dönem) birden çok kez eklenmiş — tekrarları kaldırın.",
 
     updated: "Ders güncellendi",
+    deleted: "Ders silindi",
+    newOne: "Yeni Ders",
+    inactiveHidden: "Pasifler gizli",
+    studentCount: (n: number) => `${n} öğrenci`,
+    sectionLabel: (n: number) => `Şube ${n}`,
+    willBeDeleted: "silinecek.",
+    noClassroomShort: "derslik yok",
+    deleteCourseHint:
+      "Şubesi veya sınavı olan ders silinemez; onun yerine düzenleyip pasife alın.",
+    deleteSectionHint:
+      "Haftalık program girişi olan şube silinemez; önce girişleri kaldırın.",
     updatedReset:
       "Ders güncellendi — programa etki eden alan değiştiği için haftalık ve " +
       "sınav yerleşimleri sıfırlandı. Yeniden yerleştirin.",
@@ -796,7 +822,15 @@ export const tr = {
     date: "Tarih",
     weekendError: "Hafta sonu (Cumartesi/Pazar) sınav günü olarak seçilemez (K-06)",
     start: "Başlangıç",
+    end: "Bitiş",
+    midtermNo: (i: number) => `${i}. vize`,
+    noQuota: " · kontenjan yok",
+    undoAddLabel: (etiket: string) => `${etiket} ekleme`,
     duration: "Süre (dk)",
+    // K-89: bitiş ile süre birbirine bağlı; biri değişince öteki türetilir.
+    endBeforeStart: "Bitiş, başlangıçtan sonra olmalı",
+    durationRange: (min: number, max: number) =>
+      `Süre ${min}-${max} dk arasında olmalı`,
     classrooms: "Derslikler",
     pickClassrooms: "Derslik seç (birden çok olabilir)",
     capacityOf: (n: number) => ` · ${n} kişi`,
@@ -899,6 +933,11 @@ export const tr = {
     sectionsCount: (n: number) => `${n} şube`,
     roomsCount: (n: number) => ` · ${n} derslik`,
     online: "online",
+    warningCount: (n: number) => `${n} uyarı`,
+    sectionLabel: (n: number) => `Şube ${n}`,
+    noClassroomShort: "derslik yok",
+    undoDeleteLabel: (etiket: string) => `${etiket} silme`,
+    undoAddLabel: (etiket: string) => `${etiket} ekleme`,
     parallelSections: (n: number) => `${n} paralel şube — listelemek için tıkla`,
     cardEditable: "Düzenlemek için tıkla, taşımak için sürükle",
     deleteEntry: "Girişi sil",
@@ -954,9 +993,13 @@ export const tr = {
     sectionOf: (kod: string, sube: number) => `${kod} · Şube ${sube}`,
     noExams: "Taslakta hiç sınav yok.",
     movedTag: "taşındı",
+    sharedAffected: "Ortak ders — etkilenen:",
     // K-80: K-79'dan kaçmış iki metin — sınav listesindeki "eklendi"
     // rozeti ve öğrenci sayısı ("120 öğrenci") sabit Türkçeydi.
     addedTag: "eklendi",
+    // K-89: DraftBar'daki sayaç sabit Türkçeydi — ifadeyle karışık JSX
+    // metni olduğu için K-79 taramasından kaçmıştı.
+    changeCount: (n: number) => `${n} değişiklik`,
     studentCount: (n: number) => `${n} öğrenci`,
     noClassroom: "Derslik atanmadı",
     undoFailed: "Geri alınamadı",
@@ -1205,6 +1248,7 @@ export const tr = {
     commonCourseHours: (T: number, U: number, L: number) =>
       `Ortak ders · T${T}+U${U}+L${L}`,
     hoursOf: (T: number, U: number, L: number) => `T${T}+U${U}+L${L}`,
+    infoLabel: (kod: string) => `${kod} bilgisi`,
     ectsOf: (n: number) => ` · ${n} AKTS`,
     required: "Zorunlu",
     sectionsCount: (n: number) => `Şubeler (${n})`,
@@ -1230,6 +1274,25 @@ export const tr = {
     done: (ders: number, sube: number) =>
       `${ders} ders eklendi, ${sube} şube açıldı`,
     failed: "İçe aktarma başarısız",
+    fetchFailed: "Dersler getirilemedi",
+    fetchCourses: "Dersleri Getir",
+    back: "Geri",
+    resultAdded: (ders: number, sube: number) =>
+      `${ders} yeni ders · ${sube} şube eklendi.`,
+    resultMerged: (n: number) => `${n} ders mevcut ortak derse eklendi · `,
+    resultSkipped: (atlanan: number, toplam: number) =>
+      `${atlanan} ders zaten kayıtlıydı · toplam ${toplam} ders işlendi.`,
+    sectionlessCount: (n: number) => `${n} şubesiz ders`,
+    duplicateTitle: (n: number) => `Aynı ada sahip dersler (${n})`,
+    duplicateHint:
+      "Bu derslerin adı aynı ama kodları farklı — genelde aynı dersin " +
+      "Türkçe/İngilizce kayıtları.",
+    lecturerMatchHint:
+      "Eşleşmeyen hoca (servis dersleri, farklı yazım) için listeden elle " +
+      "seçin ya da boş bırakın — boş bırakılan hoca için şube açılmaz.",
+    lecturersNote:
+      "Her dersin \"Dersi Verenler\" bilgisi de çekilir ve hocalar mevcut " +
+      "listeyle eşlenir; bu yüzden getirme birkaç saniye sürebilir.",
     alreadySectioned: (n: number) => ` · ${n} tanesi zaten şubeli`,
     duplicateNamed: (n: number) => ` · ${n} aynı adlı (aşağıda)`,
     selectAll: "Tümünü seç",

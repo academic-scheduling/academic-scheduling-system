@@ -180,7 +180,7 @@ export default function ImportCoursesModal({
     } catch (e) {
       notifications.show({
         color: "red",
-        message: e instanceof ApiError ? e.message : "Dersler getirilemedi",
+        message: e instanceof ApiError ? e.message : t.import.fetchFailed,
       });
     } finally {
       setBusy(false);
@@ -262,13 +262,12 @@ export default function ImportCoursesModal({
         <Stack>
           <Alert color="green" icon={<IconCircleCheck size={18} />}>
             <Text fw={600}>
-              {result.added_count} yeni ders · {result.sections_created} şube eklendi.
+              {t.import.resultAdded(result.added_count, result.sections_created)}
             </Text>
             <Text size="sm" c="dimmed">
               {result.merged_count > 0 &&
-                `${result.merged_count} ders mevcut ortak derse eklendi · `}
-              {result.skipped_count} ders zaten kayıtlıydı · toplam{" "}
-              {result.total_parsed} ders işlendi.
+                t.import.resultMerged(result.merged_count)}
+              {t.import.resultSkipped(result.skipped_count, result.total_parsed)}
             </Text>
           </Alert>
           <Button onClick={onClose}>{t.common.close}</Button>
@@ -278,7 +277,7 @@ export default function ImportCoursesModal({
         <Stack>
           <Group justify="space-between">
             <Text size="sm" c="dimmed">
-              {candidateCount} şubesiz ders
+              {t.import.sectionlessCount(candidateCount)}
               {rows.length - candidateCount > 0 &&
                 t.import.alreadySectioned(rows.length - candidateCount)}
               {dupIdx.length > 0 && t.import.duplicateNamed(dupIdx.length)}
@@ -289,7 +288,7 @@ export default function ImportCoursesModal({
               leftSection={<IconArrowLeft size={14} />}
               onClick={() => setRows(null)}
             >
-              Geri
+              {t.import.back}
             </Button>
           </Group>
 
@@ -335,11 +334,10 @@ export default function ImportCoursesModal({
                   <Table.Tr>
                     <Table.Td colSpan={9} bg="var(--mantine-color-default-hover)">
                       <Text size="sm" fw={600}>
-                        Aynı ada sahip dersler ({dupIdx.length})
+                        {t.import.duplicateTitle(dupIdx.length)}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Bu derslerin adı aynı ama kodları farklı — genelde aynı dersin
-                        Türkçe/İngilizce kayıtları.
+                        {t.import.duplicateHint}
                       </Text>
                     </Table.Td>
                   </Table.Tr>
@@ -364,8 +362,7 @@ export default function ImportCoursesModal({
 
           <Group justify="space-between">
             <Text size="xs" c="dimmed">
-              Eşleşmeyen hoca (servis dersleri, farklı yazım) için listeden elle
-              seçin ya da boş bırakın — boş bırakılan hoca için şube açılmaz.
+              {t.import.lecturerMatchHint}
             </Text>
             <Button
               leftSection={<IconDownload size={16} />}
@@ -400,8 +397,7 @@ export default function ImportCoursesModal({
             required
           />
           <Text size="xs" c="dimmed">
-            Her dersin "Dersi Verenler" bilgisi de çekilir ve hocalar mevcut listeyle
-            eşlenir; bu yüzden getirme birkaç saniye sürebilir.
+            {t.import.lecturersNote}
           </Text>
           <Button
             leftSection={<IconDownload size={16} />}
@@ -409,7 +405,7 @@ export default function ImportCoursesModal({
             loading={busy}
             disabled={!depId || !url.trim()}
           >
-            Dersleri Getir
+            {t.import.fetchCourses}
           </Button>
         </Stack>
       )}
@@ -458,7 +454,7 @@ function RowView({
         </Table.Td>
         <Table.Td>{c.code}</Table.Td>
         <Table.Td>{c.name}</Table.Td>
-        <Table.Td>{c.year}. sınıf</Table.Td>
+        <Table.Td>{t.courses.yearN(c.year)}</Table.Td>
         <Table.Td>{t.enums.semester[c.semester]}</Table.Td>
         <Table.Td>{c.hours_theory}+{c.hours_practice}+{c.hours_lab}</Table.Td>
         <Table.Td>
@@ -533,7 +529,7 @@ function RowView({
               />
               {/* K-55: AKTS düzeltilebilir; boşaltılırsa null (opsiyonel). */}
               <NumberInput
-                label="AKTS" size="xs" w={70} min={0}
+                label={t.courses.ects} size="xs" w={70} min={0}
                 value={c.ects ?? ""}
                 onChange={(v) => onPatch({ ects: v === "" ? null : Number(v) })}
               />

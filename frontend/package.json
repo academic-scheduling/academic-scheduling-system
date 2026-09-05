@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint:i18n": "node scripts/i18n-guard.mjs"
   },
   "dependencies": {
     "@mantine/core": "^7.13.0",

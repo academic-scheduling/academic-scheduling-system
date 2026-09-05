@@ -378,7 +378,7 @@ export default function CoursesPage() {
       clear: () => setTypeFilter("all") });
     if (semFilter) out.push({ key: "sem", label: t.enums.semester[semFilter as SemesterType],
       clear: () => setSemFilter(null) });
-    if (onlyActive) out.push({ key: "active", label: "Pasifler gizli",
+    if (onlyActive) out.push({ key: "active", label: t.courses.inactiveHidden,
       clear: () => setOnlyActive(false) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -603,14 +603,14 @@ export default function CoursesPage() {
     setBusy(true);
     try {
       await api.delete(`/courses/${deletingCourse.id}`);
-      notifications.show({ color: "green", message: "Ders silindi" });
+      notifications.show({ color: "green", message: t.courses.deleted });
       // Silinen ders açık Drawer'daysa kapat (artık yok).
       if (selId === deletingCourse.id) setSelId(null);
       setDeletingCourse(null);
       await load();
     } catch (e) {
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
@@ -807,7 +807,7 @@ export default function CoursesPage() {
       {rows.length === 0 ? (
         <Text c="dimmed" mt="xl" ta="center">
           {search || hasFilters || seg !== "all"
-            ? "Filtreye uyan ders yok."
+            ? t.courses.noMatch
             : t.courses.empty}
         </Text>
       ) : (
@@ -869,7 +869,7 @@ export default function CoursesPage() {
       <Modal
         opened={courseModal}
         onClose={() => setCourseModal(false)}
-        title={editingCourse ? t.courses.edit : "Yeni Ders"}
+        title={editingCourse ? t.courses.edit : t.courses.newOne}
       >
         <form onSubmit={courseForm.onSubmit(submitCourse)}>
           <Stack>
@@ -1077,7 +1077,7 @@ export default function CoursesPage() {
               </Stack>
             )}
             <Button type="submit" loading={busy} mt="sm">
-              {editingCourse ? "Kaydet" : "Ekle"}
+              {editingCourse ? t.common.save : t.common.add}
             </Button>
           </Stack>
         </form>
@@ -1086,10 +1086,11 @@ export default function CoursesPage() {
       {/* --- Ders silme onayı --- */}
       <Modal opened={deletingCourse !== null} onClose={() => setDeletingCourse(null)} title={t.courses.deleteModal}>
         <Text>
-          <b>{deletingCourse?.code}</b> — {deletingCourse?.name} kalıcı olarak silinecek.
+          <b>{deletingCourse?.code}</b> — {deletingCourse?.name}{" "}
+          {t.common.permanentDeleteWarning}
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Şubesi veya sınavı olan ders silinemez; onun yerine düzenleyip pasife alın.
+          {t.courses.deleteCourseHint}
         </Text>
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={() => setDeletingCourse(null)}>{t.common.dismiss}</Button>
@@ -1223,7 +1224,7 @@ function CourseDrawerBody({
     } catch (e) {
       // 409 = şubenin haftalık program girişi var
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
@@ -1237,9 +1238,9 @@ function CourseDrawerBody({
 
   // K-45: hangi bileşenler online — Drawer'da tek satır rozet olarak gösterilir.
   const online: string[] = [];
-  if (course.theory_online) online.push("Teori");
-  if (course.practice_online) online.push("Uygulama");
-  if (course.lab_online) online.push("Lab");
+  if (course.theory_online) online.push(t.weekly.session.THEORY);
+  if (course.practice_online) online.push(t.weekly.session.PRACTICE);
+  if (course.lab_online) online.push(t.weekly.session.LAB);
 
   const typeBadge = course.is_common
     ? <Badge variant="light" color="teal" size="sm">{t.courses.common}</Badge>
@@ -1291,11 +1292,11 @@ function CourseDrawerBody({
               <Text size="xs" fw={600} c="dimmed" mb={8}>{t.courses.takenBy}</Text>
               <Group gap={6}>
                 <Badge size="sm" variant="light" color="teal" style={{ textTransform: "none" }}>
-                  {depName ? `${depName} · ` : ""}{course.year}. sınıf · {t.enums.semester[course.semester]}
+                  {depName ? `${depName} · ` : ""}{t.courses.yearN(course.year)} · {t.enums.semester[course.semester]}
                 </Badge>
                 {course.extra_cohorts.map((ec) => (
                   <Badge key={ec.id} size="sm" variant="light" color="teal" style={{ textTransform: "none" }}>
-                    {ec.department_name} · {ec.year}. sınıf · {t.enums.semester[ec.semester]}
+                    {ec.department_name} · {t.courses.yearN(ec.year)} · {t.enums.semester[ec.semester]}
                   </Badge>
                 ))}
               </Group>
@@ -1349,12 +1350,12 @@ function CourseDrawerBody({
                     <Group gap="md" mt={8} c="dimmed" wrap="wrap">
                       <Group gap={5} wrap="nowrap">
                         <IconUsers size={14} />
-                        <Text size="xs">{s.expected_students} öğrenci</Text>
+                        <Text size="xs">{t.courses.studentCount(s.expected_students)}</Text>
                       </Group>
                       <Group gap={5} wrap="nowrap">
                         <IconDoor size={14} />
                         <Text size="xs" c={rooms.length ? undefined : "dimmed"}>
-                          {rooms.length ? rooms.join(", ") : "derslik yok"}
+                          {rooms.length ? rooms.join(", ") : t.courses.noClassroomShort}
                         </Text>
                       </Group>
                       {/* K-59: bu liste GET /weekly-entries'ten gelir; o uç yalnız
@@ -1409,7 +1410,7 @@ function CourseDrawerBody({
                           belirlenir ve şubenin yanında oradan gösterilir. */}
                       <Group>
                         <Button type="submit" size="xs" loading={busy}>
-                          {editing ? "Kaydet" : "Ekle"}
+                          {editing ? t.common.save : t.common.add}
                         </Button>
                         <Button size="xs" variant="default" onClick={closeForm}>{t.common.dismiss}</Button>
                       </Group>
@@ -1442,10 +1443,11 @@ function CourseDrawerBody({
       {/* Şube silme onayı */}
       <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title={t.courses.deleteSection}>
         <Text>
-          <b>Şube {deleting?.section_no}</b> ({deleting && lecturerLabel(deleting.lecturer)}) silinecek.
+          <b>{t.courses.sectionLabel(deleting?.section_no ?? 0)}</b>{" "}
+          ({deleting && lecturerLabel(deleting.lecturer)}) {t.courses.willBeDeleted}
         </Text>
         <Text c="dimmed" size="sm" mt="xs">
-          Haftalık program girişi olan şube silinemez; önce girişleri kaldırın.
+          {t.courses.deleteSectionHint}
         </Text>
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={() => setDeleting(null)}>{t.common.dismiss}</Button>

@@ -79,7 +79,7 @@ export function CourseInfoButton({ course, opened, onOpenChange, onOpenCourses, 
       <Popover.Target>
         <ActionIcon
           size="sm" variant="subtle" color="gray" radius="sm"
-          aria-label={`${course.code} bilgisi`}
+          aria-label={t.courseInfo.infoLabel(course.code)}
           draggable={false}
           onMouseDown={(e) => e.stopPropagation()}
           onDragStart={(e) => e.preventDefault()}

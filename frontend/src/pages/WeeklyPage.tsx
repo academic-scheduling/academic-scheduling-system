@@ -716,7 +716,7 @@ export default function WeeklyPage() {
       await api.delete(`/${writeBase}/${e.id}`);
       // Geri al = aynı girişi yeniden yarat (yeni id alır, remap yığında yapılır).
       recordUndo({
-        label: `${e.section.course.code}-${e.section.section_no} silme`,
+        label: t.weekly.undoDeleteLabel(`${e.section.course.code}-${e.section.section_no}`),
         entity: writeBase,
         action: { type: "create", restoreId: e.id, body: {
           section_id: e.section.id,
@@ -730,7 +730,7 @@ export default function WeeklyPage() {
       reload();
       refreshDraft();
     } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Silinemedi" });
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : t.common.deleteFailed });
     }
   };
 
@@ -998,7 +998,7 @@ export default function WeeklyPage() {
                     <Badge size="xs" variant="default" radius="sm"
                       style={{ fontWeight: 500, textTransform: "none", paddingInline: 5,
                                color: TEXT_MUTED, borderColor: BORDER }}>
-                      {r.sections.length} şube
+                      {t.weekly.sectionsCount(r.sections.length)}
                     </Badge>
                   )}
                   {r.course.is_elective && (
@@ -1195,7 +1195,7 @@ export default function WeeklyPage() {
               {weeklyConflicts.filter((c) => c.severity === "HARD").length} engel
             </Badge>
             <Badge size="sm" color="orange" variant="light">
-              {weeklyConflicts.filter((c) => c.severity === "WARNING").length} uyarı
+              {t.weekly.warningCount(weeklyConflicts.filter((c) => c.severity === "WARNING").length)}
             </Badge>
           </Group>
         </Group>
@@ -1273,7 +1273,7 @@ export default function WeeklyPage() {
               });
             // Geri al = eklenen girişi sil.
             recordUndo({
-              label: `${res.entry.section.course.code}-${res.entry.section.section_no} ekleme`,
+              label: t.weekly.undoAddLabel(`${res.entry.section.course.code}-${res.entry.section.section_no}`),
               entity: writeBase,
               action: { type: "delete", id: res.entry.id },
             });
@@ -1529,7 +1529,7 @@ function ClusterCard({ c, hard, warn, lecturerName, canWrite, highlight, deepHig
           {hard ? <IconAlertCircle size={15} /> : <IconAlertTriangle size={15} />}
         </span>
       )}
-      {many && <Text size="xs" c="dimmed" mt={3}>{c.entries.length} paralel şube</Text>}
+      {many && <Text size="xs" c="dimmed" mt={3}>{t.weekly.parallelSections(c.entries.length)}</Text>}
     </div>
   );
 }
@@ -1554,13 +1554,13 @@ function GroupModal({ cluster, canWrite, onClose, onEdit, onDelete }: {
           <Group key={e.id} gap="xs" wrap="nowrap" justify="space-between"
             style={{ borderBottom: "1px solid var(--mantine-color-default-border)", paddingBottom: 6 }}>
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-              <Badge size="sm" variant="outline">Şube {e.section.section_no}</Badge>
+              <Badge size="sm" variant="outline">{t.weekly.sectionLabel(e.section.section_no)}</Badge>
               <Text size="sm" truncate>
                 {e.delivery_mode !== "FACE_TO_FACE"
                   ? "online"
                   : e.classroom
                   ? `${e.classroom.building.name} ${e.classroom.room_code}`
-                  : "derslik yok"}
+                  : t.weekly.noClassroomShort}
               </Text>
             </Group>
             {canWrite && (
@@ -1717,7 +1717,7 @@ function EntryModal({ title, classrooms, startSlot, initial, courses, fixedCours
       });
       onDone(res.conflicts);
     } catch (err) {
-      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : "Kaydedilemedi" });
+      notifications.show({ color: "red", message: err instanceof ApiError ? err.message : t.common.saveFailed });
     } finally {
       setBusy(false);
     }

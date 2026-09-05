@@ -61,6 +61,10 @@ export const en: Dict = {
 
     dismiss: "Cancel",
     actionFailed: "The operation failed",
+    deleteFailed: "Could not be deleted",
+    saveFailed: "Could not be saved",
+    underConstruction: "This screen is under construction.",
+    deactivate: "Deactivate",
     loadFailed: "Data could not be loaded",
     permanentDeleteWarning: "will be permanently deleted. This cannot be undone.",
     admin: "Administrator",
@@ -277,6 +281,9 @@ export const en: Dict = {
       'A classroom used in a schedule or exam cannot be deleted; use "Deactivate" instead.',
 
     updated: "Classroom updated",
+    created: "Classroom added",
+    deleted: "Classroom deleted",
+    newOne: "New Classroom",
     disabled: "Classroom deactivated",
     enabled: "Classroom activated",
     activate: "Activate",
@@ -335,6 +342,11 @@ export const en: Dict = {
     allDepartments: "All departments",
     allTitles: "All titles",
     hideInactive: "Hide inactive records",
+    inactiveHidden: "Inactive hidden",
+    staff: "Staff",
+    filter: "Filter",
+    clear: "Clear",
+    courseCount: (n: number) => `${n} courses`,
     noMatch: "No lecturer matches the filter.",
     empty: "No lecturers yet.",
     personCount: (n: number) => `${n} people`,
@@ -348,6 +360,8 @@ export const en: Dict = {
       "The source site may be temporarily unreachable, or its page structure " +
       "may have changed. If the problem persists, notify your administrator.",
     noChange: "No changes",
+    nAdded: (n: number) => `${n} added`,
+    addN: (n: number) => `Add ${n}`,
     nUpdated: (n: number) => `${n} updated`,
     nSkipped: (n: number) => `${n} skipped`,
     foundSummary: (total: number, known: number, fresh: number) =>
@@ -496,6 +510,7 @@ export const en: Dict = {
 
     resendInvite: "Resend invitation",
     cancelInvite: "Cancel invitation",
+    inviteCancelled: "Invitation cancelled",
     disableAccess: "Disable access",
     enableAccess: "Enable access",
 
@@ -627,6 +642,17 @@ export const en: Dict = {
       "remove the duplicates.",
 
     updated: "Course updated",
+    deleted: "Course deleted",
+    newOne: "New Course",
+    inactiveHidden: "Inactive hidden",
+    studentCount: (n: number) => `${n} students`,
+    sectionLabel: (n: number) => `Section ${n}`,
+    willBeDeleted: "will be deleted.",
+    noClassroomShort: "no classroom",
+    deleteCourseHint:
+      "A course with sections or exams cannot be deleted; deactivate it instead.",
+    deleteSectionHint:
+      "A section used in the weekly schedule cannot be deleted; remove its entries first.",
     updatedReset:
       "Course updated — a field affecting the schedule changed, so weekly and " +
       "exam placements were reset. Please place them again.",
@@ -733,7 +759,14 @@ export const en: Dict = {
     date: "Date",
     weekendError: "Weekends (Saturday/Sunday) cannot be selected as exam days",
     start: "Start",
+    end: "End",
+    midtermNo: (i: number) => `Midterm ${i}`,
+    noQuota: " · no quota",
+    undoAddLabel: (etiket: string) => `adding ${etiket}`,
     duration: "Duration (min)",
+    endBeforeStart: "End must be after start",
+    durationRange: (min: number, max: number) =>
+      `Duration must be between ${min} and ${max} min`,
     classrooms: "Classrooms",
     pickClassrooms: "Select classrooms (more than one allowed)",
     capacityOf: (n: number) => ` · ${n} seats`,
@@ -830,6 +863,11 @@ export const en: Dict = {
     sectionsCount: (n: number) => `${n} sections`,
     roomsCount: (n: number) => ` · ${n} classrooms`,
     online: "online",
+    warningCount: (n: number) => `${n} warnings`,
+    sectionLabel: (n: number) => `Section ${n}`,
+    noClassroomShort: "no classroom",
+    undoDeleteLabel: (etiket: string) => `deleting ${etiket}`,
+    undoAddLabel: (etiket: string) => `adding ${etiket}`,
     parallelSections: (n: number) => `${n} parallel sections — click to list`,
     cardEditable: "Click to edit, drag to move",
     deleteEntry: "Delete entry",
@@ -880,7 +918,9 @@ export const en: Dict = {
     sectionOf: (kod: string, sube: number) => `${kod} · Section ${sube}`,
     noExams: "No exam in the draft.",
     movedTag: "moved",
+    sharedAffected: "Common course — affected:",
     addedTag: "added",
+    changeCount: (n: number) => `${n} changes`,
     studentCount: (n: number) => `${n} students`,
     noClassroom: "No classroom assigned",
     undoFailed: "Could not be undone",
@@ -1099,6 +1139,7 @@ export const en: Dict = {
     commonCourseHours: (T: number, U: number, L: number) =>
       `Common course · T${T}+P${U}+L${L}`,
     hoursOf: (T: number, U: number, L: number) => `T${T}+P${U}+L${L}`,
+    infoLabel: (kod: string) => `${kod} info`,
     ectsOf: (n: number) => ` · ${n} ECTS`,
     required: "Required",
     sectionsCount: (n: number) => `Sections (${n})`,
@@ -1124,6 +1165,28 @@ export const en: Dict = {
     done: (ders: number, sube: number) =>
       `${ders} courses added, ${sube} sections created`,
     failed: "Import failed",
+    fetchFailed: "Courses could not be fetched",
+    fetchCourses: "Fetch Courses",
+    back: "Back",
+    resultAdded: (ders: number, sube: number) =>
+      `${ders} new courses · ${sube} sections added.`,
+    resultMerged: (n: number) =>
+      `${n} courses added to an existing common course · `,
+    resultSkipped: (atlanan: number, toplam: number) =>
+      `${atlanan} courses already existed · ${toplam} courses processed in total.`,
+    sectionlessCount: (n: number) => `${n} courses without sections`,
+    duplicateTitle: (n: number) => `Courses with the same name (${n})`,
+    duplicateHint:
+      "These courses share a name but have different codes — usually the " +
+      "Turkish and English records of the same course.",
+    lecturerMatchHint:
+      "For an unmatched lecturer (service courses, different spelling) pick " +
+      "one from the list or leave it empty — no section is created for an " +
+      "empty lecturer.",
+    lecturersNote:
+      "The \"Taught by\" information of each course is also fetched and " +
+      "lecturers are matched against the existing list; this makes fetching " +
+      "take a few seconds.",
     alreadySectioned: (n: number) => ` · ${n} already have sections`,
     duplicateNamed: (n: number) => ` · ${n} with the same name (below)`,
     selectAll: "Select all",

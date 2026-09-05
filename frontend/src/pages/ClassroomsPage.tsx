@@ -293,7 +293,7 @@ export default function ClassroomsPage() {
         notifications.show({ color: "green", message: t.classrooms.updated });
       } else {
         await api.post<Classroom>("/classrooms", payload);
-        notifications.show({ color: "green", message: "Derslik eklendi" });
+        notifications.show({ color: "green", message: t.classrooms.created });
       }
       setRoomModal(false);
       await load();
@@ -323,13 +323,13 @@ export default function ClassroomsPage() {
     setDeleteBusy(true);
     try {
       await api.delete(`/classrooms/${deletingRoom.id}`);
-      notifications.show({ color: "green", message: "Derslik silindi" });
+      notifications.show({ color: "green", message: t.classrooms.deleted });
       if (selId === deletingRoom.id) setSelId(null);
       setDeletingRoom(null);
       await load();
     } catch (e) {
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
@@ -559,7 +559,7 @@ export default function ClassroomsPage() {
       <Modal
         opened={roomModal}
         onClose={() => setRoomModal(false)}
-        title={editingRoom ? t.classrooms.edit : "Yeni Derslik"}
+        title={editingRoom ? t.classrooms.edit : t.classrooms.newOne}
       >
         <form onSubmit={roomForm.onSubmit(handleRoomSubmit)}>
           <Stack>
@@ -588,8 +588,8 @@ export default function ClassroomsPage() {
               label={t.classrooms.type}
               data={[
                 { value: "CLASSROOM", label: t.classrooms.classLevel },
-                { value: "AMPHI", label: "Amfi" },
-                { value: "LAB", label: "Laboratuvar" },
+                { value: "AMPHI", label: t.enums.roomType.AMPHI },
+                { value: "LAB", label: t.enums.roomType.LAB },
               ]}
               allowDeselect={false}
               {...roomForm.getInputProps("room_type")}
@@ -602,7 +602,7 @@ export default function ClassroomsPage() {
               {...roomForm.getInputProps("exam_capacity")}
             />
             <Button type="submit" loading={submitting} mt="sm">
-              {editingRoom ? "Kaydet" : "Ekle"}
+              {editingRoom ? t.common.save : t.common.add}
             </Button>
           </Stack>
         </form>
@@ -828,9 +828,9 @@ function ClassroomDrawerBody({
         ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
-          <Tooltip label={c.active ? "Pasife al" : t.classrooms.activate}>
+          <Tooltip label={c.active ? t.common.deactivate : t.classrooms.activate}>
             <ActionIcon variant="subtle" size="lg" color={c.active ? "orange" : "green"}
-              onClick={() => onToggleActive(c)} aria-label={c.active ? "Pasife al" : t.classrooms.activate}>
+              onClick={() => onToggleActive(c)} aria-label={c.active ? t.common.deactivate : t.classrooms.activate}>
               {c.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>
@@ -905,7 +905,7 @@ function BuildingsModal({
       await onChanged();
     } catch (e) {
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
@@ -929,7 +929,7 @@ function BuildingsModal({
                     </Group>
                   </Table.Td>
                   <Table.Td w={110}>
-                    <Text size="sm" c="dimmed">{roomCounts[b.id] ?? 0} derslik</Text>
+                    <Text size="sm" c="dimmed">{t.classrooms.roomCount(roomCounts[b.id] ?? 0)}</Text>
                   </Table.Td>
                   <Table.Td w={90}>
                     <Group gap={4} wrap="nowrap">

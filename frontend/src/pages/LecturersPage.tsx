@@ -297,7 +297,7 @@ export default function LecturersPage() {
         clear: () => setDeptFilter(null) });
     }
     if (titleFilter) out.push({ key: "title", label: titleFilter, clear: () => setTitleFilter(null) });
-    if (onlyActive) out.push({ key: "active", label: "Pasifler gizli", clear: () => setOnlyActive(false) });
+    if (onlyActive) out.push({ key: "active", label: t.lecturers.inactiveHidden, clear: () => setOnlyActive(false) });
     return out;
   }, [deptFilter, titleFilter, onlyActive, depById]);
 
@@ -408,7 +408,7 @@ export default function LecturersPage() {
       await load();
     } catch (e) {
       notifications.show({
-        color: "red", title: "Silinemedi",
+        color: "red", title: t.common.deleteFailed,
         message: e instanceof ApiError ? e.message : t.common.actionFailed,
         autoClose: 7000,
       });
@@ -458,7 +458,7 @@ export default function LecturersPage() {
       const res = await api.post<ImportCommit>("/lecturers/import/commit",
         { rows: rowsToCommit, updates: updatesToCommit });
       const parts: string[] = [];
-      if (res.created.length) parts.push(`${res.created.length} eklendi`);
+      if (res.created.length) parts.push(t.lecturers.nAdded(res.created.length));
       if (res.updated.length) parts.push(t.lecturers.nUpdated(res.updated.length));
       if (res.skipped.length) parts.push(t.lecturers.nSkipped(res.skipped.length));
       notifications.show({ color: "green", message: parts.join(" · ") || t.lecturers.noChange });
@@ -554,7 +554,7 @@ export default function LecturersPage() {
             onChange={(v) => setSeg(v as Seg)}
             data={[
               { label: t.common.all, value: "all" },
-              { label: "Kadrolu", value: "staff" },
+              { label: t.lecturers.staff, value: "staff" },
               { label: t.lecturers.external, value: "external" },
             ]}
             size="sm"
@@ -566,7 +566,7 @@ export default function LecturersPage() {
             <Popover.Target>
               <Button variant="default" onClick={() => setFiltersOpen((o) => !o)}
                 leftSection={<IconFilter size={16} />} style={{ flex: "none" }}>
-                Filtre
+                {t.lecturers.filter}
                 {hasFilters && <Badge size="sm" circle ml={6} variant="filled">{chips.length}</Badge>}
               </Button>
             </Popover.Target>
@@ -616,7 +616,7 @@ export default function LecturersPage() {
             ))}
             {hasFilters && (
               <Button variant="subtle" size="compact-xs" onClick={clearAllFilters} style={{ flex: "none" }}>
-                Temizle
+                {t.lecturers.clear}
               </Button>
             )}
           </Group>
@@ -638,11 +638,11 @@ export default function LecturersPage() {
                 {/* K-71: Ad Soyad'a da genişlik verildi. Eskiden tek genişliksiz
                     sütun olduğu için tüm boşluğu yutup tablonun yarısını kaplıyordu;
                     artık boşluk tüm sütunlara oranlı dağılır, diğerleri sıkışmaz. */}
-                {sortTh("Ad Soyad", "name", 280)}
-                {sortTh("Unvan", "title", 150)}
-                {sortTh("Kadro birimi", "dep", 200)}
+                {sortTh(t.lecturers.fullName, "name", 280)}
+                {sortTh(t.lecturers.titleLabel, "title", 150)}
+                {sortTh(t.lecturers.homeUnit, "dep", 200)}
                 <Table.Th w={220}>{t.auth.email}</Table.Th>
-                {sortTh("Ders", "courses", 110, "center")}
+                {sortTh(t.lecturers.course, "courses", 110, "center")}
                 <Table.Th w={40} />
               </Table.Tr>
             </Table.Thead>
@@ -899,7 +899,7 @@ export default function LecturersPage() {
                 <Group justify="flex-end" mt="sm">
                   <Button variant="default" onClick={() => setImportOpen(false)}>{t.common.dismiss}</Button>
                   <Button loading={committing} disabled={totalToCommit === 0} onClick={handleImportCommit}>
-                    {committableNew > 0 && `${committableNew} ekle`}
+                    {committableNew > 0 && t.lecturers.addN(committableNew)}
                     {committableNew > 0 && selectedUpdates.size > 0 && " · "}
                     {selectedUpdates.size > 0 && t.lecturers.updateN(selectedUpdates.size)}
                     {totalToCommit === 0 && "Uygula"}
@@ -961,7 +961,7 @@ const LecturerRow = memo(function LecturerRow({
           : <Text size="sm" c="dimmed">—</Text>}
       </Table.Td>
       <Table.Td ta="center" c={courseCount ? undefined : "dimmed"} style={{ fontVariantNumeric: "tabular-nums" }}>
-        {courseCount === 0 ? "—" : `${courseCount} ders`}
+        {courseCount === 0 ? "—" : t.lecturers.courseCount(courseCount)}
       </Table.Td>
       <Table.Td ta="right">
         <IconChevronRight size={15} style={{ color: "var(--mantine-color-gray-5)" }} />
@@ -1146,9 +1146,9 @@ function LecturerDrawerBody({
         ]} />
         <Box style={{ flex: 1 }} />
         {canWrite && (
-          <Tooltip label={l.active ? "Pasife al" : t.lecturers.activate}>
+          <Tooltip label={l.active ? t.common.deactivate : t.lecturers.activate}>
             <ActionIcon variant="subtle" size="lg" color={l.active ? "orange" : "green"}
-              onClick={() => onToggleActive(l)} aria-label={l.active ? "Pasife al" : t.lecturers.activate}>
+              onClick={() => onToggleActive(l)} aria-label={l.active ? t.common.deactivate : t.lecturers.activate}>
               {l.active ? <IconEyeOff size={18} /> : <IconEye size={18} />}
             </ActionIcon>
           </Tooltip>

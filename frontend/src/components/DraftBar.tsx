@@ -70,7 +70,7 @@ export function DraftStatus({ departmentId, year, semester, kind, draft }: Cohor
         {/* K-74: "yayındaki ... ile aynı" metni kaldırıldı — değişiklik varken
             yalnız sayaç, yokken hiçbir şey (rozet zaten taslağı belli ediyor). */}
         {draft.change_count > 0 && (
-          <Text size="sm" c="dimmed">{draft.change_count} değişiklik</Text>
+          <Text size="sm" c="dimmed">{t.draft.changeCount(draft.change_count)}</Text>
         )}
       </Group>
     );

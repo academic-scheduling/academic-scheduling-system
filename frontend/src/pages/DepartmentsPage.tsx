@@ -509,7 +509,7 @@ export default function DepartmentsPage() {
             <TextInput label={t.departments.nameLabel} placeholder={t.departments.namePlaceholder} {...form.getInputProps("name")} />
             <TextInput label={t.departments.codeLabel} placeholder="CENG" {...form.getInputProps("code")} />
             <Button type="submit" loading={submitting} mt="sm">
-              {editing ? "Kaydet" : "Ekle"}
+              {editing ? t.common.save : t.common.add}
             </Button>
           </Stack>
         </form>

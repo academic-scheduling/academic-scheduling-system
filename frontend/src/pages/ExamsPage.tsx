@@ -1449,6 +1449,33 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
   const [not, setNot] = useState(exam?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
+  // K-89 · Bitiş saati. Backend `start_time` + `duration_minutes` saklar
+  // (şema değişmedi); bitiş bir ÜÇÜNCÜ gerçek değil, ikisinin görünümüdür.
+  // Bu yüzden state'te tutulmaz, her render'da türetilir — "süre 90 ama bitiş
+  // 10:00" gibi kendi içinde çelişen bir form imkânsız olur.
+  const SURE_MIN = 10, SURE_MAX = 480;      // backend CheckConstraint ile aynı
+  const basMin = toMin(saat);
+  const basGecerli = Number.isFinite(basMin);
+  // %1440: 23:00 + 8sa gibi bir aralık "31:00" değil "07:00" yazsın.
+  const bitis = basGecerli ? fmt((basMin + sure) % 1440) : "";
+  const [bitisHatasi, setBitisHatasi] = useState<string | null>(null);
+
+  /** Kullanıcı bitişi değiştirdi → süreyi ondan türet. */
+  const bitisiUygula = (deger: string) => {
+    setBitisHatasi(null);
+    if (!deger || !basGecerli) return;      // yarım girdi: sessizce bekle
+    const bitMin = toMin(deger);
+    if (!Number.isFinite(bitMin)) return;
+    const yeniSure = bitMin - basMin;
+    if (yeniSure <= 0) { setBitisHatasi(t.exams.endBeforeStart); return; }
+    if (yeniSure < SURE_MIN || yeniSure > SURE_MAX) {
+      // Backend zaten reddederdi; kullanıcıya kaydetmeden ÖNCE söyle.
+      setBitisHatasi(t.exams.durationRange(SURE_MIN, SURE_MAX));
+      return;
+    }
+    setSure(yeniSure);
+  };
+
   // K-46: seçili dersin vize sayısı; birden fazlaysa "kaçıncı vize" sorulur.
   const selectedCourse = courses.find((c) => String(c.id) === courseId) ?? null;
   const midtermCount = selectedCourse?.midterm_count ?? 1;
@@ -1539,11 +1566,22 @@ function ExamModal({ exam, initialDate, initialMin, initialCourseId, courses, cl
         <TextInput label={t.exams.date} type="date" value={tarih}
           error={haftaSonu ? t.exams.weekendError : undefined}
           onChange={(ev) => setTarih(ev.currentTarget.value)} />
+        {/* K-89: başlangıç + BİTİŞ + süre. Üçü de aynı gerçeğin görünümü, o
+            yüzden sadece ikisi state'te tutulur (başlangıç + süre); bitiş
+            TÜRETİLİR. Üçünü ayrı state yapmak, ikisi güncellenip üçüncüsü
+            unutulduğunda tutarsız bir form bırakırdı.
+              · bitiş değişti  → süre = bitiş - başlangıç
+              · süre değişti   → bitiş kendiliğinden kayar
+              · başlangıç değişti → SÜRE korunur, bitiş kayar (sınavı öne/arkaya
+                almak uzunluğunu değiştirmemeli). */}
         <Group grow>
           <TextInput label={t.exams.start} type="time" value={saat}
-            onChange={(ev) => setSaat(ev.currentTarget.value)} />
-          <NumberInput label={t.exams.duration} value={sure} min={10} max={480} step={15}
-            onChange={(v) => setSure(Number(v) || 90)} />
+            onChange={(ev) => { setSaat(ev.currentTarget.value); setBitisHatasi(null); }} />
+          <TextInput label={t.exams.end} type="time" value={bitis}
+            error={bitisHatasi}
+            onChange={(ev) => bitisiUygula(ev.currentTarget.value)} />
+          <NumberInput label={t.exams.duration} value={sure} min={SURE_MIN} max={SURE_MAX} step={15}
+            onChange={(v) => { setSure(Number(v) || 90); setBitisHatasi(null); }} />
         </Group>
         <MultiSelect label={t.exams.classrooms} value={odalar} onChange={setOdalar} searchable
           placeholder={odalar.length ? undefined : t.exams.pickClassrooms}

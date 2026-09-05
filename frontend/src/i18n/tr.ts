@@ -796,7 +796,12 @@ export const tr = {
     date: "Tarih",
     weekendError: "Hafta sonu (Cumartesi/Pazar) sınav günü olarak seçilemez (K-06)",
     start: "Başlangıç",
+    end: "Bitiş",
     duration: "Süre (dk)",
+    // K-89: bitiş ile süre birbirine bağlı; biri değişince öteki türetilir.
+    endBeforeStart: "Bitiş, başlangıçtan sonra olmalı",
+    durationRange: (min: number, max: number) =>
+      `Süre ${min}-${max} dk arasında olmalı`,
     classrooms: "Derslikler",
     pickClassrooms: "Derslik seç (birden çok olabilir)",
     capacityOf: (n: number) => ` · ${n} kişi`,
@@ -957,6 +962,9 @@ export const tr = {
     // K-80: K-79'dan kaçmış iki metin — sınav listesindeki "eklendi"
     // rozeti ve öğrenci sayısı ("120 öğrenci") sabit Türkçeydi.
     addedTag: "eklendi",
+    // K-89: DraftBar'daki sayaç sabit Türkçeydi — ifadeyle karışık JSX
+    // metni olduğu için K-79 taramasından kaçmıştı.
+    changeCount: (n: number) => `${n} değişiklik`,
     studentCount: (n: number) => `${n} öğrenci`,
     noClassroom: "Derslik atanmadı",
     undoFailed: "Geri alınamadı",
